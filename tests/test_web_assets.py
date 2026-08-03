@@ -43,6 +43,8 @@ class WebAssetTests(unittest.TestCase):
             self.assertNotIn("fetch(", source)
             self.assertNotIn("DEEPSEEK_API_KEY", source)
             self.assertNotIn("SCIVERSE_API_TOKEN", source)
+        index_html = (web_dir / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="coverage-notice"', index_html)
         workflow_html = (web_dir / "workflow.html").read_text(encoding="utf-8")
         workflow_script = (web_dir / "workflow.js").read_text(encoding="utf-8")
         self.assertIn('id="reading-guide-cards"', workflow_html)

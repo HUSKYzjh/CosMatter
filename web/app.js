@@ -76,6 +76,7 @@ const demoBundle = {
     is_synthetic: true,
   }],
   verification_decisions: [],
+  coverage: { scope: "synthetic bounded demonstration", empty_result_meaning: "No current result means no matching local artifact; it does not establish absence." },
   condition_matrix: [{ condition_cluster: "外延薄膜 · 压缩应变", supporting_evidence_ids: [], contradicting_evidence_ids: [], unknowns: ["厚度", "氧空位"] }],
   mission_report: null,
 };
@@ -319,6 +320,7 @@ function renderBundle(bundle) {
   setText("#retry-budget", `${Number.isInteger(status.retry_count) ? status.retry_count : 0} / ${Number.isInteger(status.retry_budget) ? status.retry_budget : 0}`);
   setText("#return-reason", status.return_reason === null ? "无" : text(status.return_reason));
 renderBundleMetadata(bundle, activeBundleSource);
+  setText("#coverage-notice", bundle.coverage && text(bundle.coverage.empty_result_meaning, "") ? `${text(bundle.coverage.scope, "bounded mission")}: ${text(bundle.coverage.empty_result_meaning)}` : "当前页面只显示有界任务工件；无结果不代表材料文献或现象不存在。");
   configureEvidenceFilters(asArray(bundle.evidence_cards));
   renderJourney(asArray(bundle.stations));
   renderFacilities(asArray(bundle.facilities));

@@ -47,7 +47,7 @@ function renderReadingGuide(guide) {
   const items = guide && typeof guide === "object" && Array.isArray(guide.items) ? guide.items : [];
   if (!items.length) {
     target.replaceChildren(Object.assign(document.createElement("p"), { className: "notice", textContent: "尚未生成阅读路线。请在完成受控检索后运行 build-reading-guide。" }));
-    caveat.textContent = "阅读路线只能从已批准计划与本运行候选工件生成。";
+    caveat.textContent = "阅读路线只能从已批准计划与本运行候选工件生成；无路线不代表材料文献或现象不存在。";
     return;
   }
   const roleLabel = { verified_evidence: "已核验证据", primary_candidate: "主检索候选", counterevidence_candidate: "反例候选" };

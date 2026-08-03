@@ -491,6 +491,7 @@ def build_ui_bundle(
         "literature_relations": literature_relations,
         "crossref_relations": crossref_relations,
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
+        "coverage": {"scope": "bounded local mission artifacts and configured providers", "empty_result_meaning": "No current result means no matching artifact or response in this bounded mission; it does not establish that the material-science literature or phenomenon is absent."},
     }
 
 
