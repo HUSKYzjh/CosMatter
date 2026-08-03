@@ -39,6 +39,33 @@ class RetrievalArtifactTests(unittest.TestCase):
             with self.assertRaises(RetrievalArtifactError):
                 write_candidate_artifact(Path(directory), "query_b", candidates)
 
+    def test_candidate_artifact_accumulates_search_history_without_duplicate_documents(self) -> None:
+        first = candidates_from_sciverse(
+            {"hits": [{"doc_id": "doc_1", "title": "First", "is_content_accessible": False}]},
+            "query_one",
+            1,
+        )
+        second = candidates_from_sciverse(
+            {
+                "hits": [
+                    {"doc_id": "doc_1", "title": "First from another query", "is_content_accessible": True},
+                    {"doc_id": "doc_2", "title": "Second", "is_content_accessible": False},
+                ]
+            },
+            "query_two",
+            2,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_candidate_artifact(Path(directory), "query_one", first)
+            path = write_candidate_artifact(Path(directory), "query_two", second)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["search_count"], 2)
+        self.assertEqual(len(payload["candidates"]), 2)
+        selected_doc_1 = next(item for item in payload["candidates"] if item["document_id"] == "doc_1")
+        self.assertTrue(selected_doc_1["is_content_accessible"])
+        self.assertEqual(payload["searches"][0]["query"], "query_one")
+        self.assertEqual(payload["searches"][1]["query"], "query_two")
     def test_candidate_artifact_is_metadata_only(self) -> None:
         candidates = candidates_from_sciverse({"hits": [{"doc_id": "doc_1", "title": "Paper"}]}, "query_a", 1)
         with tempfile.TemporaryDirectory() as directory:
