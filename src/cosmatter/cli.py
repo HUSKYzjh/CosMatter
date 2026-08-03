@@ -268,9 +268,11 @@ def command_execute_plan_query(args: argparse.Namespace) -> int:
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         plan = load_approved_flight_plan(run_dir, mission.mission_id)
-        if not 0 <= args.query_index < len(plan.queries):
+        query_kind = "counter" if args.counter else "primary"
+        approved_queries = plan.counter_queries if args.counter else plan.queries
+        if not 0 <= args.query_index < len(approved_queries):
             raise PlanApprovalError("query_index is outside the approved query list")
-        query = plan.queries[args.query_index]
+        query = approved_queries[args.query_index]
         response = SciverseAdapter(Settings.load()).agentic_search(query, top_k=plan.max_papers)
         candidates = candidates_from_sciverse(response.payload, query, plan.max_papers)
         artifact_path = write_candidate_artifact(run_dir, query, candidates)
@@ -282,9 +284,9 @@ def command_execute_plan_query(args: argparse.Namespace) -> int:
         event_type="approved_plan_query_executed",
         actor="search_selection",
         state=MissionState.RETRIEVE,
-        payload={"plan_id": plan.artifact_id, "query_index": args.query_index, "candidate_count": len(candidates), "request_id": response.request_id},
+        payload={"plan_id": plan.artifact_id, "query_kind": query_kind, "query_index": args.query_index, "candidate_count": len(candidates), "request_id": response.request_id},
     )
-    _json_print({"run_id": args.run_id, "query_index": args.query_index, "candidate_count": len(candidates), "candidates_path": str(artifact_path)})
+    _json_print({"run_id": args.run_id, "query_kind": query_kind, "query_index": args.query_index, "candidate_count": len(candidates), "candidates_path": str(artifact_path)})
     return 0
 
 def command_sciverse_search(args: argparse.Namespace) -> int:
@@ -373,6 +375,7 @@ def build_parser() -> argparse.ArgumentParser:
     execute_plan_query = commands.add_parser("execute-plan-query", help="execute one query from an approved FlightPlan")
     execute_plan_query.add_argument("--run-id", required=True)
     execute_plan_query.add_argument("--query-index", type=int, required=True)
+    execute_plan_query.add_argument("--counter", action="store_true", help="use the approved counterevidence query list")
     execute_plan_query.set_defaults(handler=command_execute_plan_query)
     search = commands.add_parser("sciverse-search", help="run a bounded Sciverse agentic-search request")
     search.add_argument("--query", required=True)

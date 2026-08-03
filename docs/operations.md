@@ -64,9 +64,13 @@ Git 忽略；不要把密钥、受限全文或浏览器凭据写进任何 JSON �
 ```powershell
 .\.venv\Scripts\python.exe -m cosmatter execute-plan-query `
   --run-id bfo_live_001 --query-index 0
+
+# 对批准计划中的反例查询使用同一受控通道
+.\.venv\Scripts\python.exe -m cosmatter execute-plan-query `
+  --run-id bfo_live_001 --query-index 0 --counter
 ```
 
-该命令只保存 `retrieval_candidates.json` 中的元数据卡，不保存 API 原始响应、摘要或
+两类检索均只接受已批准计划中的索引；审计记录查询类别与索引，不回显查询文本。该命令只保存 `retrieval_candidates.json` 中的元数据卡，不保存 API 原始响应、摘要或
 全文。候选必须标记为可访问，后续才能作为证据来源。
 
 ## 4. 录入可定位证据并生成交付物

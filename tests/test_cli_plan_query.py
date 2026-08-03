@@ -40,6 +40,29 @@ class CliPlanQueryTests(unittest.TestCase):
         self.assertEqual(candidates["query"], "BiFeO3 approved query")
         self.assertNotIn("BiFeO3 approved query", audit)
 
+    def test_execute_plan_query_can_use_approved_counterevidence_query(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            run_dir = runs_dir / "counter_query"
+            run_dir.mkdir()
+            mission = MissionBrief("why", "BiFeO3", "phase stability", "films", mission_id="mission_counter_query")
+            plan = FlightPlan(mission.mission_id, ("Which conditions?",), ("primary query",), ("approved counter query",))
+            (run_dir / "mission.json").write_text(json.dumps(mission.to_dict()), encoding="utf-8")
+            (run_dir / "flight_plan.json").write_text(json.dumps(plan.to_dict()), encoding="utf-8")
+            response = SciverseResponse({"hits": [{"doc_id": "doc_1", "title": "Candidate"}]}, 200, "request_counter")
+            output = io.StringIO()
+            with (
+                patch("cosmatter.cli._runs_dir", return_value=runs_dir),
+                patch("cosmatter.cli.SciverseAdapter") as adapter,
+                contextlib.redirect_stdout(output),
+            ):
+                adapter.return_value.agentic_search.return_value = response
+                status = main(["execute-plan-query", "--run-id", "counter_query", "--query-index", "0", "--counter"])
+            result = json.loads(output.getvalue())
+
+        self.assertEqual(status, 0)
+        adapter.return_value.agentic_search.assert_called_once_with("approved counter query", top_k=20)
+        self.assertEqual(result["query_kind"], "counter")
     def test_execute_plan_query_rejects_outside_index(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runs_dir = Path(directory)
