@@ -31,12 +31,15 @@ from cosmatter.models import (
 
 from .dispatch import MissionDispatcher
 from .reading_guide import ReadingGuideError, load_reading_guide
+from .source_map import SourceMapError, load_source_map
 from .verification import VerificationDecision
 
 
 UI_SCHEMA_VERSION = "1.0"
 _MAX_UI_QUOTE_CHARS = 500
 _MAX_TIMELINE_ENTRIES = 40
+_MAX_PAPER_SOURCE_SEGMENTS = 3
+_MAX_PAPER_SOURCE_CHARS = 1_000
 
 # These are presentation labels, not raw audit events.  The browser receives no
 # actor, event ID, payload, request ID, query text, exception, or review reason.
@@ -342,6 +345,19 @@ def _timeline_projection(path: Path) -> list[dict[str, str]]:
     return projected[-_MAX_TIMELINE_ENTRIES:]
 
 
+def _paper_source_map_projection(source_map: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Expose a few human-reviewed snippets, never raw parser output."""
+    if source_map is None:
+        return None
+    projected: list[dict[str, str]] = []
+    remaining = _MAX_PAPER_SOURCE_CHARS
+    for segment in source_map["segments"]:
+        if len(projected) == _MAX_PAPER_SOURCE_SEGMENTS or len(segment["quote"]) > remaining:
+            break
+        projected.append({key: segment[key] for key in ("segment_id", "locator", "kind", "quote")})
+        remaining -= len(segment["quote"])
+    return {"document_id": source_map["document_id"], "trust_status": "human_reviewed_parser_selection", "segments": projected}
+
 def build_ui_bundle(
     mission: MissionBrief,
     assignment: FleetAssignment,
@@ -352,6 +368,7 @@ def build_ui_bundle(
     condition_matrix: list[dict[str, Any]] | None = None,
     timeline: list[dict[str, str]] | None = None,
     research_guide: dict[str, Any] | None = None,
+    paper_source_map: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -409,6 +426,7 @@ def build_ui_bundle(
         "condition_matrix": condition_matrix or [],
         "timeline": timeline or [],
         "research_guide": research_guide,
+        "paper_source_map": _paper_source_map_projection(paper_source_map),
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
     }
 
@@ -432,7 +450,8 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     timeline = _timeline_projection(run_dir / "events.jsonl")
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
-    except ReadingGuideError as error:
+        paper_source_map = load_source_map(run_dir / "source_map.json", mission.mission_id)
+    except (ReadingGuideError, SourceMapError) as error:
         raise UiExportError(str(error)) from error
     bundle = build_ui_bundle(
         mission,
@@ -444,6 +463,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         condition_matrix=condition_matrix,
         timeline=timeline,
         research_guide=research_guide,
+        paper_source_map=paper_source_map,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

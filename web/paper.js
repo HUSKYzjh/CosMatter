@@ -42,11 +42,30 @@ function renderPaper(bundle) {
   const provenanceList = document.createElement("dl"); provenanceList.className = "inspector-list";
   [["document_id", paperText(item.document_id)], ["候选定位", paperText(item.locator_hint, "未记录")], ["内容状态", item.content_status === "authorized" ? "可进入授权提取流程" : "不可用于证据提取"]].forEach(([key, value]) => { const row = document.createElement("div"); const dt = document.createElement("dt"); const dd = document.createElement("dd"); dt.textContent = key; dd.textContent = value; row.append(dt, dd); provenanceList.append(row); });
   provenance.replaceChildren(provenanceList);
+  renderReviewedSourceMap(bundle, item);
   const cards = paperArray(bundle.evidence_cards).filter((card) => card && card.review_status === "accepted" && card.provenance && card.provenance.document_id === item.document_id);
   if (!cards.length) { evidenceTarget.replaceChildren(Object.assign(document.createElement("p"), { className: "notice", textContent: "此候选尚无可显示的已批准证据。候选不等于科学结论。" })); return; }
   evidenceTarget.replaceChildren(...cards.map((card) => { const article = document.createElement("article"); article.className = "evidence-card"; const claim = document.createElement("p"); claim.className = "claim"; claim.textContent = paperText(card.claim); const quote = document.createElement("p"); quote.className = "quote"; quote.textContent = `短摘录：${paperText(card.quote)}`; const locator = document.createElement("p"); locator.className = "route-meta"; locator.textContent = `定位：${paperText(card.provenance.document_id)} · ${paperText(card.provenance.locator)}`; article.append(claim, quote, locator); return article; }));
 }
 
+function renderReviewedSourceMap(bundle, item) {
+  const target = document.querySelector("#paper-source-map");
+  const sourceMap = bundle.paper_source_map;
+  if (!sourceMap || sourceMap.document_id !== item.document_id || !Array.isArray(sourceMap.segments) || !sourceMap.segments.length) {
+    target.replaceChildren(Object.assign(document.createElement("p"), { className: "notice", textContent: "No reviewed source-map snippets are available for this candidate." }));
+    return;
+  }
+  const heading = document.createElement("p");
+  heading.className = "route-meta";
+  heading.textContent = "Human-reviewed parser selection — not approved evidence.";
+  const cards = sourceMap.segments.map((segment) => {
+    const article = document.createElement("article"); article.className = "evidence-card source-map-card";
+    const locator = document.createElement("p"); locator.className = "route-meta"; locator.textContent = `${paperText(segment.kind, "segment")} · ${paperText(segment.locator)}`;
+    const quote = document.createElement("p"); quote.className = "quote"; quote.textContent = paperText(segment.quote);
+    article.append(locator, quote); return article;
+  });
+  target.replaceChildren(heading, ...cards);
+}
 function loadPaperBundle(event) {
   const file = event.target.files && event.target.files[0]; const message = document.querySelector("#paper-import-message");
   if (!file) return; if (file.size > PAPER_MAX_BUNDLE_BYTES) { message.textContent = "拒绝导入：UI JSON 不得超过 1 MiB。"; return; }
