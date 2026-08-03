@@ -91,3 +91,26 @@ def write_approved_flight_plan(run_dir: Path, plan: FlightPlan) -> Path:
     path = run_dir / "flight_plan.json"
     path.write_text(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
+
+def load_approved_flight_plan(run_dir: Path, mission_id: str) -> FlightPlan:
+    """Load only the explicit approved plan for a matching mission."""
+    path = run_dir / "flight_plan.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise TypeError("plan must be an object")
+        plan = FlightPlan(
+            mission_id=str(payload["mission_id"]),
+            subquestions=tuple(str(item) for item in payload["subquestions"]),
+            queries=tuple(str(item) for item in payload["queries"]),
+            counter_queries=tuple(str(item) for item in payload["counter_queries"]),
+            max_rounds=int(payload.get("max_rounds", 3)),
+            max_papers=int(payload.get("max_papers", 20)),
+            artifact_id=str(payload.get("artifact_id", "plan_loaded")),
+            created_at=str(payload.get("created_at", "loaded")),
+        )
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+        raise PlanApprovalError("run must contain a valid approved flight_plan.json") from error
+    if plan.mission_id != mission_id:
+        raise PlanApprovalError("approved flight plan does not belong to this mission")
+    return plan

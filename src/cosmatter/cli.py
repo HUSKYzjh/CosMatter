@@ -16,10 +16,10 @@ from .dispatch import MissionDispatcher
 from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft
-from .planning import PlanApprovalError, approved_flight_plan_from_payload, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
-from .retrieval import candidates_from_sciverse, write_candidate_artifact
+from .planning import PlanApprovalError, approved_flight_plan_from_payload, load_approved_flight_plan, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
+from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
-from .sciverse import SciverseAdapter
+from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError, SciverseConfigurationError, SciverseRequestError
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
 
 
@@ -226,6 +226,30 @@ def command_demo_flow(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_execute_plan_query(args: argparse.Namespace) -> int:
+    run_dir = _runs_dir() / args.run_id
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        plan = load_approved_flight_plan(run_dir, mission.mission_id)
+        if not 0 <= args.query_index < len(plan.queries):
+            raise PlanApprovalError("query_index is outside the approved query list")
+        query = plan.queries[args.query_index]
+        response = SciverseAdapter(Settings.load()).agentic_search(query, top_k=plan.max_papers)
+        candidates = candidates_from_sciverse(response.payload, query, plan.max_papers)
+        artifact_path = write_candidate_artifact(run_dir, query, candidates)
+    except (UiExportError, PlanApprovalError, RetrievalArtifactError, SciverseConfigurationError, SciverseRequestError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="approved_plan_query_executed",
+        actor="search_selection",
+        state=MissionState.RETRIEVE,
+        payload={"plan_id": plan.artifact_id, "query_index": args.query_index, "candidate_count": len(candidates), "request_id": response.request_id},
+    )
+    _json_print({"run_id": args.run_id, "query_index": args.query_index, "candidate_count": len(candidates), "candidates_path": str(artifact_path)})
+    return 0
+
 def command_sciverse_search(args: argparse.Namespace) -> int:
     response = SciverseAdapter(Settings.load()).agentic_search(args.query, top_k=args.top_k)
     candidates = candidates_from_sciverse(response.payload, args.query, args.top_k)
@@ -306,6 +330,10 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--run-id", default="demo_cosmatter_001")
     demo.set_defaults(handler=command_demo_flow)
 
+    execute_plan_query = commands.add_parser("execute-plan-query", help="execute one query from an approved FlightPlan")
+    execute_plan_query.add_argument("--run-id", required=True)
+    execute_plan_query.add_argument("--query-index", type=int, required=True)
+    execute_plan_query.set_defaults(handler=command_execute_plan_query)
     search = commands.add_parser("sciverse-search", help="run a bounded Sciverse agentic-search request")
     search.add_argument("--query", required=True)
     search.add_argument("--top-k", type=int, default=5)
