@@ -31,6 +31,7 @@ from .crossref_relation_expansion import CrossrefRelationExpansionError, build_c
 from .paper_structure import PaperStructureError, paper_structure_from_review, write_paper_structure
 from .ui_preview import UiPreviewError, serve_ui_preview
 from .relation_reconciliation import RelationReconciliationError, reconciliation_from_review, write_relation_reconciliation
+from .condition_normalization import ConditionNormalizationError, condition_normalization_from_review, write_condition_normalization
 from .source_map import load_source_map
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
@@ -368,6 +369,21 @@ def command_expand_crossref_references(args: argparse.Namespace) -> int:
     )
     _json_print({"run_id": args.run_id, "evidence_id": args.evidence_id, "edge_count": len(expansion["edges"]), "reference_field_present": expansion["reference_field_present"], "relation_path": str(path)})
     return 0
+def command_record_condition_normalization(args: argparse.Namespace) -> int:
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
+        decisions = _verification_decisions_from_payloads(_load_array_if_present(run_dir / "verification_decisions.json", "verification decision artifacts"))
+        selection = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        artifact = condition_normalization_from_review(mission, cards, decisions, selection)
+        path = write_condition_normalization(run_dir, artifact)
+    except (OSError, json.JSONDecodeError, UiExportError, ConditionNormalizationError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(event_type="condition_normalization_reviewed", actor="source_reviewer", state=MissionState.MAP, payload={"mapping_count": len(artifact["mappings"])})
+    _json_print({"run_id": args.run_id, "mapping_count": len(artifact["mappings"]), "normalization_path": str(path)})
+    return 0
 def command_reconcile_relations(args: argparse.Namespace) -> int:
     run_dir = _run_dir(args.run_id)
     try:
@@ -640,6 +656,10 @@ def build_parser() -> argparse.ArgumentParser:
     source_map.add_argument("--document-id", required=True)
     source_map.add_argument("--input", required=True, help="reviewed bounded JSON selection; parser output files are never read directly")
     source_map.set_defaults(handler=command_record_source_map)
+    normalization = commands.add_parser("record-condition-normalization", help="record reviewer-approved condition names and units without conversion")
+    normalization.add_argument("--run-id", required=True)
+    normalization.add_argument("--input", required=True, help="reviewed mappings from existing accepted condition fields")
+    normalization.set_defaults(handler=command_record_condition_normalization)
     reconcile = commands.add_parser("reconcile-relations", help="record reviewer-approved identity mappings between existing OpenAlex and Crossref targets")
     reconcile.add_argument("--run-id", required=True)
     reconcile.add_argument("--input", required=True, help="reviewed bounded mapping JSON; no automatic identity inference")
