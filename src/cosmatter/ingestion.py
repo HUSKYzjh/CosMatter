@@ -8,6 +8,7 @@ from typing import Any
 
 from .artifacts import persist_evidence_review
 from .models import AccessPolicy, EvidenceCard, Provenance, Stance
+from .source_map import SourceMapError, load_source_map
 from .verification import VerificationDecision
 
 
@@ -39,8 +40,34 @@ def ingest_evidence_draft(run_dir: Path, draft: dict[str, Any]) -> VerificationD
     mission_id = _mission_id(run_dir)
     card = evidence_card_from_draft(draft)
     require_eligible_candidate(run_dir, card.provenance.document_id)
+    require_source_map_match(run_dir, mission_id, card)
     return persist_evidence_review(run_dir, mission_id, card)
 
+
+def require_source_map_match(run_dir: Path, mission_id: str, card: EvidenceCard) -> None:
+    """When this document has a reviewed source map, preserve exact provenance.
+
+    Runs without a source map retain the earlier manual-ingestion path.  Once a
+    map exists for the same document, however, an evidence quote and locator
+    must exactly match one reviewer-selected segment; parser text cannot be
+    silently paraphrased into evidence.
+    """
+    try:
+        source_map = load_source_map(run_dir / "source_map.json", mission_id)
+    except SourceMapError as error:
+        raise EvidenceIngestionError("source map is invalid for this run") from error
+    if source_map is None or source_map["document_id"] != card.provenance.document_id:
+        return
+    matching_segment = next(
+        (
+            segment
+            for segment in source_map["segments"]
+            if segment["locator"] == card.provenance.locator and segment["quote"] == card.quote
+        ),
+        None,
+    )
+    if matching_segment is None:
+        raise EvidenceIngestionError("evidence quote and locator must exactly match a reviewed source-map segment")
 
 def evidence_card_from_draft(draft: dict[str, Any]) -> EvidenceCard:
     """Parse a narrow evidence-draft schema and reject raw-text side channels."""
