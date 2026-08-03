@@ -36,6 +36,13 @@ def write_relation_reconciliation(run_dir: Path, artifact: dict[str, Any]) -> Pa
     return path
 
 
+def load_relation_reconciliation(path: Path, mission_id: str) -> dict[str, Any] | None:
+    if not path.exists(): return None
+    try: payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error: raise RelationReconciliationError("relation_reconciliation.json is invalid JSON") from error
+    _validate_artifact(payload)
+    if payload["mission_id"] != mission_id: raise RelationReconciliationError("reconciliation does not belong to mission")
+    return payload
 def _mappings(raw: Any, work_ids: set[Any], dois: set[Any]) -> list[dict[str, str]]:
     if not isinstance(raw, list) or len(raw) > 12: raise RelationReconciliationError("mapping list is invalid")
     result: list[dict[str, str]] = []; seen: set[tuple[str, str]] = set()

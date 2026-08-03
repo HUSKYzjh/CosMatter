@@ -66,3 +66,7 @@ input, textarea, select { background: color-mix(in srgb, var(--surface) 88%, #00
 
 .entity-locator { margin: 0; padding: .18rem .38rem; color: var(--cyan); background: transparent; border: 1px solid var(--line); font-size: .78rem; }
 .source-map-card.is-target { border-color: var(--cyan); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cyan) 34%, transparent); }
+
+.graph-edge-identity_matched { stroke: var(--green); stroke-width: 3; }
+.graph-edge-identity_conflict { stroke: var(--danger); stroke-width: 3; stroke-dasharray: 7 3; }
+.graph-edge-identity_unresolved { stroke: var(--amber); stroke-dasharray: 2 4; }

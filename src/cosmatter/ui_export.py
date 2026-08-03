@@ -33,6 +33,7 @@ from .dispatch import MissionDispatcher
 from .reading_guide import ReadingGuideError, load_reading_guide
 from .source_map import SourceMapError, load_source_map
 from .paper_structure import PaperStructureError, load_paper_structure
+from .relation_reconciliation import RelationReconciliationError, load_relation_reconciliation
 from .verification import VerificationDecision
 
 
@@ -409,6 +410,9 @@ def _paper_source_map_projection(source_map: dict[str, Any] | None) -> dict[str,
         remaining -= len(segment["quote"])
     return {"document_id": source_map["document_id"], "trust_status": "human_reviewed_parser_selection", "segments": projected}
 
+def _relation_reconciliation_projection(reconciliation: dict[str, Any] | None) -> dict[str, Any] | None:
+    if reconciliation is None: return None
+    return {"trust_status": reconciliation["trust_status"], "source": reconciliation["source"], "mappings": [{key: mapping[key] for key in ("openalex_work_id", "crossref_doi", "status", "basis")} for mapping in reconciliation["mappings"]]}
 def _paper_structure_projection(structure: dict[str, Any] | None) -> dict[str, Any] | None:
     if structure is None:
         return None
@@ -429,6 +433,7 @@ def build_ui_bundle(
     paper_structure: dict[str, Any] | None = None,
     literature_relations: dict[str, Any] | None = None,
     crossref_relations: dict[str, Any] | None = None,
+    relation_reconciliation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -490,6 +495,7 @@ def build_ui_bundle(
         "paper_structure": _paper_structure_projection(paper_structure),
         "literature_relations": literature_relations,
         "crossref_relations": crossref_relations,
+        "relation_reconciliation": _relation_reconciliation_projection(relation_reconciliation),
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
         "coverage": {"scope": "bounded local mission artifacts and configured providers", "empty_result_meaning": "No current result means no matching artifact or response in this bounded mission; it does not establish that the material-science literature or phenomenon is absent."},
     }
@@ -518,7 +524,8 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         paper_source_map = load_source_map(run_dir / "source_map.json", mission.mission_id)
         paper_structure = load_paper_structure(run_dir / "paper_structure.json", mission.mission_id)
-    except (ReadingGuideError, SourceMapError, PaperStructureError) as error:
+        relation_reconciliation = load_relation_reconciliation(run_dir / "relation_reconciliation.json", mission.mission_id)
+    except (ReadingGuideError, SourceMapError, PaperStructureError, RelationReconciliationError) as error:
         raise UiExportError(str(error)) from error
     bundle = build_ui_bundle(
         mission,
@@ -534,6 +541,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         paper_structure=paper_structure,
         literature_relations=literature_relations,
         crossref_relations=crossref_relations,
+        relation_reconciliation=relation_reconciliation,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

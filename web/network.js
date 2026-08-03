@@ -92,6 +92,14 @@ function makeGraph(bundle) {
       const target = addNode({ id: `crossref:${targetDoi}`, kind: "external_relation", label: `Crossref · ${targetDoi}`, x: point.x, y: point.y, data: { relation_type: "crossref_reference", relation_source: "Crossref", trust_status: crossrefRelations.trust_status, reference_field_present: crossrefRelations.reference_field_present === true } });
       edges.push({ from: sourcePaperId, to: target.id, kind: "crossref_reference", label: "Crossref deposited reference metadata; not scientific evidence" });
     });
+  }  const reconciliation = bundle.relation_reconciliation;
+  if (reconciliation && reconciliation.trust_status === "human_reviewed_cross_source_identity_not_scientific_evidence" && Array.isArray(reconciliation.mappings)) {
+    reconciliation.mappings.slice(0, 12).forEach((mapping) => {
+      if (!mapping || !["matched", "conflict", "unresolved"].includes(mapping.status)) return;
+      const openalexId = `external:${netText(mapping.openalex_work_id)}`;
+      const crossrefId = `crossref:${netText(mapping.crossref_doi)}`;
+      if (byId.has(openalexId) && byId.has(crossrefId)) edges.push({ from: openalexId, to: crossrefId, kind: `identity_${mapping.status}`, label: `human-reviewed identity ${mapping.status}; not scientific evidence` });
+    });
   }  netArray(bundle.condition_matrix).forEach((row, index) => {
     const point = position(index, Math.max(netArray(bundle.condition_matrix).length, 1), 510);
     const condition = addNode({ id: `condition:${index}`, kind: "condition", label: netText(row.condition_cluster), x: point.x, y: point.y, data: row });
