@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .models import AccessPolicy, EvidenceCard, ReviewStatus, Stance
+from .verification import VerificationDecision
 
 
 class FacilityGateError(ValueError):
@@ -61,6 +62,11 @@ def review_evidence(card: EvidenceCard) -> EvidenceReview:
         return EvidenceReview(card.evidence_id, ReviewStatus.REJECTED, missing, "conditions incomplete; do not compare as equivalent")
     return EvidenceReview(card.evidence_id, ReviewStatus.ACCEPTED, (), "locator, quote, and required conditions present")
 
+
+def verification_decision(mission_id: str, card: EvidenceCard) -> VerificationDecision:
+    """Turn the deterministic facility review into an immutable release artifact."""
+    review = review_evidence(card)
+    return VerificationDecision(mission_id, review.evidence_id, review.status, review.reason, review.missing_conditions)
 
 def condition_differential(cards: tuple[EvidenceCard, ...], counterevidence_queries: tuple[str, ...]) -> DiscrepancyMatrix:
     """Compare accepted support/contradiction cards without voting across conditions."""
