@@ -1,0 +1,24 @@
+{
+  "fixture_version": "0.1",
+  "synthetic": true,
+  "purpose": "Regression fixture for condition-aware routing; not a scientific conclusion or a paper excerpt.",
+  "question": "Why can BiFeO3 epitaxial-film phase reports differ across conditions?",
+  "material": "BiFeO3",
+  "property_name": "phase stability",
+  "counterevidence_queries": [
+    "BiFeO3 epitaxial film thickness oxygen vacancy substrate phase counterexample"
+  ],
+  "evidence_cards": [
+    {
+      "evidence_id": "bfo_synthetic_support",
+      "stance": "support",
+      "conditions": {"sample_form": "epitaxial film", "strain_percent": -4.0, "substrate": "synthetic-compressive", "thickness_nm": 30, "temperature_k": 300, "method": "synthetic fixture"}
+    },
+    {
+      "evidence_id": "bfo_synthetic_contradict",
+      "stance": "contradict",
+      "conditions": {"sample_form": "epitaxial film", "strain_percent": -1.0, "substrate": "synthetic-less-compressive", "thickness_nm": 200, "temperature_k": 300, "method": "synthetic fixture"}
+    }
+  ],
+  "expected_differing_fields": ["strain_percent", "substrate", "thickness_nm"]
+}
