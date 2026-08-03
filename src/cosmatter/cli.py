@@ -29,6 +29,7 @@ from .relation_expansion import RelationExpansionError, build_relation_expansion
 from .crossref import CrossrefAdapter, CrossrefRequestError
 from .crossref_relation_expansion import CrossrefRelationExpansionError, build_crossref_relation_expansion, write_crossref_relation_expansion
 from .paper_structure import PaperStructureError, paper_structure_from_review, write_paper_structure
+from .ui_preview import UiPreviewError, serve_ui_preview
 from .source_map import load_source_map
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
@@ -52,6 +53,13 @@ def command_check_config(_: argparse.Namespace) -> int:
     return 0
 
 
+def command_preview_ui(args: argparse.Namespace) -> int:
+    try:
+        serve_ui_preview(args.port)
+    except UiPreviewError as error:
+        _json_print({"error": str(error)})
+        return 2
+    return 0
 def command_create_mission(args: argparse.Namespace) -> int:
     brief = MissionBrief(
         question=args.question,
@@ -563,6 +571,9 @@ def build_parser() -> argparse.ArgumentParser:
     check = commands.add_parser("check-config", help="report configuration presence without revealing secrets")
     check.set_defaults(handler=command_check_config)
 
+    preview = commands.add_parser("preview-ui", help="serve only static web UI on 127.0.0.1; no credentials or run artifacts are exposed")
+    preview.add_argument("--port", type=int, default=8765)
+    preview.set_defaults(handler=command_preview_ui)
     create = commands.add_parser("create-mission", help="write a validated MissionBrief and an audit event")
     create.add_argument("--question", required=True)
     create.add_argument("--material", required=True)
