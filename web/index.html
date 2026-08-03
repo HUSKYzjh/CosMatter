@@ -6,13 +6,17 @@
     <meta name="description" content="CosMatter 本地静态演示界面，不包含密钥或受限全文。">
     <title>CosMatter · 星际材料导航站</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="shell.js" defer></script>
     <script src="app.js" defer></script>
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="#top" aria-label="CosMatter 首页">Cos<span>Matter</span></a>
-      <p>星际材料导航站 · Evidence-first materials discovery</p>
+      <a class="brand" href="index.html" aria-label="CosMatter 首页">Cos<span>Matter</span></a>
+      <nav class="bridge-nav" aria-label="舰桥页面">
+        <a class="active" href="index.html">任务舰桥</a><a href="workflow.html">研究工作流</a><a href="network.html">星图网络</a><a href="extensions.html">研究拓展</a>
+      </nav>
       <span class="mode-badge">本地 JSON / 无 API 调用</span>
+      <label class="theme-switch">色彩主题<select data-theme-select aria-label="色彩主题"><option value="dark">深色</option><option value="light">浅色</option><option value="eye">护眼</option></select></label>
     </header>
 
     <main id="top" class="layout">
@@ -52,6 +56,7 @@
           <input id="ui-bundle-file" type="file" accept="application/json,.json">
         </label>
         <p id="ui-bundle-message" class="form-message" role="status">尚未导入工件；当前显示合成演示数据。</p>
+        <dl id="bundle-metadata" class="bundle-metadata" aria-label="当前 UI 工件信息"></dl>
       </section>
 
       <section class="panel fleet-panel" aria-labelledby="fleet-title">
@@ -93,6 +98,18 @@
           <p class="eyebrow">证据卡 / Evidence Card</p>
           <h2 id="evidence-title">定位与条件优先</h2>
         </div>
+        <div class="evidence-filters" aria-label="证据卡筛选">
+          <label>立场
+            <select id="evidence-stance-filter"><option value="all">全部立场</option></select>
+          </label>
+          <label>条件字段
+            <select id="evidence-condition-filter"><option value="all">全部条件字段</option></select>
+          </label>
+          <label>关键词
+            <input id="evidence-query-filter" type="search" placeholder="主张、条件或定位信息">
+          </label>
+        </div>
+        <p id="evidence-filter-summary" class="form-message" role="status"></p>
         <div id="evidence-list"></div>
         <p id="evidence-notice" class="notice">演示工件包含合成卡片，不是论文摘录；真实页面只能展示已批准证据卡的许可范围内短摘录。</p>
       </section>
@@ -111,7 +128,7 @@
         </div>
         <div class="matrix-wrap">
           <table>
-            <thead><tr><th>条件簇</th><th>支持</th><th>反驳</th><th>关键未知项</th></tr></thead>
+            <thead><tr><th>条件簇</th><th>支持</th><th>反驳</th><th>关键未知项</th><th>差异与追溯</th></tr></thead>
             <tbody id="condition-matrix-body"></tbody>
           </table>
         </div>

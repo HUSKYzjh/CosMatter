@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="CosMatter 后续研究拓展：跨库核验、实验/计算任务与评测路线。">
+    <title>CosMatter · 研究拓展</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="shell.js" defer></script>
+    <script src="extensions.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header bridge-header">
+      <a class="brand" href="index.html">Cos<span>Matter</span></a>
+      <nav class="bridge-nav" aria-label="舰桥页面">
+        <a href="index.html">任务舰桥</a><a href="workflow.html">研究工作流</a><a href="network.html">星图网络</a><a class="active" href="extensions.html">研究拓展</a>
+      </nav>
+      <label class="theme-switch">色彩主题<select data-theme-select aria-label="色彩主题"><option value="dark">深色</option><option value="light">浅色</option><option value="eye">护眼</option></select></label>
+    </header>
+    <main class="workspace-page">
+      <section class="hero-banner"><p class="eyebrow">RESEARCH EXTENSIONS / 远航规划</p><h1>把可核验证据扩展为下一轮研究</h1><p>这里生成研究拓展简报，不直接运行计算、不下载论文，也不代表系统自动认可假设。</p></section>
+      <section class="extension-grid" id="extension-grid"></section>
+      <section class="panel extension-brief"><div><p class="eyebrow">拓展简报</p><h2>待人工确认的远航任务</h2><p id="extension-status">选择一项设施，生成一个本地、可下载的研究拓展草案。</p></div><button id="download-extension" type="button" disabled>下载拓展简报 JSON</button></section>
+      <section class="panel"><p class="eyebrow">安全边界</p><ul class="guardrail-list"><li>材料数据库事实必须由服务端适配器记录来源、时间和许可后才能并入证据链。</li><li>实验或计算任务必须有变量、对照、失败判据和人工审批；浏览器不提供任意 shell/HPC 提交能力。</li><li>图网络和拓展建议均为导航辅助，不构成材料结论或自动实验指令。</li></ul></section>
+    </main>
+    <footer class="site-footer"><p>CosMatter · Expansion briefs are local planning artifacts, never API calls.</p></footer>
+  </body>
+</html>

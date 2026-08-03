@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="CosMatter 只读研究工作流：计划、检索、核验与报告的门禁总览。">
+    <title>CosMatter · 研究工作流</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="shell.js" defer></script>
+    <script src="workflow.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header bridge-header">
+      <a class="brand" href="index.html">Cos<span>Matter</span></a>
+      <nav class="bridge-nav" aria-label="舰桥页面">
+        <a href="index.html">任务舰桥</a><a class="active" href="workflow.html">研究工作流</a><a href="network.html">星图网络</a><a href="extensions.html">研究拓展</a>
+      </nav>
+      <label class="theme-switch">色彩主题<select data-theme-select aria-label="色彩主题"><option value="dark">深色</option><option value="light">浅色</option><option value="eye">护眼</option></select></label>
+    </header>
+    <main class="workspace-page">
+      <section class="hero-banner">
+        <p class="eyebrow">RESEARCH WORKFLOW / 航程控制台</p>
+        <h1>从问题到可审核结论</h1>
+        <p>每一步消费上一步的工件。前端只解释状态和门禁；模型、检索与原文访问仍由受控 Python 命令完成。</p>
+      </section>
+      <section class="workflow-toolbar panel" aria-label="工作流控制">
+        <div><strong id="workflow-mission">演示航程：BiFeO3 条件分歧</strong><p id="workflow-state">当前状态：INTAKE</p></div>
+        <label class="bundle-import compact">导入已脱敏 UI JSON<input id="workflow-bundle-file" type="file" accept="application/json,.json"></label>
+        <p id="workflow-import-message" class="form-message" role="status">未导入文件；显示合成演示航程。</p>
+      </section>
+      <section id="workflow-lane" class="workflow-lane" aria-label="研究工作流"></section>
+      <section class="two-column">
+        <article class="panel gate-panel"><p class="eyebrow">发布门禁</p><h2>为何此航程不能跳步</h2><div id="workflow-gates"></div></article>
+        <article class="panel command-panel"><p class="eyebrow">受控执行手册</p><h2>下一条可执行命令</h2><p id="workflow-command">先从舰桥导出 / 导入已审批的计划工件。</p><p class="notice">界面不保存密钥，不调用模型或第三方 API；命令须在本地 Python 环境中执行。</p></article>
+      </section>
+    </main>
+    <footer class="site-footer"><p>CosMatter · Workflow state is a read-only projection of approved local artifacts.</p></footer>
+  </body>
+</html>

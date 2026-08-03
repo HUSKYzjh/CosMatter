@@ -81,6 +81,7 @@ const demoBundle = {
 };
 
 let activeBundle = demoBundle;
+let activeBundleSource = { name: "合成演示工件", bytes: null };
 
 function text(value, fallback = "unknown") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
@@ -104,7 +105,8 @@ function element(tag, content, className) {
 
 function validateBundle(candidate) {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new Error("JSON 根节点必须是对象。");
-  if (candidate.schema_version !== UI_SCHEMA_VERSION) throw new Error(`仅支持 UI JSON v${UI_SCHEMA_VERSION}。`);
+if (candidate.schema_version !== UI_SCHEMA_VERSION) throw new Error(`仅支持 UI JSON v${UI_SCHEMA_VERSION}。`);
+  if ("generated_at" in candidate && !text(candidate.generated_at, "")) throw new Error("generated_at 必须是非空字符串。");
   for (const key of ["mission", "fleet_assignment", "status", "stations", "facilities", "evidence_cards", "condition_matrix"]) {
     if (!(key in candidate)) throw new Error(`缺少 UI 契约字段：${key}`);
   }
@@ -139,14 +141,46 @@ function renderFacilities(facilities) {
   }));
 }
 
+function replaceSelectOptions(selector, values, allLabel) {
+  const select = document.querySelector(selector);
+  if (!select) return;
+  const current = select.value;
+  select.replaceChildren(element("option", allLabel));
+  select.firstChild.value = "all";
+  values.forEach((value) => {
+    const option = element("option", value);
+    option.value = value;
+    select.append(option);
+  });
+  select.value = [...select.options].some((option) => option.value === current) ? current : "all";
+}
+
+function configureEvidenceFilters(cards) {
+  const approved = cards.filter((card) => card && card.review_status === "accepted" && card.provenance && text(card.quote, ""));
+  replaceSelectOptions("#evidence-stance-filter", [...new Set(approved.map((card) => text(card.stance)))].sort(), "全部立场");
+  const conditionKeys = [...new Set(approved.flatMap((card) => Object.keys(card.conditions && typeof card.conditions === "object" ? card.conditions : {})))].sort();
+  replaceSelectOptions("#evidence-condition-filter", conditionKeys, "全部条件字段");
+}
+
 function renderEvidence(cards) {
   const list = document.querySelector("#evidence-list");
   const approved = cards.filter((card) => card && card.review_status === "accepted" && card.provenance && text(card.quote, ""));
-  if (!approved.length) {
-    list.replaceChildren(element("p", "当前没有可公开显示的已批准证据卡。", "notice"));
+  const stance = document.querySelector("#evidence-stance-filter").value;
+  const conditionKey = document.querySelector("#evidence-condition-filter").value;
+  const needle = document.querySelector("#evidence-query-filter").value.trim().toLocaleLowerCase("zh-CN");
+  const visible = approved.filter((card) => {
+    if (stance !== "all" && card.stance !== stance) return false;
+    if (conditionKey !== "all" && !(conditionKey in (card.conditions || {}))) return false;
+    const searchable = [card.claim, card.quote, card.provenance.document_id, card.provenance.locator, ...Object.values(card.conditions || {})]
+      .map((value) => value === null ? "unknown" : String(value)).join(" ").toLocaleLowerCase("zh-CN");
+    return !needle || searchable.includes(needle);
+  });
+  setText("#evidence-filter-summary", `已显示 ${visible.length} / ${approved.length} 张已批准证据卡；未批准证据不会导出到浏览器。`);
+  if (!visible.length) {
+    list.replaceChildren(element("p", approved.length ? "没有证据卡符合当前筛选条件。" : "当前没有可公开显示的已批准证据卡。", "notice"));
     return;
   }
-  list.replaceChildren(...approved.map((card) => {
+  list.replaceChildren(...visible.map((card) => {
     const article = element("article", undefined, "evidence-card");
     const top = element("div", undefined, "card-topline");
     top.append(element("span", `${text(card.review_status)}${card.is_synthetic ? " · 合成示例" : ""}`, "state-chip accepted"), element("code", text(card.evidence_id)));
@@ -165,12 +199,26 @@ function renderEvidence(cards) {
   }));
 }
 
+function matrixDetail(rowData) {
+  const detail = element("details", undefined, "matrix-detail");
+  detail.append(element("summary", "展开差异字段与证据 ID"));
+  const items = [
+    ["差异字段", asArray(rowData.differing_fields)],
+    ["支持证据", asArray(rowData.supporting_evidence_ids)],
+    ["反驳证据", asArray(rowData.contradicting_evidence_ids)],
+  ];
+  const list = element("ul");
+  items.forEach(([label, values]) => list.append(element("li", `${label}：${values.length ? values.map((value) => text(String(value))).join("、") : "未记录"}`)));
+  detail.append(list);
+  return detail;
+}
+
 function renderMatrix(rows) {
   const body = document.querySelector("#condition-matrix-body");
   if (!rows.length) {
     const row = element("tr");
     const cell = element("td", "尚无已批准的条件矩阵工件。", "empty-cell");
-    cell.colSpan = 4;
+    cell.colSpan = 5;
     row.append(cell);
     body.replaceChildren(row);
     return;
@@ -183,7 +231,8 @@ function renderMatrix(rows) {
       element("td", text(rowData.condition_cluster)),
       element("td", support),
       element("td", contradict),
-      element("td", asArray(rowData.unknowns).map((item) => text(String(item))).join("、") || "无")
+      element("td", asArray(rowData.unknowns).map((item) => text(String(item))).join("、") || "无"),
+      (() => { const cell = element("td"); cell.append(matrixDetail(rowData)); return cell; })()
     );
     return row;
   }));
@@ -214,6 +263,23 @@ function renderReport(report) {
   }
   target.replaceChildren(article);
 }
+function renderBundleMetadata(bundle, source) {
+  const target = document.querySelector("#bundle-metadata");
+  if (!target) return;
+  const sourceLabel = source && source.name ? source.name : "当前本地预览";
+  const sourceSize = source && Number.isInteger(source.bytes) ? `${source.bytes.toLocaleString("en-US")} bytes` : "无文件传输";
+  const accepted = asArray(bundle.evidence_cards).filter((card) => card && card.review_status === "accepted").length;
+  const rows = [
+    ["来源", sourceLabel],
+    ["工件版本", `UI JSON v${text(bundle.schema_version)}`],
+    ["生成时间", text(bundle.generated_at, "未声明")],
+    ["本地文件大小", sourceSize],
+    ["可显示证据", `${accepted} 张已批准卡`],
+    ["条件矩阵", `${asArray(bundle.condition_matrix).length} 个条件簇`],
+  ];
+  target.replaceChildren(...rows.map(([key, value]) => { const row = element("div"); row.append(element("dt", key), element("dd", value)); return row; }));
+}
+
 function renderBundle(bundle) {
   const mission = bundle.mission;
   const fleet = bundle.fleet_assignment;
@@ -232,6 +298,8 @@ function renderBundle(bundle) {
   setText("#release-gate", text(fleet.release_gate));
   setText("#retry-budget", `${Number.isInteger(status.retry_count) ? status.retry_count : 0} / ${Number.isInteger(status.retry_budget) ? status.retry_budget : 0}`);
   setText("#return-reason", status.return_reason === null ? "无" : text(status.return_reason));
+renderBundleMetadata(bundle, activeBundleSource);
+  configureEvidenceFilters(asArray(bundle.evidence_cards));
   renderJourney(asArray(bundle.stations));
   renderFacilities(asArray(bundle.facilities));
   renderEvidence(asArray(bundle.evidence_cards));
@@ -266,7 +334,8 @@ function importBundle(event) {
   reader.onerror = () => { message.textContent = "无法读取选择的本地文件。"; };
   reader.onload = () => {
     try {
-      activeBundle = validateBundle(JSON.parse(String(reader.result)));
+activeBundle = validateBundle(JSON.parse(String(reader.result)));
+      activeBundleSource = { name: file.name, bytes: file.size };
       renderBundle(activeBundle);
       message.textContent = `已导入 ${file.name}；页面未发起网络请求。`;
     } catch (error) {
@@ -279,5 +348,9 @@ function importBundle(event) {
 document.addEventListener("DOMContentLoaded", () => {
   renderBundle(activeBundle);
   document.querySelector("#mission-form").addEventListener("submit", updatePreview);
-  document.querySelector("#ui-bundle-file").addEventListener("change", importBundle);
+document.querySelector("#ui-bundle-file").addEventListener("change", importBundle);
+  ["#evidence-stance-filter", "#evidence-condition-filter", "#evidence-query-filter"].forEach((selector) => {
+    document.querySelector(selector).addEventListener("input", () => renderEvidence(asArray(activeBundle.evidence_cards)));
+    document.querySelector(selector).addEventListener("change", () => renderEvidence(asArray(activeBundle.evidence_cards)));
+  });
 });

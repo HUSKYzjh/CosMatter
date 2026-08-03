@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="CosMatter 条件感知证据星图：仅浏览已批准的本地 UI 工件。">
+    <title>CosMatter · 星图网络</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="shell.js" defer></script>
+    <script src="network.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header bridge-header">
+      <a class="brand" href="index.html">Cos<span>Matter</span></a>
+      <nav class="bridge-nav" aria-label="舰桥页面">
+        <a href="index.html">任务舰桥</a><a href="workflow.html">研究工作流</a><a class="active" href="network.html">星图网络</a><a href="extensions.html">研究拓展</a>
+      </nav>
+      <label class="theme-switch">色彩主题<select data-theme-select aria-label="色彩主题"><option value="dark">深色</option><option value="light">浅色</option><option value="eye">护眼</option></select></label>
+    </header>
+    <main class="workspace-page">
+      <section class="hero-banner"><p class="eyebrow">GRAPH NETWORK / 证据星图</p><h1>关系是导航线，不是因果判定</h1><p>节点由本地 UI JSON 的任务、已批准证据、条件簇和未知项派生。点击节点查看其许可范围内的字段。</p></section>
+      <section class="graph-toolbar panel">
+        <label class="bundle-import compact">导入已脱敏 UI JSON<input id="network-bundle-file" type="file" accept="application/json,.json"></label>
+        <label>节点类别<select id="network-kind-filter"><option value="all">全部节点</option><option value="evidence">证据</option><option value="condition">条件簇</option><option value="unknown">未知项</option></select></label>
+        <p id="network-import-message" class="form-message" role="status">未导入文件；显示合成关系图。</p>
+      </section>
+      <section class="graph-layout">
+        <article class="panel graph-canvas-panel"><svg id="evidence-network" viewBox="0 0 1000 580" role="img" aria-label="条件感知证据关系网络"></svg><p class="notice">连线代表“任务—证据—条件/未知项”的工件关系，不表示论文学术影响力或因果强度。</p></article>
+        <aside class="panel graph-inspector"><p class="eyebrow">节点检查器</p><h2 id="node-title">选择一个节点</h2><div id="node-inspector">点击星图节点查看其类型、关联和可定位标识。</div></aside>
+      </section>
+    </main>
+    <footer class="site-footer"><p>CosMatter · Graph uses only manually selected, browser-safe JSON artifacts.</p></footer>
+  </body>
+</html>

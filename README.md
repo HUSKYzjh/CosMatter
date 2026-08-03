@@ -46,6 +46,8 @@ python -m venv .venv
 
 UI JSON 的字段、安全边界和扩展顺序见 [UI JSON 契约](docs/architecture/01_UI_JSON契约.md)。
 
+静态舰桥现分为任务舰桥、研究工作流、星图网络和研究拓展四页，并提供深色、浅色、护眼主题；页面只消费用户选择的本地 JSON 工件。见 [舰桥多页面 UI 设计](docs/architecture/02_舰桥多页面UI设计.md)。
+
 ## 当前边界
 
 `SciverseAdapter` 已实现有界的 `agentic-search` 调用、令牌解析、重试与 `is_content_accessible` 权限门禁。当前仓库仍处于证据优先基础设施阶段：不会把没有原文定位的文本当作科学事实，也不会在首版执行任意代码或提交外部计算。

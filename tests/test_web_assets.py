@@ -20,18 +20,31 @@ class _AssetParser(HTMLParser):
 
 
 class WebAssetTests(unittest.TestCase):
-    def test_static_ui_references_local_assets_and_has_no_secret_markers(self) -> None:
+    def test_static_fleet_pages_reference_only_local_assets_and_have_no_secret_markers(self) -> None:
         web_dir = AGENT_ROOT / "web"
-        html = (web_dir / "index.html").read_text(encoding="utf-8")
-        parser = _AssetParser()
-        parser.feed(html)
-        self.assertEqual(parser.links, ["styles.css"])
-        self.assertEqual(parser.scripts, ["app.js"])
-        self.assertTrue((web_dir / "styles.css").is_file())
-        self.assertTrue((web_dir / "app.js").is_file())
-        self.assertNotIn("DEEPSEEK_API_KEY", html)
-        self.assertNotIn("SCIVERSE_API_TOKEN", html)
-        self.assertNotIn("fetch(", (web_dir / "app.js").read_text(encoding="utf-8"))
+        expected_scripts = {
+            "index.html": ["shell.js", "app.js"],
+            "workflow.html": ["shell.js", "workflow.js"],
+            "network.html": ["shell.js", "network.js"],
+            "extensions.html": ["shell.js", "extensions.js"],
+        }
+        for page, scripts in expected_scripts.items():
+            html = (web_dir / page).read_text(encoding="utf-8")
+            parser = _AssetParser()
+            parser.feed(html)
+            self.assertEqual(parser.links, ["styles.css"])
+            self.assertEqual(parser.scripts, scripts)
+            self.assertIn('data-theme-select', html)
+            self.assertNotIn("DEEPSEEK_API_KEY", html)
+            self.assertNotIn("SCIVERSE_API_TOKEN", html)
+        for script in {script for scripts in expected_scripts.values() for script in scripts}:
+            source = (web_dir / script).read_text(encoding="utf-8")
+            self.assertNotIn("fetch(", source)
+            self.assertNotIn("DEEPSEEK_API_KEY", source)
+            self.assertNotIn("SCIVERSE_API_TOKEN", source)
+        stylesheet = (web_dir / "styles.css").read_text(encoding="utf-8")
+        for theme in ('data-theme="dark"', 'data-theme="light"', 'data-theme="eye"'):
+            self.assertIn(theme, stylesheet)
 
 
 if __name__ == "__main__":
