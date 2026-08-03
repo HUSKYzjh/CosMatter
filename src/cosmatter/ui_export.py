@@ -48,6 +48,7 @@ _TIMELINE_ACTIONS = {
     "reading_guide_built": ("search_selection", "有界阅读路线已生成"),
     "source_parse_submitted": ("evidence_extraction", "授权结构解析任务已提交"),
     "source_parse_status_checked": ("evidence_extraction", "授权结构解析状态已刷新"),
+    "source_map_reviewed": ("evidence_extraction", "定位片段已人工复核"),
     "evidence_ingested": ("evidence_extraction", "证据卡已进入审核流程"),
     "condition_diagnostics_completed": ("cross_check_review", "条件差分已完成"),
     "mission_report_built": ("report_delivery", "审核后报告已生成"),

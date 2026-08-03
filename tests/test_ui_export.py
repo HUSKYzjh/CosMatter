@@ -79,15 +79,21 @@ class UiExportTests(unittest.TestCase):
                 state=MissionState.EXTRACT,
                 payload={"document_id": "private-document", "provider": "mineru", "task_id": "private-task"},
             )
+            recorder.record(
+                event_type="source_map_reviewed",
+                actor="source_reviewer_private",
+                state=MissionState.EXTRACT,
+                payload={"document_id": "private-document", "segment_count": 1, "quote": "do not export this excerpt"},
+            )
             export_run_to_ui(runs_dir, "timeline_export")
             bundle = json.loads((runs_dir / "timeline_export" / "ui.json").read_text(encoding="utf-8"))
 
         self.assertEqual(
             [(item["station_type"], item["action"]) for item in bundle["timeline"]],
-            [("question_intake", "任务已创建"), ("search_selection", "反例检索已完成"), ("evidence_extraction", "授权结构解析任务已提交")],
+            [("question_intake", "任务已创建"), ("search_selection", "反例检索已完成"), ("evidence_extraction", "授权结构解析任务已提交"), ("evidence_extraction", "定位片段已人工复核")],
         )
         serialised = json.dumps(bundle, ensure_ascii=False)
-        for forbidden in ("do not export", "private-request", "mission_control_private", "search_selection_private", "document_parser_private", "private-document", "private-task", "token"):
+        for forbidden in ("do not export", "private-request", "mission_control_private", "search_selection_private", "document_parser_private", "source_reviewer_private", "private-document", "private-task", "do not export this excerpt", "token"):
             self.assertNotIn(forbidden, serialised)
     def test_export_projects_only_accepted_evidence_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

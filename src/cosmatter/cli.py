@@ -22,6 +22,7 @@ from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_c
 from .reading_guide import ReadingGuideError, build_reading_guide, write_reading_guide
 from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError
 from .source_parse import SourceParseArtifactError, record_source_parse_task, task_for_document, update_source_parse_task
+from .source_map import SourceMapError, source_map_from_review, write_source_map
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
@@ -223,6 +224,34 @@ def command_poll_mineru_source(args: argparse.Namespace) -> int:
         payload={"document_id": args.document_id, "provider": "mineru", "task_state": task.state},
     )
     _json_print({"run_id": args.run_id, "document_id": args.document_id, "task_state": task.state, "task_path": str(task_path)})
+    return 0
+
+def command_record_source_map(args: argparse.Namespace) -> int:
+    """Persist only reviewer-selected excerpts from a completed parse task."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        require_eligible_candidate(run_dir, args.document_id)
+        task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id)
+        selection = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        source_map = source_map_from_review(
+            mission_id=mission.mission_id,
+            document_id=args.document_id,
+            source_task=task,
+            selection=selection,
+        )
+        source_map_path = write_source_map(run_dir, source_map)
+    except (OSError, json.JSONDecodeError, UiExportError, EvidenceIngestionError, SourceParseArtifactError, SourceMapError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="source_map_reviewed",
+        actor="source_reviewer",
+        state=MissionState.EXTRACT,
+        payload={"document_id": args.document_id, "segment_count": len(source_map["segments"])},
+    )
+    _json_print({"run_id": args.run_id, "document_id": args.document_id, "segment_count": len(source_map["segments"]), "source_map_path": str(source_map_path)})
     return 0
 
 def command_build_report(args: argparse.Namespace) -> int:
@@ -451,6 +480,11 @@ def build_parser() -> argparse.ArgumentParser:
     mineru_poll.add_argument("--run-id", required=True)
     mineru_poll.add_argument("--document-id", required=True)
     mineru_poll.set_defaults(handler=command_poll_mineru_source)
+    source_map = commands.add_parser("record-source-map", help="record reviewer-selected bounded excerpts for one completed MinerU task")
+    source_map.add_argument("--run-id", required=True)
+    source_map.add_argument("--document-id", required=True)
+    source_map.add_argument("--input", required=True, help="reviewed bounded JSON selection; parser output files are never read directly")
+    source_map.set_defaults(handler=command_record_source_map)
     report = commands.add_parser("build-report", help="build a review-gated evidence-manifest report for an existing run")
     report.add_argument("--run-id", required=True)
     report.set_defaults(handler=command_build_report)
