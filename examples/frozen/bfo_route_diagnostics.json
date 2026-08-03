@@ -20,5 +20,13 @@
       "conditions": {"sample_form": "epitaxial film", "strain_percent": -1.0, "substrate": "synthetic-less-compressive", "thickness_nm": 200, "temperature_k": 300, "method": "synthetic fixture"}
     }
   ],
+  "expected_evidence_status": {
+    "bfo_synthetic_support": "accepted",
+    "bfo_synthetic_contradict": "accepted"
+  },
+  "expected_stances": {
+    "bfo_synthetic_support": "support",
+    "bfo_synthetic_contradict": "contradict"
+  },
   "expected_differing_fields": ["strain_percent", "substrate", "thickness_nm"]
 }

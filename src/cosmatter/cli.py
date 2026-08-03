@@ -13,6 +13,7 @@ from cosmatter.state_machine import MissionMachine
 
 from .config import AGENT_ROOT, Settings
 from .dispatch import MissionDispatcher
+from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
 from .sciverse import SciverseAdapter
 from .ui_export import UiExportError, export_run_to_ui
 
@@ -88,6 +89,30 @@ def command_export_ui(args: argparse.Namespace) -> int:
     _json_print({"run_id": args.run_id, "ui_path": str(destination), "schema_version": "1.0"})
     return 0
 
+
+def command_evaluate_fixture(args: argparse.Namespace) -> int:
+    fixture_path = Path(args.fixture)
+    try:
+        report = evaluate_frozen_route_fixture(fixture_path, f"evaluation_{args.run_id}")
+    except EvaluationError as error:
+        _json_print({"error": str(error), "fixture": str(fixture_path)})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    record_path = write_evaluation_record(recorder.run_dir, report)
+    recorder.record(
+        event_type="frozen_fixture_evaluated",
+        actor="evaluation_lab",
+        state=MissionState.VERIFY,
+        payload={
+            "fixture_id": report.fixture_id,
+            "citation_precision": report.citation_precision,
+            "condition_completeness": report.condition_completeness,
+            "contradiction_precision": report.contradiction_precision,
+            "reproducibility_consistency": report.reproducibility_consistency,
+        },
+    )
+    _json_print({"run_id": args.run_id, "fixture_id": report.fixture_id, "evaluation_path": str(record_path)})
+    return 0
 
 def command_demo_flow(args: argparse.Namespace) -> int:
     recorder = FlightRecorder(_runs_dir(), args.run_id)
@@ -181,6 +206,10 @@ def build_parser() -> argparse.ArgumentParser:
     export_ui.add_argument("--run-id", required=True)
     export_ui.add_argument("--output", help="optional JSON destination; defaults to runs/<run_id>/ui.json")
     export_ui.set_defaults(handler=command_export_ui)
+    evaluate = commands.add_parser("evaluate-fixture", help="evaluate an explicitly synthetic frozen route-diagnostics fixture")
+    evaluate.add_argument("--fixture", required=True)
+    evaluate.add_argument("--run-id", default="frozen_evaluation")
+    evaluate.set_defaults(handler=command_evaluate_fixture)
     demo = commands.add_parser("demo-flow", help="run the offline happy-path state-machine demo")
     demo.add_argument("--run-id", default="demo_cosmatter_001")
     demo.set_defaults(handler=command_demo_flow)
