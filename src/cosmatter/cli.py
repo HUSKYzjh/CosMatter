@@ -14,6 +14,7 @@ from cosmatter.state_machine import MissionMachine
 from .config import AGENT_ROOT, Settings
 from .dispatch import MissionDispatcher
 from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
+from .ingestion import EvidenceIngestionError, ingest_evidence_draft
 from .retrieval import candidates_from_sciverse, write_candidate_artifact
 from .sciverse import SciverseAdapter
 from .ui_export import UiExportError, export_run_to_ui
@@ -90,6 +91,24 @@ def command_export_ui(args: argparse.Namespace) -> int:
     _json_print({"run_id": args.run_id, "ui_path": str(destination), "schema_version": "1.0"})
     return 0
 
+
+def command_ingest_evidence(args: argparse.Namespace) -> int:
+    run_dir = _runs_dir() / args.run_id
+    try:
+        draft = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        decision = ingest_evidence_draft(run_dir, draft)
+    except (OSError, json.JSONDecodeError, EvidenceIngestionError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="evidence_ingested",
+        actor="source_locator",
+        state=MissionState.EXTRACT,
+        payload={"evidence_id": decision.evidence_id, "status": decision.status.value, "decision_id": decision.decision_id},
+    )
+    _json_print({"run_id": args.run_id, "evidence_id": decision.evidence_id, "status": decision.status.value})
+    return 0
 
 def command_evaluate_fixture(args: argparse.Namespace) -> int:
     fixture_path = Path(args.fixture)
@@ -199,6 +218,10 @@ def build_parser() -> argparse.ArgumentParser:
     export_ui.add_argument("--run-id", required=True)
     export_ui.add_argument("--output", help="optional JSON destination; defaults to runs/<run_id>/ui.json")
     export_ui.set_defaults(handler=command_export_ui)
+    ingest = commands.add_parser("ingest-evidence", help="validate and record one extracted evidence draft for an existing run")
+    ingest.add_argument("--run-id", required=True)
+    ingest.add_argument("--input", required=True, help="path to a narrow evidence-draft JSON file")
+    ingest.set_defaults(handler=command_ingest_evidence)
     evaluate = commands.add_parser("evaluate-fixture", help="evaluate an explicitly synthetic frozen route-diagnostics fixture")
     evaluate.add_argument("--fixture", required=True)
     evaluate.add_argument("--run-id", default="frozen_evaluation")
