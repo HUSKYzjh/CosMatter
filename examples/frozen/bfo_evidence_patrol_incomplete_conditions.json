@@ -1,0 +1,25 @@
+{
+  "fixture_version": "0.1",
+  "synthetic": true,
+  "purpose": "Regression fixture for rejecting an evidence card with incomplete material conditions; not a scientific conclusion or paper excerpt.",
+  "question": "Which missing conditions prevent a BiFeO3 thin-film observation from being compared safely?",
+  "material": "BiFeO3",
+  "property_name": "phase stability",
+  "evidence_card": {
+    "evidence_id": "bfo_synthetic_incomplete",
+    "stance": "support",
+    "conditions": {
+      "sample_form": "epitaxial film",
+      "substrate": "synthetic substrate"
+    }
+  },
+  "expected_review": {
+    "status": "rejected",
+    "missing_conditions": [
+      "strain_percent",
+      "thickness_nm",
+      "temperature_k",
+      "method"
+    ]
+  }
+}
