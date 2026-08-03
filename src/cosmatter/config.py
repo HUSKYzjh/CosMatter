@@ -9,6 +9,9 @@ from typing import Mapping
 
 
 AGENT_ROOT = Path(__file__).resolve().parents[2]
+# The workspace-level file is intentionally read-only and Git-ignored.  Keep secrets
+# outside the distributable CosMatter package tree.
+DEFAULT_ENV_FILE = AGENT_ROOT.parent / ".env"
 
 
 def _read_dotenv(path: Path) -> dict[str, str]:
@@ -57,7 +60,10 @@ class Settings:
     def load(cls, environ: Mapping[str, str] | None = None) -> "Settings":
         runtime_environ = dict(os.environ if environ is None else environ)
         values: dict[str, str] = {}
-        values.update(_read_dotenv(AGENT_ROOT / ".env"))
+        # An explicit mapping is a hermetic override used by tests and callers.
+        # Only normal runtime loading reads the protected workspace file.
+        if environ is None:
+            values.update(_read_dotenv(DEFAULT_ENV_FILE))
         explicit_env_file = runtime_environ.get("COSMATTER_ENV_FILE")
         if explicit_env_file:
             values.update(_read_dotenv(Path(explicit_env_file)))

@@ -38,7 +38,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m cosmatter demo-flow --run-id demo_cosmatter_001
 ```
 
-`create-mission` 与 `assign-fleet` 需要在同一运行目录使用相同的 `--mission-id`，这样 `export-ui` 才能验证两个工件确实属于同一任务。`check-config` 仅报告配置项是否存在，绝不回显令牌。运行产生的审计轨迹写入 `runs/<run_id>/events.jsonl`，该目录不会提交到版本控制。
+`create-mission` 与 `assign-fleet` 需要在同一运行目录使用相同的 `--mission-id`，这样 `export-ui` 才能验证两个工件确实属于同一任务。`check-config` 仅报告配置项是否存在，绝不回显令牌。运行时只读上级项目根目录的 `../.env`（对应 `AIforResearch-材料科学Agent/.env`）；该文件受保护、不会被编辑或提交。字段模板见上级目录的 `../env.txt`。运行产生的审计轨迹写入 `runs/<run_id>/events.jsonl`，该目录不会提交到版本控制。
 
 ## 静态界面演示
 

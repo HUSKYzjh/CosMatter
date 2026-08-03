@@ -7,7 +7,7 @@ from unittest.mock import call, patch
 from cosmatter.audit import AuditPathError, FlightRecorder
 from cosmatter.cli import main
 from cosmatter.models import MissionState
-from cosmatter.config import AGENT_ROOT, Settings
+from cosmatter.config import DEFAULT_ENV_FILE, Settings
 
 
 class AuditAndConfigTests(unittest.TestCase):
@@ -26,10 +26,10 @@ class AuditAndConfigTests(unittest.TestCase):
         self.assertNotIn(secret, status)
         self.assertNotIn("another-secret", status)
 
-    def test_default_config_does_not_read_parent_workspace_env(self) -> None:
+    def test_default_config_reads_only_the_protected_workspace_env(self) -> None:
         with patch("cosmatter.config._read_dotenv", return_value={}) as dotenv_reader:
-            Settings.load({})
-        self.assertEqual(dotenv_reader.call_args_list, [call(AGENT_ROOT / ".env")])
+            Settings.load()
+        self.assertEqual(dotenv_reader.call_args_list, [call(DEFAULT_ENV_FILE)])
 
     def test_flight_recorder_rejects_path_traversal_run_ids(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
