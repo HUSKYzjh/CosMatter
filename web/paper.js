@@ -54,7 +54,7 @@ function renderPaperStructure(bundle, item) {
   if (!structure || structure.document_id !== item.document_id || !Array.isArray(structure.entities)) { target.replaceChildren(Object.assign(document.createElement("p"), { className: "notice", textContent: "此候选尚无人工复核的论文内实体关系工件。" })); return; }
   const heading = document.createElement("p"); heading.className = "route-meta"; heading.textContent = `Paper-scoped structure · ${structure.entities.length} entities · ${paperArray(structure.relations).length} relations`;
   const list = document.createElement("dl"); list.className = "inspector-list";
-  structure.entities.forEach((entity) => { const row = document.createElement("div"); const dt = document.createElement("dt"); const dd = document.createElement("dd"); dt.textContent = `${paperText(entity.kind)} · ${paperText(entity.label)}`; dd.textContent = `entity:${paperText(item.document_id)}:${paperText(entity.entity_id)} · ${paperText(entity.segment_id)}`; row.append(dt, dd); list.append(row); });
+  structure.entities.forEach((entity) => { const row = document.createElement("div"); const dt = document.createElement("dt"); const button = document.createElement("button"); button.type = "button"; button.className = "entity-locator"; button.textContent = `${paperText(entity.kind)} · ${paperText(entity.label)}`; button.addEventListener("click", () => focusReviewedSegment(paperText(entity.segment_id))); const dd = document.createElement("dd"); dt.append(button); dd.textContent = `entity:${paperText(item.document_id)}:${paperText(entity.entity_id)} · ${paperText(entity.segment_id)}`; row.append(dt, dd); list.append(row); });
   const relations = document.createElement("p"); relations.className = "route-meta"; relations.textContent = paperArray(structure.relations).map((relation) => `${paperText(relation.source_entity_id)} —${paperText(relation.relation_type)}→ ${paperText(relation.target_entity_id)} (${paperText(relation.segment_id)})`).join("；") || "未选择内部关系。";
   target.replaceChildren(heading, list, relations);
 }
@@ -69,12 +69,19 @@ function renderReviewedSourceMap(bundle, item) {
   heading.className = "route-meta";
   heading.textContent = "Human-reviewed parser selection — not approved evidence.";
   const cards = sourceMap.segments.map((segment) => {
-    const article = document.createElement("article"); article.className = "evidence-card source-map-card";
+    const article = document.createElement("article"); article.className = "evidence-card source-map-card"; article.dataset.sourceSegmentId = paperText(segment.segment_id);
     const locator = document.createElement("p"); locator.className = "route-meta"; locator.textContent = `${paperText(segment.kind, "segment")} · ${paperText(segment.locator)}`;
     const quote = document.createElement("p"); quote.className = "quote"; quote.textContent = paperText(segment.quote);
     article.append(locator, quote); return article;
   });
   target.replaceChildren(heading, ...cards);
+}
+function focusReviewedSegment(segmentId) {
+  document.querySelector("#paper-view-mode").value = "guide"; applyPaperViewMode();
+  const cards = [...document.querySelectorAll("[data-source-segment-id]")];
+  cards.forEach((card) => card.classList.toggle("is-target", card.dataset.sourceSegmentId === segmentId));
+  const target = cards.find((card) => card.dataset.sourceSegmentId === segmentId);
+  if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 function applyPaperViewMode() {
   const structureMode = document.querySelector("#paper-view-mode").value === "structure";

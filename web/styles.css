@@ -63,3 +63,6 @@ input, textarea, select { background: color-mix(in srgb, var(--surface) 88%, #00
 .graph-edge-condition_recorded { stroke: var(--cyan); stroke-dasharray: 1 4; opacity: .55; }
 .graph-node.setting circle { stroke: var(--cyan); stroke-dasharray: 4 2; }
 .graph-edge-crossref_reference { stroke: var(--green); stroke-dasharray: 9 3 2 3; }
+
+.entity-locator { margin: 0; padding: .18rem .38rem; color: var(--cyan); background: transparent; border: 1px solid var(--line); font-size: .78rem; }
+.source-map-card.is-target { border-color: var(--cyan); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cyan) 34%, transparent); }
