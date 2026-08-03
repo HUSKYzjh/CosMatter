@@ -276,6 +276,34 @@ class EvidenceCard:
 
 
 @dataclass(frozen=True)
+class PaperCandidate:
+    """A retrieval candidate, explicitly not yet an evidence claim."""
+
+    document_id: str
+    title: str
+    query: str
+    source: str
+    publication_year: int | None = None
+    locator_hint: str | None = None
+    score: float | None = None
+    is_content_accessible: bool = False
+    candidate_id: str = field(default_factory=lambda: new_id("candidate"))
+    created_at: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "document_id", _nonempty(self.document_id, "document_id"))
+        object.__setattr__(self, "title", _nonempty(self.title, "title"))
+        object.__setattr__(self, "query", _nonempty(self.query, "query"))
+        object.__setattr__(self, "source", _nonempty(self.source, "source"))
+        if self.publication_year is not None and not 1000 <= self.publication_year <= 3000:
+            raise ValueError("publication_year must be plausible")
+        if self.score is not None and not isinstance(self.score, (int, float)):
+            raise ValueError("score must be numeric when present")
+
+    def to_dict(self) -> dict[str, Any]:
+        return to_primitive(self)
+
+@dataclass(frozen=True)
 class AuditEvent:
     run_id: str
     event_type: str

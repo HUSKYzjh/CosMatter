@@ -14,6 +14,7 @@ from cosmatter.state_machine import MissionMachine
 from .config import AGENT_ROOT, Settings
 from .dispatch import MissionDispatcher
 from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
+from .retrieval import candidates_from_sciverse, write_candidate_artifact
 from .sciverse import SciverseAdapter
 from .ui_export import UiExportError, export_run_to_ui
 
@@ -142,41 +143,33 @@ def command_demo_flow(args: argparse.Namespace) -> int:
 
 def command_sciverse_search(args: argparse.Namespace) -> int:
     response = SciverseAdapter(Settings.load()).agentic_search(args.query, top_k=args.top_k)
+    candidates = candidates_from_sciverse(response.payload, args.query, args.top_k)
     recorder = FlightRecorder(_runs_dir(), args.run_id)
+    artifact_path = write_candidate_artifact(recorder.run_dir, args.query, candidates)
     recorder.record(
         event_type="sciverse_agentic_search",
         actor="radar_retriever",
         state=MissionState.RETRIEVE,
-        payload={"query": args.query, "top_k": args.top_k, "status_code": response.status_code, "request_id": response.request_id},
+        payload={
+            "query": args.query,
+            "top_k": args.top_k,
+            "status_code": response.status_code,
+            "request_id": response.request_id,
+            "candidate_count": len(candidates),
+        },
     )
-    raw_hits = response.payload.get("hits", [])
-    if not isinstance(raw_hits, list):
-        raw_hits = []
-    candidates = [
-        {
-            "doc_id": hit.get("doc_id"),
-            "title": hit.get("title"),
-            "year": hit.get("publication_published_year"),
-            "page_no": hit.get("page_no"),
-            "offset": hit.get("offset"),
-            "score": hit.get("score"),
-            "is_content_accessible": hit.get("is_content_accessible"),
-        }
-        for hit in raw_hits[: args.top_k]
-        if isinstance(hit, dict)
-    ]
     _json_print(
         {
             "status_code": response.status_code,
             "request_id": response.request_id,
             "code": response.payload.get("code"),
             "message": response.payload.get("message"),
-            "candidate_count": len(raw_hits),
-            "candidates": candidates,
+            "candidate_count": len(candidates),
+            "candidates_path": str(artifact_path),
+            "candidates": [candidate.to_dict() for candidate in candidates],
         }
     )
     return 0
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cosmatter", description="CosMatter material-literature navigation agent")
