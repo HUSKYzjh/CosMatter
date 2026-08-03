@@ -20,6 +20,7 @@ from cosmatter.models import (
     FleetAssignment,
     FleetType,
     MissionBrief,
+    MissionReport,
     MissionState,
     Provenance,
     ReviewStatus,
@@ -227,6 +228,25 @@ def _assignment_from_payload(payload: dict[str, Any]) -> FleetAssignment:
         raise UiExportError("fleet_assignment.json does not satisfy FleetAssignment") from error
 
 
+def _mission_report_from_payload(payload: dict[str, Any]) -> MissionReport:
+    try:
+        evidence_ids = payload["evidence_ids"]
+        limitations = payload["limitations"]
+        next_steps = payload["next_steps"]
+        if not all(isinstance(item, list) for item in (evidence_ids, limitations, next_steps)):
+            raise TypeError("report arrays are required")
+        return MissionReport(
+            mission_id=str(payload["mission_id"]),
+            summary=str(payload["summary"]),
+            evidence_ids=tuple(str(item) for item in evidence_ids),
+            limitations=tuple(str(item) for item in limitations),
+            next_steps=tuple(str(item) for item in next_steps),
+            report_id=str(payload.get("report_id", "report_export")),
+            created_at=str(payload.get("created_at", utc_now())),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise UiExportError("mission_report.json does not satisfy MissionReport") from error
+
 def _last_recorded_state(path: Path) -> MissionState:
     """Read only event state labels; never export event actors or payloads."""
     if not path.exists():
@@ -247,10 +267,13 @@ def build_ui_bundle(
     state: MissionState = MissionState.INTAKE,
     evidence_cards: tuple[EvidenceCard, ...] = (),
     verification_decisions: tuple[VerificationDecision, ...] = (),
+    mission_report: MissionReport | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
         raise UiExportError("mission and fleet assignment identifiers do not match")
+    if mission_report is not None and mission_report.mission_id != mission.mission_id:
+        raise UiExportError("mission report and mission identifiers do not match")
     spec = MissionDispatcher.from_project().specs.get(assignment.fleet_type)
     if spec is None:
         raise UiExportError(f"missing configured fleet: {assignment.fleet_type.value}")
@@ -300,7 +323,7 @@ def build_ui_bundle(
         "evidence_cards": projected_evidence,
         "verification_decisions": [],
         "condition_matrix": [],
-        "mission_report": None,
+        "mission_report": mission_report.to_dict() if mission_report is not None else None,
     }
 
 
@@ -317,12 +340,15 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     verification_decisions = _verification_decisions_from_payloads(
         _load_array_if_present(run_dir / "verification_decisions.json", "verification decision artifacts")
     )
+    report_path = run_dir / "mission_report.json"
+    mission_report = _mission_report_from_payload(_load_object(report_path, "mission report artifact")) if report_path.exists() else None
     bundle = build_ui_bundle(
         mission,
         assignment,
         state,
         evidence_cards=evidence_cards,
         verification_decisions=verification_decisions,
+        mission_report=mission_report,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

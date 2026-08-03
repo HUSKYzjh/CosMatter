@@ -35,6 +35,8 @@ class UiDemoFixtureTests(unittest.TestCase):
 
         self.assertIn('id="ui-bundle-file"', html)
         self.assertIn("FileReader", script)
+        self.assertIn('id="mission-report"', html)
+        self.assertIn("function renderReport(report)", script)
         self.assertNotIn("fetch(", script)
 
 

@@ -189,6 +189,31 @@ function renderMatrix(rows) {
   }));
 }
 
+function renderReport(report) {
+  const target = document.querySelector("#mission-report");
+  if (!target) return;
+  if (!report || typeof report !== "object") {
+    target.replaceChildren(element("p", "No review-gated mission report has been exported for this run.", "notice"));
+    return;
+  }
+  const article = element("article", undefined, "evidence-card");
+  article.append(element("p", text(report.summary), "claim"));
+  const evidenceIds = asArray(report.evidence_ids).map((item) => text(String(item))).filter((item) => item !== "unknown");
+  article.append(element("p", `Accepted evidence cards: ${evidenceIds.length}`, "quote"));
+  const limitations = asArray(report.limitations);
+  if (limitations.length) {
+    const list = element("ul");
+    limitations.forEach((item) => list.append(element("li", text(String(item)))));
+    article.append(element("h3", "Limitations"), list);
+  }
+  const nextSteps = asArray(report.next_steps);
+  if (nextSteps.length) {
+    const list = element("ul");
+    nextSteps.forEach((item) => list.append(element("li", text(String(item)))));
+    article.append(element("h3", "Next validation steps"), list);
+  }
+  target.replaceChildren(article);
+}
 function renderBundle(bundle) {
   const mission = bundle.mission;
   const fleet = bundle.fleet_assignment;
@@ -211,6 +236,7 @@ function renderBundle(bundle) {
   renderFacilities(asArray(bundle.facilities));
   renderEvidence(asArray(bundle.evidence_cards));
   renderMatrix(asArray(bundle.condition_matrix));
+  renderReport(bundle.mission_report);
 }
 
 function updatePreview(event) {

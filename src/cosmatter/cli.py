@@ -16,8 +16,9 @@ from .dispatch import MissionDispatcher
 from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft
 from .retrieval import candidates_from_sciverse, write_candidate_artifact
+from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter
-from .ui_export import UiExportError, export_run_to_ui
+from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
 
 
 def _json_print(payload: object) -> None:
@@ -91,6 +92,29 @@ def command_export_ui(args: argparse.Namespace) -> int:
     _json_print({"run_id": args.run_id, "ui_path": str(destination), "schema_version": "1.0"})
     return 0
 
+
+def command_build_report(args: argparse.Namespace) -> int:
+    run_dir = _runs_dir() / args.run_id
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
+        decisions = _verification_decisions_from_payloads(
+            _load_array_if_present(run_dir / "verification_decisions.json", "verification decision artifacts")
+        )
+        report = build_evidence_manifest(mission, cards, decisions)
+        report_path = write_mission_report(run_dir, report)
+    except (UiExportError, ReportGateError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="mission_report_built",
+        actor="report_delivery",
+        state=MissionState.REPORT,
+        payload={"report_id": report.report_id, "accepted_evidence_count": len(report.evidence_ids)},
+    )
+    _json_print({"run_id": args.run_id, "report_id": report.report_id, "report_path": str(report_path)})
+    return 0
 
 def command_ingest_evidence(args: argparse.Namespace) -> int:
     run_dir = _runs_dir() / args.run_id
@@ -218,6 +242,9 @@ def build_parser() -> argparse.ArgumentParser:
     export_ui.add_argument("--run-id", required=True)
     export_ui.add_argument("--output", help="optional JSON destination; defaults to runs/<run_id>/ui.json")
     export_ui.set_defaults(handler=command_export_ui)
+    report = commands.add_parser("build-report", help="build a review-gated evidence-manifest report for an existing run")
+    report.add_argument("--run-id", required=True)
+    report.set_defaults(handler=command_build_report)
     ingest = commands.add_parser("ingest-evidence", help="validate and record one extracted evidence draft for an existing run")
     ingest.add_argument("--run-id", required=True)
     ingest.add_argument("--input", required=True, help="path to a narrow evidence-draft JSON file")

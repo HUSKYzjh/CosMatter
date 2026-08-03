@@ -304,6 +304,29 @@ class PaperCandidate:
         return to_primitive(self)
 
 @dataclass(frozen=True)
+class MissionReport:
+    """A review-gated evidence manifest, never an unverified scientific claim."""
+
+    mission_id: str
+    summary: str
+    evidence_ids: tuple[str, ...]
+    limitations: tuple[str, ...]
+    next_steps: tuple[str, ...]
+    report_id: str = field(default_factory=lambda: new_id("report"))
+    created_at: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mission_id", _nonempty(self.mission_id, "mission_id"))
+        object.__setattr__(self, "summary", _nonempty(self.summary, "summary"))
+        if not self.evidence_ids or len(set(self.evidence_ids)) != len(self.evidence_ids):
+            raise ValueError("MissionReport requires unique evidence_ids")
+        if not self.limitations or not self.next_steps:
+            raise ValueError("MissionReport requires limitations and next_steps")
+
+    def to_dict(self) -> dict[str, Any]:
+        return to_primitive(self)
+
+@dataclass(frozen=True)
 class AuditEvent:
     run_id: str
     event_type: str
