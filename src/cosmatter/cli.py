@@ -28,6 +28,8 @@ from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexReque
 from .relation_expansion import RelationExpansionError, build_relation_expansion, write_relation_expansion
 from .crossref import CrossrefAdapter, CrossrefRequestError
 from .crossref_relation_expansion import CrossrefRelationExpansionError, build_crossref_relation_expansion, write_crossref_relation_expansion
+from .paper_structure import PaperStructureError, paper_structure_from_review, write_paper_structure
+from .source_map import load_source_map
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _last_recorded_state, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
@@ -357,6 +359,24 @@ def command_expand_crossref_references(args: argparse.Namespace) -> int:
     )
     _json_print({"run_id": args.run_id, "evidence_id": args.evidence_id, "edge_count": len(expansion["edges"]), "reference_field_present": expansion["reference_field_present"], "relation_path": str(path)})
     return 0
+def command_record_paper_structure(args: argparse.Namespace) -> int:
+    """Record reviewer-approved paper-scoped entities and internal relations."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        source_map = load_source_map(run_dir / "source_map.json", mission.mission_id)
+        if source_map is None:
+            raise PaperStructureError("paper structure requires a reviewed source map")
+        selection = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        structure = paper_structure_from_review(mission_id=mission.mission_id, source_map=source_map, selection=selection)
+        path = write_paper_structure(run_dir, structure)
+    except (OSError, json.JSONDecodeError, UiExportError, PaperStructureError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(event_type="paper_structure_reviewed", actor="source_reviewer", state=MissionState.MAP, payload={"document_id": structure["document_id"], "entity_count": len(structure["entities"]), "relation_count": len(structure["relations"])})
+    _json_print({"run_id": args.run_id, "document_id": structure["document_id"], "entity_count": len(structure["entities"]), "relation_count": len(structure["relations"]), "paper_structure_path": str(path)})
+    return 0
 def command_build_report(args: argparse.Namespace) -> int:
     run_dir = _run_dir(args.run_id)
     try:
@@ -595,6 +615,10 @@ def build_parser() -> argparse.ArgumentParser:
     source_map.add_argument("--document-id", required=True)
     source_map.add_argument("--input", required=True, help="reviewed bounded JSON selection; parser output files are never read directly")
     source_map.set_defaults(handler=command_record_source_map)
+    structure = commands.add_parser("record-paper-structure", help="record reviewer-approved paper-scoped material entities and relations")
+    structure.add_argument("--run-id", required=True)
+    structure.add_argument("--input", required=True, help="reviewed bounded structure JSON tied to source-map segments")
+    structure.set_defaults(handler=command_record_paper_structure)
     openalex_expand = commands.add_parser("expand-openalex-relations", help="expand bounded public metadata relations for one accepted DOI-bearing evidence card")
     openalex_expand.add_argument("--run-id", required=True)
     openalex_expand.add_argument("--evidence-id", required=True)
