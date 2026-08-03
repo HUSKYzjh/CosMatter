@@ -56,7 +56,7 @@ class WebAssetTests(unittest.TestCase):
         self.assertIn('id="paper-source-map"', paper_html)
         self.assertIn("function renderPaper(bundle)", paper_script)
         self.assertIn("function renderReviewedSourceMap(bundle, item)", paper_script)
-        for semantic_edge in ("retrieval_candidate", "source_provenance", "support", "contradict", "open_question"):
+        for semantic_edge in ("retrieval_candidate", "source_provenance", "support", "contradict", "open_question", "citation_reference", "algorithmic_related"):
             self.assertIn(semantic_edge, network_script)
         stylesheet = (web_dir / "styles.css").read_text(encoding="utf-8")
         for theme in ('data-theme="dark"', 'data-theme="light"', 'data-theme="eye"'):

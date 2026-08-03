@@ -345,6 +345,30 @@ def _timeline_projection(path: Path) -> list[dict[str, str]]:
     return projected[-_MAX_TIMELINE_ENTRIES:]
 
 
+def _relation_expansion_projection(path: Path, mission_id: str) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise UiExportError("relation_expansion.json is invalid JSON") from error
+    if not isinstance(payload, dict) or payload.get("schema_version") != "1.0" or payload.get("mission_id") != mission_id:
+        raise UiExportError("relation expansion identity is invalid")
+    if payload.get("trust_status") != "public_relation_metadata_not_scientific_evidence" or not isinstance(payload.get("source"), dict) or not isinstance(payload.get("edges"), list):
+        raise UiExportError("relation expansion trust status or structure is invalid")
+    source = payload["source"]
+    if set(source) != {"evidence_id", "document_id", "openalex_work_id"} or not all(isinstance(value, str) and value for value in source.values()):
+        raise UiExportError("relation expansion source is invalid")
+    edges: list[dict[str, str]] = []
+    for edge in payload["edges"]:
+        if not isinstance(edge, dict) or set(edge) != {"edge_type", "target_openalex_id"} or edge.get("edge_type") not in {"citation_reference", "algorithmic_related"}:
+            raise UiExportError("relation expansion edge is invalid")
+        target = edge.get("target_openalex_id")
+        if not isinstance(target, str) or not target.startswith("https://openalex.org/W"):
+            raise UiExportError("relation expansion target is invalid")
+        edges.append({"edge_type": edge["edge_type"], "target_openalex_id": target})
+    return {"trust_status": payload["trust_status"], "source": source, "edges": edges}
+
 def _paper_source_map_projection(source_map: dict[str, Any] | None) -> dict[str, Any] | None:
     """Expose a few human-reviewed snippets, never raw parser output."""
     if source_map is None:
@@ -369,6 +393,7 @@ def build_ui_bundle(
     timeline: list[dict[str, str]] | None = None,
     research_guide: dict[str, Any] | None = None,
     paper_source_map: dict[str, Any] | None = None,
+    literature_relations: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -427,6 +452,7 @@ def build_ui_bundle(
         "timeline": timeline or [],
         "research_guide": research_guide,
         "paper_source_map": _paper_source_map_projection(paper_source_map),
+        "literature_relations": literature_relations,
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
     }
 
@@ -448,6 +474,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     mission_report = _mission_report_from_payload(_load_object(report_path, "mission report artifact")) if report_path.exists() else None
     condition_matrix = _condition_matrix_if_present(run_dir / "condition_matrix.json")
     timeline = _timeline_projection(run_dir / "events.jsonl")
+    literature_relations = _relation_expansion_projection(run_dir / "relation_expansion.json", mission.mission_id)
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         paper_source_map = load_source_map(run_dir / "source_map.json", mission.mission_id)
@@ -464,6 +491,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         timeline=timeline,
         research_guide=research_guide,
         paper_source_map=paper_source_map,
+        literature_relations=literature_relations,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

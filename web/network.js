@@ -47,6 +47,21 @@ function makeGraph(bundle) {
     }
     edges.push({ from: paperId, to: evidence.id, kind: "source_provenance", label: "document_id + locator" });
   });
+  const relations = bundle.literature_relations;
+  if (relations && relations.trust_status === "public_relation_metadata_not_scientific_evidence" && relations.source && Array.isArray(relations.edges)) {
+    const sourceDocumentId = netText(relations.source.document_id);
+    const sourcePaperId = `paper:${sourceDocumentId}`;
+    if (!byId.has(sourcePaperId)) {
+      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, x: 500, y: 220, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "authorized", track: "unclassified", role: "relation_source", evidence_ids: [relations.source.evidence_id] } });
+    }
+    netArray(relations.edges).slice(0, 24).forEach((relation, index) => {
+      if (!relation || !["citation_reference", "algorithmic_related"].includes(relation.edge_type)) return;
+      const targetId = netText(relation.target_openalex_id);
+      const point = position(index, Math.min(netArray(relations.edges).length, 24), 645);
+      const target = addNode({ id: `external:${targetId}`, kind: "external_relation", label: targetId.replace("https://openalex.org/", ""), x: point.x, y: point.y, data: { relation_type: relation.edge_type, trust_status: relations.trust_status } });
+      edges.push({ from: sourcePaperId, to: target.id, kind: relation.edge_type, label: relation.edge_type === "citation_reference" ? "OpenAlex reference metadata" : "OpenAlex algorithmic related-work metadata" });
+    });
+  }
   netArray(bundle.condition_matrix).forEach((row, index) => {
     const point = position(index, Math.max(netArray(bundle.condition_matrix).length, 1), 510);
     const condition = addNode({ id: `condition:${index}`, kind: "condition", label: netText(row.condition_cluster), x: point.x, y: point.y, data: row });
@@ -68,6 +83,7 @@ function inspector(node) {
   if (node.kind === "paper") fields = [["类型", "有界候选论文"], ["阅读角色", netText(node.data.role)], ["检索轨道", netText(node.data.track)], ["访问状态", netText(node.data.content_status)], ["来源定位", netText(node.data.locator_hint, "未记录")], ["关联证据", netArray(node.data.evidence_ids).join("、") || "尚无"]];
   else if (node.kind === "evidence") fields = [["类型", "已批准证据"], ["立场", netText(node.data.stance)], ["定位", `${netText(node.data.provenance.document_id)} · ${netText(node.data.provenance.locator)}`], ["主张", netText(node.data.claim)]];
   else if (node.kind === "condition") fields = [["类型", "条件簇"], ["差异字段", netArray(node.data.differing_fields).join("、") || "未记录"], ["支持证据", netArray(node.data.supporting_evidence_ids).join("、") || "无"], ["反驳证据", netArray(node.data.contradicting_evidence_ids).join("、") || "无"]];
+  else if (node.kind === "external_relation") fields = [["Type", "public relation metadata"], ["Relation", netText(node.data.relation_type)], ["Trust", "not scientific evidence"]];
   else if (node.kind === "unknown") fields = [["类型", "待核查项"], ["所属条件簇", netText(node.data.condition_cluster)], ["未知项", netText(node.data.unknown)]];
   else fields = [["类型", "任务锚点"], ["材料", netText(node.data.material)], ["性质", netText(node.data.property_name)]];
   const list = document.createElement("dl"); list.className = "inspector-list";
