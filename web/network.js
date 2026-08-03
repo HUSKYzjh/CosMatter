@@ -47,7 +47,22 @@ function makeGraph(bundle) {
     }
     edges.push({ from: paperId, to: evidence.id, kind: "source_provenance", label: "document_id + locator" });
   });
-  const relations = bundle.literature_relations;
+  const settingNodeIds = new Map();
+  approved.forEach((card, evidenceIndex) => {
+    Object.entries(card.conditions || {}).slice(0, 12).forEach(([field, value], conditionIndex) => {
+      if (value === null || typeof value === "object") return;
+      const encoded = `${field}:${String(value)}`;
+      let settingId = settingNodeIds.get(encoded);
+      const computational = /method|code|functional|cutoff|kpoint|supercell|calculation/i.test(field);
+      if (!settingId) {
+        const point = position(evidenceIndex * 12 + conditionIndex, Math.max(approved.length * 4, 1), 505);
+        settingId = `setting:${encoded}`;
+        settingNodeIds.set(encoded, settingId);
+        addNode({ id: settingId, kind: "setting", label: `${field} = ${String(value)}`, x: point.x, y: point.y, data: { field, value: String(value), category: computational ? "computational_setting" : "experimental_setting" } });
+      }
+      edges.push({ from: `evidence:${netText(card.evidence_id)}`, to: settingId, kind: "condition_recorded", label: "reported condition; not causal" });
+    });
+  });  const relations = bundle.literature_relations;
   if (relations && relations.trust_status === "public_relation_metadata_not_scientific_evidence" && relations.source && Array.isArray(relations.edges)) {
     const sourceDocumentId = netText(relations.source.document_id);
     const sourcePaperId = `paper:${sourceDocumentId}`;
@@ -83,6 +98,7 @@ function inspector(node) {
   if (node.kind === "paper") fields = [["类型", "有界候选论文"], ["阅读角色", netText(node.data.role)], ["检索轨道", netText(node.data.track)], ["访问状态", netText(node.data.content_status)], ["来源定位", netText(node.data.locator_hint, "未记录")], ["关联证据", netArray(node.data.evidence_ids).join("、") || "尚无"]];
   else if (node.kind === "evidence") fields = [["类型", "已批准证据"], ["立场", netText(node.data.stance)], ["定位", `${netText(node.data.provenance.document_id)} · ${netText(node.data.provenance.locator)}`], ["主张", netText(node.data.claim)]];
   else if (node.kind === "condition") fields = [["类型", "条件簇"], ["差异字段", netArray(node.data.differing_fields).join("、") || "未记录"], ["支持证据", netArray(node.data.supporting_evidence_ids).join("、") || "无"], ["反驳证据", netArray(node.data.contradicting_evidence_ids).join("、") || "无"]];
+  else if (node.kind === "setting") fields = [["Type", node.data.category === "computational_setting" ? "computational setting" : "experimental setting"], ["Recorded field", netText(node.data.field)], ["Recorded value", netText(node.data.value)], ["Semantics", "reported condition; not causal"]];
   else if (node.kind === "external_relation") fields = [["Type", "public relation metadata"], ["Relation", netText(node.data.relation_type)], ["Trust", "not scientific evidence"]];
   else if (node.kind === "unknown") fields = [["类型", "待核查项"], ["所属条件簇", netText(node.data.condition_cluster)], ["未知项", netText(node.data.unknown)]];
   else fields = [["类型", "任务锚点"], ["材料", netText(node.data.material)], ["性质", netText(node.data.property_name)]];

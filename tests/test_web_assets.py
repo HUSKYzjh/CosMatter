@@ -50,13 +50,14 @@ class WebAssetTests(unittest.TestCase):
         network_html = (web_dir / "network.html").read_text(encoding="utf-8")
         network_script = (web_dir / "network.js").read_text(encoding="utf-8")
         self.assertIn("graph-legend", network_html)
+        self.assertIn('value="setting"', network_html)
         paper_html = (web_dir / "paper.html").read_text(encoding="utf-8")
         paper_script = (web_dir / "paper.js").read_text(encoding="utf-8")
         self.assertIn('id="paper-guide-select"', paper_html)
         self.assertIn('id="paper-source-map"', paper_html)
         self.assertIn("function renderPaper(bundle)", paper_script)
         self.assertIn("function renderReviewedSourceMap(bundle, item)", paper_script)
-        for semantic_edge in ("retrieval_candidate", "source_provenance", "support", "contradict", "open_question", "citation_reference", "algorithmic_related"):
+        for semantic_edge in ("retrieval_candidate", "source_provenance", "support", "contradict", "open_question", "condition_recorded", "citation_reference", "algorithmic_related"):
             self.assertIn(semantic_edge, network_script)
         stylesheet = (web_dir / "styles.css").read_text(encoding="utf-8")
         for theme in ('data-theme="dark"', 'data-theme="light"', 'data-theme="eye"'):
