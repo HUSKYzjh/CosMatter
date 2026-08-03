@@ -1,0 +1,25 @@
+# 航道诊断舰队 / Route Diagnostics Fleet
+# 该文件是可审查的路由与门禁配置，不含任何 API 密钥或提示词正文。
+fleet_id: route_diagnostics
+display_name:
+  zh: 航道诊断舰队
+  en: Route Diagnostics Fleet
+mission_types:
+  - literature_discrepancy
+  - conditional_comparison
+required_stations:
+  - question_intake
+  - research_planning
+  - search_selection
+  - evidence_extraction
+  - cross_check_review
+  - report_delivery
+required_facilities:
+  - trajectory_overlay
+  - condition_differential
+  - counterevidence_detector
+handoff_allowed_to:
+  - mission_validation
+release_gate: navigation_verification
+max_planning_loops: 3
+max_facility_attempts: 2
