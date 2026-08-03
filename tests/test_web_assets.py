@@ -26,6 +26,7 @@ class WebAssetTests(unittest.TestCase):
             "index.html": ["shell.js", "app.js"],
             "workflow.html": ["shell.js", "workflow.js"],
             "network.html": ["shell.js", "network.js"],
+            "paper.html": ["shell.js", "paper.js"],
             "extensions.html": ["shell.js", "extensions.js"],
         }
         for page, scripts in expected_scripts.items():
@@ -49,6 +50,10 @@ class WebAssetTests(unittest.TestCase):
         network_html = (web_dir / "network.html").read_text(encoding="utf-8")
         network_script = (web_dir / "network.js").read_text(encoding="utf-8")
         self.assertIn("graph-legend", network_html)
+        paper_html = (web_dir / "paper.html").read_text(encoding="utf-8")
+        paper_script = (web_dir / "paper.js").read_text(encoding="utf-8")
+        self.assertIn('id="paper-guide-select"', paper_html)
+        self.assertIn("function renderPaper(bundle)", paper_script)
         for semantic_edge in ("retrieval_candidate", "source_provenance", "support", "contradict", "open_question"):
             self.assertIn(semantic_edge, network_script)
         stylesheet = (web_dir / "styles.css").read_text(encoding="utf-8")

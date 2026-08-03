@@ -9,7 +9,7 @@
 | 自然语言问题 → 有界检索计划 | `MissionBrief` → 人工批准 `FlightPlan` | 已实现 | LLM 草案始终是 `untrusted_draft`，不自动执行。 |
 | 有界主题发现图 | 已批准主/反例查询的候选历史 | 已实现 | 候选只是元数据，不能成为科学证据。 |
 | Research Guide / Learning Roadmap | `build-reading-guide` → `reading_guide.json` → Guided Cards | 已实现 | 仅排序已有候选与已接受证据；不含检索式、摘要、全文、分数或模型生成的结论。 |
-| 论文卡片与 Paper Reading Guide | 候选卡、证据卡、`document_id + locator` | 部分实现 | 下一阶段接入经授权的 MinerU 段落/页码工件后，再提供论文级结构阅读。 |
+| 论文卡片与 Paper Reading Guide | `paper.html` 候选导读、证据卡、`document_id + locator` | 基础实现 | 不加载全文；接入经授权的 MinerU 段落/页码工件后，才可提供论文级结构阅读。 |
 | 三种边语义：内部关系、引用、相关建议 | 候选论文、证据、条件簇与未知项的五类关系 | 初版已实现 | 图例与检查器明确区分检索候选、出处、审核支持/反驳和待核查；后续再增加公开引用/相关工作边。 |
 | provenance 回溯和段落高亮 | `EvidenceCard.provenance` | 已实现基础门禁 | 只保留短摘录和定位；全文查看必须由授权内容管线提供。 |
 | 实时可取消进度 | UI `timeline` 的脱敏动作投影 | 已实现只读版 | 不是原始审计流；不含 actor、请求 ID、payload 或错误原文。 |
