@@ -39,6 +39,10 @@ def _positive_int(value: str | None, default: int) -> int:
 class Settings:
     llm_provider: str | None
     llm_model: str | None
+    llm_base_url: str
+    deepseek_api_key: str | None
+    llm_thinking_enabled: bool
+    llm_reasoning_effort: str | None
     deepseek_configured: bool
     sciverse_api_token: str | None
     sciverse_base_url: str
@@ -63,6 +67,10 @@ class Settings:
         return cls(
             llm_provider=values.get("LLM_PROVIDER") or None,
             llm_model=values.get("LLM_MODEL") or None,
+            llm_base_url=(values.get("LLM_BASE_URL") or "https://api.deepseek.com").rstrip("/"),
+            deepseek_api_key=deepseek_key or None,
+            llm_thinking_enabled=values.get("LLM_THINKING_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"},
+            llm_reasoning_effort=values.get("LLM_REASONING_EFFORT") or None,
             deepseek_configured=bool(deepseek_key),
             sciverse_api_token=token.strip() if token else None,
             sciverse_base_url=(values.get("SCIVERSE_BASE_URL") or "https://api.sciverse.space").rstrip("/"),
@@ -75,6 +83,9 @@ class Settings:
         return {
             "llm_provider": self.llm_provider,
             "llm_model": self.llm_model,
+            "llm_base_url": self.llm_base_url,
+            "llm_thinking_enabled": self.llm_thinking_enabled,
+            "llm_reasoning_effort": self.llm_reasoning_effort,
             "deepseek_configured": self.deepseek_configured,
             "sciverse_configured": self.sciverse_configured,
             "sciverse_base_url": self.sciverse_base_url,
