@@ -56,6 +56,65 @@ class UiExportTests(unittest.TestCase):
         self.assertNotIn("api_key", serialised)
         self.assertNotIn("authorization", serialised)
 
+    def test_export_projects_only_accepted_evidence_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            run_dir = runs_dir / "approved_evidence_run"
+            self._write_run(runs_dir, "approved_evidence_run")
+            evidence = [
+                {
+                    "evidence_id": "evidence_accepted",
+                    "claim": "short synthetic claim",
+                    "stance": "support",
+                    "material": "BiFeO3",
+                    "property_name": "phase stability",
+                    "conditions": {"sample_form": "film"},
+                    "quote": "short synthetic quote",
+                    "provenance": {
+                        "document_id": "doc_fixture",
+                        "locator": "page:1",
+                        "source": "fixture",
+                        "access_policy": "oa",
+                    },
+                },
+                {
+                    "evidence_id": "evidence_rejected",
+                    "claim": "withheld synthetic claim",
+                    "stance": "contradict",
+                    "material": "BiFeO3",
+                    "property_name": "phase stability",
+                    "conditions": {"sample_form": "film"},
+                    "quote": "withheld synthetic quote",
+                    "provenance": {
+                        "document_id": "doc_fixture_2",
+                        "locator": "page:2",
+                        "source": "fixture",
+                        "access_policy": "oa",
+                    },
+                },
+            ]
+            decisions = [
+                {
+                    "mission_id": "mission_ui_export_001",
+                    "evidence_id": "evidence_accepted",
+                    "status": "accepted",
+                    "reason": "complete",
+                },
+                {
+                    "mission_id": "mission_ui_export_001",
+                    "evidence_id": "evidence_rejected",
+                    "status": "rejected",
+                    "reason": "missing conditions",
+                },
+            ]
+            (run_dir / "evidence_cards.json").write_text(json.dumps(evidence), encoding="utf-8")
+            (run_dir / "verification_decisions.json").write_text(json.dumps(decisions), encoding="utf-8")
+            export_run_to_ui(runs_dir, "approved_evidence_run")
+            bundle = json.loads((run_dir / "ui.json").read_text(encoding="utf-8"))
+
+        self.assertEqual([card["evidence_id"] for card in bundle["evidence_cards"]], ["evidence_accepted"])
+        self.assertEqual(bundle["status"]["verification_summary"]["rejected_count"], 1)
+        self.assertEqual(bundle["verification_decisions"], [])
     def test_export_rejects_path_traversal_run_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(UiExportError):
