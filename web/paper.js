@@ -76,6 +76,13 @@ function renderReviewedSourceMap(bundle, item) {
   });
   target.replaceChildren(heading, ...cards);
 }
+function applyPaperViewMode() {
+  const structureMode = document.querySelector("#paper-view-mode").value === "structure";
+  document.querySelector("#paper-guide-workspace").hidden = structureMode;
+  document.querySelector("#paper-source-workspace").hidden = structureMode;
+  document.querySelector("#paper-evidence-workspace").hidden = structureMode;
+  document.querySelector(".paper-structure").hidden = !structureMode;
+}
 function loadPaperBundle(event) {
   const file = event.target.files && event.target.files[0]; const message = document.querySelector("#paper-import-message");
   if (!file) return; if (file.size > PAPER_MAX_BUNDLE_BYTES) { message.textContent = "拒绝导入：UI JSON 不得超过 1 MiB。"; return; }
@@ -84,4 +91,4 @@ function loadPaperBundle(event) {
   reader.readAsText(file, "utf-8");
 }
 
-document.addEventListener("DOMContentLoaded", () => { window.paperBundle = paperDemo; setGuideOptions(paperDemo); renderPaper(paperDemo); document.querySelector("#paper-bundle-file").addEventListener("change", loadPaperBundle); document.querySelector("#paper-guide-select").addEventListener("change", () => renderPaper(window.paperBundle)); });
+document.addEventListener("DOMContentLoaded", () => { window.paperBundle = paperDemo; setGuideOptions(paperDemo); renderPaper(paperDemo); document.querySelector("#paper-bundle-file").addEventListener("change", loadPaperBundle); document.querySelector("#paper-guide-select").addEventListener("change", () => renderPaper(window.paperBundle)); document.querySelector("#paper-view-mode").addEventListener("change", applyPaperViewMode); applyPaperViewMode(); });

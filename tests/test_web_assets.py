@@ -60,9 +60,11 @@ class WebAssetTests(unittest.TestCase):
         self.assertIn('id="paper-guide-select"', paper_html)
         self.assertIn('id="paper-source-map"', paper_html)
         self.assertIn('id="paper-structure"', paper_html)
+        self.assertIn('id="paper-view-mode"', paper_html)
         self.assertIn("function renderPaper(bundle)", paper_script)
         self.assertIn("function renderReviewedSourceMap(bundle, item)", paper_script)
         self.assertIn("function renderPaperStructure(bundle, item)", paper_script)
+        self.assertIn("function applyPaperViewMode()", paper_script)
         for semantic_edge in ("retrieval_candidate", "source_provenance", "support", "contradict", "open_question", "condition_recorded", "citation_reference", "algorithmic_related", "crossref_reference"):
             self.assertIn(semantic_edge, network_script)
         stylesheet = (web_dir / "styles.css").read_text(encoding="utf-8")

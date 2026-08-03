@@ -21,16 +21,16 @@
       <section class="hero-banner"><p class="eyebrow">PAPER READING GUIDE / 定位优先</p><h1>从有界候选到可定位证据</h1><p>选择阅读路线中的候选，查看访问状态、来源定位及已批准短证据。页面不保存或加载全文；段落级阅读只在后续授权解析工件存在时开放。</p></section>
       <section class="panel paper-toolbar">
         <label class="bundle-import compact">导入已脱敏 UI JSON<input id="paper-bundle-file" type="file" accept="application/json,.json"></label>
-        <label>阅读路线候选<select id="paper-guide-select"></select></label>
+        <label>阅读路线候选<select id="paper-guide-select"></select></label><label>工作区视图<select id="paper-view-mode"><option value="guide">导读与证据</option><option value="structure">论文内结构</option></select></label>
         <p id="paper-import-message" class="form-message" role="status">未导入文件；显示合成示例。</p>
       </section>
-      <section class="paper-layout">
+      <section class="paper-layout" id="paper-guide-workspace">
         <article class="panel paper-overview"><p class="eyebrow">候选卡 / Candidate Card</p><div id="paper-overview"></div></article>
         <aside class="panel paper-provenance"><p class="eyebrow">来源定位 / Provenance</p><div id="paper-provenance"></div><p class="notice">`document_id + locator` 是回溯键，不是全文访问授权。没有授权解析工件时，界面不会拼接、下载或显示正文。</p></aside>
       </section>
-      <section class="panel paper-source-map"><div class="section-heading"><p class="eyebrow">REVIEWED SOURCE MAP / 人工复核定位片段</p><h2>受控原文短片段</h2></div><div id="paper-source-map"></div><p class="notice">这些片段来自人工复核的授权解析工件，不等同于已批准证据或科学结论；页面不会加载全文。</p></section>
+      <section class="panel paper-source-map" id="paper-source-workspace"><div class="section-heading"><p class="eyebrow">REVIEWED SOURCE MAP / 人工复核定位片段</p><h2>受控原文短片段</h2></div><div id="paper-source-map"></div><p class="notice">这些片段来自人工复核的授权解析工件，不等同于已批准证据或科学结论；页面不会加载全文。</p></section>
       <section class="panel paper-structure"><div class="section-heading"><p class="eyebrow">PAPER INTERNAL / 论文内结构</p><h2>人工复核实体与关系</h2></div><div id="paper-structure"></div><p class="notice">实体身份仅在当前 document_id 内有效；内部关系来自人工复核片段，非科学证据或因果结论。</p></section>
-      <section class="panel paper-evidence"><div class="section-heading"><p class="eyebrow">已批准证据 / Approved Evidence</p><h2>短摘录与条件字段</h2></div><div id="paper-evidence-list"></div></section>
+      <section class="panel paper-evidence" id="paper-evidence-workspace"><div class="section-heading"><p class="eyebrow">已批准证据 / Approved Evidence</p><h2>短摘录与条件字段</h2></div><div id="paper-evidence-list"></div></section>
     </main>
     <footer class="site-footer"><p>CosMatter · The paper guide is a bounded metadata and approved-evidence view, not a full-text reader.</p></footer>
   </body>
