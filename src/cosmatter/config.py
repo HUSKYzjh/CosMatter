@@ -54,6 +54,8 @@ class Settings:
     mineru_model_version: str
     openalex_api_key: str | None
     openalex_base_url: str
+    crossref_mailto: str | None
+    crossref_base_url: str
     http_timeout_seconds: int
     api_max_retries: int
 
@@ -77,6 +79,7 @@ class Settings:
         deepseek_key = values.get("DEEPSEEK_API_KEY", "").strip()
         mineru_token = values.get("MINERU_API_TOKEN", "").strip()
         openalex_key = values.get("OPENALEX_API_KEY", "").strip()
+        crossref_mailto = values.get("CROSSREF_MAILTO", "").strip()
         return cls(
             llm_provider=values.get("LLM_PROVIDER") or None,
             llm_model=values.get("LLM_MODEL") or None,
@@ -92,6 +95,8 @@ class Settings:
             mineru_model_version=(values.get("MINERU_MODEL_VERSION") or "vlm").strip(),
             openalex_api_key=openalex_key or None,
             openalex_base_url=(values.get("OPENALEX_BASE_URL") or "https://api.openalex.org").rstrip("/"),
+            crossref_mailto=crossref_mailto or None,
+            crossref_base_url=(values.get("CROSSREF_BASE_URL") or "https://api.crossref.org").rstrip("/"),
             http_timeout_seconds=_positive_int(values.get("HTTP_TIMEOUT_SECONDS"), 60),
             api_max_retries=_positive_int(values.get("API_MAX_RETRIES"), 3),
         )
@@ -112,6 +117,8 @@ class Settings:
             "mineru_model_version": self.mineru_model_version,
             "openalex_configured": bool(self.openalex_api_key),
             "openalex_base_url": self.openalex_base_url,
+            "crossref_polite_contact_configured": bool(self.crossref_mailto),
+            "crossref_base_url": self.crossref_base_url,
             "http_timeout_seconds": self.http_timeout_seconds,
             "api_max_retries": self.api_max_retries,
         }
