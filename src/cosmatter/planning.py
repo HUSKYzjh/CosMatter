@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from .deepseek import DraftCompletion
-from .models import MissionBrief
+from .models import FlightPlan, MissionBrief
 
 
 def research_planning_prompts(mission: MissionBrief) -> tuple[str, str]:
@@ -41,4 +41,53 @@ def write_untrusted_plan_draft(run_dir: Path, completion: DraftCompletion) -> Pa
         "content": completion.content,
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+class PlanApprovalError(ValueError):
+    """Raised when a reviewed plan is not a bounded FlightPlan."""
+
+
+_PLAN_FIELDS = {"subquestions", "queries", "counter_queries", "max_rounds", "max_papers"}
+
+
+def approved_flight_plan_from_payload(mission: MissionBrief, payload: object) -> FlightPlan:
+    """Validate a separately reviewed planning JSON; never parse LLM drafts implicitly."""
+    if not isinstance(payload, dict) or set(payload) - _PLAN_FIELDS:
+        raise PlanApprovalError("reviewed plan must be a JSON object with supported fields only")
+    try:
+        subquestions = _bounded_strings(payload["subquestions"], "subquestions", 5)
+        queries = _bounded_strings(payload["queries"], "queries", 8)
+        counter_queries = _bounded_strings(payload["counter_queries"], "counter_queries", 4)
+        max_rounds = int(payload.get("max_rounds", 3))
+        max_papers = int(payload.get("max_papers", 20))
+        if not 1 <= max_rounds <= 3 or not 1 <= max_papers <= 20:
+            raise PlanApprovalError("reviewed plan limits exceed the configured baseline")
+        return FlightPlan(
+            mission_id=mission.mission_id,
+            subquestions=subquestions,
+            queries=queries,
+            counter_queries=counter_queries,
+            max_rounds=max_rounds,
+            max_papers=max_papers,
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        if isinstance(error, PlanApprovalError):
+            raise
+        raise PlanApprovalError("reviewed plan does not satisfy FlightPlan") from error
+
+
+def _bounded_strings(value: object, name: str, maximum: int) -> tuple[str, ...]:
+    if not isinstance(value, list) or not value or len(value) > maximum:
+        raise PlanApprovalError(f"{name} must be a nonempty array with at most {maximum} items")
+    items = tuple(str(item).strip() for item in value)
+    if any(not item for item in items) or len(set(items)) != len(items):
+        raise PlanApprovalError(f"{name} must contain unique nonempty strings")
+    return items
+
+
+def write_approved_flight_plan(run_dir: Path, plan: FlightPlan) -> Path:
+    """Persist the reviewed executable plan separately from untrusted LLM drafts."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    path = run_dir / "flight_plan.json"
+    path.write_text(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path

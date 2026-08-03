@@ -16,7 +16,7 @@ from .dispatch import MissionDispatcher
 from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft
-from .planning import research_planning_prompts, write_untrusted_plan_draft
+from .planning import PlanApprovalError, approved_flight_plan_from_payload, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
 from .retrieval import candidates_from_sciverse, write_candidate_artifact
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter
@@ -94,6 +94,26 @@ def command_export_ui(args: argparse.Namespace) -> int:
     _json_print({"run_id": args.run_id, "ui_path": str(destination), "schema_version": "1.0"})
     return 0
 
+
+def command_approve_plan(args: argparse.Namespace) -> int:
+    run_dir = _runs_dir() / args.run_id
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        plan = approved_flight_plan_from_payload(mission, payload)
+        plan_path = write_approved_flight_plan(run_dir, plan)
+    except (OSError, json.JSONDecodeError, UiExportError, PlanApprovalError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="flight_plan_approved",
+        actor="human_plan_review",
+        state=MissionState.PLAN,
+        payload={"plan_id": plan.artifact_id, "query_count": len(plan.queries), "counter_query_count": len(plan.counter_queries)},
+    )
+    _json_print({"run_id": args.run_id, "plan_id": plan.artifact_id, "plan_path": str(plan_path)})
+    return 0
 
 def command_draft_plan(args: argparse.Namespace) -> int:
     run_dir = _runs_dir() / args.run_id
@@ -264,6 +284,10 @@ def build_parser() -> argparse.ArgumentParser:
     export_ui.add_argument("--run-id", required=True)
     export_ui.add_argument("--output", help="optional JSON destination; defaults to runs/<run_id>/ui.json")
     export_ui.set_defaults(handler=command_export_ui)
+    approve_plan = commands.add_parser("approve-plan", help="persist a human-reviewed bounded FlightPlan JSON")
+    approve_plan.add_argument("--run-id", required=True)
+    approve_plan.add_argument("--input", required=True, help="path to reviewed FlightPlan JSON; never reads LLM draft implicitly")
+    approve_plan.set_defaults(handler=command_approve_plan)
     draft_plan = commands.add_parser("draft-plan", help="generate an untrusted DeepSeek research-planning draft")
     draft_plan.add_argument("--run-id", required=True)
     draft_plan.set_defaults(handler=command_draft_plan)
