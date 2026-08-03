@@ -30,6 +30,7 @@ from .crossref import CrossrefAdapter, CrossrefRequestError
 from .crossref_relation_expansion import CrossrefRelationExpansionError, build_crossref_relation_expansion, write_crossref_relation_expansion
 from .paper_structure import PaperStructureError, paper_structure_from_review, write_paper_structure
 from .ui_preview import UiPreviewError, serve_ui_preview
+from .relation_reconciliation import RelationReconciliationError, reconciliation_from_review, write_relation_reconciliation
 from .source_map import load_source_map
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
@@ -367,6 +368,19 @@ def command_expand_crossref_references(args: argparse.Namespace) -> int:
     )
     _json_print({"run_id": args.run_id, "evidence_id": args.evidence_id, "edge_count": len(expansion["edges"]), "reference_field_present": expansion["reference_field_present"], "relation_path": str(path)})
     return 0
+def command_reconcile_relations(args: argparse.Namespace) -> int:
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        selection = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        artifact = reconciliation_from_review(mission_id=mission.mission_id, openalex=_load_object(run_dir / "relation_expansion.json", "OpenAlex relation artifact"), crossref=_load_object(run_dir / "crossref_relation_expansion.json", "Crossref relation artifact"), selection=selection)
+        path = write_relation_reconciliation(run_dir, artifact)
+    except (OSError, json.JSONDecodeError, UiExportError, RelationReconciliationError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(event_type="cross_source_identity_reviewed", actor="source_reviewer", state=MissionState.MAP, payload={"mapping_count": len(artifact["mappings"]), "statuses": sorted({item["status"] for item in artifact["mappings"]})})
+    _json_print({"run_id": args.run_id, "mapping_count": len(artifact["mappings"]), "reconciliation_path": str(path)})
+    return 0
 def command_record_paper_structure(args: argparse.Namespace) -> int:
     """Record reviewer-approved paper-scoped entities and internal relations."""
     run_dir = _run_dir(args.run_id)
@@ -626,6 +640,10 @@ def build_parser() -> argparse.ArgumentParser:
     source_map.add_argument("--document-id", required=True)
     source_map.add_argument("--input", required=True, help="reviewed bounded JSON selection; parser output files are never read directly")
     source_map.set_defaults(handler=command_record_source_map)
+    reconcile = commands.add_parser("reconcile-relations", help="record reviewer-approved identity mappings between existing OpenAlex and Crossref targets")
+    reconcile.add_argument("--run-id", required=True)
+    reconcile.add_argument("--input", required=True, help="reviewed bounded mapping JSON; no automatic identity inference")
+    reconcile.set_defaults(handler=command_reconcile_relations)
     structure = commands.add_parser("record-paper-structure", help="record reviewer-approved paper-scoped material entities and relations")
     structure.add_argument("--run-id", required=True)
     structure.add_argument("--input", required=True, help="reviewed bounded structure JSON tied to source-map segments")
