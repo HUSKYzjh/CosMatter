@@ -195,6 +195,25 @@ def _verification_decisions_from_payloads(
             raise UiExportError("verification_decisions.json contains an invalid decision artifact") from error
     return tuple(decisions)
 
+def _condition_matrix_if_present(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise UiExportError("condition_matrix.json is invalid JSON") from error
+    if not isinstance(payload, list):
+        raise UiExportError("condition_matrix.json must be an array")
+    required = {"condition_cluster", "supporting_evidence_ids", "contradicting_evidence_ids", "differing_fields", "unknowns"}
+    safe_rows: list[dict[str, Any]] = []
+    for row in payload:
+        if not isinstance(row, dict) or set(row) != required or not isinstance(row["condition_cluster"], str):
+            raise UiExportError("condition_matrix.json contains an invalid row")
+        if not all(isinstance(row[key], list) and all(isinstance(item, str) for item in row[key]) for key in required - {"condition_cluster"}):
+            raise UiExportError("condition_matrix.json contains invalid row lists")
+        safe_rows.append(row)
+    return safe_rows
+
 def _mission_from_payload(payload: dict[str, Any]) -> MissionBrief:
     try:
         return MissionBrief(
@@ -268,6 +287,7 @@ def build_ui_bundle(
     evidence_cards: tuple[EvidenceCard, ...] = (),
     verification_decisions: tuple[VerificationDecision, ...] = (),
     mission_report: MissionReport | None = None,
+    condition_matrix: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -322,7 +342,7 @@ def build_ui_bundle(
         "facilities": facilities,
         "evidence_cards": projected_evidence,
         "verification_decisions": [],
-        "condition_matrix": [],
+        "condition_matrix": condition_matrix or [],
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
     }
 
@@ -342,6 +362,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     )
     report_path = run_dir / "mission_report.json"
     mission_report = _mission_report_from_payload(_load_object(report_path, "mission report artifact")) if report_path.exists() else None
+    condition_matrix = _condition_matrix_if_present(run_dir / "condition_matrix.json")
     bundle = build_ui_bundle(
         mission,
         assignment,
@@ -349,6 +370,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         evidence_cards=evidence_cards,
         verification_decisions=verification_decisions,
         mission_report=mission_report,
+        condition_matrix=condition_matrix,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

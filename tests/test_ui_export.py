@@ -115,6 +115,24 @@ class UiExportTests(unittest.TestCase):
         self.assertEqual([card["evidence_id"] for card in bundle["evidence_cards"]], ["evidence_accepted"])
         self.assertEqual(bundle["status"]["verification_summary"]["rejected_count"], 1)
         self.assertEqual(bundle["verification_decisions"], [])
+    def test_export_includes_valid_condition_matrix_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            self._write_run(runs_dir, "matrix_export")
+            matrix = [
+                {
+                    "condition_cluster": "synthetic cluster",
+                    "supporting_evidence_ids": ["support"],
+                    "contradicting_evidence_ids": ["contradict"],
+                    "differing_fields": ["strain_percent"],
+                    "unknowns": [],
+                }
+            ]
+            (runs_dir / "matrix_export" / "condition_matrix.json").write_text(json.dumps(matrix), encoding="utf-8")
+            export_run_to_ui(runs_dir, "matrix_export")
+            bundle = json.loads((runs_dir / "matrix_export" / "ui.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(bundle["condition_matrix"], matrix)
     def test_export_rejects_path_traversal_run_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(UiExportError):

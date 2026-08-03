@@ -15,11 +15,12 @@ from .config import AGENT_ROOT, Settings
 from .dispatch import MissionDispatcher
 from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
+from .facilities import FacilityGateError, condition_differential, write_condition_matrix
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft
 from .planning import PlanApprovalError, approved_flight_plan_from_payload, load_approved_flight_plan, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
-from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError, SciverseConfigurationError, SciverseRequestError
+from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
 
 
@@ -230,6 +231,38 @@ def command_demo_flow(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_diagnose_conditions(args: argparse.Namespace) -> int:
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        plan = load_approved_flight_plan(run_dir, mission.mission_id)
+        cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
+        decisions = _verification_decisions_from_payloads(
+            _load_array_if_present(run_dir / "verification_decisions.json", "verification decision artifacts")
+        )
+        accepted_ids = {
+            decision.evidence_id
+            for decision in decisions
+            if decision.mission_id == mission.mission_id and decision.status.value == "accepted"
+        }
+        matrix = condition_differential(
+            tuple(card for card in cards if card.evidence_id in accepted_ids),
+            plan.counter_queries,
+        )
+        matrix_path = write_condition_matrix(run_dir, matrix)
+    except (UiExportError, PlanApprovalError, FacilityGateError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="condition_diagnostics_completed",
+        actor="condition_differential",
+        state=MissionState.MAP,
+        payload={"matrix_row_count": len(matrix.rows), "differing_field_count": sum(len(row.differing_fields) for row in matrix.rows)},
+    )
+    _json_print({"run_id": args.run_id, "matrix_path": str(matrix_path), "matrix_row_count": len(matrix.rows)})
+    return 0
+
 def command_execute_plan_query(args: argparse.Namespace) -> int:
     run_dir = _run_dir(args.run_id)
     try:
@@ -334,6 +367,9 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--run-id", default="demo_cosmatter_001")
     demo.set_defaults(handler=command_demo_flow)
 
+    diagnose = commands.add_parser("diagnose-conditions", help="build a condition-differential matrix from accepted evidence")
+    diagnose.add_argument("--run-id", required=True)
+    diagnose.set_defaults(handler=command_diagnose_conditions)
     execute_plan_query = commands.add_parser("execute-plan-query", help="execute one query from an approved FlightPlan")
     execute_plan_query.add_argument("--run-id", required=True)
     execute_plan_query.add_argument("--query-index", type=int, required=True)

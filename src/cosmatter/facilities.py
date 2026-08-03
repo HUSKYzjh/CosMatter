@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Any
 
 from .models import AccessPolicy, EvidenceCard, ReviewStatus, Stance
@@ -89,3 +91,25 @@ def condition_differential(cards: tuple[EvidenceCard, ...], counterevidence_quer
         rows=(DiscrepancyRow(cluster or "no shared explicit conditions", tuple(card.evidence_id for card in supports), tuple(card.evidence_id for card in contradicts), differing, ()),),
         counterevidence_queries=counterevidence_queries,
     )
+
+
+def condition_matrix_payload(matrix: DiscrepancyMatrix) -> list[dict[str, object]]:
+    """Return the browser-safe portion of a condition-diagnostics result."""
+    return [
+        {
+            "condition_cluster": row.condition_cluster,
+            "supporting_evidence_ids": list(row.supporting_evidence_ids),
+            "contradicting_evidence_ids": list(row.contradicting_evidence_ids),
+            "differing_fields": list(row.differing_fields),
+            "unknowns": list(row.unknown_fields),
+        }
+        for row in matrix.rows
+    ]
+
+
+def write_condition_matrix(run_dir: Path, matrix: DiscrepancyMatrix) -> Path:
+    """Persist a condition matrix without quotes, full text, or model reasoning."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    path = run_dir / "condition_matrix.json"
+    path.write_text(json.dumps(condition_matrix_payload(matrix), ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
