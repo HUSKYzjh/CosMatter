@@ -27,6 +27,7 @@ function validateWorkflowBundle(candidate) {
   if (candidate.schema_version !== WORKFLOW_SCHEMA) throw new Error(`仅支持 UI JSON v${WORKFLOW_SCHEMA}。`);
   for (const key of ["mission", "status", "stations", "fleet_assignment"]) if (!(key in candidate)) throw new Error(`缺少 UI 契约字段：${key}`);
   if (!candidate.mission || !candidate.status || !candidate.fleet_assignment || !Array.isArray(candidate.stations)) throw new Error("工作流工件字段类型无效。");
+  if ("research_guide" in candidate && candidate.research_guide !== null && (!candidate.research_guide || typeof candidate.research_guide !== "object" || !Array.isArray(candidate.research_guide.items))) throw new Error("research_guide 字段无效。");
   return candidate;
 }
 
@@ -40,10 +41,32 @@ function workflowCommand(station, bundle) {
   return `在任务舰桥定义问题与许可范围；系统当前状态为 ${wfText(bundle.status.mission_state)}。`;
 }
 
+function renderReadingGuide(guide) {
+  const target = document.querySelector("#reading-guide-cards");
+  const caveat = document.querySelector("#reading-guide-caveat");
+  const items = guide && typeof guide === "object" && Array.isArray(guide.items) ? guide.items : [];
+  if (!items.length) {
+    target.replaceChildren(Object.assign(document.createElement("p"), { className: "notice", textContent: "尚未生成阅读路线。请在完成受控检索后运行 build-reading-guide。" }));
+    caveat.textContent = "阅读路线只能从已批准计划与本运行候选工件生成。";
+    return;
+  }
+  const roleLabel = { verified_evidence: "已核验证据", primary_candidate: "主检索候选", counterevidence_candidate: "反例候选" };
+  target.replaceChildren(...items.map((item) => {
+    const card = document.createElement("article"); card.className = `reading-guide-card ${item.track === "counterevidence" ? "counter-route" : "primary-route"}`;
+    const header = document.createElement("header"); const order = document.createElement("span"); order.className = "route-order"; order.textContent = String(item.order || "?").padStart(2, "0"); const badge = document.createElement("span"); badge.className = "route-badge"; badge.textContent = roleLabel[item.role] || "候选"; header.append(order, badge);
+    const title = document.createElement("h3"); title.textContent = wfText(item.title);
+    const meta = document.createElement("p"); meta.className = "route-meta"; meta.textContent = `${wfText(item.source)} · ${item.publication_year || "年份未知"} · ${item.content_status === "authorized" ? "内容访问已授权" : "仅元数据"}`;
+    const linked = document.createElement("p"); linked.className = "route-linked"; linked.textContent = Array.isArray(item.evidence_ids) && item.evidence_ids.length ? `已关联证据：${item.evidence_ids.join("、")}` : "尚无已接受证据关联";
+    card.append(header, title, meta, linked); return card;
+  }));
+  caveat.textContent = Array.isArray(guide.caveats) && guide.caveats.length ? guide.caveats.join(" ") : "阅读路线仅组织已批准工件，不代表论文内容已被证实。";
+}
+
 function renderWorkflow(bundle) {
   const mission = bundle.mission;
   document.querySelector("#workflow-mission").textContent = `${wfText(mission.material)} · ${wfText(mission.property_name)}：${wfText(mission.question)}`;
   document.querySelector("#workflow-state").textContent = `当前状态：${wfText(bundle.status.mission_state)}${bundle.status.return_reason ? ` · 退回原因：${wfText(bundle.status.return_reason)}` : ""}`;
+  renderReadingGuide(bundle.research_guide);
   const current = new Map(bundle.stations.map((item) => [item.station_type, item.status]));
   const lane = document.querySelector("#workflow-lane");
   lane.replaceChildren(...WORKFLOW_STEPS.map(([station, title, detail], index) => {

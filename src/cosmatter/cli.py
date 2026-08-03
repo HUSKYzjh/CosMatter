@@ -19,6 +19,7 @@ from .facilities import FacilityGateError, condition_differential, write_conditi
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft
 from .planning import PlanApprovalError, approved_flight_plan_from_payload, load_approved_flight_plan, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
+from .reading_guide import ReadingGuideError, build_reading_guide, write_reading_guide
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
@@ -139,6 +140,32 @@ def command_draft_plan(args: argparse.Namespace) -> int:
     )
     _json_print({"run_id": args.run_id, "draft_path": str(draft_path), "trust_status": "untrusted_draft"})
     return 0
+
+def command_build_reading_guide(args: argparse.Namespace) -> int:
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        plan = load_approved_flight_plan(run_dir, mission.mission_id)
+        candidate_history = _load_object(run_dir / "retrieval_candidates.json", "candidate history")
+        cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
+        decisions = _verification_decisions_from_payloads(
+            _load_array_if_present(run_dir / "verification_decisions.json", "verification decision artifacts")
+        )
+        guide = build_reading_guide(mission, plan, candidate_history, cards, decisions)
+        guide_path = write_reading_guide(run_dir, guide)
+    except (UiExportError, PlanApprovalError, ReadingGuideError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="reading_guide_built",
+        actor="research_guide",
+        state=MissionState.SELECT,
+        payload={"guide_item_count": len(guide["items"]), "trust_status": guide["trust_status"]},
+    )
+    _json_print({"run_id": args.run_id, "guide_path": str(guide_path), "item_count": len(guide["items"]), "trust_status": guide["trust_status"]})
+    return 0
+
 
 def command_build_report(args: argparse.Namespace) -> int:
     run_dir = _run_dir(args.run_id)
@@ -354,6 +381,9 @@ def build_parser() -> argparse.ArgumentParser:
     draft_plan = commands.add_parser("draft-plan", help="generate an untrusted DeepSeek research-planning draft")
     draft_plan.add_argument("--run-id", required=True)
     draft_plan.set_defaults(handler=command_draft_plan)
+    reading_guide = commands.add_parser("build-reading-guide", help="build a bounded route from approved candidates and reviewed evidence")
+    reading_guide.add_argument("--run-id", required=True)
+    reading_guide.set_defaults(handler=command_build_reading_guide)
     report = commands.add_parser("build-report", help="build a review-gated evidence-manifest report for an existing run")
     report.add_argument("--run-id", required=True)
     report.set_defaults(handler=command_build_report)

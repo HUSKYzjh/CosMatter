@@ -30,6 +30,7 @@ from cosmatter.models import (
 )
 
 from .dispatch import MissionDispatcher
+from .reading_guide import ReadingGuideError, load_reading_guide
 from .verification import VerificationDecision
 
 
@@ -44,6 +45,7 @@ _TIMELINE_ACTIONS = {
     "fleet_assigned": ("question_intake", "主舰队已分派"),
     "research_plan_drafted": ("research_planning", "研究计划草案已生成（待人工审批）"),
     "flight_plan_approved": ("research_planning", "研究计划已批准"),
+    "reading_guide_built": ("search_selection", "有界阅读路线已生成"),
     "evidence_ingested": ("evidence_extraction", "证据卡已进入审核流程"),
     "condition_diagnostics_completed": ("cross_check_review", "条件差分已完成"),
     "mission_report_built": ("report_delivery", "审核后报告已生成"),
@@ -345,6 +347,7 @@ def build_ui_bundle(
     mission_report: MissionReport | None = None,
     condition_matrix: list[dict[str, Any]] | None = None,
     timeline: list[dict[str, str]] | None = None,
+    research_guide: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -401,6 +404,7 @@ def build_ui_bundle(
         "verification_decisions": [],
         "condition_matrix": condition_matrix or [],
         "timeline": timeline or [],
+        "research_guide": research_guide,
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
     }
 
@@ -422,6 +426,10 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     mission_report = _mission_report_from_payload(_load_object(report_path, "mission report artifact")) if report_path.exists() else None
     condition_matrix = _condition_matrix_if_present(run_dir / "condition_matrix.json")
     timeline = _timeline_projection(run_dir / "events.jsonl")
+    try:
+        research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
+    except ReadingGuideError as error:
+        raise UiExportError(str(error)) from error
     bundle = build_ui_bundle(
         mission,
         assignment,
@@ -431,6 +439,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         mission_report=mission_report,
         condition_matrix=condition_matrix,
         timeline=timeline,
+        research_guide=research_guide,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

@@ -42,6 +42,10 @@ class WebAssetTests(unittest.TestCase):
             self.assertNotIn("fetch(", source)
             self.assertNotIn("DEEPSEEK_API_KEY", source)
             self.assertNotIn("SCIVERSE_API_TOKEN", source)
+        workflow_html = (web_dir / "workflow.html").read_text(encoding="utf-8")
+        workflow_script = (web_dir / "workflow.js").read_text(encoding="utf-8")
+        self.assertIn('id="reading-guide-cards"', workflow_html)
+        self.assertIn("function renderReadingGuide(guide)", workflow_script)
         stylesheet = (web_dir / "styles.css").read_text(encoding="utf-8")
         for theme in ('data-theme="dark"', 'data-theme="light"', 'data-theme="eye"'):
             self.assertIn(theme, stylesheet)

@@ -72,6 +72,12 @@
 两类检索均只接受已批准计划中的索引；审计记录查询类别与索引，不回显查询文本。该命令只保存 `retrieval_candidates.json` 中的元数据卡，不保存 API 原始响应、摘要或
 全文。候选必须标记为可访问，后续才能作为证据来源。
 
+在一个或多个批准查询已有候选后，可生成不含查询文本和评分的有界阅读路线：
+
+```powershell
+.\.venv\Scripts\python.exe -m cosmatter build-reading-guide --run-id bfo_live_001
+```
+
 ## 4. 录入可定位证据并生成交付物
 
 证据草稿由已获授权的内容提取流程产生，至少含有 `claim`、`stance`、材料、性质、

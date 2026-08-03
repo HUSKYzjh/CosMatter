@@ -25,6 +25,7 @@
   "verification_decisions": [],
   "condition_matrix": [],
   "timeline": [{"station_type": "search_selection", "action": "主检索已完成", "state": "RETRIEVE", "occurred_at": "..."}],
+  "research_guide": {"trust_status": "derived_from_approved_artifacts", "items": []},
   "mission_report": null
 }
 ```
@@ -40,5 +41,6 @@
 - `condition_matrix[]`：条件簇、支持/反驳证据 ID 与未知项；布局不能被表述为因果结论。
 - `mission_report`：已批准的结论、局限及下一步验证建议。
 - `timeline[]`：仅含固定动作标签、工位、状态和发生时间的脱敏摘要；不能携带原始审计字段。
+- `research_guide`：从已批准计划、候选历史和已接受证据导出的有界阅读路线；不含查询文本、评分、摘要或全文。
 
 未知的顶层字段应由前端忽略，缺失必填顶层字段则拒绝导入。公开演示夹具见 [`../../examples/ui-demo/route_diagnostics.json`](../../examples/ui-demo/route_diagnostics.json)。

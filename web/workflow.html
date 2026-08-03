@@ -29,6 +29,14 @@
         <p id="workflow-import-message" class="form-message" role="status">未导入文件；显示合成演示航程。</p>
       </section>
       <section id="workflow-lane" class="workflow-lane" aria-label="研究工作流"></section>
+      <section class="panel reading-route-panel" aria-labelledby="reading-route-title">
+        <div class="section-heading">
+          <p class="eyebrow">GUIDED CARDS / 有界阅读路线</p>
+          <h2 id="reading-route-title">先读已核验证据，再检查主检索与反例候选</h2>
+        </div>
+        <div id="reading-guide-cards" class="reading-guide-cards"></div>
+        <p id="reading-guide-caveat" class="notice">阅读路线仅组织已批准工件，不代表论文内容已被证实。</p>
+      </section>
       <section class="two-column">
         <article class="panel gate-panel"><p class="eyebrow">发布门禁</p><h2>为何此航程不能跳步</h2><div id="workflow-gates"></div></article>
         <article class="panel command-panel"><p class="eyebrow">受控执行手册</p><h2>下一条可执行命令</h2><p id="workflow-command">先从舰桥导出 / 导入已审批的计划工件。</p><p class="notice">界面不保存密钥，不调用模型或第三方 API；命令须在本地 Python 环境中执行。</p></article>
