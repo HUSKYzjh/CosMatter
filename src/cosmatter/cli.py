@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from cosmatter.audit import FlightRecorder
+from cosmatter.audit import AuditPathError, FlightRecorder, safe_run_id
 from cosmatter.models import MissionBrief, MissionState
 from cosmatter.state_machine import MissionMachine
 
@@ -29,6 +29,10 @@ def _json_print(payload: object) -> None:
 
 def _runs_dir() -> Path:
     return AGENT_ROOT / "runs"
+
+
+def _run_dir(run_id: str) -> Path:
+    return _runs_dir() / safe_run_id(run_id)
 
 
 def command_check_config(_: argparse.Namespace) -> int:
@@ -96,7 +100,7 @@ def command_export_ui(args: argparse.Namespace) -> int:
 
 
 def command_approve_plan(args: argparse.Namespace) -> int:
-    run_dir = _runs_dir() / args.run_id
+    run_dir = _run_dir(args.run_id)
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
@@ -116,7 +120,7 @@ def command_approve_plan(args: argparse.Namespace) -> int:
     return 0
 
 def command_draft_plan(args: argparse.Namespace) -> int:
-    run_dir = _runs_dir() / args.run_id
+    run_dir = _run_dir(args.run_id)
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         system_prompt, user_prompt = research_planning_prompts(mission)
@@ -136,7 +140,7 @@ def command_draft_plan(args: argparse.Namespace) -> int:
     return 0
 
 def command_build_report(args: argparse.Namespace) -> int:
-    run_dir = _runs_dir() / args.run_id
+    run_dir = _run_dir(args.run_id)
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
@@ -159,7 +163,7 @@ def command_build_report(args: argparse.Namespace) -> int:
     return 0
 
 def command_ingest_evidence(args: argparse.Namespace) -> int:
-    run_dir = _runs_dir() / args.run_id
+    run_dir = _run_dir(args.run_id)
     try:
         draft = json.loads(Path(args.input).read_text(encoding="utf-8"))
         decision = ingest_evidence_draft(run_dir, draft)
@@ -227,7 +231,7 @@ def command_demo_flow(args: argparse.Namespace) -> int:
 
 
 def command_execute_plan_query(args: argparse.Namespace) -> int:
-    run_dir = _runs_dir() / args.run_id
+    run_dir = _run_dir(args.run_id)
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         plan = load_approved_flight_plan(run_dir, mission.mission_id)
@@ -344,4 +348,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.handler(args)
+    try:
+        return args.handler(args)
+    except AuditPathError as error:
+        _json_print({"error": str(error), "run_id": getattr(args, "run_id", None)})
+        return 2

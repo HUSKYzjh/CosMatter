@@ -25,10 +25,20 @@ def sanitize(value: Any) -> Any:
     return value
 
 
+class AuditPathError(ValueError):
+    """Raised when a run identifier could escape the local runs directory."""
+
+
+def safe_run_id(run_id: str) -> str:
+    candidate = run_id.strip()
+    if not candidate or candidate in {".", ".."} or Path(candidate).name != candidate:
+        raise AuditPathError("run_id must be a single directory name")
+    return candidate
+
 class FlightRecorder:
     def __init__(self, runs_dir: Path, run_id: str) -> None:
-        self.run_id = run_id
-        self.run_dir = runs_dir / run_id
+        self.run_id = safe_run_id(run_id)
+        self.run_dir = runs_dir / self.run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.path = self.run_dir / "events.jsonl"
 

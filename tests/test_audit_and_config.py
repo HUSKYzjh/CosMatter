@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import call, patch
 
-from cosmatter.audit import FlightRecorder
+from cosmatter.audit import AuditPathError, FlightRecorder
+from cosmatter.cli import main
 from cosmatter.models import MissionState
 from cosmatter.config import AGENT_ROOT, Settings
 
@@ -30,6 +31,20 @@ class AuditAndConfigTests(unittest.TestCase):
             Settings.load({})
         self.assertEqual(dotenv_reader.call_args_list, [call(AGENT_ROOT / ".env")])
 
+    def test_flight_recorder_rejects_path_traversal_run_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(AuditPathError):
+                FlightRecorder(Path(directory), "../outside")
+    def test_cli_returns_safe_error_for_path_traversal_run_id(self) -> None:
+        from io import StringIO
+        from contextlib import redirect_stdout
+
+        output = StringIO()
+        with redirect_stdout(output):
+            status = main(["demo-flow", "--run-id", "../outside"])
+        payload = json.loads(output.getvalue())
+        self.assertEqual(status, 2)
+        self.assertIn("single directory name", payload["error"])
     def test_flight_recorder_redacts_sensitive_keys(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             recorder = FlightRecorder(Path(directory), "run_test")
