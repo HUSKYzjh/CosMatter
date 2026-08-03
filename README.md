@@ -34,6 +34,10 @@ python -m venv .venv
 
 `check-config` 仅报告配置项是否存在，绝不回显令牌。运行产生的审计轨迹写入 `runs/<run_id>/events.jsonl`，该目录不会提交到版本控制。
 
+## 静态界面演示
+
+界面原型位于 [`web/index.html`](web/index.html)。可直接用浏览器打开，或在项目根目录运行 `python -m http.server 8765 --directory web` 后访问 `http://127.0.0.1:8765/`。它只展示本地合成数据和 JSON 契约映射，不会读取 `.env`、调用模型或访问第三方 API。
+
 ## 当前边界
 
 `SciverseAdapter` 已实现有界的 `agentic-search` 调用、令牌解析、重试与 `is_content_accessible` 权限门禁。当前仓库仍处于证据优先基础设施阶段：不会把没有原文定位的文本当作科学事实，也不会在首版执行任意代码或提交外部计算。

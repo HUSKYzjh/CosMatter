@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="CosMatter 本地静态演示界面，不包含密钥或受限全文。">
+    <title>CosMatter · 星际材料导航站</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="CosMatter 首页">Cos<span>Matter</span></a>
+      <p>星际材料导航站 · Evidence-first materials discovery</p>
+      <span class="mode-badge">静态演示 / 无 API 调用</span>
+    </header>
+
+    <main id="top" class="layout">
+      <section class="panel mission-panel" aria-labelledby="mission-title">
+        <div class="section-heading">
+          <p class="eyebrow">任务舰桥 / Bridge Intake</p>
+          <h1 id="mission-title">创建研究航程</h1>
+          <p>此页面只用于界面预览。提交表单不会调用模型、数据库或第三方服务。</p>
+        </div>
+        <form id="mission-form">
+          <label>
+            研究问题
+            <textarea id="question" rows="3">为什么两篇论文对 BiFeO3 外延薄膜应变相变有不同结论？</textarea>
+          </label>
+          <div class="form-grid">
+            <label>材料体系<input id="material" value="BiFeO3"></label>
+            <label>关注性质<input id="property" value="phase stability"></label>
+          </div>
+          <label>
+            研究范围
+            <input id="scope" value="epitaxial thin films">
+          </label>
+          <button type="submit">更新本地预览</button>
+          <p id="form-message" class="form-message" role="status"></p>
+        </form>
+      </section>
+
+      <section class="panel fleet-panel" aria-labelledby="fleet-title">
+        <div class="section-heading">
+          <p class="eyebrow">舰队航行面板 / Fleet Flight Panel</p>
+          <h2 id="fleet-title">主舰队分派</h2>
+        </div>
+        <div class="fleet-card">
+          <div>
+            <span class="status-dot" aria-hidden="true"></span>
+            <strong id="fleet-name">航道诊断舰队</strong>
+            <p id="fleet-en">Route Diagnostics Fleet</p>
+          </div>
+          <span class="state-chip" id="mission-state">INTAKE</span>
+        </div>
+        <dl class="key-values">
+          <div><dt>任务类型</dt><dd id="mission-type">literature_discrepancy</dd></div>
+          <div><dt>分派理由</dt><dd id="dispatch-reason">匹配任务信号：不同结论</dd></div>
+          <div><dt>发布门禁</dt><dd>导航校验部 / cross_check_review</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel journey-panel" aria-labelledby="journey-title">
+        <div class="section-heading">
+          <p class="eyebrow">当前航程 / Flight Progress</p>
+          <h2 id="journey-title">工位与专用设施</h2>
+        </div>
+        <ol class="journey" id="stations-list"></ol>
+        <div class="facility-block">
+          <h3>已装配的专用设施</h3>
+          <div class="facility-grid" id="facilities-list"></div>
+        </div>
+      </section>
+
+      <section class="panel evidence-panel" aria-labelledby="evidence-title">
+        <div class="section-heading">
+          <p class="eyebrow">证据卡 / Evidence Card</p>
+          <h2 id="evidence-title">定位与条件优先</h2>
+        </div>
+        <article class="evidence-card">
+          <div class="card-topline">
+            <span class="state-chip accepted">accepted 示例</span>
+            <code>evidence_demo_001</code>
+          </div>
+          <p class="claim">示例：仅在明确记录应变、衬底、厚度与表征条件后，才允许比较 T-like 相稳定化结论。</p>
+          <dl class="conditions">
+            <div><dt>样品</dt><dd>外延薄膜</dd></div>
+            <div><dt>应变</dt><dd>unknown（演示）</dd></div>
+            <div><dt>温度</dt><dd>unknown（演示）</dd></div>
+            <div><dt>方法</dt><dd>待原文定位</dd></div>
+          </dl>
+          <footer>
+            <span>document_id: <code>demo_document</code></span>
+            <span>locator: <code>page / offset pending</code></span>
+          </footer>
+        </article>
+        <p class="notice">这是合成演示数据，不是论文摘录；真实页面只能展示已批准证据卡的许可范围内短摘录。</p>
+      </section>
+
+      <section class="panel matrix-panel" aria-labelledby="matrix-title">
+        <div class="section-heading">
+          <p class="eyebrow">条件星图 / Condition Matrix</p>
+          <h2 id="matrix-title">分歧不是投票</h2>
+        </div>
+        <div class="matrix-wrap">
+          <table>
+            <thead><tr><th>条件簇</th><th>支持</th><th>反驳</th><th>关键未知项</th></tr></thead>
+            <tbody>
+              <tr><td>外延薄膜 · 压缩应变</td><td><span class="tag support">待定位</span></td><td><span class="tag neutral">待反例检索</span></td><td>厚度、氧空位</td></tr>
+              <tr><td>不同衬底 / 制备法</td><td><span class="tag neutral">不可直接合并</span></td><td><span class="tag neutral">不可直接合并</span></td><td>应变测量方式</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>CosMatter UI demo · 数据来源契约：MissionBrief、FleetAssignment、EvidenceCard、VerificationDecision、MissionReport。</p>
+      <p>浏览器端不得访问 <code>.env</code>、密钥、受限全文或隐藏推理。</p>
+    </footer>
+  </body>
+</html>
