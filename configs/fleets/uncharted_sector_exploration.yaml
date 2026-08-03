@@ -1,0 +1,23 @@
+fleet_id: uncharted_sector_exploration
+display_name:
+  zh: 未知星区探索舰队
+  en: Uncharted-Sector Exploration Fleet
+mission_types:
+  - research_gap
+  - combination_gap
+required_stations:
+  - question_intake
+  - research_planning
+  - search_selection
+  - evidence_extraction
+  - cross_check_review
+  - report_delivery
+required_facilities:
+  - blind_spot_scan
+  - variable_combination_scan
+  - hypothesis_triage
+handoff_allowed_to:
+  - mission_validation
+release_gate: cross_check_review
+max_planning_loops: 3
+max_facility_attempts: 2

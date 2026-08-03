@@ -1,0 +1,23 @@
+fleet_id: mission_validation
+display_name:
+  zh: 航程验证舰队
+  en: Mission Validation Fleet
+mission_types:
+  - validation_design
+  - experiment_design
+required_stations:
+  - question_intake
+  - research_planning
+  - search_selection
+  - evidence_extraction
+  - cross_check_review
+  - report_delivery
+required_facilities:
+  - experiment_mission_design
+  - computation_mission_design
+  - falsification_monitor
+handoff_allowed_to:
+  - evidence_patrol
+release_gate: cross_check_review
+max_planning_loops: 3
+max_facility_attempts: 2

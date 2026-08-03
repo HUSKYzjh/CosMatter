@@ -1,0 +1,23 @@
+fleet_id: deep_space_survey
+display_name:
+  zh: 深空测绘舰队
+  en: Deep-Space Survey Fleet
+mission_types:
+  - literature_mapping
+  - topic_overview
+required_stations:
+  - question_intake
+  - research_planning
+  - search_selection
+  - evidence_extraction
+  - cross_check_review
+  - report_delivery
+required_facilities:
+  - sector_cartography
+  - timeline_observatory
+  - citation_array
+handoff_allowed_to:
+  - evidence_patrol
+release_gate: cross_check_review
+max_planning_loops: 3
+max_facility_attempts: 2

@@ -20,6 +20,6 @@ required_facilities:
   - counterevidence_detector
 handoff_allowed_to:
   - mission_validation
-release_gate: navigation_verification
+release_gate: cross_check_review
 max_planning_loops: 3
 max_facility_attempts: 2

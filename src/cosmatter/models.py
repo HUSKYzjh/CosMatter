@@ -58,6 +58,120 @@ class AccessPolicy(str, Enum):
     LOCAL_ONLY = "local_only"
 
 
+class FleetType(str, Enum):
+    DEEP_SPACE_SURVEY = "deep_space_survey"
+    EVIDENCE_PATROL = "evidence_patrol"
+    ROUTE_DIAGNOSTICS = "route_diagnostics"
+    UNCHARTED_SECTOR_EXPLORATION = "uncharted_sector_exploration"
+    MISSION_VALIDATION = "mission_validation"
+
+
+class StationType(str, Enum):
+    QUESTION_INTAKE = "question_intake"
+    RESEARCH_PLANNING = "research_planning"
+    SEARCH_SELECTION = "search_selection"
+    EVIDENCE_EXTRACTION = "evidence_extraction"
+    CROSS_CHECK_REVIEW = "cross_check_review"
+    REPORT_DELIVERY = "report_delivery"
+
+
+class FacilityType(str, Enum):
+    SECTOR_CARTOGRAPHY = "sector_cartography"
+    TIMELINE_OBSERVATORY = "timeline_observatory"
+    CITATION_ARRAY = "citation_array"
+    SOURCE_LOCATOR = "source_locator"
+    EVIDENCE_COMPARATOR = "evidence_comparator"
+    CONDITION_RECORDER = "condition_recorder"
+    TRAJECTORY_OVERLAY = "trajectory_overlay"
+    CONDITION_DIFFERENTIAL = "condition_differential"
+    COUNTEREVIDENCE_DETECTOR = "counterevidence_detector"
+    BLIND_SPOT_SCAN = "blind_spot_scan"
+    VARIABLE_COMBINATION_SCAN = "variable_combination_scan"
+    HYPOTHESIS_TRIAGE = "hypothesis_triage"
+    EXPERIMENT_MISSION_DESIGN = "experiment_mission_design"
+    COMPUTATION_MISSION_DESIGN = "computation_mission_design"
+    FALSIFICATION_MONITOR = "falsification_monitor"
+
+
+@dataclass(frozen=True)
+class FleetSpec:
+    fleet_type: FleetType
+    display_name_zh: str
+    display_name_en: str
+    mission_types: tuple[str, ...]
+    required_stations: tuple[StationType, ...]
+    required_facilities: tuple[FacilityType, ...]
+    handoff_allowed_to: tuple[FleetType, ...]
+    release_gate: StationType
+    max_planning_loops: int
+    max_facility_attempts: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "display_name_zh", _nonempty(self.display_name_zh, "display_name_zh"))
+        object.__setattr__(self, "display_name_en", _nonempty(self.display_name_en, "display_name_en"))
+        if not self.mission_types or not self.required_stations or not self.required_facilities:
+            raise ValueError("FleetSpec requires mission types, stations, and facilities")
+        if len(set(self.mission_types)) != len(self.mission_types):
+            raise ValueError("FleetSpec mission_types must be unique")
+        if len(set(self.required_stations)) != len(self.required_stations):
+            raise ValueError("FleetSpec required_stations must be unique")
+        if len(set(self.required_facilities)) != len(self.required_facilities):
+            raise ValueError("FleetSpec required_facilities must be unique")
+        if self.release_gate not in self.required_stations:
+            raise ValueError("FleetSpec release_gate must be one of required_stations")
+        if self.max_planning_loops < 1 or self.max_facility_attempts < 1:
+            raise ValueError("FleetSpec limits must be positive")
+
+
+@dataclass(frozen=True)
+class FleetAssignment:
+    mission_id: str
+    fleet_type: FleetType
+    mission_type: str
+    reason: str
+    required_stations: tuple[StationType, ...]
+    required_facilities: tuple[FacilityType, ...]
+    release_gate: StationType
+    assignment_id: str = field(default_factory=lambda: new_id("assignment"))
+    created_at: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mission_id", _nonempty(self.mission_id, "mission_id"))
+        object.__setattr__(self, "mission_type", _nonempty(self.mission_type, "mission_type"))
+        object.__setattr__(self, "reason", _nonempty(self.reason, "reason"))
+        if not self.required_stations or not self.required_facilities:
+            raise ValueError("FleetAssignment requires stations and facilities")
+        if self.release_gate not in self.required_stations:
+            raise ValueError("FleetAssignment release_gate must be required")
+
+    def to_dict(self) -> dict[str, Any]:
+        return to_primitive(self)
+
+
+@dataclass(frozen=True)
+class FleetHandoff:
+    mission_id: str
+    from_fleet: FleetType
+    to_fleet: FleetType
+    artifact_ids: tuple[str, ...]
+    verification_status: ReviewStatus
+    reason: str
+    handoff_id: str = field(default_factory=lambda: new_id("handoff"))
+    created_at: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mission_id", _nonempty(self.mission_id, "mission_id"))
+        object.__setattr__(self, "reason", _nonempty(self.reason, "reason"))
+        if self.from_fleet is self.to_fleet:
+            raise ValueError("FleetHandoff must target another fleet")
+        if not self.artifact_ids or any(not artifact_id.strip() for artifact_id in self.artifact_ids):
+            raise ValueError("FleetHandoff requires nonempty artifact_ids")
+        if self.verification_status is not ReviewStatus.ACCEPTED:
+            raise ValueError("FleetHandoff requires accepted verification")
+
+    def to_dict(self) -> dict[str, Any]:
+        return to_primitive(self)
+
 def _nonempty(value: str, field_name: str) -> str:
     value = value.strip()
     if not value:

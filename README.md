@@ -8,7 +8,8 @@
 - 受控任务状态机与拒绝非法状态跳转；
 - 追加式 JSONL 黑匣子日志（不写入密钥）；
 - Sciverse 适配器的配置、重试、限流和权限检查边界；
-- 无密钥可运行的 `check-config`、`create-mission` 与 `demo-flow` 命令。
+- 无密钥可运行的 `check-config`、`create-mission`、`assign-fleet` 与 `demo-flow` 命令。
+- 五支舰队的可校验 YAML 配置；调度中心只选择一支主舰队，并记录分派理由与所需设施。
 
 ## 快速开始
 
@@ -22,6 +23,11 @@ python -m venv .venv
   --question "BiFeO3 薄膜中压缩应变如何影响 T-like 相稳定化？" `
   --material "BiFeO3" `
   --property "T-like phase stability" `
+  --scope "epitaxial thin films"
+.\.venv\Scripts\python.exe -m cosmatter assign-fleet `
+  --question "为什么两篇论文对 BiFeO3 应变相变有不同结论？" `
+  --material "BiFeO3" `
+  --property "phase stability" `
   --scope "epitaxial thin films"
 .\.venv\Scripts\python.exe -m cosmatter demo-flow --run-id demo_bfo_001
 ```

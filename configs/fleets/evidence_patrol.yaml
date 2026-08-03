@@ -1,0 +1,24 @@
+fleet_id: evidence_patrol
+display_name:
+  zh: 证据巡检舰队
+  en: Evidence Patrol Fleet
+mission_types:
+  - claim_verification
+  - evidence_review
+required_stations:
+  - question_intake
+  - research_planning
+  - search_selection
+  - evidence_extraction
+  - cross_check_review
+  - report_delivery
+required_facilities:
+  - source_locator
+  - evidence_comparator
+  - condition_recorder
+handoff_allowed_to:
+  - route_diagnostics
+  - mission_validation
+release_gate: cross_check_review
+max_planning_loops: 3
+max_facility_attempts: 2

@@ -12,6 +12,7 @@ from cosmatter.models import MissionBrief, MissionState
 from cosmatter.state_machine import MissionMachine
 
 from .config import AGENT_ROOT, Settings
+from .dispatch import MissionDispatcher
 from .sciverse import SciverseAdapter
 
 
@@ -43,6 +44,35 @@ def command_create_mission(args: argparse.Namespace) -> int:
     _json_print({"run_id": run_id, "mission_path": str(mission_path), "state": MissionState.INTAKE.value})
     return 0
 
+
+def command_assign_fleet(args: argparse.Namespace) -> int:
+    brief = MissionBrief(
+        question=args.question,
+        material=args.material,
+        property_name=args.property_name,
+        scope=args.scope,
+    )
+    assignment = MissionDispatcher.from_project().assign(brief, args.mission_type)
+    run_id = args.run_id or brief.mission_id.replace("mission_", "run_")
+    recorder = FlightRecorder(_runs_dir(), run_id)
+    assignment_path = recorder.run_dir / "fleet_assignment.json"
+    assignment_path.write_text(json.dumps(assignment.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    recorder.record(
+        event_type="fleet_assigned",
+        actor="mission_dispatch",
+        state=MissionState.INTAKE,
+        payload=assignment.to_dict(),
+    )
+    _json_print(
+        {
+            "run_id": run_id,
+            "fleet_type": assignment.fleet_type.value,
+            "mission_type": assignment.mission_type,
+            "reason": assignment.reason,
+            "assignment_path": str(assignment_path),
+        }
+    )
+    return 0
 
 def command_demo_flow(args: argparse.Namespace) -> int:
     recorder = FlightRecorder(_runs_dir(), args.run_id)
@@ -122,6 +152,14 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--run-id")
     create.set_defaults(handler=command_create_mission)
 
+    assign = commands.add_parser("assign-fleet", help="select one configured primary fleet and record its reason")
+    assign.add_argument("--question", required=True)
+    assign.add_argument("--material", required=True)
+    assign.add_argument("--property", dest="property_name", required=True)
+    assign.add_argument("--scope", required=True)
+    assign.add_argument("--mission-type", help="optional explicit mission type, such as literature_discrepancy")
+    assign.add_argument("--run-id")
+    assign.set_defaults(handler=command_assign_fleet)
     demo = commands.add_parser("demo-flow", help="run the offline happy-path state-machine demo")
     demo.add_argument("--run-id", default="demo_cosmatter_001")
     demo.set_defaults(handler=command_demo_flow)
