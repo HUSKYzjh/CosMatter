@@ -56,6 +56,33 @@ class UiExportTests(unittest.TestCase):
         self.assertNotIn("api_key", serialised)
         self.assertNotIn("authorization", serialised)
 
+    def test_export_projects_an_allowlisted_timeline_without_raw_audit_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            self._write_run(runs_dir, "timeline_export")
+            recorder = FlightRecorder(runs_dir, "timeline_export")
+            recorder.record(
+                event_type="mission_created",
+                actor="mission_control_private",
+                state=MissionState.INTAKE,
+                payload={"question": "do not export this question", "token": "do-not-export"},
+            )
+            recorder.record(
+                event_type="approved_plan_query_executed",
+                actor="search_selection_private",
+                state=MissionState.RETRIEVE,
+                payload={"query_kind": "counter", "query": "do not export this query", "request_id": "private-request"},
+            )
+            export_run_to_ui(runs_dir, "timeline_export")
+            bundle = json.loads((runs_dir / "timeline_export" / "ui.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            [(item["station_type"], item["action"]) for item in bundle["timeline"]],
+            [("question_intake", "任务已创建"), ("search_selection", "反例检索已完成")],
+        )
+        serialised = json.dumps(bundle, ensure_ascii=False)
+        for forbidden in ("do not export", "private-request", "mission_control_private", "search_selection_private", "token"):
+            self.assertNotIn(forbidden, serialised)
     def test_export_projects_only_accepted_evidence_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runs_dir = Path(directory)

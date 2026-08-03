@@ -115,6 +115,9 @@ if (candidate.schema_version !== UI_SCHEMA_VERSION) throw new Error(`仅支持 U
     if (!text(candidate.mission[key], "")) throw new Error(`任务字段无效：${key}`);
   }
   if (!text(candidate.fleet_assignment.display_name_zh, "")) throw new Error("舰队中文名称不能为空。");
+if ("timeline" in candidate && (!Array.isArray(candidate.timeline) || !candidate.timeline.every((entry) => entry && typeof entry === "object" && ["station_type", "action", "state", "occurred_at"].every((key) => text(entry[key], ""))))) {
+    throw new Error("timeline 必须是脱敏动作摘要数组。");
+  }
   for (const key of ["stations", "facilities", "evidence_cards", "condition_matrix"]) {
     if (!Array.isArray(candidate[key])) throw new Error(`${key} 必须是数组。`);
   }
@@ -160,6 +163,23 @@ function configureEvidenceFilters(cards) {
   replaceSelectOptions("#evidence-stance-filter", [...new Set(approved.map((card) => text(card.stance)))].sort(), "全部立场");
   const conditionKeys = [...new Set(approved.flatMap((card) => Object.keys(card.conditions && typeof card.conditions === "object" ? card.conditions : {})))].sort();
   replaceSelectOptions("#evidence-condition-filter", conditionKeys, "全部条件字段");
+}
+
+function renderTimeline(entries) {
+  const list = document.querySelector("#run-timeline");
+  if (!list) return;
+  if (!entries.length) {
+    list.replaceChildren(element("li", "尚无可安全投影的航程动作。", "timeline-empty"));
+    return;
+  }
+  list.replaceChildren(...entries.map((entry) => {
+    const item = element("li", undefined, "timeline-item");
+    const marker = element("span", "", "timeline-marker");
+    const content = element("div");
+    content.append(element("strong", text(entry.action)), element("span", `${text(entry.station_type)} · ${text(entry.state)}`, "timeline-meta"), element("time", text(entry.occurred_at), "timeline-meta"));
+    item.append(marker, content);
+    return item;
+  }));
 }
 
 function renderEvidence(cards) {
@@ -302,6 +322,7 @@ renderBundleMetadata(bundle, activeBundleSource);
   configureEvidenceFilters(asArray(bundle.evidence_cards));
   renderJourney(asArray(bundle.stations));
   renderFacilities(asArray(bundle.facilities));
+  renderTimeline(asArray(bundle.timeline));
   renderEvidence(asArray(bundle.evidence_cards));
   renderMatrix(asArray(bundle.condition_matrix));
   renderReport(bundle.mission_report);

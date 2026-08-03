@@ -35,6 +35,19 @@ from .verification import VerificationDecision
 
 UI_SCHEMA_VERSION = "1.0"
 _MAX_UI_QUOTE_CHARS = 500
+_MAX_TIMELINE_ENTRIES = 40
+
+# These are presentation labels, not raw audit events.  The browser receives no
+# actor, event ID, payload, request ID, query text, exception, or review reason.
+_TIMELINE_ACTIONS = {
+    "mission_created": ("question_intake", "任务已创建"),
+    "fleet_assigned": ("question_intake", "主舰队已分派"),
+    "research_plan_drafted": ("research_planning", "研究计划草案已生成（待人工审批）"),
+    "flight_plan_approved": ("research_planning", "研究计划已批准"),
+    "evidence_ingested": ("evidence_extraction", "证据卡已进入审核流程"),
+    "condition_diagnostics_completed": ("cross_check_review", "条件差分已完成"),
+    "mission_report_built": ("report_delivery", "审核后报告已生成"),
+}
 
 
 class UiExportError(ValueError):
@@ -280,6 +293,49 @@ def _last_recorded_state(path: Path) -> MissionState:
     return latest
 
 
+def _timeline_projection(path: Path) -> list[dict[str, str]]:
+    """Project a small, allowlisted timeline without exposing audit records."""
+    if not path.exists():
+        return []
+    projected: list[dict[str, str]] = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            event = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("event_type")
+        created_at = event.get("created_at")
+        state = event.get("state")
+        if not isinstance(event_type, str) or not isinstance(created_at, str) or not isinstance(state, str):
+            continue
+        action: tuple[str, str] | None = _TIMELINE_ACTIONS.get(event_type)
+        if event_type == "approved_plan_query_executed":
+            payload = event.get("payload")
+            query_kind = payload.get("query_kind") if isinstance(payload, dict) else None
+            action = (
+                "search_selection",
+                "反例检索已完成" if query_kind == "counter" else "主检索已完成",
+            )
+        if action is None:
+            continue
+        try:
+            state_label = MissionState(state).value
+        except ValueError:
+            continue
+        station, label = action
+        projected.append(
+            {
+                "station_type": station,
+                "action": label,
+                "state": state_label,
+                "occurred_at": created_at,
+            }
+        )
+    return projected[-_MAX_TIMELINE_ENTRIES:]
+
+
 def build_ui_bundle(
     mission: MissionBrief,
     assignment: FleetAssignment,
@@ -288,6 +344,7 @@ def build_ui_bundle(
     verification_decisions: tuple[VerificationDecision, ...] = (),
     mission_report: MissionReport | None = None,
     condition_matrix: list[dict[str, Any]] | None = None,
+    timeline: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -343,6 +400,7 @@ def build_ui_bundle(
         "evidence_cards": projected_evidence,
         "verification_decisions": [],
         "condition_matrix": condition_matrix or [],
+        "timeline": timeline or [],
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
     }
 
@@ -363,6 +421,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     report_path = run_dir / "mission_report.json"
     mission_report = _mission_report_from_payload(_load_object(report_path, "mission report artifact")) if report_path.exists() else None
     condition_matrix = _condition_matrix_if_present(run_dir / "condition_matrix.json")
+    timeline = _timeline_projection(run_dir / "events.jsonl")
     bundle = build_ui_bundle(
         mission,
         assignment,
@@ -371,6 +430,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         verification_decisions=verification_decisions,
         mission_report=mission_report,
         condition_matrix=condition_matrix,
+        timeline=timeline,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

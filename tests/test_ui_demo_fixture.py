@@ -36,6 +36,8 @@ class UiDemoFixtureTests(unittest.TestCase):
         self.assertIn('id="ui-bundle-file"', html)
         self.assertIn("FileReader", script)
         self.assertIn('id="mission-report"', html)
+        self.assertIn('id="run-timeline"', html)
+        self.assertIn("function renderTimeline(entries)", script)
         self.assertIn("function renderReport(report)", script)
         self.assertNotIn("fetch(", script)
 
