@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-03T00:00:00+00:00",
+  "mission": {
+    "mission_id": "mission_demo_route_001",
+    "question": "为什么两篇论文对 BiFeO3 外延薄膜应变相变有不同结论？",
+    "material": "BiFeO3",
+    "property_name": "phase stability",
+    "scope": "epitaxial thin films",
+    "source_policy": "authorized"
+  },
+  "fleet_assignment": {
+    "assignment_id": "assignment_demo_route_001",
+    "fleet_type": "route_diagnostics",
+    "display_name_zh": "航道诊断舰队",
+    "display_name_en": "Route Diagnostics Fleet",
+    "mission_type": "literature_discrepancy",
+    "reason": "演示工件：任务含有“不同结论”信号。",
+    "release_gate": "cross_check_review"
+  },
+  "status": {
+    "mission_state": "INTAKE",
+    "retry_count": 0,
+    "retry_budget": 2,
+    "return_reason": null
+  },
+  "stations": [
+    {"station_type": "question_intake", "status": "active"},
+    {"station_type": "research_planning", "status": "waiting"},
+    {"station_type": "search_selection", "status": "waiting"},
+    {"station_type": "evidence_extraction", "status": "waiting"},
+    {"station_type": "cross_check_review", "status": "waiting"}
+  ],
+  "facilities": [
+    {"facility_type": "trajectory_overlay", "status": "queued"},
+    {"facility_type": "condition_differential", "status": "queued"},
+    {"facility_type": "counterevidence_detector", "status": "queued"}
+  ],
+  "evidence_cards": [
+    {
+      "evidence_id": "evidence_synthetic_001",
+      "claim": "合成演示：比较前必须显式记录应变、衬底、厚度与表征条件。",
+      "stance": "context",
+      "conditions": {"sample_form": "epitaxial thin film", "strain_percent": null, "temperature": null, "method": "synthetic demonstration"},
+      "review_status": "accepted",
+      "quote": "Synthetic demonstration only; no paper text is included.",
+      "provenance": {"document_id": "synthetic_demo_not_a_paper", "locator": "demo fixture", "source": "CosMatter example", "access_policy": "local_only"},
+      "is_synthetic": true
+    }
+  ],
+  "verification_decisions": [],
+  "condition_matrix": [
+    {"condition_cluster": "外延薄膜 · 压缩应变", "supporting_evidence_ids": [], "contradicting_evidence_ids": [], "unknowns": ["厚度", "氧空位"]}
+  ],
+  "mission_report": null
+}

@@ -14,6 +14,7 @@ from cosmatter.state_machine import MissionMachine
 from .config import AGENT_ROOT, Settings
 from .dispatch import MissionDispatcher
 from .sciverse import SciverseAdapter
+from .ui_export import UiExportError, export_run_to_ui
 
 
 def _json_print(payload: object) -> None:
@@ -35,6 +36,7 @@ def command_create_mission(args: argparse.Namespace) -> int:
         material=args.material,
         property_name=args.property_name,
         scope=args.scope,
+        **({"mission_id": args.mission_id} if args.mission_id else {}),
     )
     run_id = args.run_id or brief.mission_id.replace("mission_", "run_")
     recorder = FlightRecorder(_runs_dir(), run_id)
@@ -51,6 +53,7 @@ def command_assign_fleet(args: argparse.Namespace) -> int:
         material=args.material,
         property_name=args.property_name,
         scope=args.scope,
+        **({"mission_id": args.mission_id} if args.mission_id else {}),
     )
     assignment = MissionDispatcher.from_project().assign(brief, args.mission_type)
     run_id = args.run_id or brief.mission_id.replace("mission_", "run_")
@@ -73,6 +76,18 @@ def command_assign_fleet(args: argparse.Namespace) -> int:
         }
     )
     return 0
+
+
+def command_export_ui(args: argparse.Namespace) -> int:
+    output_path = Path(args.output) if args.output else None
+    try:
+        destination = export_run_to_ui(_runs_dir(), args.run_id, output_path)
+    except UiExportError as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    _json_print({"run_id": args.run_id, "ui_path": str(destination), "schema_version": "1.0"})
+    return 0
+
 
 def command_demo_flow(args: argparse.Namespace) -> int:
     recorder = FlightRecorder(_runs_dir(), args.run_id)
@@ -150,6 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--property", dest="property_name", required=True)
     create.add_argument("--scope", required=True)
     create.add_argument("--run-id")
+    create.add_argument("--mission-id", help="optional stable ID for linking later run artifacts")
     create.set_defaults(handler=command_create_mission)
 
     assign = commands.add_parser("assign-fleet", help="select one configured primary fleet and record its reason")
@@ -159,7 +175,12 @@ def build_parser() -> argparse.ArgumentParser:
     assign.add_argument("--scope", required=True)
     assign.add_argument("--mission-type", help="optional explicit mission type, such as literature_discrepancy")
     assign.add_argument("--run-id")
+    assign.add_argument("--mission-id", help="must match create-mission when both artifacts share a run")
     assign.set_defaults(handler=command_assign_fleet)
+    export_ui = commands.add_parser("export-ui", help="export a redacted, browser-safe JSON bundle for one run")
+    export_ui.add_argument("--run-id", required=True)
+    export_ui.add_argument("--output", help="optional JSON destination; defaults to runs/<run_id>/ui.json")
+    export_ui.set_defaults(handler=command_export_ui)
     demo = commands.add_parser("demo-flow", help="run the offline happy-path state-machine demo")
     demo.add_argument("--run-id", default="demo_cosmatter_001")
     demo.set_defaults(handler=command_demo_flow)
