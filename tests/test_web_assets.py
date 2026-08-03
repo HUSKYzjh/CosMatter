@@ -46,6 +46,11 @@ class WebAssetTests(unittest.TestCase):
         workflow_script = (web_dir / "workflow.js").read_text(encoding="utf-8")
         self.assertIn('id="reading-guide-cards"', workflow_html)
         self.assertIn("function renderReadingGuide(guide)", workflow_script)
+        network_html = (web_dir / "network.html").read_text(encoding="utf-8")
+        network_script = (web_dir / "network.js").read_text(encoding="utf-8")
+        self.assertIn("graph-legend", network_html)
+        for semantic_edge in ("retrieval_candidate", "source_provenance", "support", "contradict", "open_question"):
+            self.assertIn(semantic_edge, network_script)
         stylesheet = (web_dir / "styles.css").read_text(encoding="utf-8")
         for theme in ('data-theme="dark"', 'data-theme="light"', 'data-theme="eye"'):
             self.assertIn(theme, stylesheet)
