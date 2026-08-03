@@ -13,8 +13,10 @@ from cosmatter.state_machine import MissionMachine
 
 from .config import AGENT_ROOT, Settings
 from .dispatch import MissionDispatcher
+from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft
+from .planning import research_planning_prompts, write_untrusted_plan_draft
 from .retrieval import candidates_from_sciverse, write_candidate_artifact
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter
@@ -92,6 +94,26 @@ def command_export_ui(args: argparse.Namespace) -> int:
     _json_print({"run_id": args.run_id, "ui_path": str(destination), "schema_version": "1.0"})
     return 0
 
+
+def command_draft_plan(args: argparse.Namespace) -> int:
+    run_dir = _runs_dir() / args.run_id
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        system_prompt, user_prompt = research_planning_prompts(mission)
+        completion = DeepSeekAdapter(Settings.load()).draft(system_prompt=system_prompt, user_prompt=user_prompt)
+        draft_path = write_untrusted_plan_draft(run_dir, completion)
+    except (UiExportError, DeepSeekConfigurationError, DeepSeekRequestError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="research_plan_drafted",
+        actor="research_planning",
+        state=MissionState.PLAN,
+        payload={"model": completion.model, "request_id": completion.request_id, "trust_status": "untrusted_draft"},
+    )
+    _json_print({"run_id": args.run_id, "draft_path": str(draft_path), "trust_status": "untrusted_draft"})
+    return 0
 
 def command_build_report(args: argparse.Namespace) -> int:
     run_dir = _runs_dir() / args.run_id
@@ -242,6 +264,9 @@ def build_parser() -> argparse.ArgumentParser:
     export_ui.add_argument("--run-id", required=True)
     export_ui.add_argument("--output", help="optional JSON destination; defaults to runs/<run_id>/ui.json")
     export_ui.set_defaults(handler=command_export_ui)
+    draft_plan = commands.add_parser("draft-plan", help="generate an untrusted DeepSeek research-planning draft")
+    draft_plan.add_argument("--run-id", required=True)
+    draft_plan.set_defaults(handler=command_draft_plan)
     report = commands.add_parser("build-report", help="build a review-gated evidence-manifest report for an existing run")
     report.add_argument("--run-id", required=True)
     report.set_defaults(handler=command_build_report)
