@@ -32,6 +32,7 @@ from cosmatter.models import (
 from .dispatch import MissionDispatcher
 from .reading_guide import ReadingGuideError, load_reading_guide
 from .source_map import SourceMapError, load_source_map
+from .paper_structure import PaperStructureError, load_paper_structure
 from .verification import VerificationDecision
 
 
@@ -408,6 +409,12 @@ def _paper_source_map_projection(source_map: dict[str, Any] | None) -> dict[str,
         remaining -= len(segment["quote"])
     return {"document_id": source_map["document_id"], "trust_status": "human_reviewed_parser_selection", "segments": projected}
 
+def _paper_structure_projection(structure: dict[str, Any] | None) -> dict[str, Any] | None:
+    if structure is None:
+        return None
+    entities = [{key: entity[key] for key in ("entity_id", "label", "kind", "segment_id")} for entity in structure["entities"]]
+    relations = [{key: relation[key] for key in ("source_entity_id", "target_entity_id", "relation_type", "segment_id")} for relation in structure["relations"]]
+    return {"document_id": structure["document_id"], "trust_status": structure["trust_status"], "entities": entities, "relations": relations}
 def build_ui_bundle(
     mission: MissionBrief,
     assignment: FleetAssignment,
@@ -419,6 +426,7 @@ def build_ui_bundle(
     timeline: list[dict[str, str]] | None = None,
     research_guide: dict[str, Any] | None = None,
     paper_source_map: dict[str, Any] | None = None,
+    paper_structure: dict[str, Any] | None = None,
     literature_relations: dict[str, Any] | None = None,
     crossref_relations: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -479,6 +487,7 @@ def build_ui_bundle(
         "timeline": timeline or [],
         "research_guide": research_guide,
         "paper_source_map": _paper_source_map_projection(paper_source_map),
+        "paper_structure": _paper_structure_projection(paper_structure),
         "literature_relations": literature_relations,
         "crossref_relations": crossref_relations,
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
@@ -507,7 +516,8 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         paper_source_map = load_source_map(run_dir / "source_map.json", mission.mission_id)
-    except (ReadingGuideError, SourceMapError) as error:
+        paper_structure = load_paper_structure(run_dir / "paper_structure.json", mission.mission_id)
+    except (ReadingGuideError, SourceMapError, PaperStructureError) as error:
         raise UiExportError(str(error)) from error
     bundle = build_ui_bundle(
         mission,
@@ -520,6 +530,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         timeline=timeline,
         research_guide=research_guide,
         paper_source_map=paper_source_map,
+        paper_structure=paper_structure,
         literature_relations=literature_relations,
         crossref_relations=crossref_relations,
     )

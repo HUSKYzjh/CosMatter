@@ -43,11 +43,21 @@ function renderPaper(bundle) {
   [["document_id", paperText(item.document_id)], ["候选定位", paperText(item.locator_hint, "未记录")], ["内容状态", item.content_status === "authorized" ? "可进入授权提取流程" : "不可用于证据提取"]].forEach(([key, value]) => { const row = document.createElement("div"); const dt = document.createElement("dt"); const dd = document.createElement("dd"); dt.textContent = key; dd.textContent = value; row.append(dt, dd); provenanceList.append(row); });
   provenance.replaceChildren(provenanceList);
   renderReviewedSourceMap(bundle, item);
+  renderPaperStructure(bundle, item);
   const cards = paperArray(bundle.evidence_cards).filter((card) => card && card.review_status === "accepted" && card.provenance && card.provenance.document_id === item.document_id);
   if (!cards.length) { evidenceTarget.replaceChildren(Object.assign(document.createElement("p"), { className: "notice", textContent: "此候选尚无可显示的已批准证据。候选不等于科学结论。" })); return; }
   evidenceTarget.replaceChildren(...cards.map((card) => { const article = document.createElement("article"); article.className = "evidence-card"; const claim = document.createElement("p"); claim.className = "claim"; claim.textContent = paperText(card.claim); const quote = document.createElement("p"); quote.className = "quote"; quote.textContent = `短摘录：${paperText(card.quote)}`; const locator = document.createElement("p"); locator.className = "route-meta"; locator.textContent = `定位：${paperText(card.provenance.document_id)} · ${paperText(card.provenance.locator)}`; article.append(claim, quote, locator); return article; }));
 }
 
+function renderPaperStructure(bundle, item) {
+  const target = document.querySelector("#paper-structure"); const structure = bundle.paper_structure;
+  if (!structure || structure.document_id !== item.document_id || !Array.isArray(structure.entities)) { target.replaceChildren(Object.assign(document.createElement("p"), { className: "notice", textContent: "此候选尚无人工复核的论文内实体关系工件。" })); return; }
+  const heading = document.createElement("p"); heading.className = "route-meta"; heading.textContent = `Paper-scoped structure · ${structure.entities.length} entities · ${paperArray(structure.relations).length} relations`;
+  const list = document.createElement("dl"); list.className = "inspector-list";
+  structure.entities.forEach((entity) => { const row = document.createElement("div"); const dt = document.createElement("dt"); const dd = document.createElement("dd"); dt.textContent = `${paperText(entity.kind)} · ${paperText(entity.label)}`; dd.textContent = `entity:${paperText(item.document_id)}:${paperText(entity.entity_id)} · ${paperText(entity.segment_id)}`; row.append(dt, dd); list.append(row); });
+  const relations = document.createElement("p"); relations.className = "route-meta"; relations.textContent = paperArray(structure.relations).map((relation) => `${paperText(relation.source_entity_id)} —${paperText(relation.relation_type)}→ ${paperText(relation.target_entity_id)} (${paperText(relation.segment_id)})`).join("；") || "未选择内部关系。";
+  target.replaceChildren(heading, list, relations);
+}
 function renderReviewedSourceMap(bundle, item) {
   const target = document.querySelector("#paper-source-map");
   const sourceMap = bundle.paper_source_map;
