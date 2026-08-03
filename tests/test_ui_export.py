@@ -73,15 +73,21 @@ class UiExportTests(unittest.TestCase):
                 state=MissionState.RETRIEVE,
                 payload={"query_kind": "counter", "query": "do not export this query", "request_id": "private-request"},
             )
+            recorder.record(
+                event_type="source_parse_submitted",
+                actor="document_parser_private",
+                state=MissionState.EXTRACT,
+                payload={"document_id": "private-document", "provider": "mineru", "task_id": "private-task"},
+            )
             export_run_to_ui(runs_dir, "timeline_export")
             bundle = json.loads((runs_dir / "timeline_export" / "ui.json").read_text(encoding="utf-8"))
 
         self.assertEqual(
             [(item["station_type"], item["action"]) for item in bundle["timeline"]],
-            [("question_intake", "任务已创建"), ("search_selection", "反例检索已完成")],
+            [("question_intake", "任务已创建"), ("search_selection", "反例检索已完成"), ("evidence_extraction", "授权结构解析任务已提交")],
         )
         serialised = json.dumps(bundle, ensure_ascii=False)
-        for forbidden in ("do not export", "private-request", "mission_control_private", "search_selection_private", "token"):
+        for forbidden in ("do not export", "private-request", "mission_control_private", "search_selection_private", "document_parser_private", "private-document", "private-task", "token"):
             self.assertNotIn(forbidden, serialised)
     def test_export_projects_only_accepted_evidence_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

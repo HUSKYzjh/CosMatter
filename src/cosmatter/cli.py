@@ -16,10 +16,12 @@ from .dispatch import MissionDispatcher
 from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
 from .facilities import FacilityGateError, condition_differential, write_condition_matrix
-from .ingestion import EvidenceIngestionError, ingest_evidence_draft
+from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
 from .planning import PlanApprovalError, approved_flight_plan_from_payload, load_approved_flight_plan, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .reading_guide import ReadingGuideError, build_reading_guide, write_reading_guide
+from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError
+from .source_parse import SourceParseArtifactError, record_source_parse_task, task_for_document, update_source_parse_task
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
@@ -166,6 +168,62 @@ def command_build_reading_guide(args: argparse.Namespace) -> int:
     _json_print({"run_id": args.run_id, "guide_path": str(guide_path), "item_count": len(guide["items"]), "trust_status": guide["trust_status"]})
     return 0
 
+
+def command_submit_mineru_source(args: argparse.Namespace) -> int:
+    """Submit an explicitly authorized public source URL to MinerU.
+
+    The local ledger retains only a hash of the URL and task metadata.  MinerU
+    output is not downloaded or exposed to the UI at this stage.
+    """
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        require_eligible_candidate(run_dir, args.document_id)
+        settings = Settings.load()
+        task = MinerUAdapter(settings).submit_remote_source(args.source_url)
+        task_path = record_source_parse_task(
+            run_dir,
+            mission_id=mission.mission_id,
+            document_id=args.document_id,
+            source_url=args.source_url.strip(),
+            task=task,
+            model_version=settings.mineru_model_version,
+        )
+    except (UiExportError, EvidenceIngestionError, MinerUConfigurationError, MinerURequestError, SourceParseArtifactError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="source_parse_submitted",
+        actor="document_parser",
+        state=MissionState.EXTRACT,
+        payload={"document_id": args.document_id, "provider": "mineru", "task_state": task.state},
+    )
+    _json_print({"run_id": args.run_id, "document_id": args.document_id, "task_state": task.state, "task_path": str(task_path)})
+    return 0
+
+
+def command_poll_mineru_source(args: argparse.Namespace) -> int:
+    """Refresh one recorded MinerU task without fetching parse output."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        stored_task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id)
+        settings = Settings.load()
+        task = MinerUAdapter(settings).get_task(stored_task["task_id"])
+        task_path = update_source_parse_task(run_dir, mission_id=mission.mission_id, document_id=args.document_id, task=task)
+    except (UiExportError, MinerUConfigurationError, MinerURequestError, SourceParseArtifactError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="source_parse_status_checked",
+        actor="document_parser",
+        state=MissionState.EXTRACT,
+        payload={"document_id": args.document_id, "provider": "mineru", "task_state": task.state},
+    )
+    _json_print({"run_id": args.run_id, "document_id": args.document_id, "task_state": task.state, "task_path": str(task_path)})
+    return 0
 
 def command_build_report(args: argparse.Namespace) -> int:
     run_dir = _run_dir(args.run_id)
@@ -384,6 +442,15 @@ def build_parser() -> argparse.ArgumentParser:
     reading_guide = commands.add_parser("build-reading-guide", help="build a bounded route from approved candidates and reviewed evidence")
     reading_guide.add_argument("--run-id", required=True)
     reading_guide.set_defaults(handler=command_build_reading_guide)
+    mineru_submit = commands.add_parser("mineru-submit-url", help="submit one authorized HTTPS source URL to MinerU without downloading output")
+    mineru_submit.add_argument("--run-id", required=True)
+    mineru_submit.add_argument("--document-id", required=True)
+    mineru_submit.add_argument("--source-url", required=True, help="explicit HTTPS remote source; its plain URL is not stored in run artifacts")
+    mineru_submit.set_defaults(handler=command_submit_mineru_source)
+    mineru_poll = commands.add_parser("mineru-poll", help="refresh a recorded MinerU task state without fetching parser output")
+    mineru_poll.add_argument("--run-id", required=True)
+    mineru_poll.add_argument("--document-id", required=True)
+    mineru_poll.set_defaults(handler=command_poll_mineru_source)
     report = commands.add_parser("build-report", help="build a review-gated evidence-manifest report for an existing run")
     report.add_argument("--run-id", required=True)
     report.set_defaults(handler=command_build_report)

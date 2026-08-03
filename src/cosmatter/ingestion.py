@@ -38,7 +38,7 @@ def ingest_evidence_draft(run_dir: Path, draft: dict[str, Any]) -> VerificationD
     """
     mission_id = _mission_id(run_dir)
     card = evidence_card_from_draft(draft)
-    _require_eligible_candidate(run_dir, card.provenance.document_id)
+    require_eligible_candidate(run_dir, card.provenance.document_id)
     return persist_evidence_review(run_dir, mission_id, card)
 
 
@@ -90,7 +90,7 @@ def _mission_id(run_dir: Path) -> str:
     return mission_id
 
 
-def _require_eligible_candidate(run_dir: Path, document_id: str) -> None:
+def require_eligible_candidate(run_dir: Path, document_id: str) -> None:
     path = run_dir / "retrieval_candidates.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
