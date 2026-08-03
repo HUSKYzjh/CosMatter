@@ -77,7 +77,22 @@ function makeGraph(bundle) {
       edges.push({ from: sourcePaperId, to: target.id, kind: relation.edge_type, label: relation.edge_type === "citation_reference" ? "OpenAlex reference metadata" : "OpenAlex algorithmic related-work metadata" });
     });
   }
-  netArray(bundle.condition_matrix).forEach((row, index) => {
+  const crossrefRelations = bundle.crossref_relations;
+  if (crossrefRelations && crossrefRelations.trust_status === "public_bibliographic_reference_metadata_not_scientific_evidence" && crossrefRelations.source && Array.isArray(crossrefRelations.edges)) {
+    const sourceDocumentId = netText(crossrefRelations.source.document_id);
+    const sourcePaperId = `paper:${sourceDocumentId}`;
+    if (!byId.has(sourcePaperId)) {
+      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, x: 500, y: 220, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "authorized", track: "unclassified", role: "relation_source", evidence_ids: [crossrefRelations.source.evidence_id] } });
+    }
+    netArray(crossrefRelations.edges).slice(0, 12).forEach((relation, index) => {
+      if (!relation || relation.edge_type !== "crossref_reference") return;
+      const targetDoi = netText(relation.target_doi);
+      if (!targetDoi.startsWith("10.") || !targetDoi.includes("/")) return;
+      const point = position(index, Math.min(netArray(crossrefRelations.edges).length, 12), 600);
+      const target = addNode({ id: `crossref:${targetDoi}`, kind: "external_relation", label: `Crossref · ${targetDoi}`, x: point.x, y: point.y, data: { relation_type: "crossref_reference", relation_source: "Crossref", trust_status: crossrefRelations.trust_status, reference_field_present: crossrefRelations.reference_field_present === true } });
+      edges.push({ from: sourcePaperId, to: target.id, kind: "crossref_reference", label: "Crossref deposited reference metadata; not scientific evidence" });
+    });
+  }  netArray(bundle.condition_matrix).forEach((row, index) => {
     const point = position(index, Math.max(netArray(bundle.condition_matrix).length, 1), 510);
     const condition = addNode({ id: `condition:${index}`, kind: "condition", label: netText(row.condition_cluster), x: point.x, y: point.y, data: row });
     netArray(row.supporting_evidence_ids).forEach((evidenceId) => edges.push({ from: `evidence:${netText(evidenceId)}`, to: condition.id, kind: "support", label: "审核支持" }));
@@ -99,7 +114,7 @@ function inspector(node) {
   else if (node.kind === "evidence") fields = [["类型", "已批准证据"], ["立场", netText(node.data.stance)], ["定位", `${netText(node.data.provenance.document_id)} · ${netText(node.data.provenance.locator)}`], ["主张", netText(node.data.claim)]];
   else if (node.kind === "condition") fields = [["类型", "条件簇"], ["差异字段", netArray(node.data.differing_fields).join("、") || "未记录"], ["支持证据", netArray(node.data.supporting_evidence_ids).join("、") || "无"], ["反驳证据", netArray(node.data.contradicting_evidence_ids).join("、") || "无"]];
   else if (node.kind === "setting") fields = [["Type", node.data.category === "computational_setting" ? "computational setting" : "experimental setting"], ["Recorded field", netText(node.data.field)], ["Recorded value", netText(node.data.value)], ["Semantics", "reported condition; not causal"]];
-  else if (node.kind === "external_relation") fields = [["Type", "public relation metadata"], ["Relation", netText(node.data.relation_type)], ["Trust", "not scientific evidence"]];
+  else if (node.kind === "external_relation") fields = [["Type", "public relation metadata"], ["Relation", netText(node.data.relation_type)], ["Source", netText(node.data.relation_source, "OpenAlex")], ["Reference field", node.data.relation_source === "Crossref" ? (node.data.reference_field_present ? "deposited metadata available" : "not deposited / unavailable") : "not applicable"], ["Trust", "not scientific evidence"]];
   else if (node.kind === "unknown") fields = [["类型", "待核查项"], ["所属条件簇", netText(node.data.condition_cluster)], ["未知项", netText(node.data.unknown)]];
   else fields = [["类型", "任务锚点"], ["材料", netText(node.data.material)], ["性质", netText(node.data.property_name)]];
   const list = document.createElement("dl"); list.className = "inspector-list";

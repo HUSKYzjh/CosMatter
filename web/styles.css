@@ -62,3 +62,4 @@ input, textarea, select { background: color-mix(in srgb, var(--surface) 88%, #00
 .graph-node.external_relation circle { stroke: var(--violet); stroke-dasharray: 3 3; }
 .graph-edge-condition_recorded { stroke: var(--cyan); stroke-dasharray: 1 4; opacity: .55; }
 .graph-node.setting circle { stroke: var(--cyan); stroke-dasharray: 4 2; }
+.graph-edge-crossref_reference { stroke: var(--green); stroke-dasharray: 9 3 2 3; }

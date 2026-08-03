@@ -26,6 +26,8 @@ from .source_map import SourceMapError, source_map_from_review, write_source_map
 from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexRequestError
 from .relation_expansion import RelationExpansionError, build_relation_expansion, write_relation_expansion
+from .crossref import CrossrefAdapter, CrossrefRequestError
+from .crossref_relation_expansion import CrossrefRelationExpansionError, build_crossref_relation_expansion, write_crossref_relation_expansion
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _last_recorded_state, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
@@ -328,6 +330,33 @@ def command_expand_openalex_relations(args: argparse.Namespace) -> int:
     _json_print({"run_id": args.run_id, "evidence_id": args.evidence_id, "edge_count": len(expansion["edges"]), "relation_path": str(path)})
     return 0
 
+def command_expand_crossref_references(args: argparse.Namespace) -> int:
+    """Expand deposited Crossref reference metadata for one accepted evidence card."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        require_active_run(run_dir, mission.mission_id)
+        cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
+        decisions = _verification_decisions_from_payloads(_load_array_if_present(run_dir / "verification_decisions.json", "verification decision artifacts"))
+        card = next((item for item in cards if item.evidence_id == args.evidence_id), None)
+        decision = next((item for item in decisions if item.evidence_id == args.evidence_id and item.mission_id == mission.mission_id), None)
+        if card is None or decision is None:
+            raise CrossrefRelationExpansionError("evidence_id must have a recorded card and review decision in this mission")
+        work = CrossrefAdapter(Settings.load()).work_references_by_doi(card.provenance.doi or "")
+        expansion = build_crossref_relation_expansion(mission, card, decision, work)
+        path = write_crossref_relation_expansion(run_dir, expansion)
+    except (UiExportError, RunControlError, CrossrefRequestError, CrossrefRelationExpansionError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "evidence_id": args.evidence_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="crossref_references_expanded",
+        actor="citation_array",
+        state=MissionState.MAP,
+        payload={"evidence_id": args.evidence_id, "provider": "crossref", "edge_count": len(expansion["edges"]), "reference_field_present": expansion["reference_field_present"]},
+    )
+    _json_print({"run_id": args.run_id, "evidence_id": args.evidence_id, "edge_count": len(expansion["edges"]), "reference_field_present": expansion["reference_field_present"], "relation_path": str(path)})
+    return 0
 def command_build_report(args: argparse.Namespace) -> int:
     run_dir = _run_dir(args.run_id)
     try:
@@ -570,6 +599,10 @@ def build_parser() -> argparse.ArgumentParser:
     openalex_expand.add_argument("--run-id", required=True)
     openalex_expand.add_argument("--evidence-id", required=True)
     openalex_expand.set_defaults(handler=command_expand_openalex_relations)
+    crossref_expand = commands.add_parser("expand-crossref-references", help="expand bounded deposited Crossref reference metadata for one accepted DOI-bearing evidence card")
+    crossref_expand.add_argument("--run-id", required=True)
+    crossref_expand.add_argument("--evidence-id", required=True)
+    crossref_expand.set_defaults(handler=command_expand_crossref_references)
     report = commands.add_parser("build-report", help="build a review-gated evidence-manifest report for an existing run")
     report.add_argument("--run-id", required=True)
     report.set_defaults(handler=command_build_report)

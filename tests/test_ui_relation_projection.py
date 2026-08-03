@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cosmatter.ui_export import _relation_expansion_projection
+from cosmatter.ui_export import _crossref_relation_expansion_projection, _relation_expansion_projection
 
 
 class UiRelationProjectionTests(unittest.TestCase):
@@ -22,6 +22,21 @@ class UiRelationProjectionTests(unittest.TestCase):
         self.assertEqual(projected["edges"][0]["edge_type"], "citation_reference")
         self.assertNotIn("doi", json.dumps(projected))
 
+    def test_projects_crossref_references_without_root_doi(self) -> None:
+        payload = {
+            "schema_version": "1.0",
+            "mission_id": "mission_1",
+            "trust_status": "public_bibliographic_reference_metadata_not_scientific_evidence",
+            "source": {"evidence_id": "evidence_1", "document_id": "doc_1", "crossref_doi": "10.1000/root"},
+            "reference_field_present": True,
+            "edges": [{"edge_type": "crossref_reference", "target_doi": "10.1000/target"}],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "crossref_relation_expansion.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            projected = _crossref_relation_expansion_projection(path, "mission_1")
+        self.assertEqual(projected["edges"][0]["target_doi"], "10.1000/target")
+        self.assertNotIn("10.1000/root", json.dumps(projected))
     def test_rejects_wrong_mission(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "relation_expansion.json"

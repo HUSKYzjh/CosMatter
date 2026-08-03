@@ -53,6 +53,8 @@ _TIMELINE_ACTIONS = {
     "source_parse_submitted": ("evidence_extraction", "授权结构解析任务已提交"),
     "source_parse_status_checked": ("evidence_extraction", "授权结构解析状态已刷新"),
     "source_map_reviewed": ("evidence_extraction", "定位片段已人工复核"),
+    "public_relations_expanded": ("cross_check_review", "OpenAlex 关系元数据已扩展（非科学证据）"),
+    "crossref_references_expanded": ("cross_check_review", "Crossref 参考元数据已扩展（非科学证据）"),
     "evidence_ingested": ("evidence_extraction", "证据卡已进入审核流程"),
     "condition_diagnostics_completed": ("cross_check_review", "条件差分已完成"),
     "mission_report_built": ("report_delivery", "审核后报告已生成"),
@@ -369,6 +371,30 @@ def _relation_expansion_projection(path: Path, mission_id: str) -> dict[str, Any
         edges.append({"edge_type": edge["edge_type"], "target_openalex_id": target})
     return {"trust_status": payload["trust_status"], "source": source, "edges": edges}
 
+def _crossref_relation_expansion_projection(path: Path, mission_id: str) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise UiExportError("crossref_relation_expansion.json is invalid JSON") from error
+    trust_status = "public_bibliographic_reference_metadata_not_scientific_evidence"
+    if not isinstance(payload, dict) or payload.get("schema_version") != "1.0" or payload.get("mission_id") != mission_id:
+        raise UiExportError("Crossref relation expansion identity is invalid")
+    if payload.get("trust_status") != trust_status or not isinstance(payload.get("source"), dict) or not isinstance(payload.get("reference_field_present"), bool) or not isinstance(payload.get("edges"), list):
+        raise UiExportError("Crossref relation expansion structure is invalid")
+    source = payload["source"]
+    if set(source) != {"evidence_id", "document_id", "crossref_doi"} or not all(isinstance(value, str) and value for value in source.values()):
+        raise UiExportError("Crossref relation expansion source is invalid")
+    edges: list[dict[str, str]] = []
+    for edge in payload["edges"]:
+        if not isinstance(edge, dict) or set(edge) != {"edge_type", "target_doi"} or edge.get("edge_type") != "crossref_reference":
+            raise UiExportError("Crossref relation expansion edge is invalid")
+        target = edge.get("target_doi")
+        if not isinstance(target, str) or not target.startswith("10.") or "/" not in target:
+            raise UiExportError("Crossref relation expansion target is invalid")
+        edges.append({"edge_type": "crossref_reference", "target_doi": target})
+    return {"trust_status": trust_status, "source": {"evidence_id": source["evidence_id"], "document_id": source["document_id"]}, "reference_field_present": payload["reference_field_present"], "edges": edges}
 def _paper_source_map_projection(source_map: dict[str, Any] | None) -> dict[str, Any] | None:
     """Expose a few human-reviewed snippets, never raw parser output."""
     if source_map is None:
@@ -394,6 +420,7 @@ def build_ui_bundle(
     research_guide: dict[str, Any] | None = None,
     paper_source_map: dict[str, Any] | None = None,
     literature_relations: dict[str, Any] | None = None,
+    crossref_relations: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -453,6 +480,7 @@ def build_ui_bundle(
         "research_guide": research_guide,
         "paper_source_map": _paper_source_map_projection(paper_source_map),
         "literature_relations": literature_relations,
+        "crossref_relations": crossref_relations,
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
     }
 
@@ -475,6 +503,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     condition_matrix = _condition_matrix_if_present(run_dir / "condition_matrix.json")
     timeline = _timeline_projection(run_dir / "events.jsonl")
     literature_relations = _relation_expansion_projection(run_dir / "relation_expansion.json", mission.mission_id)
+    crossref_relations = _crossref_relation_expansion_projection(run_dir / "crossref_relation_expansion.json", mission.mission_id)
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         paper_source_map = load_source_map(run_dir / "source_map.json", mission.mission_id)
@@ -492,6 +521,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         research_guide=research_guide,
         paper_source_map=paper_source_map,
         literature_relations=literature_relations,
+        crossref_relations=crossref_relations,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
