@@ -36,6 +36,7 @@ class MissionState(str, Enum):
     REPORT = "REPORT"
     COMPLETE = "COMPLETE"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class Stance(str, Enum):

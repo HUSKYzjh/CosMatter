@@ -23,9 +23,10 @@ from .reading_guide import ReadingGuideError, build_reading_guide, write_reading
 from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError
 from .source_parse import SourceParseArtifactError, record_source_parse_task, task_for_document, update_source_parse_task
 from .source_map import SourceMapError, source_map_from_review, write_source_map
+from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .reporting import ReportGateError, build_evidence_manifest, write_mission_report
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
-from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
+from .ui_export import UiExportError, _evidence_cards_from_payloads, _last_recorded_state, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
 
 
 def _json_print(payload: object) -> None:
@@ -93,6 +94,46 @@ def command_assign_fleet(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_cancel_mission(args: argparse.Namespace) -> int:
+    """Record cooperative cancellation; in-flight synchronous requests are unaffected."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        state = _last_recorded_state(run_dir / "events.jsonl")
+        existing_control = load_run_control(run_dir / "run_control.json", mission.mission_id)
+        if existing_control is not None:
+            _json_print(build_run_status(args.run_id, mission.mission_id, state, existing_control))
+            return 0
+        if state in {MissionState.COMPLETE, MissionState.FAILED, MissionState.CANCELLED}:
+            raise RunControlError("terminal missions cannot be cancelled")
+        control_path = cancel_run(run_dir, mission.mission_id)
+    except (UiExportError, RunControlError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    recorder = FlightRecorder(_runs_dir(), args.run_id)
+    recorder.record(
+        event_type="mission_cancelled",
+        actor="mission_control",
+        state=MissionState.CANCELLED,
+        payload={"control_schema_version": "1.0"},
+    )
+    _json_print({"control_path": str(control_path), **build_run_status(args.run_id, mission.mission_id, state, load_run_control(control_path, mission.mission_id))})
+    return 0
+
+
+def command_run_status(args: argparse.Namespace) -> int:
+    """Return an allowlisted status summary suitable for a future local UI."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        state = _last_recorded_state(run_dir / "events.jsonl")
+        control = load_run_control(run_dir / "run_control.json", mission.mission_id)
+    except (UiExportError, RunControlError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    _json_print(build_run_status(args.run_id, mission.mission_id, state, control))
+    return 0
+
 def command_export_ui(args: argparse.Namespace) -> int:
     output_path = Path(args.output) if args.output else None
     try:
@@ -128,6 +169,7 @@ def command_draft_plan(args: argparse.Namespace) -> int:
     run_dir = _run_dir(args.run_id)
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        require_active_run(run_dir, mission.mission_id)
         system_prompt, user_prompt = research_planning_prompts(mission)
         completion = DeepSeekAdapter(Settings.load()).draft(system_prompt=system_prompt, user_prompt=user_prompt)
         draft_path = write_untrusted_plan_draft(run_dir, completion)
@@ -180,6 +222,7 @@ def command_submit_mineru_source(args: argparse.Namespace) -> int:
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         require_eligible_candidate(run_dir, args.document_id)
+        require_active_run(run_dir, mission.mission_id)
         settings = Settings.load()
         task = MinerUAdapter(settings).submit_remote_source(args.source_url)
         task_path = record_source_parse_task(
@@ -210,6 +253,7 @@ def command_poll_mineru_source(args: argparse.Namespace) -> int:
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         stored_task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id)
+        require_active_run(run_dir, mission.mission_id)
         settings = Settings.load()
         task = MinerUAdapter(settings).get_task(stored_task["task_id"])
         task_path = update_source_parse_task(run_dir, mission_id=mission.mission_id, document_id=args.document_id, task=task)
@@ -382,6 +426,7 @@ def command_execute_plan_query(args: argparse.Namespace) -> int:
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         plan = load_approved_flight_plan(run_dir, mission.mission_id)
+        require_active_run(run_dir, mission.mission_id)
         query_kind = "counter" if args.counter else "primary"
         approved_queries = plan.counter_queries if args.counter else plan.queries
         if not 0 <= args.query_index < len(approved_queries):
@@ -457,6 +502,12 @@ def build_parser() -> argparse.ArgumentParser:
     assign.add_argument("--run-id")
     assign.add_argument("--mission-id", help="must match create-mission when both artifacts share a run")
     assign.set_defaults(handler=command_assign_fleet)
+    cancel = commands.add_parser("cancel-mission", help="write a cooperative cancellation marker for a nonterminal run")
+    cancel.add_argument("--run-id", required=True)
+    cancel.set_defaults(handler=command_cancel_mission)
+    run_status = commands.add_parser("run-status", help="emit an allowlisted state summary without audit payloads")
+    run_status.add_argument("--run-id", required=True)
+    run_status.set_defaults(handler=command_run_status)
     export_ui = commands.add_parser("export-ui", help="export a redacted, browser-safe JSON bundle for one run")
     export_ui.add_argument("--run-id", required=True)
     export_ui.add_argument("--output", help="optional JSON destination; defaults to runs/<run_id>/ui.json")

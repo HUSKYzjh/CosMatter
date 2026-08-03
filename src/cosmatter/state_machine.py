@@ -22,6 +22,7 @@ ALLOWED_TRANSITIONS: Final[dict[MissionState, frozenset[MissionState]]] = {
     MissionState.REPORT: frozenset({MissionState.COMPLETE, MissionState.FAILED}),
     MissionState.COMPLETE: frozenset(),
     MissionState.FAILED: frozenset(),
+    MissionState.CANCELLED: frozenset(),
 }
 
 
@@ -36,6 +37,9 @@ class MissionMachine:
     max_rounds: int = 3
 
     def transition(self, target: MissionState) -> MissionState:
+        if target is MissionState.CANCELLED and self.state not in {MissionState.COMPLETE, MissionState.FAILED, MissionState.CANCELLED}:
+            self.state = target
+            return self.state
         if target not in ALLOWED_TRANSITIONS[self.state]:
             raise InvalidTransitionError(f"cannot transition from {self.state.value} to {target.value}")
         if target is MissionState.PLAN and self.state in {MissionState.SELECT, MissionState.VERIFY, MissionState.HUMAN_REVIEW}:

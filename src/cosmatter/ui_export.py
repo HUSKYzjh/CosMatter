@@ -42,6 +42,7 @@ _MAX_TIMELINE_ENTRIES = 40
 # actor, event ID, payload, request ID, query text, exception, or review reason.
 _TIMELINE_ACTIONS = {
     "mission_created": ("question_intake", "任务已创建"),
+    "mission_cancelled": ("question_intake", "任务已取消；未启动后续外部请求"),
     "fleet_assigned": ("question_intake", "主舰队已分派"),
     "research_plan_drafted": ("research_planning", "研究计划草案已生成（待人工审批）"),
     "flight_plan_approved": ("research_planning", "研究计划已批准"),
