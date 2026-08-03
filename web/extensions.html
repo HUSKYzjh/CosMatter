@@ -19,6 +19,7 @@
     </header>
     <main class="workspace-page">
       <section class="hero-banner"><p class="eyebrow">RESEARCH EXTENSIONS / 远航规划</p><h1>把可核验证据扩展为下一轮研究</h1><p>这里生成研究拓展简报，不直接运行计算、不下载论文，也不代表系统自动认可假设。</p></section>
+      <section class="panel extension-import"><label class="bundle-import compact">导入已脱敏 UI JSON<input id="extension-bundle-file" type="file" accept="application/json,.json"></label><p id="extension-import-message" class="form-message" role="status">未导入文件；将生成不带研究上下文的模板草案。</p></section>
       <section class="extension-grid" id="extension-grid"></section>
       <section class="panel extension-brief"><div><p class="eyebrow">拓展简报</p><h2>待人工确认的远航任务</h2><p id="extension-status">选择一项设施，生成一个本地、可下载的研究拓展草案。</p></div><button id="download-extension" type="button" disabled>下载拓展简报 JSON</button></section>
       <section class="panel"><p class="eyebrow">安全边界</p><ul class="guardrail-list"><li>材料数据库事实必须由服务端适配器记录来源、时间和许可后才能并入证据链。</li><li>实验或计算任务必须有变量、对照、失败判据和人工审批；浏览器不提供任意 shell/HPC 提交能力。</li><li>图网络和拓展建议均为导航辅助，不构成材料结论或自动实验指令。</li></ul></section>
