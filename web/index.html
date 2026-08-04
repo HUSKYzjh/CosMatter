@@ -9,7 +9,7 @@
     <script src="shell.js" defer></script>
     <script src="app.js" defer></script>
   </head>
-  <body>
+  <body class="page-intake">
     <header class="site-header">
       <a class="brand" href="index.html" aria-label="CosMatter 首页">Cos<span>Matter</span></a>
       <nav class="bridge-nav" aria-label="舰桥页面">
@@ -24,17 +24,18 @@
           <div><dt>数据表面</dt><dd>LOCAL JSON</dd></div>
           <div><dt>结论门禁</dt><dd>REVIEWED</dd></div>
         </dl>
-      </section>      <label class="theme-switch">色彩主题<select data-theme-select aria-label="色彩主题"><option value="dark">深色</option><option value="light">浅色</option><option value="eye">护眼</option></select></label>
+      </section>
+      <label class="theme-switch">色彩主题<select data-theme-select aria-label="色彩主题"><option value="dark">深色</option><option value="light">浅色</option><option value="eye">护眼</option></select></label>
     </header>
 
     <main id="top" class="layout">
       <section class="panel mission-panel" aria-labelledby="mission-title">
         <div class="section-heading">
           <p class="eyebrow">任务舰桥 / Bridge Intake</p>
-          <h1 id="mission-title">创建研究航程</h1>
-          <p>页面可预览本地输入，或通过下方控件导入 Python 导出的已脱敏 JSON 工件。</p>
+          <h1 id="mission-title">从研究问题开始<br>定位材料分歧</h1>
+          <p>定义一个可审核的问题范围；系统只预览本地输入或用户手动导入的已脱敏工件。</p>
         </div>
-        <form id="mission-form">
+        <div class="intake-prompt"><form id="mission-form">
           <label>
             研究问题
             <textarea id="question" rows="3">为什么两篇论文对 BiFeO3 外延薄膜应变相变有不同结论？</textarea>
@@ -58,7 +59,7 @@
           </label>
           <button type="submit">更新本地预览</button>
           <p id="form-message" class="form-message" role="status"></p>
-        </form>
+        </form></div>
         <label class="bundle-import">
           导入 Python 导出的 UI JSON
           <input id="ui-bundle-file" type="file" accept="application/json,.json">
