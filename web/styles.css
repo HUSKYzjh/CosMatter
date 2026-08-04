@@ -375,3 +375,80 @@ body::before { display: none; }
   .extension-card { border: 0; border-top: 1px solid var(--line); }
   .graph-inspector { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); padding-top: 1.2rem; }
 }
+/* Boundaryless command surface: hierarchy comes from space, tone, and typography instead of outlines. */
+.site-header, .site-footer { border: 0; }
+.site-header::before { display: none; }
+
+.mode-badge, .state-chip, .tag, .route-badge, .paper-tags span, .entity-locator {
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--surface-raised) 55%, transparent);
+}
+.mode-badge, .state-chip, .tag, .route-badge { padding: .3rem .5rem; }
+
+input, textarea, select {
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--surface-raised) 52%, transparent);
+  box-shadow: none;
+}
+input:hover, textarea:hover, select:hover { border-color: transparent; background: color-mix(in srgb, var(--surface-raised) 76%, transparent); }
+input:focus, textarea:focus, select:focus { border-color: transparent; box-shadow: none; background: color-mix(in srgb, var(--surface-raised) 90%, transparent); }
+button { border: 0; border-radius: 0; box-shadow: none; }
+button:hover { box-shadow: 0 8px 20px color-mix(in srgb, var(--cyan) 16%, transparent); }
+
+.mission-panel, .fleet-panel, .journey-panel, .evidence-panel,
+.matrix-panel, .timeline-panel, .report-panel { border: 0; }
+.fleet-card, .facility, .evidence-card, .timeline-item, .reading-guide-card, .source-map-card,
+.bundle-metadata div, .key-values div, .conditions div { border: 0; }
+.fleet-card { padding-left: 0; }
+.facility { padding-left: 0; }
+
+.journey { gap: .7rem; }
+.journey li { min-height: auto; padding: .45rem 0; border: 0; }
+.journey li::before { position: static; display: inline-block; width: .34rem; height: .34rem; margin-right: .38rem; border: 0; background: var(--faint); box-shadow: none; transform: none; }
+.journey li.active::before { background: var(--cyan); box-shadow: 0 0 10px color-mix(in srgb, var(--cyan) 58%, transparent); }
+.journey li.done::before { background: var(--green); }
+
+.hero-banner { border: 0; }
+.hero-banner::before { border: 0; opacity: .34; }
+.hero-banner::after { opacity: .6; }
+
+.workflow-lane, .extension-grid { gap: .75rem; border: 0; }
+.workflow-step, .workflow-step:first-child, .extension-card {
+  border: 0;
+  background: transparent;
+}
+.workflow-step { min-height: 10.5rem; padding: .8rem .15rem; }
+.workflow-step:hover, .workflow-step:focus-visible { border: 0; background: transparent; }
+.workflow-step.active { border: 0; background: color-mix(in srgb, var(--surface-raised) 43%, transparent); box-shadow: inset 3px 0 var(--cyan); }
+.workflow-step.done, .workflow-step.complete { border: 0; box-shadow: inset 2px 0 color-mix(in srgb, var(--green) 78%, transparent); }
+.workflow-step.active.done, .workflow-step.active.complete { box-shadow: inset 3px 0 var(--cyan); }
+.extension-card { min-height: 11rem; padding: .8rem .2rem .8rem 3.4rem; }
+.extension-card::before { border: 0; }
+.extension-card:hover, .extension-card:focus-visible, .extension-card[aria-pressed="true"] { border: 0; background: color-mix(in srgb, var(--surface-raised) 40%, transparent); }
+.extension-card[aria-pressed="true"] { box-shadow: inset 3px 0 var(--cyan); }
+.extension-icon { left: .35rem; border: 0; clip-path: none; }
+
+.graph-canvas-panel svg { border: 0; border-radius: 0; }
+.graph-inspector { padding-left: 0; border: 0; }
+.inspector-list div { border: 0; padding-bottom: .65rem; }
+
+th, td { border: 0; }
+tbody tr:nth-child(odd) td { background: color-mix(in srgb, var(--surface-raised) 27%, transparent); }
+tr:hover td { background: color-mix(in srgb, var(--cyan) 6%, transparent); }
+.graph-legend li::before { border: 0; height: 2px; background: var(--line-bright); }
+.graph-legend .edge-retrieval_candidate::before { background: var(--cyan); }
+.graph-legend .edge-source_provenance::before, .graph-legend .edge-support::before { background: var(--green); }
+.graph-legend .edge-contradict::before { background: repeating-linear-gradient(90deg, var(--danger) 0 5px, transparent 5px 8px); }
+.graph-legend .edge-open_question::before { background: repeating-linear-gradient(90deg, var(--violet) 0 2px, transparent 2px 5px); }
+
+@media (max-width: 980px) {
+  .workflow-lane, .extension-grid { gap: .75rem; }
+  .workflow-step, .workflow-step:first-child, .extension-card { border: 0; }
+}
+/* Resting controls deliberately recede; only interaction reveals a surface. */
+.mode-badge, .state-chip, .tag, .route-badge, .paper-tags span, .entity-locator { background: transparent; }
+input, textarea, select { background: transparent; }
+input:hover, textarea:hover, select:hover { background: color-mix(in srgb, var(--surface-raised) 34%, transparent); }
+input:focus, textarea:focus, select:focus { background: color-mix(in srgb, var(--surface-raised) 60%, transparent); }.bundle-import, .matrix-detail, .paper-evidence, .reading-route-panel { border: 0; }
