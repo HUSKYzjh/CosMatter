@@ -215,3 +215,23 @@ button { cursor: pointer; }
 @media (max-width: 880px) { .fleet-decoration { width: 920px; opacity: .34; } .fleet-decoration--workflow { right: -310px; } }
 @media (max-width: 560px) { .fleet-decoration { width: 690px; opacity: .26; } .fleet-decoration--discover, .fleet-decoration--reader { right: -385px; } .fleet-decoration--workflow { right: -350px; } }
 @media (prefers-reduced-motion: reduce) { .fleet-decoration { animation: none !important; } }
+/* Quiet long-range chart pass: fewer marks, hairline geometry, and off-canvas composition. */
+.theme-light { --fleet-vector-opacity: .42; --fleet-vector-muted: .31; }
+.theme-dark { --fleet-vector-opacity: .48; --fleet-vector-muted: .36; }
+.theme-eye { --fleet-vector-opacity: .37; --fleet-vector-muted: .27; }
+.fleet-decoration {
+  z-index: 2 !important;
+  width: min(92vw, 1380px);
+  color: color-mix(in srgb, var(--art-primary) 62%, var(--muted));
+  opacity: var(--fleet-vector-opacity);
+  filter: none;
+}
+.fleet-decoration g, .fleet-decoration path, .fleet-decoration ellipse, .fleet-decoration circle, .fleet-decoration rect { stroke-width: 2.25; }
+.fleet-decoration .fleet-solid { fill: var(--paper); stroke: currentColor; stroke-width: 2.25; }
+.fleet-decoration .fleet-dashed { stroke-width: 1.4; stroke-dasharray: 10 24; }
+.fleet-decoration--discover { top: 78px; right: -438px; }
+.fleet-decoration--workflow { top: 126px; right: -372px; }
+.fleet-decoration--reader { top: 34px; right: -432px; }
+.fleet-decoration--horizon { right: -336px; bottom: -276px; }
+@media (max-width: 880px) { .fleet-decoration { width: 1120px; opacity: .27; } .fleet-decoration--discover, .fleet-decoration--reader { right: -590px; } .fleet-decoration--workflow { right: -500px; } }
+@media (max-width: 560px) { .fleet-decoration { width: 860px; opacity: .20; } .fleet-decoration--discover, .fleet-decoration--reader { right: -500px; } .fleet-decoration--workflow { right: -440px; } .fleet-decoration--horizon { right: -480px; } }
