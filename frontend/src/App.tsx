@@ -1,8 +1,10 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 
 import { demoBundle, readBundle, type ImportedBundle } from "./model";
+import { ResearchWorkflow } from "./ResearchWorkflow";
 
 type Theme = "light" | "dark" | "eye";
+type View = "discover" | "workflow";
 type DiscoveryKind = "scope" | "condition" | "evidence" | "question";
 
 interface DiscoveryObject {
@@ -70,6 +72,7 @@ export function App() {
   const [bundle, setBundle] = createSignal<ImportedBundle>(demoBundle);
   const [question, setQuestion] = createSignal(demoBundle.mission.question);
   const [theme, setTheme] = createSignal<Theme>("light");
+  const [view, setView] = createSignal<View>("discover");
   const [status, setStatus] = createSignal("当前显示合成演示对象；未发起网络请求。");
   const [filter, setFilter] = createSignal<DiscoveryKind | "all">("all");
 
@@ -108,6 +111,10 @@ export function App() {
       <aside class="research-rail" aria-label="研究控制栏">
         <a class="wordmark" href="/" aria-label="CosMatter 研究发现页">Cos<span>Matter</span></a>
         <p class="rail-kicker">MATERIALS / DISCOVERY</p>
+        <nav class="view-switcher" aria-label="工作台视图">
+          <button type="button" classList={{ active: view() === "discover" }} onClick={() => setView("discover")}>发现</button>
+          <button type="button" classList={{ active: view() === "workflow" }} onClick={() => setView("workflow")}>工作流</button>
+        </nav>
         <section class="rail-stats" aria-label="当前发现范围">
           <div><strong>01</strong><span>当前任务</span></div>
           <div><strong>04</strong><span>研究对象</span></div>
@@ -141,6 +148,7 @@ export function App() {
         </div>
       </aside>
 
+      <Show when={view() === "discover"} fallback={<ResearchWorkflow bundle={bundle()} />}>
       <main class="discovery-stage">
         <header class="stage-header">
           <div><p class="stage-kicker">COSMATTER / RESEARCH DISCOVERY</p><h1>发现材料分歧</h1><p>{bundle().mission.question}</p></div>
@@ -165,6 +173,7 @@ export function App() {
         </section>
         <footer class="stage-note">对象仅由本地任务工件派生；它们是导航信息，不构成材料科学结论。</footer>
       </main>
+      </Show>
     </div>
   );
 }
