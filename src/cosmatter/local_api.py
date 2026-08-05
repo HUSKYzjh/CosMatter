@@ -17,6 +17,7 @@ from .audit import AuditPathError, FlightRecorder, safe_run_id
 from .config import AGENT_ROOT, Settings
 from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .dispatch import DispatchError, MissionDispatcher
+from .metadata_search import MetadataSearchAdapter, MetadataSearchConfigurationError, MetadataSearchRequestError
 from .models import MissionBrief, MissionState
 from .planning import (
     PlanApprovalError,
@@ -82,6 +83,7 @@ class LocalMissionApi:
                 "sciverse": bool(status["sciverse_configured"]),
                 "mineru": bool(status["mineru_configured"]),
                 "openalex": bool(status["openalex_configured"]),
+                "crossref": True,
                 "crossref_polite_contact": bool(status["crossref_polite_contact_configured"]),
             },
         }
@@ -158,12 +160,19 @@ class LocalMissionApi:
         return {"run_id": run_id, "plan_id": plan.artifact_id, "queries": list(plan.queries), "counter_queries": list(plan.counter_queries)}
 
     def execute_plan_query(self, run_id: str, payload: object) -> dict[str, object]:
+        """Run an approved query against explicitly selected metadata sources.
+
+        External activity is possible only after plan approval and this endpoint
+        is invoked. Every provider result is metadata-only candidate data, not
+        evidence or full text.
+        """
         run_dir, mission = self._active_mission(run_id)
         body = _object_payload(payload)
         try:
             plan = load_approved_flight_plan(run_dir, mission.mission_id)
             index = body.get("query_index")
             counter = body.get("counter", False)
+            sources = _selected_sources(body.get("sources"))
             if not isinstance(index, int) or isinstance(index, bool):
                 raise LocalApiError("query_index must be an integer")
             if not isinstance(counter, bool):
@@ -172,10 +181,25 @@ class LocalMissionApi:
             if not 0 <= index < len(approved_queries):
                 raise LocalApiError("query_index is outside the approved query list")
             query = approved_queries[index]
-            response = SciverseAdapter(self.settings_loader()).agentic_search(query, top_k=plan.max_papers)
-            candidates = candidates_from_sciverse(response.payload, query, plan.max_papers)
-            write_candidate_artifact(run_dir, query, candidates)
-        except (PlanApprovalError, RetrievalArtifactError, SciverseConfigurationError, SciverseRequestError, ValueError) as error:
+            settings = self.settings_loader()
+            source_counts: dict[str, int] = {}
+            candidates = []
+            if "sciverse" in sources:
+                response = SciverseAdapter(settings).agentic_search(query, top_k=plan.max_papers)
+                current = candidates_from_sciverse(response.payload, query, plan.max_papers)
+                source_counts["Sciverse"] = len(current)
+                candidates.extend(current)
+            metadata = MetadataSearchAdapter(settings)
+            if "openalex" in sources:
+                current = metadata.search_openalex(query, top_k=min(plan.max_papers, 20))
+                source_counts["OpenAlex"] = len(current)
+                candidates.extend(current)
+            if "crossref" in sources:
+                current = metadata.search_crossref(query, top_k=min(plan.max_papers, 20))
+                source_counts["Crossref"] = len(current)
+                candidates.extend(current)
+            write_candidate_artifact(run_dir, query, tuple(candidates))
+        except (PlanApprovalError, RetrievalArtifactError, SciverseConfigurationError, SciverseRequestError, MetadataSearchConfigurationError, MetadataSearchRequestError, ValueError) as error:
             if isinstance(error, LocalApiError):
                 raise
             raise LocalApiError(str(error), 503) from error
@@ -183,22 +207,9 @@ class LocalMissionApi:
             event_type="approved_plan_query_executed",
             actor="search_selection",
             state=MissionState.RETRIEVE,
-            payload={
-                "plan_id": plan.artifact_id,
-                "query_kind": "counter" if counter else "primary",
-                "query_index": index,
-                "candidate_count": len(candidates),
-                "request_id": response.request_id,
-            },
+            payload={"plan_id": plan.artifact_id, "query_kind": "counter" if counter else "primary", "query_index": index, "sources": list(sources), "candidate_count": len(candidates), "source_counts": source_counts},
         )
-        return {
-            "run_id": run_id,
-            "query_kind": "counter" if counter else "primary",
-            "query_index": index,
-            "candidate_count": len(candidates),
-            "candidates": [candidate.to_dict() for candidate in candidates],
-        }
-
+        return {"run_id": run_id, "query_kind": "counter" if counter else "primary", "query_index": index, "sources": list(sources), "source_counts": source_counts, "candidate_count": len(candidates), "candidates": [candidate.to_dict() for candidate in candidates]}
     def ui_bundle(self, run_id: str) -> bytes:
         try:
             destination = export_run_to_ui(self.runs_dir, _api_safe_run_id(run_id))
@@ -216,6 +227,19 @@ class LocalMissionApi:
         except (AuditPathError, UiExportError, RunControlError) as error:
             raise LocalApiError(str(error), 404) from error
 
+
+def _selected_sources(value: object) -> tuple[str, ...]:
+    allowed = {"sciverse", "openalex", "crossref"}
+    if value is None:
+        return ("sciverse",)
+    if not isinstance(value, list) or not value or len(value) > len(allowed):
+        raise LocalApiError("sources must be a nonempty list of approved providers")
+    selected: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or item not in allowed or item in selected:
+            raise LocalApiError("sources contains an unsupported provider")
+        selected.append(item)
+    return tuple(selected)
 
 def _object_payload(payload: object) -> dict[str, Any]:
     if not isinstance(payload, dict):

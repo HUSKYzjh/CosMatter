@@ -1,104 +1,21 @@
 import { For, Show, createSignal } from "solid-js";
-
 import type { ImportedBundle } from "./model";
 
-interface RouteNode {
-  id: string;
-  code: string;
-  title: string;
-  detail: string;
-  guard: string;
-  tone: "blue" | "teal" | "violet" | "orange" | "rose";
-}
-
+const ZH: Record<string, string> = {
+  "Discover": "\u53d1\u73b0", "Workflow": "\u5de5\u4f5c\u6d41", "Graph": "\u56fe\u8c31", "Reading": "\u9605\u8bfb", "Horizon": "\u62d3\u5c55", "Research question": "\u7814\u7a76\u95ee\u9898", "Research workflow": "\u7814\u7a76\u5de5\u4f5c\u6d41", "Paper reading desk": "\u8bba\u6587\u9605\u8bfb\u53f0", "Research extension": "\u7814\u7a76\u62d3\u5c55", "Material": "\u6750\u6599", "Property": "\u6027\u8d28", "Scope": "\u8303\u56f4", "Approved evidence": "\u5df2\u6279\u51c6\u8bc1\u636e", "Evidence navigation route": "\u8bc1\u636e\u5bfc\u822a\u8def\u7ebf", "Reading task": "\u9605\u8bfb\u4efb\u52a1", "Evidence leads": "\u8bc1\u636e\u7ebf\u7d22", "Review notes": "\u590d\u6838\u5907\u6ce8", "Light": "\u6d45\u8272", "Dark": "\u6df1\u8272", "Eye care": "\u62a4\u773c", "All objects": "\u5168\u90e8\u5bf9\u8c61", "Update discovery": "\u66f4\u65b0\u53d1\u73b0\u53f0"
+};
+const bi = (_zh: string, en: string) => `${ZH[en] ?? "\u4e2d\u6587"} / ${en}`;
+interface RouteNode { id: string; code: string; title: string; detail: string; guard: string; tone: "blue" | "teal" | "violet" | "orange" | "rose"; }
 const ROUTE: RouteNode[] = [
-  { id: "brief", code: "01", title: "任务锚定", detail: "固定材料、目标性质和适用范围，避免把相邻问题混为同一任务。", guard: "MissionBrief 已锁定", tone: "blue" },
-  { id: "corpus", code: "02", title: "候选语料", detail: "记录候选论文与检索式；此处只呈现清单，不推导材料结论。", guard: "等待受控检索", tone: "teal" },
-  { id: "conditions", code: "03", title: "条件归一", detail: "把应变、厚度、基底、缺陷与表征方法放入可比较字段。", guard: "ConditionMatrix 待补全", tone: "violet" },
-  { id: "evidence", code: "04", title: "证据审查", detail: "每条主张必须能回到来源位置、条件字段与审查状态。", guard: "EvidenceGate 未放行", tone: "orange" },
-  { id: "review", code: "05", title: "人工批准", detail: "由研究者确认主检索、反例检索和下一次阅读路线后才可执行。", guard: "FlightPlan 等待批准", tone: "rose" },
+  { id: "brief", code: "01", title: bi("任务锚定", "Mission anchor"), detail: bi("固定材料、目标性质与适用范围，避免把相邻问题混成同一任务。", "Fix material, target property, and scope; do not merge adjacent questions."), guard: bi("任务简报已锁定", "Mission brief locked"), tone: "blue" },
+  { id: "corpus", code: "02", title: bi("候选语料", "Candidate corpus"), detail: bi("记录候选论文与检索式；此处只呈现清单，不推导材料结论。", "Record papers and queries; this view lists candidates without inferring conclusions."), guard: bi("等待受控检索", "Await controlled retrieval"), tone: "teal" },
+  { id: "conditions", code: "03", title: bi("条件归一", "Condition normalisation"), detail: bi("将应变、厚度、基底、缺陷与表征方法放入可比较字段。", "Place strain, thickness, substrate, defects, and methods into comparable fields."), guard: bi("条件矩阵待补全", "Condition matrix incomplete"), tone: "violet" },
+  { id: "evidence", code: "04", title: bi("证据审查", "Evidence review"), detail: bi("每条主张必须回到来源位置、条件字段与审查状态。", "Each claim must return to a source location, condition fields, and review state."), guard: bi("证据门禁未放行", "Evidence gate not released"), tone: "orange" },
+  { id: "review", code: "05", title: bi("人工批准", "Human approval"), detail: bi("研究者确认主检索、反例检索和下一轮阅读路线后才能执行。", "A researcher confirms primary, counterexample, and next-reading routes before execution."), guard: bi("飞行计划等待批准", "Flight plan awaiting approval"), tone: "rose" },
 ];
 
 export function ResearchWorkflow(props: { bundle: ImportedBundle }) {
   const [selected, setSelected] = createSignal(ROUTE[0].id);
   const active = () => ROUTE.find((node) => node.id === selected()) ?? ROUTE[0];
-
-  return (
-    <main class="discovery-stage workflow-stage">
-      <header class="stage-header">
-        <div>
-          <p class="stage-kicker">COSMATTER / RESEARCH WORKFLOW</p>
-          <h1>证据导航路线</h1>
-          <p>围绕「{props.bundle.mission.question}」建立一条可审查的阅读与验证路线。</p>
-        </div>
-        <div class="stage-tools" aria-label="路线工具">
-          <button type="button" aria-label="缩小路线">−</button>
-          <button type="button" aria-label="重置路线">◎</button>
-          <button type="button" aria-label="放大路线">+</button>
-        </div>
-      </header>
-
-      <section class="workflow-meta" aria-label="Workflow boundary">
-        <span>Material <strong>{props.bundle.mission.material}</strong></span>
-        <span>Property <strong>{props.bundle.mission.property}</strong></span>
-        <span>Approved evidence <strong>{props.bundle.evidenceCards.length}</strong></span>
-        <span>Mission state <strong>{props.bundle.status?.missionState ?? "LOCAL"}</strong></span>
-        <span>Facilities <strong>{props.bundle.facilities.length}</strong></span>
-      </section>
-
-      <section class="workflow-layout" aria-label="研究工作流">
-        <aside class="reading-guide">
-          <p class="stage-kicker">READING GUIDE</p>
-          <h2>当前阅读准则</h2>
-          <ol>
-            <li>先确认研究对象与可比范围。</li>
-            <li>将实验条件与结论分开记录。</li>
-            <li>把每条证据锚定到可定位来源。</li>
-            <li>将冲突保留为待验证路线。</li>
-          </ol>
-          <div class="guide-status">
-            <small>选中节点</small>
-            <strong>{active().title}</strong>
-            <p>{active().guard}</p>
-          </div>
-        </aside>
-
-        <div class="roadmap-canvas">
-          <div class="roadmap-heading">
-            <span>RESEARCH LEARNING PATH</span>
-            <strong>由问题驱动，而不是自动总结</strong>
-            <small>每个节点是下一步的审查入口，不是事实结论。</small>
-          </div>
-          <svg class="workflow-edges" viewBox="0 0 900 530" preserveAspectRatio="none" aria-hidden="true">
-            <defs><marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" /></marker></defs>
-            <path d="M 220 168 C 290 168, 292 168, 356 168" marker-end="url(#workflow-arrow)" />
-            <path d="M 510 168 C 565 168, 620 168, 676 168" marker-end="url(#workflow-arrow)" />
-            <path d="M 760 250 C 760 310, 660 350, 540 364" marker-end="url(#workflow-arrow)" />
-            <path d="M 410 364 C 290 364, 230 364, 180 364" marker-end="url(#workflow-arrow)" />
-          </svg>
-          <For each={ROUTE}>{(node, index) => (
-            <button
-              type="button"
-              class={`route-node tone-${node.tone}`}
-              classList={{ active: selected() === node.id, [`route-${index() + 1}`]: true }}
-              onClick={() => setSelected(node.id)}
-            >
-              <span class="route-code">{node.code}</span>
-              <span class="route-kind">{node.guard}</span>
-              <strong>{node.title}</strong>
-              <p>{node.detail}</p>
-              <footer>审查入口 <b>→</b></footer>
-            </button>
-          )}</For>
-        </div>
-      </section>
-<section class="timeline-preview" aria-label="Safe mission timeline">
-        <p class="stage-kicker">SAFE TIMELINE</p>
-        <Show when={props.bundle.timeline.length} fallback={<small>No projected timeline entries are available for this local mission.</small>}>
-          <For each={props.bundle.timeline.slice(-4)}>{(entry) => <div><strong>{entry.stationType}</strong><span>{entry.action}</span><small>{entry.state}</small></div>}</For>
-        </Show>
-      </section>
-      <footer class="stage-note">此路线当前仅由本地任务工件派生；后续连接检索或模型服务前，仍需显式批准。</footer>
-    </main>
-  );
+  return <main class="discovery-stage workflow-stage"><header class="stage-header"><div><p class="stage-kicker">COSMATTER / 研究工作流 RESEARCH WORKFLOW</p><h1>{bi("证据导航路线", "Evidence navigation route")}</h1><p>{bi(`围绕“${props.bundle.mission.question}”建立可审查的阅读与验证路线。`, `Build an auditable reading and verification route around “${props.bundle.mission.question}”.`)}</p></div><div class="stage-tools" aria-label={bi("路线工具", "Route tools")}><button type="button" aria-label={bi("缩小路线", "Zoom out route")}>-</button><button type="button" aria-label={bi("重置路线", "Reset route")}>Reset</button><button type="button" aria-label={bi("放大路线", "Zoom in route")}>+</button></div></header><section class="workflow-meta" aria-label={bi("工作流边界", "Workflow boundary")}><span>{bi("材料", "Material")} <strong>{props.bundle.mission.material}</strong></span><span>{bi("性质", "Property")} <strong>{props.bundle.mission.property}</strong></span><span>{bi("已批准证据", "Approved evidence")} <strong>{props.bundle.evidenceCards.length}</strong></span><span>{bi("任务状态", "Mission state")} <strong>{props.bundle.status?.missionState ?? "LOCAL"}</strong></span><span>{bi("设施", "Facilities")} <strong>{props.bundle.facilities.length}</strong></span></section><section class="workflow-layout" aria-label={bi("研究工作流", "Research workflow")}><aside class="reading-guide"><p class="stage-kicker">阅读指南 / READING GUIDE</p><h2>{bi("当前阅读准则", "Current reading rules")}</h2><ol><li>{bi("先确认研究对象与可比范围。", "Confirm object and comparable scope first.")}</li><li>{bi("将实验条件与结论分开记录。", "Record experimental conditions separately from conclusions.")}</li><li>{bi("将每条证据锚定到可定位来源。", "Anchor every evidence item to a locatable source.")}</li><li>{bi("把冲突保留为待验证路线。", "Keep conflicts as routes to verify.")}</li></ol><div class="guide-status"><small>{bi("选中节点", "Selected node")}</small><strong>{active().title}</strong><p>{active().guard}</p></div></aside><div class="roadmap-canvas"><div class="roadmap-heading"><span>研究学习路径 / RESEARCH LEARNING PATH</span><strong>{bi("由问题驱动，而不是自动总结", "Question-driven, not automatic summarisation")}</strong><small>{bi("每个节点是下一步的审查入口，不是事实结论。", "Each node is a review entry for the next step, not a factual conclusion.")}</small></div><svg class="workflow-edges" viewBox="0 0 900 530" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" /></marker></defs><path d="M 220 168 C 290 168, 292 168, 356 168" marker-end="url(#workflow-arrow)" /><path d="M 510 168 C 565 168, 620 168, 676 168" marker-end="url(#workflow-arrow)" /><path d="M 760 250 C 760 310, 660 350, 540 364" marker-end="url(#workflow-arrow)" /><path d="M 410 364 C 290 364, 230 364, 180 364" marker-end="url(#workflow-arrow)" /></svg><For each={ROUTE}>{(node, index) => <button type="button" class={`route-node tone-${node.tone}`} classList={{ active: selected() === node.id, [`route-${index() + 1}`]: true }} onClick={() => setSelected(node.id)}><span class="route-code">{node.code}</span><span class="route-kind">{node.guard}</span><strong>{node.title}</strong><p>{node.detail}</p><footer>{bi("审查入口", "Review entry")} <b>→</b></footer></button>}</For></div></section><section class="timeline-preview" aria-label={bi("安全任务时间线", "Safe mission timeline")}><p class="stage-kicker">安全时间线 / SAFE TIMELINE</p><Show when={props.bundle.timeline.length} fallback={<small>{bi("当前本地任务没有可投影的时间线条目。", "No projected timeline entries are available for this local mission.")}</small>}><For each={props.bundle.timeline.slice(-4)}>{(entry) => <div><strong>{entry.stationType}</strong><span>{entry.action}</span><small>{entry.state}</small></div>}</For></Show></section><footer class="stage-note">{bi("此路线当前只由本地任务工件派生；连接检索或模型服务前仍需显式批准。", "This route is currently derived from local mission artifacts; explicit approval remains required before retrieval or model services connect.")}</footer></main>;
 }
