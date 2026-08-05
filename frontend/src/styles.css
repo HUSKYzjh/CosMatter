@@ -183,3 +183,35 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+/* Explicit inline SVG layer: visible in every browser, above page surfaces but below interaction. */
+.theme-light { --fleet-vector-opacity: .56; --fleet-vector-muted: .43; }
+.theme-dark { --fleet-vector-opacity: .72; --fleet-vector-muted: .56; }
+.theme-eye { --fleet-vector-opacity: .52; --fleet-vector-muted: .40; }
+.discovery-stage::before, .workflow-stage::before, .reader-stage::before, .expansion-stage::before { content: none !important; animation: none !important; filter: none !important; }
+.fleet-decoration {
+  position: absolute !important;
+  z-index: 2 !important;
+  display: block;
+  width: min(72vw, 1060px);
+  height: auto;
+  overflow: visible;
+  color: var(--art-primary);
+  pointer-events: none;
+  opacity: var(--fleet-vector-opacity);
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--art-primary) 48%, transparent));
+  transform-origin: center;
+}
+.fleet-decoration g, .fleet-decoration path, .fleet-decoration ellipse, .fleet-decoration circle, .fleet-decoration rect { fill: none; stroke: currentColor; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.fleet-decoration .fleet-solid { fill: currentColor; stroke: none; }
+.fleet-decoration .fleet-dashed { stroke-width: 3; stroke-dasharray: 15 18; }
+.fleet-decoration--discover { top: 150px; right: -138px; animation: fleet-visible-orbit 34s ease-in-out infinite alternate; }
+.fleet-decoration--workflow { top: 165px; right: -78px; animation: fleet-visible-route 28s ease-in-out infinite alternate; }
+.fleet-decoration--reader { top: 104px; right: -118px; animation: fleet-visible-aperture 24s ease-in-out infinite alternate; }
+.fleet-decoration--horizon { right: -92px; bottom: -136px; animation: fleet-visible-horizon 42s ease-in-out infinite alternate; }
+@keyframes fleet-visible-orbit { from { transform: translate3d(0, 0, 0) rotate(-1deg); } to { transform: translate3d(-24px, 14px, 0) rotate(1deg); } }
+@keyframes fleet-visible-route { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-34px, 10px, 0); } }
+@keyframes fleet-visible-aperture { from { transform: scale(.98); opacity: var(--fleet-vector-muted); } to { transform: scale(1.02); opacity: var(--fleet-vector-opacity); } }
+@keyframes fleet-visible-horizon { from { transform: translate3d(0, 18px, 0); } to { transform: translate3d(-28px, -7px, 0); } }
+@media (max-width: 880px) { .fleet-decoration { width: 920px; opacity: .34; } .fleet-decoration--workflow { right: -310px; } }
+@media (max-width: 560px) { .fleet-decoration { width: 690px; opacity: .26; } .fleet-decoration--discover, .fleet-decoration--reader { right: -385px; } .fleet-decoration--workflow { right: -350px; } }
+@media (prefers-reduced-motion: reduce) { .fleet-decoration { animation: none !important; } }

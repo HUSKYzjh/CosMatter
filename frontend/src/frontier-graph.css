@@ -68,3 +68,10 @@
 @media (max-width: 880px) { .lens-main::before { -webkit-mask-size: 980px auto; mask-size: 980px auto; opacity: var(--art-muted-opacity); } }
 @media (max-width: 560px) { .lens-main::before { -webkit-mask-size: 700px auto; mask-size: 700px auto; opacity: var(--art-mobile-opacity); } }
 @media (prefers-reduced-motion: reduce) { .lens-main::before { animation: none; } }
+/* The graph keeps its constellation behind Cytoscape nodes but as a real SVG DOM element. */
+.lens-main::before { content: none !important; animation: none !important; filter: none !important; }
+.lens-main > .fleet-decoration { z-index: 0 !important; top: 116px; right: -118px; width: min(78vw, 1120px); opacity: var(--fleet-vector-opacity); animation: fleet-visible-constellation 38s ease-in-out infinite alternate; }
+@keyframes fleet-visible-constellation { from { transform: translate3d(0, 0, 0) scale(.99); } to { transform: translate3d(-22px, 12px, 0) scale(1.02); } }
+@media (max-width: 880px) { .lens-main > .fleet-decoration { width: 900px; opacity: .30; } }
+@media (max-width: 560px) { .lens-main > .fleet-decoration { width: 680px; right: -300px; opacity: .23; } }
+@media (prefers-reduced-motion: reduce) { .lens-main > .fleet-decoration { animation: none !important; } }

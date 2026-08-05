@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal, lazy } from "solid-js";
 
+import { FleetDecoration } from "./FleetDecoration";
 import type { GraphCanvasControls } from "./LiteratureGraphCanvas";
 import { TOPIC_KEYS, TOPIC_LABELS, isPaperNode, relatedLiteraturePairs, topicFor, type RelatedLiteraturePair, type TopicKey } from "./literatureTopology";
 import type { ImportedBundle, LiteratureGraphEdge, LiteratureGraphNode } from "./model";
@@ -120,7 +121,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; onN
       </Show>
       <p class="lens-boundary">Topic grouping and related-title links use display-title metadata only. They are navigation aids, never citation, content, or material-science evidence.</p>
     </aside>
-    <section class="lens-main">
+    <section class="lens-main"><FleetDecoration kind="graph" />
       <header class="lens-scope-banner"><div><span>\u6587\u732e\u661f\u56fe / SCIVERSE</span><h1>\u9650\u5b9a\u4efb\u52a1\u8303\u56f4\u7684\u63a2\u7d22</h1><p>{props.bundle.mission.scope}</p></div><div class="lens-view-tabs"><button type="button" classList={{ active: view() === "cards" }} onClick={() => setView("cards")}>{zh("Card view")}</button><button type="button" classList={{ active: view() === "graph" }} onClick={() => setView("graph")}>{zh("Relationship graph")}</button></div></header>
       <Show when={view() === "graph"} fallback={<section class="lens-card-board"><For each={paperCards()}>{(node, index) => <article><span>{String(index() + 1).padStart(2, "0")}</span><small>{TOPIC_LABELS[topicFor(node)]} / {node.source ?? "local artifact"}{node.publicationYear ? ` / ${node.publicationYear}` : ""}</small><h2>{node.label}</h2><p>{node.trustStatus.replaceAll("_", " ")}</p><button type="button" onClick={() => { selectNode(node.nodeId); setView("graph"); }}>{zh("Open in graph")}</button></article>}</For><Show when={!paperCards().length}><p class="lens-empty">No paper metadata matches the current lens.</p></Show></section>}>
         <section class="lens-canvas-region">
