@@ -32,3 +32,9 @@
 .lens-related-panel button:hover strong { color: var(--blue); }
 .lens-related-panel button strong { font-size: 10px; line-height: 1.35; }
 .lens-related-panel button span { color: var(--muted); font-size: 9px; }
+.frontier-literature-workbench { background: radial-gradient(circle at 66% 4%, #123757 0, transparent 26rem), var(--paper); }
+.lens-main::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(120deg, transparent 30%, color-mix(in srgb, var(--blue) 6%, transparent) 30.3%, transparent 30.7%); opacity: .9; }
+.lens-sidebar, .lens-inspector { background: linear-gradient(180deg, color-mix(in srgb, var(--paper) 95%, #08203a), var(--paper)); }
+.lens-inspector { border-left-color: color-mix(in srgb, var(--blue) 28%, var(--line)); }
+.lens-canvas-tools { right: 22px; }
+.lens-footnote { padding: 8px 10px; border-left: 2px solid var(--teal); background: color-mix(in srgb, var(--paper) 76%, transparent); }

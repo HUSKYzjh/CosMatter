@@ -76,3 +76,31 @@ button { cursor: pointer; }
 /* Unicode escapes ensure Chinese labels render correctly even in legacy Windows shells. */
 .stage-kicker::after, .lens-kicker::after { content: "  /  \4E2D\6587 \754C\9762"; color: var(--teal); }
 .wordmark::after, .lens-wordmark::after { content: "  \4E2D\6587"; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: 0; }
+/* Starship navigation-console layer: compact, information-first, low-border. */
+:root { background: #030914; }
+.workbench { --paper: #07111f; --paper-2: #0b1a2c; --ink: #e8f2ff; --muted: #8da5c1; --line: #173250; --blue: #61b8ff; --teal: #52dbc8; --violet: #ae98ff; --orange: #f7bb70; --rose: #ff91b4; background: radial-gradient(circle at 76% 8%, #123553 0, transparent 26rem), radial-gradient(circle at 18% 84%, #0f3440 0, transparent 28rem), #07111f; }
+.theme-light { --paper: #eff5fb; --paper-2: #e5eef7; --ink: #0e2742; --muted: #59708d; --line: #b9cde0; --blue: #1873c5; --teal: #147d77; --violet: #6a4ec4; --orange: #a75d11; --rose: #a53e67; }
+.theme-eye { --paper: #102421; --paper-2: #15322d; --ink: #e6f1d9; --muted: #abc19c; --line: #31544a; --blue: #8fc8a8; --teal: #b4db86; --violet: #c4afd6; --orange: #e3c277; --rose: #e4a4af; }
+.research-rail, .lens-sidebar { background: linear-gradient(180deg, color-mix(in srgb, var(--paper) 92%, #071c34), color-mix(in srgb, var(--paper) 98%, transparent)); border-right-color: color-mix(in srgb, var(--blue) 28%, var(--line)); }
+.research-rail::before, .lens-sidebar::before { content: "\25c7  \822a\884c\63a7\5236\u4e2d\u5fc3  /  NAVIGATION COMMAND"; color: var(--teal); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+.wordmark::before { content: "\25c7"; }
+.wordmark::after, .lens-wordmark::after { content: "  \u822a\884c\53f0"; color: var(--teal); }
+.rail-kicker, .stage-kicker, .lens-kicker { color: var(--teal); letter-spacing: .12em; }
+.stage-kicker::after, .lens-kicker::after { content: ""; }
+.view-switcher, .lens-navigation { gap: 3px; padding: 4px 0; background: transparent; border-top: 1px solid color-mix(in srgb, var(--blue) 25%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--blue) 25%, transparent); }
+.view-switcher button, .lens-navigation button { position: relative; border-radius: 0; letter-spacing: .04em; }
+.view-switcher button.active, .lens-navigation button.active { color: var(--ink); background: color-mix(in srgb, var(--blue) 19%, transparent); }
+.view-switcher button.active::before, .lens-navigation button.active::before { content: ""; position: absolute; inset: 3px auto 3px 0; width: 2px; background: var(--teal); box-shadow: 0 0 12px var(--teal); }
+.rail-stats, .lens-stats { gap: 6px; border: 0; }
+.rail-stats div, .lens-stats div { position: relative; overflow: hidden; min-height: 64px; border: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line)); background: linear-gradient(135deg, color-mix(in srgb, var(--paper-2) 82%, transparent), transparent); }
+.rail-stats div::after, .lens-stats div::after { content: ""; position: absolute; right: 7px; bottom: 7px; width: 22px; height: 2px; background: var(--teal); opacity: .65; box-shadow: 0 0 10px var(--teal); }
+.discovery-stage, .lens-main { background-color: var(--paper); background-image: linear-gradient(color-mix(in srgb, var(--blue) 13%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--blue) 13%, transparent) 1px, transparent 1px), radial-gradient(circle at 72% 14%, color-mix(in srgb, var(--blue) 11%, transparent), transparent 25rem); background-size: 32px 32px, 32px 32px, auto; }
+.stage-header, .lens-scope-banner { border-bottom-color: color-mix(in srgb, var(--blue) 36%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--paper) 91%, transparent), transparent); }
+.stage-header h1, .lens-scope-banner h1 { font-family: "Noto Sans SC", "Microsoft YaHei UI", sans-serif; font-weight: 760; letter-spacing: .02em; }
+.stage-tools button, .lens-canvas-tools button { border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); border-radius: 2px; background: color-mix(in srgb, var(--paper) 76%, transparent); }
+.stage-tools button:hover, .lens-canvas-tools button:hover { color: var(--teal); border-color: var(--teal); box-shadow: 0 0 15px color-mix(in srgb, var(--teal) 36%, transparent); }
+.discovery-object, .route-node, .proposal-card { border-radius: 2px; border-color: color-mix(in srgb, var(--object-color, var(--node-tone)) 52%, var(--line)); background: linear-gradient(135deg, color-mix(in srgb, var(--paper-2) 83%, var(--object-color, var(--node-tone))), color-mix(in srgb, var(--paper) 95%, transparent)); box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent); }
+.discovery-object::before, .route-node::before, .proposal-card::before { content: ""; display: block; width: 24px; height: 2px; background: var(--object-color, var(--node-tone)); box-shadow: 0 0 9px var(--object-color, var(--node-tone)); }
+.primary-action { border-radius: 2px; background: linear-gradient(90deg, var(--blue), color-mix(in srgb, var(--blue) 62%, var(--teal))); box-shadow: 0 6px 18px color-mix(in srgb, var(--blue) 25%, transparent); }
+.question-label textarea, .live-api-panel textarea { border-radius: 2px; border-color: color-mix(in srgb, var(--blue) 37%, var(--line)); background: color-mix(in srgb, var(--paper) 74%, transparent); }
+.scope-strip, .workflow-meta, .reader-meta, .expansion-brief { border-bottom-color: color-mix(in srgb, var(--blue) 26%, var(--line)); }
