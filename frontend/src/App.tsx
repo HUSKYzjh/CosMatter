@@ -4,9 +4,10 @@ import { demoBundle, readBundle, type ImportedBundle } from "./model";
 import { ResearchWorkflow } from "./ResearchWorkflow";
 import { GraphNetwork } from "./GraphNetwork";
 import { PaperReader } from "./PaperReader";
+import { ResearchExpansion } from "./ResearchExpansion";
 
 type Theme = "light" | "dark" | "eye";
-type View = "discover" | "workflow" | "graph" | "reader";
+type View = "discover" | "workflow" | "graph" | "reader" | "horizon";
 type DiscoveryKind = "scope" | "condition" | "evidence" | "question";
 
 interface DiscoveryObject {
@@ -118,6 +119,7 @@ export function App() {
           <button type="button" classList={{ active: view() === "workflow" }} onClick={() => setView("workflow")}>工作流</button>
           <button type="button" classList={{ active: view() === "graph" }} onClick={() => setView("graph")}>图谱</button>
           <button type="button" classList={{ active: view() === "reader" }} onClick={() => setView("reader")}>阅读</button>
+          <button type="button" classList={{ active: view() === "horizon" }} onClick={() => setView("horizon")}>拓展</button>
         </nav>
         <section class="rail-stats" aria-label="当前发现范围">
           <div><strong>01</strong><span>当前任务</span></div>
@@ -152,7 +154,7 @@ export function App() {
         </div>
       </aside>
 
-      <Show when={view() === "discover"} fallback={view() === "workflow" ? <ResearchWorkflow bundle={bundle()} /> : view() === "graph" ? <GraphNetwork bundle={bundle()} /> : <PaperReader bundle={bundle()} />}>
+      <Show when={view() === "discover"} fallback={view() === "workflow" ? <ResearchWorkflow bundle={bundle()} /> : view() === "graph" ? <GraphNetwork bundle={bundle()} /> : view() === "reader" ? <PaperReader bundle={bundle()} /> : <ResearchExpansion bundle={bundle()} />}>
       <main class="discovery-stage">
         <header class="stage-header">
           <div><p class="stage-kicker">COSMATTER / RESEARCH DISCOVERY</p><h1>发现材料分歧</h1><p>{bundle().mission.question}</p></div>
