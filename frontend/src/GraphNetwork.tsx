@@ -17,13 +17,13 @@ const NODE_GROUPS: Array<{ id: NodeGroup; label: string; color: string }> = [
   { id: "papers", label: "Papers", color: "var(--teal)" },
   { id: "evidence", label: "Accepted evidence", color: "var(--orange)" },
   { id: "references", label: "Reference metadata", color: "var(--violet)" },
-  { id: "structure", label: "Reviewed structure", color: "var(--rose)" },
+  { id: "structure", label: "Structure / collections", color: "var(--rose)" },
 ];
 const EDGE_GROUPS: Array<{ id: EdgeGroup; label: string; color: string }> = [
   { id: "discovery", label: "Discovery route", color: "var(--teal)" },
   { id: "evidence", label: "Evidence provenance", color: "var(--orange)" },
   { id: "bibliography", label: "Bibliographic links", color: "var(--violet)" },
-  { id: "structure", label: "Document structure", color: "var(--rose)" },
+  { id: "structure", label: "Document / collection links", color: "var(--rose)" },
 ];
 
 function nodeGroup(node: LiteratureGraphNode): NodeGroup {
