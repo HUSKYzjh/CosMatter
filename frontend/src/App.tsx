@@ -84,6 +84,7 @@ export function App() {
   const [draftContent, setDraftContent] = createSignal("");
   const [reviewedPlan, setReviewedPlan] = createSignal("");
   const [planApproved, setPlanApproved] = createSignal(false);
+  const [approvedQueryCount, setApprovedQueryCount] = createSignal(0);
 
   const objects = createMemo(() => createObjects(bundle()));
   const visibleObjects = createMemo(() => objects().filter((item) => filter() === "all" || item.kind === filter()));
@@ -116,6 +117,7 @@ export function App() {
       setDraftContent("");
       setReviewedPlan("");
       setPlanApproved(false);
+      setApprovedQueryCount(0);
       setStatus(`Local API mission ${result.run_id} launched with ${result.fleet_type}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to launch the local API mission.");
@@ -146,17 +148,24 @@ export function App() {
     }
   }
 
-  async function executeFirstApprovedQuery() {
+  async function executeApprovedQueries() {
     const runId = liveRunId();
-    if (!runId || !planApproved()) return;
+    const queryCount = approvedQueryCount();
+    if (!runId || !planApproved() || !queryCount) return;
     try {
-      const result = await executeApprovedQuery(runId, 0);
+      let received = 0;
+      for (let index = 0; index < queryCount; index += 1) {
+        setStatus(`Running approved Sciverse query ${index + 1} of ${queryCount}; candidate metadata only.`);
+        const result = await executeApprovedQuery(runId, index);
+        received += result.candidate_count;
+      }
       const payload = await fetchLiveUiBundle(runId);
       const imported = readBundle(payload, "loopback");
       setBundle(imported);
-      setStatus(`Sciverse returned ${result.candidate_count} metadata-only candidates. No full text was loaded.`);
+      setStatus(`Completed ${queryCount} approved queries. ${received} candidate records were received before deduplication; the graph now shows the bounded accumulated set.`);
+      setView("graph");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to execute the approved query.");
+      setStatus(error instanceof Error ? error.message : "Unable to execute the approved query set.");
     }
   }
 
@@ -188,7 +197,8 @@ export function App() {
   }
 
   return (
-    <div class={`workbench theme-${theme()}`}>
+    <div class={`workbench theme-${theme()} ${view() === "graph" ? "graph-focus" : ""}`}>
+      <Show when={view() !== "graph"}>
       <aside class="research-rail" aria-label="研究控制栏">
         <a class="wordmark" href="/" aria-label="CosMatter 研究发现页">Cos<span>Matter</span></a>
         <p class="rail-kicker">MATERIALS / DISCOVERY</p>
@@ -223,7 +233,7 @@ export function App() {
               <label>Human-reviewed plan JSON<textarea value={reviewedPlan()} onInput={(event) => setReviewedPlan(event.currentTarget.value)} rows="7" placeholder='{"subquestions":["..."],"queries":["..."],"counter_queries":["..."]}' /></label>
               <button type="button" onClick={() => void approveReviewedPlan()}>Approve reviewed plan</button>
               <Show when={planApproved()}>
-                <button class="primary-action" type="button" onClick={() => void executeFirstApprovedQuery()}>Run first approved Sciverse query</button>
+                <button class="primary-action" type="button" onClick={() => void executeApprovedQueries()}>Run {approvedQueryCount()} approved Sciverse queries</button>
               </Show>
             </Show>
           </section>
@@ -249,8 +259,9 @@ export function App() {
           <small>密钥、全文和运行日志不进入浏览器。</small>
         </div>
       </aside>
+      </Show>
 
-      <Show when={view() === "discover"} fallback={view() === "workflow" ? <ResearchWorkflow bundle={bundle()} /> : view() === "graph" ? <GraphNetwork bundle={bundle()} /> : view() === "reader" ? <PaperReader bundle={bundle()} /> : <ResearchExpansion bundle={bundle()} />}>
+      <Show when={view() === "discover"} fallback={view() === "workflow" ? <ResearchWorkflow bundle={bundle()} /> : view() === "graph" ? <GraphNetwork bundle={bundle()} theme={theme()} onNavigate={setView} /> : view() === "reader" ? <PaperReader bundle={bundle()} /> : <ResearchExpansion bundle={bundle()} />}>
       <main class="discovery-stage">
         <header class="stage-header">
           <div><p class="stage-kicker">COSMATTER / RESEARCH DISCOVERY</p><h1>发现材料分歧</h1><p>{bundle().mission.question}</p></div>

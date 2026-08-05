@@ -10,6 +10,7 @@
     "build": "npm run check && vite build"
   },
   "dependencies": {
+    "cytoscape": "^3.33.1",
     "solid-js": "^1.9.7"
   },
   "devDependencies": {

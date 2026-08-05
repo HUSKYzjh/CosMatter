@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readBundle } from "./model";
+import { demoBundle, readBundle } from "./model";
 
 describe("readBundle", () => {
   it("reads the complete safe UI projection", () => {
@@ -25,6 +25,13 @@ describe("readBundle", () => {
     expect(bundle.literatureGraph.nodes).toHaveLength(1);
     expect(bundle.literatureGraph.edges).toHaveLength(0);
     expect(JSON.stringify(bundle.literatureGraph)).not.toContain("score");
+  });
+
+  it("ships a dense but explicitly synthetic graph fixture for canvas verification", () => {
+    expect(demoBundle.literatureGraph.trustStatus).toContain("synthetic_demo");
+    expect(demoBundle.literatureGraph.nodes.length).toBeGreaterThanOrEqual(30);
+    expect(demoBundle.literatureGraph.edges.length).toBeGreaterThanOrEqual(40);
+    expect(demoBundle.literatureGraph.nodes.filter((node) => node.kind === "candidate_paper")).toHaveLength(20);
   });
   it("requires a complete mission boundary", () => {
     expect(() => readBundle({ mission: { mission_id: "m", question: "q" } })).toThrow("mission.material");
