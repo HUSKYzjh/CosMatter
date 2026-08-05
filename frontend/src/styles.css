@@ -105,26 +105,21 @@ button { cursor: pointer; }
   --paper: #edf4fb; --paper-2: #e4eef8; --ink: #102c47; --muted: #607995; --line: #bfd3e5;
   --blue: #1d70c2; --teal: #107c79; --violet: #7258bc; --orange: #a96619; --rose: #a64e75;
   --space-void: #edf4fb; --space-deep: #dcebf7; --space-glow: #b8dff4; --space-far: #ded4f4;
-  --art-primary: #2879b7; --art-secondary: #675caf; --art-opacity: .17; --art-muted-opacity: .11; --art-mobile-opacity: .09; --star-opacity: .30;
+  --art-primary: #2879b7; --art-secondary: #675caf; --art-opacity: .30; --art-muted-opacity: .22; --art-mobile-opacity: .17; --star-opacity: .30;
 }
 .theme-dark {
   --paper: #07121f; --paper-2: #0b1c2e; --ink: #e8f3ff; --muted: #8da8c5; --line: #1b3856;
   --blue: #65baff; --teal: #52dbc8; --violet: #b39cff; --orange: #f1b76a; --rose: #ff98b9;
   --space-void: #030a15; --space-deep: #071d34; --space-glow: #123f62; --space-far: #211849;
-  --art-primary: #6bc8ff; --art-secondary: #a991ff; --art-opacity: .22; --art-muted-opacity: .15; --art-mobile-opacity: .12; --star-opacity: .66;
+  --art-primary: #6bc8ff; --art-secondary: #a991ff; --art-opacity: .44; --art-muted-opacity: .32; --art-mobile-opacity: .24; --star-opacity: .66;
 }
 .theme-eye {
   --paper: #eff1e3; --paper-2: #e4e8d6; --ink: #293d33; --muted: #65766a; --line: #c6d3bf;
   --blue: #5a8578; --teal: #77985f; --violet: #887b9c; --orange: #a58048; --rose: #a56e76;
   --space-void: #eef0e1; --space-deep: #dfe7d3; --space-glow: #c4d7bb; --space-far: #ded8c6;
-  --art-primary: #668a71; --art-secondary: #9b835d; --art-opacity: .15; --art-muted-opacity: .10; --art-mobile-opacity: .08; --star-opacity: .23;
+  --art-primary: #668a71; --art-secondary: #9b835d; --art-opacity: .28; --art-muted-opacity: .20; --art-mobile-opacity: .16; --star-opacity: .23;
 }
 .workbench {
-  --visual-discovery: url("./assets/visuals/discovery-orbit.svg");
-  --visual-workflow: url("./assets/visuals/workflow-vector.svg");
-  --visual-reader: url("./assets/visuals/reader-aperture.svg");
-  --visual-graph: url("./assets/visuals/graph-constellation.svg");
-  --visual-horizon: url("./assets/visuals/horizon-probe.svg");
   background: var(--space-void);
 }
 .research-rail { background: linear-gradient(180deg, color-mix(in srgb, var(--paper) 91%, var(--space-deep)), color-mix(in srgb, var(--paper) 98%, transparent)); }
@@ -149,29 +144,29 @@ button { cursor: pointer; }
   inset: 0;
   pointer-events: none;
   opacity: var(--art-opacity);
-  background: linear-gradient(135deg, var(--art-primary), var(--art-secondary));
+  background: linear-gradient(135deg, var(--art-primary), var(--art-secondary)); filter: drop-shadow(0 0 16px color-mix(in srgb, var(--art-primary) 58%, transparent));
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   -webkit-mask-size: min(76vw, 1040px) auto;
   mask-size: min(76vw, 1040px) auto;
 }
 .discovery-stage:not(.workflow-stage):not(.reader-stage):not(.expansion-stage)::before {
-  -webkit-mask-image: var(--visual-discovery); mask-image: var(--visual-discovery);
+  -webkit-mask-image: url("./assets/visuals/discovery-orbit.svg"); mask-image: url("./assets/visuals/discovery-orbit.svg");
   -webkit-mask-position: 104% 47%; mask-position: 104% 47%;
   animation: fleet-orbit-drift 48s ease-in-out infinite alternate;
 }
 .workflow-stage::before {
-  -webkit-mask-image: var(--visual-workflow); mask-image: var(--visual-workflow);
+  -webkit-mask-image: url("./assets/visuals/workflow-vector.svg"); mask-image: url("./assets/visuals/workflow-vector.svg");
   -webkit-mask-position: 61% 58%; mask-position: 61% 58%;
   animation: fleet-route-drift 42s ease-in-out infinite alternate;
 }
 .reader-stage::before {
-  -webkit-mask-image: var(--visual-reader); mask-image: var(--visual-reader);
+  -webkit-mask-image: url("./assets/visuals/reader-aperture.svg"); mask-image: url("./assets/visuals/reader-aperture.svg");
   -webkit-mask-position: 96% 26%; mask-position: 96% 26%;
   animation: fleet-aperture-pulse 31s ease-in-out infinite alternate;
 }
 .expansion-stage::before {
-  -webkit-mask-image: var(--visual-horizon); mask-image: var(--visual-horizon);
+  -webkit-mask-image: url("./assets/visuals/horizon-probe.svg"); mask-image: url("./assets/visuals/horizon-probe.svg");
   -webkit-mask-position: 78% 88%; mask-position: 78% 88%;
   animation: fleet-horizon-drift 56s ease-in-out infinite alternate;
 }

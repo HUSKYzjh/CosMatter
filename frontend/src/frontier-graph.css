@@ -53,9 +53,9 @@
   inset: 0;
   pointer-events: none;
   opacity: var(--art-muted-opacity);
-  background: linear-gradient(135deg, var(--art-primary), var(--art-secondary));
-  -webkit-mask-image: var(--visual-graph);
-  mask-image: var(--visual-graph);
+  background: linear-gradient(135deg, var(--art-primary), var(--art-secondary)); filter: drop-shadow(0 0 16px color-mix(in srgb, var(--art-primary) 58%, transparent));
+  -webkit-mask-image: url("./assets/visuals/graph-constellation.svg");
+  mask-image: url("./assets/visuals/graph-constellation.svg");
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   -webkit-mask-position: 54% 54%;
