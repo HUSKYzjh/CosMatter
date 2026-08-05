@@ -58,7 +58,7 @@ def command_check_config(_: argparse.Namespace) -> int:
 def command_preview_ui(args: argparse.Namespace) -> int:
     try:
         ui_bundle = _run_dir(args.run_id) / "ui.json" if args.run_id else None
-        serve_ui_preview(args.port, solid=args.solid, ui_bundle=ui_bundle)
+        serve_ui_preview(args.port, solid=args.solid, ui_bundle=ui_bundle, api=args.api)
     except (AuditPathError, UiPreviewError) as error:
         _json_print({"error": str(error), "run_id": args.run_id})
         return 2
@@ -606,6 +606,7 @@ def build_parser() -> argparse.ArgumentParser:
     preview.add_argument("--port", type=int, default=8765)
     preview.add_argument("--solid", action="store_true", help="serve frontend/dist instead of the legacy static web UI")
     preview.add_argument("--run-id", help="explicit run whose already-exported ui.json is exposed only at /ui.json")
+    preview.add_argument("--api", action="store_true", help="enable the allowlisted loopback task API; provider credentials remain server-side")
     preview.set_defaults(handler=command_preview_ui)
     create = commands.add_parser("create-mission", help="write a validated MissionBrief and an audit event")
     create.add_argument("--question", required=True)

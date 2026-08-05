@@ -48,3 +48,28 @@ On Windows, the equivalent checked launcher is:
 ```powershell
 .\scripts\start-solid-preview.ps1 -RunId <run_id>
 ```
+## Use the local live API
+
+The interactive path is opt-in. Start the loopback server with the API switch:
+
+```powershell
+cd ..
+.\scripts\start-solid-preview.ps1 -Api
+```
+
+Open `http://127.0.0.1:8765/?api=local`. The Discovery rail can then create a
+mission, ask DeepSeek for an explicitly **untrusted** plan draft, accept a
+human-edited JSON plan, and run only an approved Sciverse query. API keys stay
+inside the Python loopback process; the browser receives neither keys nor raw
+provider responses. After a query, the UI reloads only the redacted mission
+bundle.
+
+To reopen an existing exported run while keeping the live API available:
+
+```powershell
+.\scripts\start-solid-preview.ps1 -RunId <run_id> -Api
+```
+
+Before using a provider, fill the protected workspace configuration file from
+`.env.example` (or use the parent `env.txt` template). Do not put credentials
+in the frontend, a URL, or a JSON artifact.

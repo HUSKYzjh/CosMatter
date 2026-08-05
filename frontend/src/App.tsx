@@ -5,6 +5,7 @@ import { ResearchWorkflow } from "./ResearchWorkflow";
 import { GraphNetwork } from "./GraphNetwork";
 import { PaperReader } from "./PaperReader";
 import { ResearchExpansion } from "./ResearchExpansion";
+import { approveLivePlan, createLiveMission, draftLivePlan, executeApprovedQuery, fetchLiveUiBundle, getLocalApiStatus, localApiEnabled } from "./localApi";
 
 type Theme = "light" | "dark" | "eye";
 type View = "discover" | "workflow" | "graph" | "reader" | "horizon";
@@ -78,11 +79,21 @@ export function App() {
   const [view, setView] = createSignal<View>("discover");
   const [status, setStatus] = createSignal("当前显示合成演示对象；未发起网络请求。");
   const [filter, setFilter] = createSignal<DiscoveryKind | "all">("all");
+  const [apiSummary, setApiSummary] = createSignal("Local API is disabled. Start the preview with --api and open ?api=local.");
+  const [liveRunId, setLiveRunId] = createSignal<string | null>(null);
+  const [draftContent, setDraftContent] = createSignal("");
+  const [reviewedPlan, setReviewedPlan] = createSignal("");
+  const [planApproved, setPlanApproved] = createSignal(false);
 
   const objects = createMemo(() => createObjects(bundle()));
   const visibleObjects = createMemo(() => objects().filter((item) => filter() === "all" || item.kind === filter()));
 
   onMount(() => {
+    if (localApiEnabled()) {
+      void getLocalApiStatus()
+        .then((result) => setApiSummary(`Local API ready. DeepSeek: ${result.providers.deepseek ? "configured" : "not configured"}; Sciverse: ${result.providers.sciverse ? "configured" : "not configured"}.`))
+        .catch((error: unknown) => setApiSummary(error instanceof Error ? error.message : "Unable to reach the local API."));
+    }
     if (new URLSearchParams(window.location.search).get("ui") !== "server") return;
     void fetch("./ui.json", { cache: "no-store" })
       .then((response) => {
@@ -97,6 +108,57 @@ export function App() {
       })
       .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to load the local UI bundle."));
   });
+
+  async function launchLiveMission() {
+    try {
+      const result = await createLiveMission({ question: question().trim(), material: bundle().mission.material, property: bundle().mission.property, scope: bundle().mission.scope });
+      setLiveRunId(result.run_id);
+      setDraftContent("");
+      setReviewedPlan("");
+      setPlanApproved(false);
+      setStatus(`Local API mission ${result.run_id} launched with ${result.fleet_type}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to launch the local API mission.");
+    }
+  }
+
+  async function requestPlanDraft() {
+    const runId = liveRunId();
+    if (!runId) return;
+    try {
+      const result = await draftLivePlan(runId);
+      setDraftContent(result.content);
+      setStatus("DeepSeek returned an untrusted draft. Review and replace it with valid JSON before approval.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to request a plan draft.");
+    }
+  }
+
+  async function approveReviewedPlan() {
+    const runId = liveRunId();
+    if (!runId) return;
+    try {
+      const result = await approveLivePlan(runId, JSON.parse(reviewedPlan()));
+      setPlanApproved(true);
+      setStatus(`Human-reviewed plan approved with ${result.queries.length} primary queries.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The reviewed plan must be valid JSON.");
+    }
+  }
+
+  async function executeFirstApprovedQuery() {
+    const runId = liveRunId();
+    if (!runId || !planApproved()) return;
+    try {
+      const result = await executeApprovedQuery(runId, 0);
+      const payload = await fetchLiveUiBundle(runId);
+      const imported = readBundle(payload, "loopback");
+      setBundle(imported);
+      setStatus(`Sciverse returned ${result.candidate_count} metadata-only candidates. No full text was loaded.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to execute the approved query.");
+    }
+  }
 
   function beginDiscovery() {
     const trimmed = question().trim();
@@ -148,6 +210,24 @@ export function App() {
           <textarea value={question()} onInput={(event) => setQuestion(event.currentTarget.value)} rows="4" />
         </label>
         <button class="primary-action" type="button" onClick={beginDiscovery}>更新发现台</button>
+        <Show when={localApiEnabled()}>
+          <section class="live-api-panel" aria-live="polite">
+            <small>{apiSummary()}</small>
+            <button class="primary-action" type="button" onClick={() => void launchLiveMission()}>Launch API mission</button>
+            <Show when={liveRunId()}>
+              <small>Run {liveRunId()} · provider keys stay on the loopback backend.</small>
+              <button type="button" onClick={() => void requestPlanDraft()}>Draft plan with DeepSeek</button>
+              <Show when={draftContent()}>
+                <label>Untrusted LLM draft<textarea value={draftContent()} readOnly rows="5" /></label>
+              </Show>
+              <label>Human-reviewed plan JSON<textarea value={reviewedPlan()} onInput={(event) => setReviewedPlan(event.currentTarget.value)} rows="7" placeholder='{"subquestions":["..."],"queries":["..."],"counter_queries":["..."]}' /></label>
+              <button type="button" onClick={() => void approveReviewedPlan()}>Approve reviewed plan</button>
+              <Show when={planApproved()}>
+                <button class="primary-action" type="button" onClick={() => void executeFirstApprovedQuery()}>Run first approved Sciverse query</button>
+              </Show>
+            </Show>
+          </section>
+        </Show>
         <section class="examples" aria-labelledby="examples-title">
           <p id="examples-title" class="rail-kicker">建议问题</p>
           <For each={EXAMPLES}>{(example, index) => (

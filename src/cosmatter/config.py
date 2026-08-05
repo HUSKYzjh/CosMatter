@@ -68,10 +68,11 @@ class Settings:
         runtime_environ = dict(os.environ if environ is None else environ)
         values: dict[str, str] = {}
         # An explicit mapping is a hermetic override used by tests and callers.
-        # Only normal runtime loading reads the protected workspace file.
-        if environ is None:
-            values.update(_read_dotenv(DEFAULT_ENV_FILE))
+        # An explicit env-file path also prevents any read of the protected
+        # workspace file, which makes isolated service tests secret-free.
         explicit_env_file = runtime_environ.get("COSMATTER_ENV_FILE")
+        if environ is None and not explicit_env_file:
+            values.update(_read_dotenv(DEFAULT_ENV_FILE))
         if explicit_env_file:
             values.update(_read_dotenv(Path(explicit_env_file)))
         values.update(runtime_environ)

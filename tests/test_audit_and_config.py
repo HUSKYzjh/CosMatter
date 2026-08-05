@@ -31,6 +31,13 @@ class AuditAndConfigTests(unittest.TestCase):
             Settings.load()
         self.assertEqual(dotenv_reader.call_args_list, [call(DEFAULT_ENV_FILE)])
 
+    def test_explicit_env_file_does_not_read_the_protected_workspace_env(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            explicit = Path(directory) / "isolated.env"
+            explicit.write_text("LLM_PROVIDER=deepseek\n", encoding="utf-8")
+            with patch("cosmatter.config._read_dotenv", return_value={}) as dotenv_reader:
+                Settings.load({"COSMATTER_ENV_FILE": str(explicit)})
+        self.assertEqual(dotenv_reader.call_args_list, [call(explicit)])
     def test_flight_recorder_rejects_path_traversal_run_ids(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(AuditPathError):
