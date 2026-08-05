@@ -43,3 +43,8 @@ Open `http://127.0.0.1:8765/?ui=server`. The `?ui=server` opt-in makes the
 workbench fetch only the same-origin `/ui.json` route for the selected run.
 Without it, the frontend has no automatic connection and continues to use its
 manual local JSON import.
+On Windows, the equivalent checked launcher is:
+
+```powershell
+.\scripts\start-solid-preview.ps1 -RunId <run_id>
+```
