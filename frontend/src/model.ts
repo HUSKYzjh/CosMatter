@@ -24,7 +24,7 @@ export interface RelationBundle { trustStatus: string; edgeCount: number; }
 export interface ImportedBundle {
   schemaVersion: string;
   mission: Mission;
-  source: "demo" | "local-file";
+  source: "demo" | "local-file" | "loopback";
   fleet: { displayName: string; missionType: string; releaseGate: string } | null;
   status: { missionState: string; retryCount: number; retryBudget: number; returnReason: string | null } | null;
   stations: Array<{ stationType: string; status: string }>;

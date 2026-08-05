@@ -57,9 +57,10 @@ def command_check_config(_: argparse.Namespace) -> int:
 
 def command_preview_ui(args: argparse.Namespace) -> int:
     try:
-        serve_ui_preview(args.port)
-    except UiPreviewError as error:
-        _json_print({"error": str(error)})
+        ui_bundle = _run_dir(args.run_id) / "ui.json" if args.run_id else None
+        serve_ui_preview(args.port, solid=args.solid, ui_bundle=ui_bundle)
+    except (AuditPathError, UiPreviewError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
         return 2
     return 0
 def command_create_mission(args: argparse.Namespace) -> int:
@@ -601,8 +602,10 @@ def build_parser() -> argparse.ArgumentParser:
     check = commands.add_parser("check-config", help="report configuration presence without revealing secrets")
     check.set_defaults(handler=command_check_config)
 
-    preview = commands.add_parser("preview-ui", help="serve only static web UI on 127.0.0.1; no credentials or run artifacts are exposed")
+    preview = commands.add_parser("preview-ui", help="serve a loopback-only UI; credentials and unselected run artifacts are never exposed")
     preview.add_argument("--port", type=int, default=8765)
+    preview.add_argument("--solid", action="store_true", help="serve frontend/dist instead of the legacy static web UI")
+    preview.add_argument("--run-id", help="explicit run whose already-exported ui.json is exposed only at /ui.json")
     preview.set_defaults(handler=command_preview_ui)
     create = commands.add_parser("create-mission", help="write a validated MissionBrief and an audit event")
     create.add_argument("--question", required=True)

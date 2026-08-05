@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 
 import { demoBundle, readBundle, type ImportedBundle } from "./model";
 import { ResearchWorkflow } from "./ResearchWorkflow";
@@ -81,6 +81,22 @@ export function App() {
 
   const objects = createMemo(() => createObjects(bundle()));
   const visibleObjects = createMemo(() => objects().filter((item) => filter() === "all" || item.kind === filter()));
+
+  onMount(() => {
+    if (new URLSearchParams(window.location.search).get("ui") !== "server") return;
+    void fetch("./ui.json", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("The selected local UI bundle is unavailable.");
+        return response.json();
+      })
+      .then((payload) => {
+        const imported = readBundle(payload, "loopback");
+        setBundle(imported);
+        setQuestion(imported.mission.question);
+        setStatus("Loaded the selected loopback UI bundle. No external service was contacted.");
+      })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to load the local UI bundle."));
+  });
 
   function beginDiscovery() {
     const trimmed = question().trim();
