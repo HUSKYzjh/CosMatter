@@ -121,11 +121,11 @@ export function App() {
           <button type="button" classList={{ active: view() === "reader" }} onClick={() => setView("reader")}>阅读</button>
           <button type="button" classList={{ active: view() === "horizon" }} onClick={() => setView("horizon")}>拓展</button>
         </nav>
-        <section class="rail-stats" aria-label="当前发现范围">
-          <div><strong>01</strong><span>当前任务</span></div>
-          <div><strong>04</strong><span>研究对象</span></div>
-          <div><strong>0</strong><span>已批准证据</span></div>
-          <div><strong>0</strong><span>外部调用</span></div>
+        <section class="rail-stats" aria-label="Mission summary">
+          <div><strong>{bundle().status?.missionState ?? "LOCAL"}</strong><span>mission state</span></div>
+          <div><strong>{String(bundle().stations.length).padStart(2, "0")}</strong><span>stations</span></div>
+          <div><strong>{String(bundle().evidenceCards.length).padStart(2, "0")}</strong><span>approved evidence</span></div>
+          <div><strong>{String(bundle().timeline.length).padStart(2, "0")}</strong><span>timeline events</span></div>
         </section>
         <label class="question-label">
           研究问题

@@ -29,7 +29,8 @@ export function PaperReader(props: { bundle: ImportedBundle }) {
       <section class="reader-meta">
         <span>Material <strong>{props.bundle.mission.material}</strong></span>
         <span>Scope <strong>{props.bundle.mission.scope}</strong></span>
-        <span>Full text <strong>Not imported</strong></span>
+        <span>Approved snippets <strong>{props.bundle.evidenceCards.length}</strong></span>
+        <span>Source maps <strong>{props.bundle.evidenceCards.filter((card) => !card.isSynthetic).length}</strong></span>
       </section>
       <section class="reader-layout" aria-label="Paper reading workbench">
         <aside class="reader-queue">

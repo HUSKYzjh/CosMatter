@@ -1,4 +1,4 @@
-import { For, createSignal } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 
 import type { ImportedBundle } from "./model";
 
@@ -38,11 +38,12 @@ export function ResearchWorkflow(props: { bundle: ImportedBundle }) {
         </div>
       </header>
 
-      <section class="workflow-meta" aria-label="路线边界">
-        <span>材料 <strong>{props.bundle.mission.material}</strong></span>
-        <span>性质 <strong>{props.bundle.mission.property}</strong></span>
-        <span>范围 <strong>{props.bundle.mission.scope}</strong></span>
-        <span>状态 <strong>本地预览 / 零外部调用</strong></span>
+      <section class="workflow-meta" aria-label="Workflow boundary">
+        <span>Material <strong>{props.bundle.mission.material}</strong></span>
+        <span>Property <strong>{props.bundle.mission.property}</strong></span>
+        <span>Approved evidence <strong>{props.bundle.evidenceCards.length}</strong></span>
+        <span>Mission state <strong>{props.bundle.status?.missionState ?? "LOCAL"}</strong></span>
+        <span>Facilities <strong>{props.bundle.facilities.length}</strong></span>
       </section>
 
       <section class="workflow-layout" aria-label="研究工作流">
@@ -90,6 +91,12 @@ export function ResearchWorkflow(props: { bundle: ImportedBundle }) {
             </button>
           )}</For>
         </div>
+      </section>
+<section class="timeline-preview" aria-label="Safe mission timeline">
+        <p class="stage-kicker">SAFE TIMELINE</p>
+        <Show when={props.bundle.timeline.length} fallback={<small>No projected timeline entries are available for this local mission.</small>}>
+          <For each={props.bundle.timeline.slice(-4)}>{(entry) => <div><strong>{entry.stationType}</strong><span>{entry.action}</span><small>{entry.state}</small></div>}</For>
+        </Show>
       </section>
       <footer class="stage-note">此路线当前仅由本地任务工件派生；后续连接检索或模型服务前，仍需显式批准。</footer>
     </main>

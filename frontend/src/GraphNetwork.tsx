@@ -23,7 +23,13 @@ export function GraphNetwork(props: { bundle: ImportedBundle }) {
         <div><p class="stage-kicker">COSMATTER / GRAPH NETWORK</p><h1>任务关系图谱</h1><p>用图谱浏览研究边界与证据依赖；当前尚未连接外部文献库。</p></div>
         <div class="stage-tools"><button type="button" aria-label="缩小图谱">−</button><button type="button" aria-label="聚焦图谱">◎</button><button type="button" aria-label="放大图谱">+</button></div>
       </header>
-      <section class="graph-meta" aria-label="图谱筛选"><span>任务 <strong>{props.bundle.mission.missionId}</strong></span><span>材料 <strong>{props.bundle.mission.material}</strong></span><span>外部节点 <strong>0</strong></span><span>已批准证据 <strong>0</strong></span></section>
+      <section class="graph-meta" aria-label="Graph filters">
+        <span>Mission <strong>{props.bundle.mission.missionId}</strong></span>
+        <span>Material <strong>{props.bundle.mission.material}</strong></span>
+        <span>Approved evidence <strong>{props.bundle.evidenceCards.length}</strong></span>
+        <span>OpenAlex edges <strong>{props.bundle.literatureRelations?.edgeCount ?? 0}</strong></span>
+        <span>Crossref edges <strong>{props.bundle.crossrefRelations?.edgeCount ?? 0}</strong></span>
+      </section>
       <section class="graph-workspace" aria-label="任务关系网络">
         <div class="graph-canvas">
           <div class="graph-title"><span>LOCAL RESEARCH MAP</span><strong>概念节点与审查关系</strong><small>边线说明依赖关系，不表示因果或文献引用。</small></div>

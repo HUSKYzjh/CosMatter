@@ -14,7 +14,12 @@ export function ResearchExpansion(props: { bundle: ImportedBundle }) {
   return (
     <main class="discovery-stage expansion-stage">
       <header class="stage-header"><div><p class="stage-kicker">COSMATTER / RESEARCH EXTENSION</p><h1>Research extension</h1><p>Turn unresolved material questions into explicit, human-approved follow-up missions.</p></div><div class="stage-tools"><button type="button" aria-label="Previous horizon">Previous</button><button type="button" aria-label="Horizon settings">Settings</button><button type="button" aria-label="Next horizon">Next</button></div></header>
-      <section class="expansion-brief"><span>Current mission <strong>{props.bundle.mission.missionId}</strong></span><span>Question <strong>{props.bundle.mission.question}</strong></span><span>Outbound actions <strong>0</strong></span></section>
+      <section class="expansion-brief">
+        <span>Current mission <strong>{props.bundle.mission.missionId}</strong></span>
+        <span>Approved evidence <strong>{props.bundle.evidenceCards.length}</strong></span>
+        <span>Condition gaps <strong>{props.bundle.conditionMatrix.flatMap((row) => row.unknowns).length}</strong></span>
+        <span>Report status <strong>{props.bundle.report ? "available" : "not released"}</strong></span>
+      </section>
       <section class="horizon-intro"><p class="stage-kicker">RESEARCH HORIZON</p><h2>Do not close a contradiction too early.</h2><p>These are proposed directions, not generated scientific claims. They become executable only after a researcher approves a new task boundary and its evidence requirements.</p></section>
       <section class="proposal-grid" aria-label="Follow-up research proposals"><For each={PROPOSALS}>{(proposal, index) => <article class={`proposal-card tone-${proposal.tone}`}><span>{String(index() + 1).padStart(2, "0")}</span><small>{proposal.status}</small><h2>{proposal.title}</h2><p>{proposal.rationale}</p><footer><em>{proposal.requirement}</em><button type="button" classList={{ armed: armed() === proposal.id }} onClick={() => setArmed(armed() === proposal.id ? null : proposal.id)}>{armed() === proposal.id ? "Marked for review" : "Mark for review"}</button></footer></article>}</For></section>
       <section class="approval-strip"><div><p class="stage-kicker">APPROVAL GATE</p><strong>{armed() ? "One proposed direction is marked for human review." : "No new research action is armed."}</strong></div><button type="button">Create approved follow-up mission</button></section>
