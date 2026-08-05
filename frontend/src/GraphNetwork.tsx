@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal, lazy } from "solid-js";
 
 import type { GraphCanvasControls } from "./LiteratureGraphCanvas";
+import { TOPIC_KEYS, TOPIC_LABELS, isPaperNode, relatedLiteraturePairs, topicFor, type RelatedLiteraturePair, type TopicKey } from "./literatureTopology";
 import type { ImportedBundle, LiteratureGraphEdge, LiteratureGraphNode } from "./model";
 import "./frontier-graph.css";
 
@@ -8,8 +9,7 @@ const LiteratureGraphCanvas = lazy(() => import("./LiteratureGraphCanvas").then(
 
 type GraphView = "graph" | "cards";
 type NodeGroup = "mission" | "papers" | "evidence" | "references" | "structure";
-type EdgeGroup = "discovery" | "evidence" | "bibliography" | "structure";
-
+type EdgeGroup = "discovery" | "evidence" | "bibliography" | "related" | "structure";
 type NavigateView = "discover" | "workflow" | "reader" | "horizon";
 
 const NODE_GROUPS: Array<{ id: NodeGroup; label: string; color: string }> = [
@@ -23,12 +23,13 @@ const EDGE_GROUPS: Array<{ id: EdgeGroup; label: string; color: string }> = [
   { id: "discovery", label: "Discovery route", color: "var(--teal)" },
   { id: "evidence", label: "Evidence provenance", color: "var(--orange)" },
   { id: "bibliography", label: "Bibliographic links", color: "var(--violet)" },
+  { id: "related", label: "Related-title suggestions", color: "var(--blue)" },
   { id: "structure", label: "Document / collection links", color: "var(--rose)" },
 ];
 
 function nodeGroup(node: LiteratureGraphNode): NodeGroup {
   if (node.kind === "mission") return "mission";
-  if (["candidate_paper", "evidence_paper", "relation_root_paper", "structured_paper"].includes(node.kind)) return "papers";
+  if (isPaperNode(node)) return "papers";
   if (node.kind === "accepted_evidence") return "evidence";
   if (["openalex_work", "crossref_work"].includes(node.kind)) return "references";
   return "structure";
@@ -36,31 +37,64 @@ function nodeGroup(node: LiteratureGraphNode): NodeGroup {
 function edgeGroup(edge: LiteratureGraphEdge): EdgeGroup {
   if (edge.edgeType === "retrieval_candidate") return "discovery";
   if (edge.edgeType === "source_provenance") return "evidence";
+  if (edge.edgeType === "title_similarity_suggestion") return "related";
   if (["citation_reference", "algorithmic_related", "crossref_reference"].includes(edge.edgeType)) return "bibliography";
   return "structure";
 }
-function isPaper(node: LiteratureGraphNode): boolean { return nodeGroup(node) === "papers"; }
-function label(node: LiteratureGraphNode): string { return node.label.length > 92 ? `${node.label.slice(0, 89).trim()}…` : node.label; }
+function edgeKey(edge: LiteratureGraphEdge): string { return `${edge.sourceId}|${edge.targetId}|${edge.edgeType}`; }
+function label(node: LiteratureGraphNode): string { return node.label.length > 92 ? `${node.label.slice(0, 89).trim()}...` : node.label; }
 
 export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; onNavigate: (view: NavigateView) => void }) {
   const [view, setView] = createSignal<GraphView>("graph");
   const [query, setQuery] = createSignal("");
+  const [selectedTopic, setSelectedTopic] = createSignal<TopicKey | "all">("all");
   const [nodeVisibility, setNodeVisibility] = createSignal<Record<NodeGroup, boolean>>({ mission: true, papers: true, evidence: true, references: true, structure: true });
-  const [edgeVisibility, setEdgeVisibility] = createSignal<Record<EdgeGroup, boolean>>({ discovery: true, evidence: true, bibliography: true, structure: true });
+  const [edgeVisibility, setEdgeVisibility] = createSignal<Record<EdgeGroup, boolean>>({ discovery: true, evidence: true, bibliography: true, related: true, structure: true });
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
   const [selectedEdge, setSelectedEdge] = createSignal<LiteratureGraphEdge | null>(null);
+  const [focusSelection, setFocusSelection] = createSignal(false);
   const [controls, setControls] = createSignal<GraphCanvasControls | null>(null);
   const graph = () => props.bundle.literatureGraph;
-  const visibleNodes = createMemo(() => {
+  const suggestedPairs = createMemo(() => relatedLiteraturePairs(graph().nodes));
+  const graphEdges = createMemo(() => {
+    const supplied = graph().edges;
+    const keys = new Set(supplied.map(edgeKey));
+    return [...supplied, ...suggestedPairs().map((pair) => pair.edge).filter((edge) => !keys.has(edgeKey(edge)))];
+  });
+  const filteredNodes = createMemo(() => {
     const term = query().trim().toLocaleLowerCase();
-    return graph().nodes.filter((node) => nodeVisibility()[nodeGroup(node)] && (!term || `${node.label} ${node.source ?? ""} ${node.kind}`.toLocaleLowerCase().includes(term)));
+    return graph().nodes.filter((node) => nodeVisibility()[nodeGroup(node)]
+      && (!isPaperNode(node) || selectedTopic() === "all" || topicFor(node) === selectedTopic())
+      && (!term || `${node.label} ${node.source ?? ""} ${node.kind}`.toLocaleLowerCase().includes(term)));
+  });
+  const visibleNodes = createMemo(() => {
+    const nodes = filteredNodes();
+    const selected = selectedNodeId();
+    if (!focusSelection() || !selected) return nodes;
+    const neighbors = new Set([selected]);
+    graphEdges().forEach((edge) => {
+      if (edge.sourceId === selected) neighbors.add(edge.targetId);
+      if (edge.targetId === selected) neighbors.add(edge.sourceId);
+    });
+    return nodes.filter((node) => neighbors.has(node.nodeId));
   });
   const visibleIds = createMemo(() => new Set(visibleNodes().map((node) => node.nodeId)));
-  const visibleEdges = createMemo(() => graph().edges.filter((edge) => edgeVisibility()[edgeGroup(edge)] && visibleIds().has(edge.sourceId) && visibleIds().has(edge.targetId)));
+  const visibleEdges = createMemo(() => graphEdges().filter((edge) => edgeVisibility()[edgeGroup(edge)] && visibleIds().has(edge.sourceId) && visibleIds().has(edge.targetId)));
   const selectedNode = createMemo(() => graph().nodes.find((node) => node.nodeId === selectedNodeId()) ?? visibleNodes().find((node) => node.kind === "mission") ?? visibleNodes()[0] ?? null);
-  const paperCards = createMemo(() => visibleNodes().filter(isPaper));
+  const paperCards = createMemo(() => visibleNodes().filter(isPaperNode));
+  const topicCounts = createMemo(() => Object.fromEntries(TOPIC_KEYS.map((topic) => [topic, graph().nodes.filter((node) => isPaperNode(node) && topicFor(node) === topic).length])) as Record<TopicKey, number>);
+  const selectedRelated = createMemo(() => selectedEdge()?.edgeType === "title_similarity_suggestion" ? suggestedPairs().find((pair) => edgeKey(pair.edge) === edgeKey(selectedEdge()!)) ?? null : null);
+  const relatedForSelected = createMemo(() => {
+    const selected = selectedNode();
+    if (!selected || !isPaperNode(selected)) return [] as Array<{ node: LiteratureGraphNode; pair: RelatedLiteraturePair }>;
+    return suggestedPairs().flatMap((pair) => {
+      const otherId = pair.edge.sourceId === selected.nodeId ? pair.edge.targetId : pair.edge.targetId === selected.nodeId ? pair.edge.sourceId : null;
+      const node = otherId ? graph().nodes.find((item) => item.nodeId === otherId) : null;
+      return node ? [{ node, pair }] : [];
+    });
+  });
   const countNodes = (group: NodeGroup) => graph().nodes.filter((node) => nodeGroup(node) === group).length;
-  const countEdges = (group: EdgeGroup) => graph().edges.filter((edge) => edgeGroup(edge) === group).length;
+  const countEdges = (group: EdgeGroup) => graphEdges().filter((edge) => edgeGroup(edge) === group).length;
   const selectNode = (nodeId: string) => { setSelectedNodeId(nodeId || null); setSelectedEdge(null); };
   const selectEdge = (edge: LiteratureGraphEdge) => { setSelectedEdge(edge); setSelectedNodeId(null); };
   const toggleNode = (group: NodeGroup) => setNodeVisibility((current) => ({ ...current, [group]: !current[group] }));
@@ -68,44 +102,38 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; onN
 
   return <main class="frontier-literature-workbench">
     <aside class="lens-sidebar" aria-label="Literature graph controls">
-      <a class="lens-wordmark" href="/" onClick={(event) => { event.preventDefault(); props.onNavigate("discover"); }}>◈ Cos<span>Matter</span></a>
+      <a class="lens-wordmark" href="/" onClick={(event) => { event.preventDefault(); props.onNavigate("discover"); }}>Cos<span>Matter</span></a>
       <p class="lens-kicker">MATERIALS / LITERATURE</p>
       <nav class="lens-navigation" aria-label="Workbench views">
-        <button type="button" onClick={() => props.onNavigate("discover")}>Discover</button>
-        <button type="button" onClick={() => props.onNavigate("workflow")}>Workflow</button>
-        <button class="active" type="button">Graph</button>
-        <button type="button" onClick={() => props.onNavigate("reader")}>Reading</button>
-        <button type="button" onClick={() => props.onNavigate("horizon")}>Horizon</button>
+        <button type="button" onClick={() => props.onNavigate("discover")}>Discover</button><button type="button" onClick={() => props.onNavigate("workflow")}>Workflow</button><button class="active" type="button">Graph</button><button type="button" onClick={() => props.onNavigate("reader")}>Reading</button><button type="button" onClick={() => props.onNavigate("horizon")}>Horizon</button>
       </nav>
       <section class="lens-stats" aria-label="Graph coverage">
-        <div><strong>{paperCards().length}</strong><span>visible papers</span></div>
-        <div><strong>{visibleEdges().length}</strong><span>visible links</span></div>
-        <div><strong>{props.bundle.evidenceCards.length}</strong><span>accepted evidence</span></div>
-        <div><strong>{new Set(paperCards().map((node) => node.source ?? "local")).size}</strong><span>source channels</span></div>
+        <div><strong>{paperCards().length}</strong><span>visible papers</span></div><div><strong>{visibleEdges().length}</strong><span>visible links</span></div><div><strong>{suggestedPairs().length}</strong><span>title suggestions</span></div><div><strong>{new Set(paperCards().map((node) => node.source ?? "local")).size}</strong><span>source channels</span></div>
       </section>
-      <section class="lens-question"><p>Research scope</p><strong>{props.bundle.mission.question}</strong><small>{props.bundle.mission.material} · {props.bundle.mission.property}</small></section>
+      <section class="lens-question"><p>Research scope</p><strong>{props.bundle.mission.question}</strong><small>{props.bundle.mission.material} / {props.bundle.mission.property}</small></section>
       <label class="lens-search">Search visible map<input aria-label="Search literature graph" value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="titles or sources" /></label>
       <Show when={view() === "graph"}>
+        <section class="lens-filter-section"><h2>Topic clusters</h2><div class="lens-topic-choices"><button type="button" classList={{ active: selectedTopic() === "all" }} onClick={() => setSelectedTopic("all")}>All <span>{graph().nodes.filter(isPaperNode).length}</span></button><For each={TOPIC_KEYS.filter((topic) => topicCounts()[topic])}>{(topic) => <button type="button" classList={{ active: selectedTopic() === topic }} onClick={() => setSelectedTopic(topic)}>{TOPIC_LABELS[topic]} <span>{topicCounts()[topic]}</span></button>}</For></div></section>
         <section class="lens-filter-section"><h2>Node types</h2><For each={NODE_GROUPS}>{(item) => <label classList={{ "is-muted": !nodeVisibility()[item.id] }}><input type="checkbox" checked={nodeVisibility()[item.id]} onChange={() => toggleNode(item.id)} /><i style={{ background: item.color }} /><strong>{item.label}</strong><span>{countNodes(item.id)}</span></label>}</For></section>
         <section class="lens-filter-section"><h2>Relation types</h2><For each={EDGE_GROUPS}>{(item) => <label classList={{ "is-muted": !edgeVisibility()[item.id] }}><input type="checkbox" checked={edgeVisibility()[item.id]} onChange={() => toggleEdge(item.id)} /><i style={{ background: item.color }} /><strong>{item.label}</strong><span>{countEdges(item.id)}</span></label>}</For></section>
       </Show>
-      <p class="lens-boundary">Map facts are task-scoped metadata and reviewed artifacts. A link is never a material-science conclusion.</p>
+      <p class="lens-boundary">Topic grouping and related-title links use display-title metadata only. They are navigation aids, never citation, content, or material-science evidence.</p>
     </aside>
     <section class="lens-main">
       <header class="lens-scope-banner"><div><span>SCIVERSE-STYLE LITERATURE MAP</span><h1>Query-scoped exploration</h1><p>{props.bundle.mission.scope}</p></div><div class="lens-view-tabs"><button type="button" classList={{ active: view() === "cards" }} onClick={() => setView("cards")}>Card view</button><button type="button" classList={{ active: view() === "graph" }} onClick={() => setView("graph")}>Relationship graph</button></div></header>
-      <Show when={view() === "graph"} fallback={<section class="lens-card-board"><For each={paperCards()}>{(node, index) => <article><span>{String(index() + 1).padStart(2, "0")}</span><small>{node.source ?? "local artifact"}{node.publicationYear ? ` · ${node.publicationYear}` : ""}</small><h2>{node.label}</h2><p>{node.trustStatus.replaceAll("_", " ")}</p><button type="button" onClick={() => { selectNode(node.nodeId); setView("graph"); }}>Open in graph →</button></article>}</For><Show when={!paperCards().length}><p class="lens-empty">No paper metadata matches the current lens.</p></Show></section>}>
+      <Show when={view() === "graph"} fallback={<section class="lens-card-board"><For each={paperCards()}>{(node, index) => <article><span>{String(index() + 1).padStart(2, "0")}</span><small>{TOPIC_LABELS[topicFor(node)]} / {node.source ?? "local artifact"}{node.publicationYear ? ` / ${node.publicationYear}` : ""}</small><h2>{node.label}</h2><p>{node.trustStatus.replaceAll("_", " ")}</p><button type="button" onClick={() => { selectNode(node.nodeId); setView("graph"); }}>Open in graph</button></article>}</For><Show when={!paperCards().length}><p class="lens-empty">No paper metadata matches the current lens.</p></Show></section>}>
         <section class="lens-canvas-region">
-          <div class="lens-canvas-tools"><button type="button" onClick={() => controls()?.fit()}>Fit</button><button type="button" aria-label="Zoom in graph" onClick={() => controls()?.zoomIn()}>+</button><button type="button" aria-label="Zoom out graph" onClick={() => controls()?.zoomOut()}>−</button></div>
+          <div class="lens-canvas-tools"><button type="button" onClick={() => controls()?.fit()}>Fit</button><button type="button" classList={{ active: focusSelection() }} disabled={!selectedNodeId()} onClick={() => setFocusSelection((value) => !value)}>Focus</button><button type="button" aria-label="Zoom in graph" onClick={() => controls()?.zoomIn()}>+</button><button type="button" aria-label="Zoom out graph" onClick={() => controls()?.zoomOut()}>-</button></div>
           <LiteratureGraphCanvas theme={() => props.theme} nodes={visibleNodes} edges={visibleEdges} selectedNodeId={selectedNodeId} selectedEdge={selectedEdge} onSelectNode={selectNode} onSelectEdge={selectEdge} onReady={setControls} />
-          <p class="lens-footnote">Showing {visibleNodes().length} bounded nodes and {visibleEdges().length} typed relations. Pan, zoom, or narrow the lens from the sidebar.</p>
+          <p class="lens-footnote">Showing {visibleNodes().length} bounded nodes and {visibleEdges().length} typed relations. Select a paper to inspect and focus its immediate map neighborhood.</p>
         </section>
       </Show>
     </section>
     <aside class="lens-inspector" aria-label="Selected graph artifact">
       <Show when={selectedEdge()} fallback={<Show when={selectedNode()} fallback={<><p class="lens-kicker">INSPECTOR</p><h2>Choose a node or relation</h2><p>Details stay outside the map so the relationship field remains readable.</p></>}>
-        {(node) => <><p class="lens-kicker">NODE</p><i style={{ background: NODE_GROUPS.find((item) => item.id === nodeGroup(node()))?.color }} /><h2>{label(node())}</h2><small>{node().kind.replaceAll("_", " ")}</small><dl><div><dt>Trust boundary</dt><dd>{node().trustStatus.replaceAll("_", " ")}</dd></div><Show when={node().source}><div><dt>Metadata source</dt><dd>{node().source}</dd></div></Show><Show when={node().publicationYear}><div><dt>Publication year</dt><dd>{node().publicationYear}</dd></div></Show><Show when={node().isContentAccessible !== undefined}><div><dt>Content access</dt><dd>{node().isContentAccessible ? "accessible candidate" : "metadata only"}</dd></div></Show></dl></>}
+        {(node) => <><p class="lens-kicker">NODE</p><i style={{ background: NODE_GROUPS.find((item) => item.id === nodeGroup(node()))?.color }} /><h2>{label(node())}</h2><small>{node().kind.replaceAll("_", " ")}</small><dl><div><dt>Trust boundary</dt><dd>{node().trustStatus.replaceAll("_", " ")}</dd></div><Show when={isPaperNode(node())}><div><dt>Title-derived cluster</dt><dd>{TOPIC_LABELS[topicFor(node())]}</dd></div></Show><Show when={node().source}><div><dt>Metadata source</dt><dd>{node().source}</dd></div></Show><Show when={node().publicationYear}><div><dt>Publication year</dt><dd>{node().publicationYear}</dd></div></Show><Show when={node().isContentAccessible !== undefined}><div><dt>Content access</dt><dd>{node().isContentAccessible ? "accessible candidate" : "metadata only"}</dd></div></Show></dl><Show when={relatedForSelected().length}><section class="lens-related-panel"><h3>Related titles</h3><p>Suggested from shared title keywords only; not citations or evidence.</p><For each={relatedForSelected()}>{(item) => <button type="button" onClick={() => selectNode(item.node.nodeId)}><strong>{label(item.node)}</strong><span>Shared: {item.pair.sharedTerms.join(", ")}</span></button>}</For></section></Show></>}
       </Show>}>
-        {(edge) => <><p class="lens-kicker">RELATION</p><i style={{ background: EDGE_GROUPS.find((item) => item.id === edgeGroup(edge()))?.color }} /><h2>{edge().edgeType.replaceAll("_", " ")}</h2><small>{edge().relationSource}</small><dl><div><dt>Relation boundary</dt><dd>{edge().trustStatus.replaceAll("_", " ")}</dd></div><div><dt>From</dt><dd>{edge().sourceId}</dd></div><div><dt>To</dt><dd>{edge().targetId}</dd></div></dl></>}
+        {(edge) => <><p class="lens-kicker">RELATION</p><i style={{ background: EDGE_GROUPS.find((item) => item.id === edgeGroup(edge()))?.color }} /><h2>{edge().edgeType.replaceAll("_", " ")}</h2><small>{edge().relationSource}</small><dl><div><dt>Relation boundary</dt><dd>{edge().trustStatus.replaceAll("_", " ")}</dd></div><div><dt>From</dt><dd>{edge().sourceId}</dd></div><div><dt>To</dt><dd>{edge().targetId}</dd></div></dl><Show when={selectedRelated()}>{(pair) => <section class="lens-related-panel"><h3>Why this suggestion?</h3><p>Both display titles include: {pair().sharedTerms.join(", ")}.</p></section>}</Show></>}
       </Show>
       <p class="lens-inspector-note">Inspect provenance before treating any document as evidence.</p>
     </aside>
