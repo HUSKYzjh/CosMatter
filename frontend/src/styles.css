@@ -12,7 +12,7 @@ button { cursor: pointer; }
 .question-label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 700; }.question-label textarea { width: 100%; resize: vertical; min-height: 88px; padding: 10px; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; background: transparent; line-height: 1.5; }.question-label textarea:focus { outline: 2px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: 1px; }
 .primary-action { padding: 11px; border: 0; border-radius: 8px; color: white; background: var(--ink); font-size: 12px; font-weight: 760; }.primary-action:hover { filter: brightness(1.16); }.examples { display: grid; gap: 7px; }.examples .rail-kicker { margin-top: 3px; }.examples button { display: grid; grid-template-columns: 24px 1fr; gap: 7px; padding: 8px; border: 0; border-radius: 7px; color: var(--ink); background: transparent; text-align: left; font-size: 11px; line-height: 1.45; }.examples button:hover { background: color-mix(in srgb, var(--blue) 8%, transparent); }.examples button span { display: grid; place-items: center; height: 20px; color: var(--blue); background: color-mix(in srgb, var(--blue) 9%, transparent); font-size: 9px; font-weight: 750; }
 .import-control { display: grid; gap: 6px; color: var(--muted); font-size: 11px; }.import-control input { width: 100%; font-size: 10px; }.rail-footer { display: grid; gap: 8px; margin-top: auto; color: var(--muted); font-size: 10px; }.rail-footer label { display: flex; align-items: center; justify-content: space-between; }.rail-footer select { padding: 4px; border: 0; color: var(--ink); background: transparent; }.rail-footer small { line-height: 1.45; }
-.discovery-stage { min-width: 0; padding: 18px 30px 14px; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 24px 24px; background-position: -1px -1px; }.stage-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; min-height: 112px; padding: 4px 0 18px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 82%, transparent); }.stage-header h1 { margin: 5px 0 3px; font: 600 26px Georgia, "Noto Serif SC", serif; }.stage-header p:not(.stage-kicker) { max-width: 720px; margin: 0; color: var(--muted); font-size: 12px; }.stage-tools { display: flex; gap: 8px; }.stage-tools button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: color-mix(in srgb, var(--paper) 85%, transparent); }
+.discovery-stage { min-width: 0; padding: 18px 30px 14px; background-image: none; }.stage-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; min-height: 112px; padding: 4px 0 18px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 82%, transparent); }.stage-header h1 { margin: 5px 0 3px; font: 600 26px Georgia, "Noto Serif SC", serif; }.stage-header p:not(.stage-kicker) { max-width: 720px; margin: 0; color: var(--muted); font-size: 12px; }.stage-tools { display: flex; gap: 8px; }.stage-tools button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: color-mix(in srgb, var(--paper) 85%, transparent); }
 .scope-strip { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px 0; color: var(--muted); border-bottom: 1px solid var(--line); font-size: 11px; }.scope-strip strong { color: var(--ink); font-weight: 700; }.discovery-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 0; }.discovery-toolbar > p { margin: 0; color: var(--muted); font-size: 12px; }.filter-group { display: flex; flex-wrap: wrap; gap: 5px; }.filter-group button { padding: 5px 7px; border: 0; border-radius: 5px; color: var(--muted); background: transparent; font-size: 10px; }.filter-group button.selected { color: white; background: var(--ink); }
 .discovery-canvas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-content: start; min-height: 520px; padding: 36px 20px; }.discovery-object { min-height: 205px; padding: 15px; border: 1px solid var(--object-color); border-radius: 11px; background: color-mix(in srgb, var(--paper) 88%, var(--object-color)); box-shadow: 0 5px 14px color-mix(in srgb, var(--ink) 5%, transparent); }.discovery-object header { display: flex; align-items: center; gap: 8px; color: var(--object-color); font-size: 10px; font-weight: 800; }.discovery-object header span { display: grid; width: 23px; height: 23px; place-items: center; border-radius: 50%; color: white; background: var(--object-color); }.discovery-object h2 { margin: 18px 0 8px; font-size: 18px; letter-spacing: -.02em; }.discovery-object p { min-height: 53px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }.discovery-object footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--object-color) 32%, transparent); color: var(--object-color); font-size: 10px; }.discovery-object footer b { font-size: 17px; }.kind-scope { --object-color: var(--blue); }.kind-condition { --object-color: var(--teal); }.kind-evidence { --object-color: var(--violet); }.kind-question { --object-color: var(--orange); }.empty-state { grid-column: 1 / -1; color: var(--muted); text-align: center; }.stage-note { padding: 10px 0 0; color: var(--muted); border-top: 1px solid var(--line); font-size: 10px; }
 @media (max-width: 880px) { .workbench { grid-template-columns: 1fr; }.research-rail { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); }.rail-stats { grid-template-columns: repeat(4, 1fr); }.examples { display: none; }.rail-footer { margin-top: 0; }.discovery-stage { padding: 18px; }.discovery-canvas { padding-inline: 0; } }
@@ -94,7 +94,7 @@ button { cursor: pointer; }
 .rail-stats, .lens-stats { gap: 6px; border: 0; }
 .rail-stats div, .lens-stats div { position: relative; overflow: hidden; min-height: 64px; border: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line)); background: linear-gradient(135deg, color-mix(in srgb, var(--paper-2) 82%, transparent), transparent); }
 .rail-stats div::after, .lens-stats div::after { content: ""; position: absolute; right: 7px; bottom: 7px; width: 22px; height: 2px; background: var(--teal); opacity: .65; box-shadow: 0 0 10px var(--teal); }
-.discovery-stage, .lens-main { background-color: var(--paper); background-image: linear-gradient(color-mix(in srgb, var(--blue) 13%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--blue) 13%, transparent) 1px, transparent 1px), radial-gradient(circle at 72% 14%, color-mix(in srgb, var(--blue) 11%, transparent), transparent 25rem); background-size: 32px 32px, 32px 32px, auto; }
+.discovery-stage, .lens-main { background-color: var(--paper);  }
 .stage-header, .lens-scope-banner { border-bottom-color: color-mix(in srgb, var(--blue) 36%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--paper) 91%, transparent), transparent); }
 .stage-header h1, .lens-scope-banner h1 { font-family: "Noto Sans SC", "Microsoft YaHei UI", sans-serif; font-weight: 760; letter-spacing: .02em; }
 .stage-tools button, .lens-canvas-tools button { border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); border-radius: 2px; background: color-mix(in srgb, var(--paper) 76%, transparent); }
@@ -104,3 +104,42 @@ button { cursor: pointer; }
 .primary-action { border-radius: 2px; background: linear-gradient(90deg, var(--blue), color-mix(in srgb, var(--blue) 62%, var(--teal))); box-shadow: 0 6px 18px color-mix(in srgb, var(--blue) 25%, transparent); }
 .question-label textarea, .live-api-panel textarea { border-radius: 2px; border-color: color-mix(in srgb, var(--blue) 37%, var(--line)); background: color-mix(in srgb, var(--paper) 74%, transparent); }
 .scope-strip, .workflow-meta, .reader-meta, .expansion-brief { border-bottom-color: color-mix(in srgb, var(--blue) 26%, var(--line)); }
+/* Five distinct, grid-free deep-space backdrops. */
+.discovery-stage { background-image: none; }
+.discovery-stage:not(.workflow-stage):not(.reader-stage):not(.expansion-stage) {
+  background-color: #061322;
+  background-image:
+    radial-gradient(circle at 79% 16%, rgba(82, 219, 200, .34) 0 1px, transparent 2px),
+    radial-gradient(circle at 65% 29%, rgba(97, 184, 255, .7) 0 1px, transparent 2px),
+    radial-gradient(circle at 88% 64%, rgba(174, 152, 255, .45) 0 1px, transparent 2px),
+    radial-gradient(ellipse at 77% 30%, rgba(34, 122, 172, .38), transparent 31%),
+    radial-gradient(ellipse at 20% 80%, rgba(19, 109, 103, .25), transparent 38%),
+    linear-gradient(135deg, #061322 0%, #081c31 46%, #06101f 100%);
+}
+.workflow-stage {
+  background-color: #070d1c;
+  background-image:
+    linear-gradient(116deg, transparent 0 31%, rgba(97, 184, 255, .10) 31.2% 31.5%, transparent 31.8% 48%, rgba(82, 219, 200, .09) 48.2% 48.45%, transparent 48.7%),
+    linear-gradient(152deg, transparent 0 62%, rgba(174, 152, 255, .10) 62.2% 62.45%, transparent 62.7%),
+    radial-gradient(circle at 78% 18%, rgba(91, 100, 226, .27), transparent 29%),
+    radial-gradient(circle at 24% 78%, rgba(20, 108, 132, .20), transparent 39%),
+    linear-gradient(160deg, #070d1c, #0a1630 54%, #060c18);
+}
+.reader-stage {
+  background-color: #160e12;
+  background-image:
+    radial-gradient(circle at 70% 15%, rgba(255, 199, 100, .74) 0 1px, transparent 3px),
+    radial-gradient(circle at 70% 15%, rgba(255, 169, 67, .25) 0 10%, transparent 31%),
+    radial-gradient(ellipse at 69% 14%, rgba(205, 82, 39, .28), transparent 37%),
+    radial-gradient(circle at 20% 72%, rgba(132, 73, 118, .18), transparent 36%),
+    linear-gradient(135deg, #160e12, #241316 52%, #100b17);
+}
+.expansion-stage {
+  background-color: #090916;
+  background-image:
+    radial-gradient(circle at 16% 23%, rgba(174, 152, 255, .8) 0 1px, transparent 2px),
+    radial-gradient(circle at 80% 43%, rgba(97, 184, 255, .52) 0 1px, transparent 2px),
+    radial-gradient(circle at 62% 79%, rgba(82, 219, 200, .44) 0 1px, transparent 2px),
+    radial-gradient(ellipse at 58% 92%, rgba(92, 53, 148, .35), transparent 38%),
+    linear-gradient(176deg, #090916 0%, #11102b 54%, #030817 100%);
+}
