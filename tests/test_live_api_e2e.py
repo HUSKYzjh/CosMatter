@@ -73,6 +73,9 @@ class LiveApiEndToEndTests(unittest.TestCase):
                     with urlopen(f"{app}/api/runs/e2e_live/ui", timeout=3) as response:
                         bundle = response.read().decode("utf-8")
                     self.assertIn('"mission_id"', bundle)
+                    graph = json.loads(bundle)["literature_graph"]
+                    self.assertIn("candidate_paper", {node["kind"] for node in graph["nodes"]})
+                    self.assertIn("retrieval_candidate", {edge["edge_type"] for edge in graph["edges"]})
                     self.assertNotIn("fixture-deepseek-token", bundle)
                     self.assertNotIn("fixture-sciverse-token", bundle)
                 finally:

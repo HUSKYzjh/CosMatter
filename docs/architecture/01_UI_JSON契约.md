@@ -44,3 +44,13 @@
 - `research_guide`：从已批准计划、候选历史和已接受证据导出的有界阅读路线；不含查询文本、评分、摘要或全文。
 
 未知的顶层字段应由前端忽略，缺失必填顶层字段则拒绝导入。公开演示夹具见 [`../../examples/ui-demo/route_diagnostics.json`](../../examples/ui-demo/route_diagnostics.json)。
+
+## Literature graph extension
+
+`literature_graph` is a bounded navigation projection for the Graph page. It contains only allowlisted node and edge metadata:
+
+- nodes: mission, candidate-paper metadata, accepted-evidence markers, OpenAlex/Crossref relation targets, and reviewer-recorded paper entities;
+- edges: retrieval candidate, source provenance, citation/reference metadata, and reviewed paper-structure relations;
+- never included: provider tokens, queries, ranking scores, raw responses, abstracts/full text, audit events, review reasons, or hidden reasoning.
+
+Every node and edge carries a `trust_status`. Retrieval and bibliographic relations are navigation metadata, not scientific evidence or causal statements. The frontend caps imported graphs at 96 nodes and 144 edges.

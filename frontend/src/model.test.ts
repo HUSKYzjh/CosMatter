@@ -12,6 +12,20 @@ describe("readBundle", () => {
     expect(bundle.report?.summary).toBe("Approved");
   });
 
+  it("keeps only connected bounded literature graph records", () => {
+    const bundle = readBundle({
+      schema_version: "1.0",
+      mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
+      literature_graph: {
+        trust_status: "navigation_only",
+        nodes: [{ node_id: "paper:1", kind: "candidate_paper", label: "Paper", trust_status: "metadata", source: "Sciverse", score: 0.99 }],
+        edges: [{ source_id: "paper:1", target_id: "missing", edge_type: "bad", relation_source: "fixture", trust_status: "metadata" }],
+      },
+    });
+    expect(bundle.literatureGraph.nodes).toHaveLength(1);
+    expect(bundle.literatureGraph.edges).toHaveLength(0);
+    expect(JSON.stringify(bundle.literatureGraph)).not.toContain("score");
+  });
   it("requires a complete mission boundary", () => {
     expect(() => readBundle({ mission: { mission_id: "m", question: "q" } })).toThrow("mission.material");
   });

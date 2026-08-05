@@ -42,6 +42,9 @@ _MAX_UI_QUOTE_CHARS = 500
 _MAX_TIMELINE_ENTRIES = 40
 _MAX_PAPER_SOURCE_SEGMENTS = 3
 _MAX_PAPER_SOURCE_CHARS = 1_000
+_MAX_LITERATURE_GRAPH_CANDIDATES = 48
+_MAX_LITERATURE_GRAPH_NODES = 96
+_MAX_LITERATURE_GRAPH_EDGES = 144
 
 # These are presentation labels, not raw audit events.  The browser receives no
 # actor, event ID, payload, request ID, query text, exception, or review reason.
@@ -419,6 +422,119 @@ def _paper_structure_projection(structure: dict[str, Any] | None) -> dict[str, A
     entities = [{key: entity[key] for key in ("entity_id", "label", "kind", "segment_id")} for entity in structure["entities"]]
     relations = [{key: relation[key] for key in ("source_entity_id", "target_entity_id", "relation_type", "segment_id")} for relation in structure["relations"]]
     return {"document_id": structure["document_id"], "trust_status": structure["trust_status"], "entities": entities, "relations": relations}
+def _retrieval_candidate_projection(path: Path) -> list[dict[str, Any]]:
+    """Release public-looking candidate metadata, never query text or scores."""
+    if not path.exists():
+        return []
+    payload = _load_object(path, "retrieval candidate artifact")
+    raw_candidates = payload.get("candidates")
+    if not isinstance(raw_candidates, list):
+        raise UiExportError("retrieval candidate artifact has invalid candidates")
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_candidates:
+        if not isinstance(item, dict):
+            raise UiExportError("retrieval candidate artifact contains an invalid candidate")
+        document_id, title, source = item.get("document_id"), item.get("title"), item.get("source")
+        if (
+            not isinstance(document_id, str) or not document_id or len(document_id) > 255 or document_id in seen
+            or not isinstance(title, str) or not title.strip() or len(title.strip()) > 500
+            or not isinstance(source, str) or not source.strip() or len(source.strip()) > 120
+        ):
+            raise UiExportError("retrieval candidate artifact contains invalid public metadata")
+        year = item.get("publication_year")
+        if year is not None and (not isinstance(year, int) or not 1600 <= year <= 3000):
+            raise UiExportError("retrieval candidate artifact contains an invalid publication year")
+        result.append({
+            "document_id": document_id,
+            "title": title.strip(),
+            "source": source.strip(),
+            "publication_year": year,
+            "is_content_accessible": item.get("is_content_accessible") is True,
+        })
+        seen.add(document_id)
+        if len(result) == _MAX_LITERATURE_GRAPH_CANDIDATES:
+            break
+    return result
+
+
+def _literature_graph_projection(
+    mission: MissionBrief,
+    evidence_cards: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    literature_relations: dict[str, Any] | None,
+    crossref_relations: dict[str, Any] | None,
+    paper_structure: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build a bounded navigation graph with explicit non-evidence labels."""
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, str]] = []
+    node_ids: set[str] = set()
+    edge_ids: set[tuple[str, str, str]] = set()
+
+    def add_node(node_id: str, kind: str, label: str, trust_status: str, **extra: Any) -> None:
+        if node_id in node_ids or len(nodes) == _MAX_LITERATURE_GRAPH_NODES:
+            return
+        node = {"node_id": node_id, "kind": kind, "label": label, "trust_status": trust_status}
+        node.update(extra)
+        nodes.append(node)
+        node_ids.add(node_id)
+
+    def add_edge(source_id: str, target_id: str, edge_type: str, relation_source: str, trust_status: str) -> None:
+        key = (source_id, target_id, edge_type)
+        if source_id not in node_ids or target_id not in node_ids or key in edge_ids or len(edges) == _MAX_LITERATURE_GRAPH_EDGES:
+            return
+        edges.append({"source_id": source_id, "target_id": target_id, "edge_type": edge_type, "relation_source": relation_source, "trust_status": trust_status})
+        edge_ids.add(key)
+
+    mission_node = f"mission:{mission.mission_id}"
+    add_node(mission_node, "mission", f"{mission.material} / {mission.property_name}", "mission_navigation")
+    for candidate in candidates:
+        paper_id = f"paper:{candidate['document_id']}"
+        add_node(paper_id, "candidate_paper", candidate["title"], "retrieval_candidate_not_scientific_evidence", source=candidate["source"], publication_year=candidate["publication_year"], is_content_accessible=candidate["is_content_accessible"])
+        add_edge(mission_node, paper_id, "retrieval_candidate", candidate["source"], "retrieval_candidate_not_scientific_evidence")
+
+    for card in evidence_cards:
+        provenance = card["provenance"]
+        paper_id = f"paper:{provenance['document_id']}"
+        if paper_id not in node_ids:
+            add_node(paper_id, "evidence_paper", provenance["document_id"], "accepted_evidence_source", source=provenance["source"], publication_year=None, is_content_accessible=provenance["access_policy"] != AccessPolicy.METADATA_ONLY.value)
+        evidence_id = f"evidence:{card['evidence_id']}"
+        add_node(evidence_id, "accepted_evidence", card["claim"], "accepted_evidence")
+        add_edge(paper_id, evidence_id, "source_provenance", provenance["source"], "accepted_evidence")
+
+    if literature_relations is not None:
+        root_id = f"paper:{literature_relations['source']['document_id']}"
+        if root_id not in node_ids:
+            add_node(root_id, "relation_root_paper", literature_relations["source"]["document_id"], "public_relation_metadata_not_scientific_evidence")
+        for relation in literature_relations["edges"]:
+            target = relation["target_openalex_id"]
+            target_id = f"openalex:{target.rsplit('/', maxsplit=1)[-1]}"
+            add_node(target_id, "openalex_work", target.rsplit("/", maxsplit=1)[-1], "public_relation_metadata_not_scientific_evidence", source="OpenAlex")
+            add_edge(root_id, target_id, relation["edge_type"], "OpenAlex", "public_relation_metadata_not_scientific_evidence")
+
+    if crossref_relations is not None:
+        root_id = f"paper:{crossref_relations['source']['document_id']}"
+        if root_id not in node_ids:
+            add_node(root_id, "relation_root_paper", crossref_relations["source"]["document_id"], "public_bibliographic_reference_metadata_not_scientific_evidence")
+        for relation in crossref_relations["edges"]:
+            target = relation["target_doi"]
+            target_id = f"doi:{target}"
+            add_node(target_id, "crossref_work", target, "public_bibliographic_reference_metadata_not_scientific_evidence", source="Crossref")
+            add_edge(root_id, target_id, "crossref_reference", "Crossref", "public_bibliographic_reference_metadata_not_scientific_evidence")
+
+    if paper_structure is not None:
+        paper_id = f"paper:{paper_structure['document_id']}"
+        if paper_id not in node_ids:
+            add_node(paper_id, "structured_paper", paper_structure["document_id"], paper_structure["trust_status"])
+        for entity in paper_structure["entities"]:
+            entity_id = f"entity:{entity['entity_id']}"
+            add_node(entity_id, "paper_entity", entity["label"], paper_structure["trust_status"], entity_kind=entity["kind"])
+            add_edge(paper_id, entity_id, "paper_contains", "reviewed_structure", paper_structure["trust_status"])
+        for relation in paper_structure["relations"]:
+            add_edge(f"entity:{relation['source_entity_id']}", f"entity:{relation['target_entity_id']}", relation["relation_type"], "reviewed_structure", paper_structure["trust_status"])
+    return {"trust_status": "navigation_metadata_and_reviewed_artifacts_not_a_scientific_conclusion", "nodes": nodes, "edges": edges}
+
 def build_ui_bundle(
     mission: MissionBrief,
     assignment: FleetAssignment,
@@ -434,6 +550,7 @@ def build_ui_bundle(
     literature_relations: dict[str, Any] | None = None,
     crossref_relations: dict[str, Any] | None = None,
     relation_reconciliation: dict[str, Any] | None = None,
+    retrieval_candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -496,6 +613,7 @@ def build_ui_bundle(
         "literature_relations": literature_relations,
         "crossref_relations": crossref_relations,
         "relation_reconciliation": _relation_reconciliation_projection(relation_reconciliation),
+        "literature_graph": _literature_graph_projection(mission, projected_evidence, retrieval_candidates or [], literature_relations, crossref_relations, paper_structure),
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
         "coverage": {"scope": "bounded local mission artifacts and configured providers", "empty_result_meaning": "No current result means no matching artifact or response in this bounded mission; it does not establish that the material-science literature or phenomenon is absent."},
     }
@@ -520,6 +638,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     timeline = _timeline_projection(run_dir / "events.jsonl")
     literature_relations = _relation_expansion_projection(run_dir / "relation_expansion.json", mission.mission_id)
     crossref_relations = _crossref_relation_expansion_projection(run_dir / "crossref_relation_expansion.json", mission.mission_id)
+    retrieval_candidates = _retrieval_candidate_projection(run_dir / "retrieval_candidates.json")
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         paper_source_map = load_source_map(run_dir / "source_map.json", mission.mission_id)
@@ -542,6 +661,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         literature_relations=literature_relations,
         crossref_relations=crossref_relations,
         relation_reconciliation=relation_reconciliation,
+        retrieval_candidates=retrieval_candidates,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
