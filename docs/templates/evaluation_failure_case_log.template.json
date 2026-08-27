@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "mission_id": "<copy_from_mission_json>",
+  "corpus_id": "<copy_from_corpus_manifest_json>",
+  "trust_status": "human_reviewed_aggregate_evaluation_failure_case_log",
+  "categories": [
+    {
+      "category": "parser_or_conversion_failure",
+      "occurrence_count": 0,
+      "resolution_status": "open"
+    }
+  ]
+}

@@ -135,10 +135,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--library-root", type=Path, required=True, help="User-owned folder containing PDFs")
     parser.add_argument("--output", type=Path, required=True, help="Destination UI JSON, normally under runs/")
-    parser.add_argument("--max-papers", type=int, default=48, help="Bounded number of distinct file-name records (1-48)")
+    parser.add_argument("--max-papers", type=int, default=90, help="Bounded number of distinct file-name records (1-250)")
     args = parser.parse_args()
-    if not 1 <= args.max_papers <= 48:
-        parser.error("--max-papers must be between 1 and 48")
+    if not 1 <= args.max_papers <= 250:
+        parser.error("--max-papers must be between 1 and 250")
     root = args.library_root.resolve()
     if not root.is_dir():
         parser.error("--library-root must be an existing directory")

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "mission_id": "mission_bfo_live_001",
+  "trust_status": "human_expert_reviewed_gap_assessment_for_evaluation",
+  "assessments": [
+    {
+      "gap_id": "gap_from_current_run",
+      "expert_approved": true,
+      "novelty_rating": 4,
+      "actionability_rating": 5,
+      "evidence_complete": true
+    }
+  ]
+}

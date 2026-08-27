@@ -52,13 +52,33 @@ class UiLiteratureGraphProjectionTests(unittest.TestCase):
                 "edges": [{"edge_type": "crossref_reference", "target_doi": "10.1000/target"}],
             },
             None,
+            citation_expansion={
+                "trust_status": "public_bibliographic_metadata_not_scientific_evidence",
+                "nodes": [{"doi": "10.1000/root", "depth": 0}, {"doi": "10.1000/citing", "depth": 1}],
+                "edges": [{"source_doi": "10.1000/citing", "target_doi": "10.1000/root", "edge_type": "citation_cited_by", "depth": 1}],
+            },
         )
         node_kinds = {node["kind"] for node in graph["nodes"]}
         edge_kinds = {edge["edge_type"] for edge in graph["edges"]}
-        self.assertTrue({"mission", "candidate_paper", "accepted_evidence", "openalex_work", "crossref_work"} <= node_kinds)
-        self.assertTrue({"retrieval_candidate", "source_provenance", "citation_reference", "crossref_reference"} <= edge_kinds)
+        self.assertTrue({"mission", "candidate_paper", "accepted_evidence", "openalex_work", "crossref_work", "citation_work"} <= node_kinds)
+        self.assertTrue({"retrieval_candidate", "source_provenance", "citation_reference", "citation_cited_by", "crossref_reference"} <= edge_kinds)
         self.assertIn("not_a_scientific_conclusion", graph["trust_status"])
+        condition_graph = _literature_graph_projection(
+            mission, evidence, [], None, None, None,
+            condition_matrix=[dict(
+                condition_cluster="matched strain and thickness",
+                supporting_evidence_ids=["evidence_1"],
+                contradicting_evidence_ids=["evidence_1"],
+                differing_fields=["method"],
+                unknowns=["oxygen_pressure"],
+            )],
+        )
+        cluster = next(node for node in condition_graph["nodes"] if node["kind"] == "condition_cluster")
+        self.assertEqual(cluster["trust_status"], "derived_condition_comparison_not_scientific_conclusion")
+        condition_edges = list(edge for edge in condition_graph["edges"] if edge["target_id"] == cluster["node_id"])
+        self.assertEqual(sorted(edge["edge_type"] for edge in condition_edges), ["condition_contradiction", "condition_support"])
 
 
 if __name__ == "__main__":
     unittest.main()
+

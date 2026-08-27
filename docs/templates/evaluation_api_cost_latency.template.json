@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "mission_id": "<copy_from_mission_json>",
+  "corpus_id": "<copy_from_corpus_manifest_json>",
+  "trust_status": "human_reviewed_aggregate_evaluation_api_cost_latency",
+  "measurement_scope": "<actual provider calls and local-processing window>",
+  "providers": [
+    {
+      "provider_id": "<lowercase_provider_identifier>",
+      "request_count": 0,
+      "successful_request_count": 0,
+      "failed_request_count": 0,
+      "currency": "not_applicable",
+      "total_cost": 0,
+      "median_latency_seconds": 0,
+      "p95_latency_seconds": 0
+    }
+  ]
+}

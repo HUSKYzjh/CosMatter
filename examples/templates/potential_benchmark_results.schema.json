@@ -1,0 +1,20 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CosMatter potential benchmark imported result summary",
+  "description": "One object per planned task/model pair. Populate only from an approved external calculation; this file is not an input-structure or trajectory container.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["task_id", "model_id", "atom_count", "reference_energy_ev", "predicted_energy_ev", "force_rmse_ev_per_a", "wall_time_seconds"],
+    "properties": {
+      "task_id": {"type": "string"},
+      "model_id": {"type": "string"},
+      "atom_count": {"type": "integer", "minimum": 1},
+      "reference_energy_ev": {"type": "number"},
+      "predicted_energy_ev": {"type": "number"},
+      "force_rmse_ev_per_a": {"type": "number", "minimum": 0},
+      "wall_time_seconds": {"type": "number", "exclusiveMinimum": 0}
+    }
+  }
+}

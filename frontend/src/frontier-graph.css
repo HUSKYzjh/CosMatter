@@ -1,81 +1,19 @@
-.workbench.graph-focus { display: block; }
-.frontier-literature-workbench { display: grid; grid-template-columns: 278px minmax(0, 1fr) 250px; min-height: 100vh; color: var(--ink); background: var(--paper); }
-.lens-sidebar { display: flex; min-height: 100vh; flex-direction: column; gap: 16px; padding: 22px 18px 16px; overflow-y: auto; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 96%, white); }
-.lens-wordmark { color: var(--ink); font-size: 20px; font-weight: 780; letter-spacing: -.04em; text-decoration: none; }.lens-wordmark span { color: var(--blue); }.lens-kicker { margin: 0; color: var(--blue); font-size: 10px; font-weight: 800; letter-spacing: .09em; }
-.lens-navigation { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }.lens-navigation button { min-height: 31px; padding: 3px; border: 0; color: var(--muted); background: transparent; font-size: 9px; font-weight: 760; }.lens-navigation button.active { color: white; background: var(--ink); }
-.lens-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }.lens-stats div { min-height: 62px; padding: 9px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }.lens-stats strong, .lens-stats span { display: block; }.lens-stats strong { font: 700 20px Georgia, serif; }.lens-stats span { margin-top: 3px; color: var(--muted); font-size: 9px; }
-.lens-question { display: grid; gap: 5px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }.lens-question p { margin: 0; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }.lens-question strong { font-size: 12px; line-height: 1.45; }.lens-question small { color: var(--blue); font-size: 10px; }
-.lens-search { display: grid; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 800; }.lens-search input { width: 100%; padding: 7px 0; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); background: transparent; font-size: 11px; }.lens-search input:focus { outline: 0; border-bottom-color: var(--blue); }
-.lens-filter-section { display: grid; gap: 3px; }.lens-filter-section h2 { margin: 0 0 5px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }.lens-filter-section label { display: grid; grid-template-columns: 15px 8px minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 24px; color: var(--ink); font-size: 10px; cursor: pointer; }.lens-filter-section label.is-muted { opacity: .42; }.lens-filter-section input { width: 12px; height: 12px; margin: 0; accent-color: var(--blue); }.lens-filter-section i { display: block; width: 7px; height: 7px; border-radius: 50%; }.lens-filter-section strong { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }.lens-filter-section span { color: var(--muted); font-size: 9px; }
-.lens-boundary { margin: auto 0 0; padding-top: 13px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; line-height: 1.55; }
-.lens-main { position: relative; min-width: 0; min-height: 100vh; overflow: hidden; background-color: var(--paper); background-image: none; }
-.lens-scope-banner { position: relative; z-index: 5; display: flex; min-height: 100px; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 28px 17px; border-bottom: 1px solid color-mix(in srgb, var(--line) 80%, transparent); background: color-mix(in srgb, var(--paper) 84%, transparent); }.lens-scope-banner span { color: var(--blue); font-size: 10px; font-weight: 800; letter-spacing: .08em; }.lens-scope-banner h1 { margin: 4px 0; font: 600 24px Georgia, "Noto Serif SC", serif; }.lens-scope-banner p { margin: 0; color: var(--muted); font-size: 11px; }
-.lens-view-tabs { display: flex; gap: 12px; padding-top: 7px; }.lens-view-tabs button { padding: 5px 0; border: 0; border-bottom: 1px solid transparent; color: var(--muted); background: transparent; font-size: 10px; font-weight: 800; }.lens-view-tabs button.active { color: var(--ink); border-bottom-color: var(--blue); }
-.lens-canvas-region { position: relative; height: calc(100vh - 100px); min-height: 560px; }.cytoscape-literature-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }.lens-canvas-tools { position: absolute; z-index: 8; top: 17px; right: 18px; display: flex; gap: 4px; }.lens-canvas-tools button { min-width: 28px; height: 28px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--line) 88%, transparent); border-radius: 5px; color: var(--muted); background: color-mix(in srgb, var(--paper) 92%, transparent); font-size: 11px; font-weight: 750; }.lens-canvas-tools button:hover { color: var(--ink); border-color: var(--blue); }
-.lens-footnote { position: absolute; z-index: 8; right: 24px; bottom: 14px; left: 24px; margin: 0; color: var(--muted); font-size: 10px; pointer-events: none; }
-.lens-card-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); min-height: calc(100vh - 100px); padding: 34px 28px; }.lens-card-board article { display: grid; min-height: 225px; align-content: start; gap: 8px; padding: 0 20px; border-left: 1px solid color-mix(in srgb, var(--line) 80%, transparent); }.lens-card-board article:nth-child(3n + 1) { padding-left: 0; border-left: 0; }.lens-card-board article > span { color: var(--teal); font: 700 18px Georgia, serif; }.lens-card-board article small { color: var(--muted); font-size: 10px; }.lens-card-board article h2 { margin: 2px 0; font: 600 17px Georgia, serif; line-height: 1.4; }.lens-card-board article p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }.lens-card-board article button { width: max-content; margin-top: auto; padding: 0; border: 0; color: var(--blue); background: transparent; font-size: 10px; font-weight: 800; }.lens-empty { grid-column: 1 / -1; color: var(--muted); text-align: center; }
-.lens-inspector { min-height: 100vh; padding: 126px 20px 20px; overflow-y: auto; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 96%, white); }.lens-inspector > i { display: block; width: 9px; height: 9px; margin: 18px 0 8px; border-radius: 50%; }.lens-inspector h2 { margin: 7px 0 3px; font: 600 18px Georgia, "Noto Serif SC", serif; line-height: 1.27; }.lens-inspector > small { color: var(--blue); font-size: 10px; font-weight: 800; }.lens-inspector > p { color: var(--muted); font-size: 11px; line-height: 1.55; }.lens-inspector dl { display: grid; gap: 9px; margin: 22px 0; }.lens-inspector dl div { padding-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 80%, transparent); }.lens-inspector dt { color: var(--muted); font-size: 9px; }.lens-inspector dd { margin: 3px 0 0; overflow-wrap: anywhere; font-size: 11px; }.lens-inspector-note { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--orange) !important; font-size: 10px !important; }
-@media (max-width: 1080px) { .frontier-literature-workbench { grid-template-columns: 245px minmax(0, 1fr); }.lens-inspector { display: none; }.lens-card-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }.lens-card-board article:nth-child(3n + 1) { padding-left: 20px; border-left: 1px solid color-mix(in srgb, var(--line) 80%, transparent); }.lens-card-board article:nth-child(odd) { padding-left: 0; border-left: 0; } }
-@media (max-width: 760px) { .frontier-literature-workbench { display: block; }.lens-sidebar { min-height: 0; padding: 16px; border-right: 0; border-bottom: 1px solid var(--line); }.lens-navigation { max-width: 360px; }.lens-filter-section { display: none; }.lens-boundary { margin-top: 0; }.lens-main { min-height: 640px; }.lens-scope-banner { padding: 18px; }.lens-canvas-region { height: 560px; min-height: 560px; }.lens-card-board { grid-template-columns: 1fr; min-height: auto; padding: 24px 18px; gap: 20px; }.lens-card-board article, .lens-card-board article:nth-child(3n + 1), .lens-card-board article:nth-child(odd) { min-height: 180px; padding: 0 0 18px; border: 0; border-bottom: 1px solid var(--line); } }
+/* Graph styles are consolidated in styles.css. */
 
-.lens-topic-choices { display: grid; gap: 2px; }
-.lens-topic-choices button { display: flex; align-items: center; justify-content: space-between; min-height: 25px; padding: 3px 0; border: 0; color: var(--muted); background: transparent; font-size: 10px; font-weight: 650; text-align: left; }
-.lens-topic-choices button:hover, .lens-topic-choices button.active { color: var(--ink); }
-.lens-topic-choices button.active { padding-left: 7px; border-left: 2px solid var(--blue); }
-.lens-topic-choices span { color: var(--blue); font-size: 9px; font-variant-numeric: tabular-nums; }
-.lens-canvas-tools button.active { color: var(--ink); border-color: var(--blue); background: color-mix(in srgb, var(--blue) 10%, var(--paper)); }
-.lens-canvas-tools button:disabled { cursor: not-allowed; opacity: .36; }
-.lens-related-panel { display: grid; gap: 7px; margin: 20px 0 4px; padding-top: 13px; border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent); }
-.lens-related-panel h3 { margin: 0; color: var(--ink); font-size: 11px; letter-spacing: .03em; }
-.lens-related-panel p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-.lens-related-panel button { display: grid; gap: 3px; width: 100%; padding: 8px 0; border: 0; border-top: 1px solid color-mix(in srgb, var(--line) 65%, transparent); color: var(--ink); background: transparent; text-align: left; }
-.lens-related-panel button:hover strong { color: var(--blue); }
-.lens-related-panel button strong { font-size: 10px; line-height: 1.35; }
-.lens-related-panel button span { color: var(--muted); font-size: 9px; }
-.frontier-literature-workbench { background: radial-gradient(circle at 66% 4%, #123757 0, transparent 26rem), var(--paper); }
-.lens-main::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(120deg, transparent 30%, color-mix(in srgb, var(--blue) 6%, transparent) 30.3%, transparent 30.7%); opacity: .9; }
-.lens-sidebar, .lens-inspector { background: linear-gradient(180deg, color-mix(in srgb, var(--paper) 95%, #08203a), var(--paper)); }
-.lens-inspector { border-left-color: color-mix(in srgb, var(--blue) 28%, var(--line)); }
-.lens-canvas-tools { right: 22px; }
-.lens-footnote { padding: 8px 10px; border-left: 2px solid var(--teal); background: color-mix(in srgb, var(--paper) 76%, transparent); }
-/* Literature graph: a separate galactic chart with a low-contrast constellation overlay. */
-.frontier-literature-workbench { background: var(--space-void); }
-.lens-main {
-  isolation: isolate;
-  background-color: var(--space-void);
-  background-image: radial-gradient(circle at 22% 21%, color-mix(in srgb, var(--space-glow) 62%, transparent), transparent 25%), radial-gradient(ellipse at 77% 72%, color-mix(in srgb, var(--teal) 10%, transparent), transparent 38%), linear-gradient(145deg, var(--space-void), var(--space-deep));
-}
-.lens-main > * { position: relative; z-index: 1; }
-.lens-main::before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  pointer-events: none;
-  opacity: var(--art-muted-opacity);
-  background: linear-gradient(135deg, var(--art-primary), var(--art-secondary)); filter: drop-shadow(0 0 16px color-mix(in srgb, var(--art-primary) 58%, transparent));
-  -webkit-mask-image: url("./assets/visuals/graph-constellation.svg");
-  mask-image: url("./assets/visuals/graph-constellation.svg");
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: 54% 54%;
-  mask-position: 54% 54%;
-  -webkit-mask-size: min(84vw, 1120px) auto;
-  mask-size: min(84vw, 1120px) auto;
-  animation: fleet-constellation-drift 54s ease-in-out infinite alternate;
-}
-@keyframes fleet-constellation-drift { from { transform: translate3d(-1%, 1%, 0) scale(.99); opacity: var(--art-muted-opacity); } to { transform: translate3d(2%, -1%, 0) scale(1.02); opacity: var(--art-opacity); } }
-@media (max-width: 880px) { .lens-main::before { -webkit-mask-size: 980px auto; mask-size: 980px auto; opacity: var(--art-muted-opacity); } }
-@media (max-width: 560px) { .lens-main::before { -webkit-mask-size: 700px auto; mask-size: 700px auto; opacity: var(--art-mobile-opacity); } }
-@media (prefers-reduced-motion: reduce) { .lens-main::before { animation: none; } }
-/* The graph keeps its constellation behind Cytoscape nodes but as a real SVG DOM element. */
-.lens-main::before { content: none !important; animation: none !important; filter: none !important; }
-.lens-main > .fleet-decoration { z-index: 0 !important; top: 116px; right: -118px; width: min(78vw, 1120px); opacity: var(--fleet-vector-opacity); animation: fleet-visible-constellation 38s ease-in-out infinite alternate; }
-@keyframes fleet-visible-constellation { from { transform: translate3d(0, 0, 0) scale(.99); } to { transform: translate3d(-22px, 12px, 0) scale(1.02); } }
-@media (max-width: 880px) { .lens-main > .fleet-decoration { width: 900px; opacity: .30; } }
-@media (max-width: 560px) { .lens-main > .fleet-decoration { width: 680px; right: -300px; opacity: .23; } }
-@media (prefers-reduced-motion: reduce) { .lens-main > .fleet-decoration { animation: none !important; } }
-/* Keep the graph constellation spacious and subordinate to the live network. */
-.lens-main > .fleet-decoration { top: 86px; right: -360px; width: min(94vw, 1420px); opacity: var(--fleet-vector-muted); color: color-mix(in srgb, var(--art-primary) 58%, var(--muted)); filter: none; }
-@media (max-width: 880px) { .lens-main > .fleet-decoration { width: 1100px; right: -540px; opacity: .22; } }
-@media (max-width: 560px) { .lens-main > .fleet-decoration { width: 820px; right: -455px; opacity: .17; } }
+/* A paper cannot skip its candidate-screening decision on the way to private full text. */
+.evidence-handoff { display: grid; gap: .45rem; margin: .9rem 0; padding: .75rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.evidence-handoff small { color: var(--signal-amber); font: .58rem ui-monospace, monospace; letter-spacing: .08em; }
+.evidence-handoff p { margin: 0; color: var(--muted); font-size: .7rem; line-height: 1.5; }
+.evidence-handoff button { justify-self: start; padding: .4rem .55rem; border: 1px solid var(--line); border-radius: .25rem; color: var(--ink); background: transparent; font-size: .68rem; }
+.evidence-handoff .primary-action { border-color: var(--signal-teal); color: var(--signal-teal); }
+.candidate-screening .screening-list > article.focused { border-inline-start: 2px solid var(--signal-teal); background: color-mix(in srgb, var(--signal-teal) 8%, transparent); }
+
+
+.graph-hidden-selection { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin: .65rem 0 0; padding: .65rem .8rem; border-left: 2px solid var(--signal-amber); background: color-mix(in srgb, var(--signal-amber) 5%, transparent); }.graph-hidden-selection div { display: grid; gap: .18rem; }.graph-hidden-selection small { color: var(--signal-amber); font: .58rem ui-monospace, monospace; letter-spacing: .08em; }.graph-hidden-selection strong { color: var(--ink); font-size: .78rem; }.graph-hidden-selection p { margin: 0; color: var(--muted); font-size: .67rem; line-height: 1.4; }.graph-hidden-selection button { flex: none; padding: .4rem .55rem; border: 1px solid color-mix(in srgb, var(--signal-amber) 58%, var(--line)); color: var(--signal-amber); background: transparent; font-size: .66rem; font-weight: 750; }
+@media (max-width: 560px) { .graph-hidden-selection { align-items: start; flex-direction: column; } }
+
+.paper-workflow-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .38rem .7rem; margin: .55rem 0 0; color: var(--muted); font: .59rem/1.35 ui-monospace, monospace; }
+.paper-workflow-legend small { flex-basis: 100%; color: var(--muted); letter-spacing: .07em; }
+.paper-workflow-legend span { display: inline-flex; align-items: center; gap: .25rem; }
+.paper-workflow-legend span::before { content: ""; inline-size: .5rem; block-size: .5rem; border: 1.5px solid currentColor; border-radius: 999px; }
+.paper-workflow-legend .state-screening { color: var(--muted); }.paper-workflow-legend .state-included, .paper-workflow-legend .state-evidence_review { color: var(--signal-teal); }.paper-workflow-legend .state-parsing { color: var(--signal-blue); }.paper-workflow-legend .state-source_map { color: var(--signal-amber); }.paper-workflow-legend .state-accepted_evidence { color: var(--signal-violet); }.paper-workflow-legend .state-failed { color: var(--signal-rose); }

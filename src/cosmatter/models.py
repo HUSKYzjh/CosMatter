@@ -173,6 +173,29 @@ class FleetHandoff:
     def to_dict(self) -> dict[str, Any]:
         return to_primitive(self)
 
+def normalize_doi(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("doi must be a string when present")
+    doi = value.strip().casefold()
+    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
+        if doi.startswith(prefix):
+            doi = doi[len(prefix):].strip()
+            break
+    if not doi or len(doi) > 255 or any(character.isspace() for character in doi) or not doi.startswith("10.") or "/" not in doi:
+        raise ValueError("doi must be a normalized DOI")
+    return doi
+
+
+def normalized_doi_or_none(value: object) -> str | None:
+    """Return a canonical DOI only when a provider value is syntactically usable."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return normalize_doi(value)
+    except ValueError:
+        return None
+
+
 def _nonempty(value: str, field_name: str) -> str:
     value = value.strip()
     if not value:
@@ -288,6 +311,7 @@ class PaperCandidate:
     locator_hint: str | None = None
     score: float | None = None
     is_content_accessible: bool = False
+    doi: str | None = None
     candidate_id: str = field(default_factory=lambda: new_id("candidate"))
     created_at: str = field(default_factory=utc_now)
 
@@ -300,6 +324,8 @@ class PaperCandidate:
             raise ValueError("publication_year must be plausible")
         if self.score is not None and not isinstance(self.score, (int, float)):
             raise ValueError("score must be numeric when present")
+        if self.doi is not None:
+            object.__setattr__(self, "doi", normalize_doi(self.doi))
 
     def to_dict(self) -> dict[str, Any]:
         return to_primitive(self)
@@ -313,6 +339,7 @@ class MissionReport:
     evidence_ids: tuple[str, ...]
     limitations: tuple[str, ...]
     next_steps: tuple[str, ...]
+    research_gap_candidate_ids: tuple[str, ...] = ()
     report_id: str = field(default_factory=lambda: new_id("report"))
     created_at: str = field(default_factory=utc_now)
 
@@ -323,6 +350,8 @@ class MissionReport:
             raise ValueError("MissionReport requires unique evidence_ids")
         if not self.limitations or not self.next_steps:
             raise ValueError("MissionReport requires limitations and next_steps")
+        if len(set(self.research_gap_candidate_ids)) != len(self.research_gap_candidate_ids):
+            raise ValueError("MissionReport requires unique research_gap_candidate_ids")
 
     def to_dict(self) -> dict[str, Any]:
         return to_primitive(self)

@@ -1,0 +1,28 @@
+{
+  "manifest_format": "cosmatter-static-harness-plugin-v1",
+  "plugin_package_id": "cosmatter-potential-scope",
+  "version": "0.1.0",
+  "upstream_design_reference": {
+    "name": "DeepSeek Harness",
+    "repository": "https://github.com/deepseek-ai/deepseek-harness",
+    "compatibility": "inspired_by_plugin_composition_not_a_claimed_official_abi"
+  },
+  "entrypoint": "cosmatter.potential_scope_harness_plugins:PotentialScopeHarness",
+  "static_registration": true,
+  "dynamic_code_loading": false,
+  "plugins": [
+    "potential_scope.private_triage_prompt",
+    "potential_scope.freeze_template",
+    "potential_scope.campaign_preflight",
+    "potential_scope.plan_only_test_cards",
+    "potential_scope.prioritize_test_cards"
+  ],
+  "default_policy": {
+    "external_calls": "deny",
+    "private_content_egress": "deny",
+    "calculation_execution": "deny",
+    "scheduler_submission": "deny",
+    "model_loading": "deny"
+  },
+  "license": "MIT"
+}

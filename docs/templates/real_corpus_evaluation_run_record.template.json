@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "mission_id": "<copy_from_mission_json>",
+  "corpus_id": "<copy_from_corpus_manifest_json>",
+  "trust_status": "blank_human_real_corpus_evaluation_run_record_not_a_result",
+  "frozen_corpus_document_count": 90,
+  "execution_completed_on": "",
+  "code_revision": "",
+  "service_and_model_disclosure": {
+    "llm": "not_recorded",
+    "embedding": "not_recorded",
+    "reranker": "not_recorded",
+    "sciverse": "not_recorded",
+    "mineru": "not_recorded",
+    "local_corpus": "not_recorded"
+  },
+  "human_review_disclosure": {
+    "relevance_gold": "not_started",
+    "material_fact_gold": "not_started",
+    "evidence_quality": "not_started",
+    "gap_expert_review": "not_started"
+  },
+  "metric_artifacts": {
+    "human_retrieval_evaluation": "not_generated",
+    "human_material_fact_evaluation": "not_generated",
+    "human_evidence_quality_evaluation": "not_generated",
+    "human_gap_evaluation": "not_generated"
+  },
+  "failure_case_log_status": "not_recorded",
+  "api_cost_and_latency_status": "not_recorded",
+  "submission_truth_check": "not_completed"
+}

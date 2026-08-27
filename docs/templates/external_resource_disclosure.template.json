@@ -1,0 +1,18 @@
+﻿{
+  "schema_version": "1.0",
+  "trust_status": "human_completed_external_resource_disclosure_not_execution_evidence",
+  "resources": [
+    {
+      "name": "【待填写】",
+      "category": "database | API | model | parser | software",
+      "purpose": "【待填写】",
+      "access_method": "API | local authorized corpus | public download",
+      "version_or_access_date": "【待填写】",
+      "license_or_terms": "【待填写】",
+      "redistribution_boundary": "【待填写】",
+      "used_in_final_result": false
+    }
+  ],
+  "reviewer": "翟家辉",
+  "review_date": "【待填写】"
+}

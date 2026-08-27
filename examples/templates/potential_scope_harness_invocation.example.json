@@ -1,0 +1,12 @@
+{
+  "plugin_id": "potential_scope.campaign_preflight",
+  "authorizations": [],
+  "payload": {
+    "machine": "<inline public plan-only machine JSON>",
+    "reviewed_source_registry": "<inline quote-free reviewed registry JSON>",
+    "system_spec": "<inline human-frozen SystemSpec JSON>",
+    "passports": "<inline reviewed PotentialPassport array JSON>",
+    "condition_matrix": "<inline reviewed condition matrix JSON>"
+  },
+  "note": "This illustrates the invocation envelope only. Replace placeholder strings with validated JSON objects before use; do not include PDFs, Markdown, secrets, paths, commands or raw provider responses."
+}

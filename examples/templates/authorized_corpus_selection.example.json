@@ -1,0 +1,12 @@
+{
+  "corpus_id": "bfo_90_v1",
+  "material": "BiFeO3",
+  "documents": [
+    {
+      "document_id": "bfo_001",
+      "title": "Enter the verified bibliographic title",
+      "doi": null,
+      "access_policy": "institutional_access_internal_review_only"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "fixture_version": "0.1",
+  "synthetic": true,
+  "purpose": "Synthetic end-to-end benchmark; no real paper text or external performance claim.",
+  "retrieval": {
+    "query": "BiFeO3 thin film",
+    "top_k": 2,
+    "zotero_items": [
+      {"key": "relevant_1", "title": "BiFeO3 thin film phase stability", "tags": ["ferroelectric"]},
+      {"key": "relevant_2", "title": "BiFeO3 film strain response", "tags": ["thin film"]},
+      {"key": "irrelevant", "title": "Battery electrolyte review", "tags": ["energy"]}
+    ],
+    "expected_relevant_document_ids": ["zotero:relevant_1", "zotero:relevant_2"]
+  },
+  "extraction": {
+    "document_id": "synthetic_doc",
+    "segments": [
+      {"segment_id": "seg_comp", "locator": "page:1", "quote": "Synthetic material composition statement."},
+      {"segment_id": "seg_temp", "locator": "page:2", "quote": "Synthetic temperature condition statement."}
+    ],
+    "reviewed_facts": {"document_id": "synthetic_doc", "facts": [
+      {"fact_id": "fact_composition", "segment_id": "seg_comp", "category": "composition", "name": "material", "value": "BiFeO3", "unit": null, "normalized_value": "BiFeO3", "normalized_unit": null, "qualifiers": {}},
+      {"fact_id": "fact_temperature", "segment_id": "seg_temp", "category": "experimental_condition", "name": "temperature", "value": 300, "unit": "K", "normalized_value": 300, "normalized_unit": "K", "qualifiers": {"sample_form": "film"}}
+    ]},
+    "expected_fact_ids": ["fact_composition", "fact_temperature"]
+  },
+  "gap": {
+    "material": "BiFeO3", "property_name": "phase stability", "counterevidence_queries": ["synthetic BiFeO3 counterevidence"],
+    "evidence_cards": [
+      {"evidence_id": "gap_support", "stance": "support", "conditions": {"sample_form": "film", "strain_percent": -4, "substrate": "synthetic_a", "thickness_nm": 30, "temperature_k": 300, "method": "synthetic"}},
+      {"evidence_id": "gap_contradict", "stance": "contradict", "conditions": {"sample_form": "film", "strain_percent": -1, "substrate": "synthetic_b", "thickness_nm": 150, "temperature_k": 300, "method": "synthetic"}}
+    ],
+    "expected_evidence_ids": ["gap_support", "gap_contradict"],
+    "expected_differing_fields": ["strain_percent", "substrate", "thickness_nm"]
+  }
+}

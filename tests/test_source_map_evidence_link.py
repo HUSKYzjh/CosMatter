@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from cosmatter.candidate_screening import candidate_screening_from_review, write_candidate_screening
 from cosmatter.ingestion import EvidenceIngestionError, ingest_evidence_draft
 from cosmatter.source_map import source_map_from_review, write_source_map
 from tests.test_ingestion import draft
@@ -13,9 +14,12 @@ class SourceMapEvidenceLinkTests(unittest.TestCase):
         run_dir = root / "run_1"
         run_dir.mkdir()
         (run_dir / "mission.json").write_text(json.dumps({"mission_id": "mission_1"}), encoding="utf-8")
-        (run_dir / "retrieval_candidates.json").write_text(
-            json.dumps({"candidates": [{"document_id": "doc_1", "is_content_accessible": True}]}), encoding="utf-8"
-        )
+        candidates = {"candidates": [{"document_id": "doc_1", "is_content_accessible": True}]}
+        (run_dir / "retrieval_candidates.json").write_text(json.dumps(candidates), encoding="utf-8")
+        write_candidate_screening(run_dir, candidate_screening_from_review(
+            "mission_1", candidates,
+            {"decisions": [{"document_id": "doc_1", "decision": "include_for_fulltext", "reason_codes": ["material_match"]}]},
+        ))
         source_map = source_map_from_review(
             mission_id="mission_1",
             document_id="doc_1",

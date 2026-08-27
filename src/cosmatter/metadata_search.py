@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .config import Settings
-from .models import PaperCandidate
+from .models import PaperCandidate, normalized_doi_or_none
 
 
 class MetadataSearchConfigurationError(RuntimeError):
@@ -61,6 +61,7 @@ class MetadataSearchAdapter:
             candidate = _candidate(
                 document_id=f"openalex:{work_id.rsplit('/', maxsplit=1)[-1]}", title=title, query=query,
                 source="OpenAlex", year=record.get("publication_year"), score=record.get("cited_by_count"), accessible=is_oa,
+                doi=normalized_doi_or_none(record.get("doi")),
             )
             if candidate is not None:
                 candidates.append(candidate)
@@ -87,13 +88,14 @@ class MetadataSearchAdapter:
         for record in records:
             if not isinstance(record, dict):
                 continue
-            doi = _bounded_string(record.get("DOI"), 255)
+            doi = normalized_doi_or_none(_bounded_string(record.get("DOI"), 255))
             title = _first_title(record.get("title"))
             if not doi or not title:
                 continue
             candidate = _candidate(
-                document_id=f"doi:{doi.lower()}", title=title, query=query, source="Crossref",
+                document_id=f"doi:{doi}", title=title, query=query, source="Crossref",
                 year=_crossref_year(record), score=record.get("is-referenced-by-count"), accessible=False,
+                doi=doi,
             )
             if candidate is not None:
                 candidates.append(candidate)
@@ -145,15 +147,17 @@ def _crossref_year(record: dict[str, Any]) -> int | None:
     return None
 
 
-def _candidate(*, document_id: str, title: str, query: str, source: str, year: object, score: object, accessible: bool) -> PaperCandidate | None:
+def _candidate(*, document_id: str, title: str, query: str, source: str, year: object, score: object, accessible: bool, doi: str | None = None) -> PaperCandidate | None:
     try:
-        return PaperCandidate(document_id=document_id, title=title, query=query, source=source, publication_year=year if isinstance(year, int) else None, score=float(score) if isinstance(score, (int, float)) else None, is_content_accessible=accessible)
+        return PaperCandidate(document_id=document_id, title=title, query=query, source=source, publication_year=year if isinstance(year, int) else None, score=float(score) if isinstance(score, (int, float)) else None, is_content_accessible=accessible, doi=doi)
     except ValueError:
         return None
 
 
 def _dedupe(candidates: list[PaperCandidate]) -> tuple[PaperCandidate, ...]:
+    """Collapse only exact DOI aliases within one metadata-provider response."""
     retained: dict[str, PaperCandidate] = {}
     for candidate in candidates:
-        retained.setdefault(candidate.document_id, candidate)
+        identity = f"doi:{candidate.doi}" if candidate.doi else f"document:{candidate.document_id.casefold()}"
+        retained.setdefault(identity, candidate)
     return tuple(retained.values())

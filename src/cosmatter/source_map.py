@@ -19,6 +19,7 @@ _MAX_QUOTE_CHARS = 500
 _INPUT_FIELDS = {"document_id", "segments"}
 _INPUT_SEGMENT_FIELDS = {"segment_id", "locator", "kind", "quote"}
 _MAP_FIELDS = {"schema_version", "mission_id", "trust_status", "document_id", "provider", "task_id_sha256", "segments"}
+_POOL_BOUND_MAP_FIELDS = _MAP_FIELDS | {"source_markdown_sha256"}
 _MAP_SEGMENT_FIELDS = {"segment_id", "locator", "kind", "quote", "quote_sha256"}
 _KINDS = {"paragraph", "table", "formula", "figure_caption"}
 
@@ -54,6 +55,75 @@ def source_map_from_review(
         "segments": selected_segments,
     }
 
+
+
+def source_map_from_pool_review(
+    *,
+    mission_id: str,
+    document_id: str,
+    source_task: dict[str, Any],
+    selection: object,
+    source_markdown_sha256: str,
+) -> dict[str, Any]:
+    """Create a Source Map whose selected snippets were resolved from a private pool."""
+    if not isinstance(source_markdown_sha256, str) or len(source_markdown_sha256) != 64 or any(char not in "0123456789abcdef" for char in source_markdown_sha256):
+        raise SourceMapError("private review-pool Markdown fingerprint is invalid")
+    result = source_map_from_review(
+        mission_id=mission_id,
+        document_id=document_id,
+        source_task=source_task,
+        selection=selection,
+    )
+    result["schema_version"] = "1.1"
+    result["source_markdown_sha256"] = source_markdown_sha256
+    _validate_source_map(result)
+    return result
+
+
+def source_map_document_path(run_dir: Path, document_id: str) -> Path:
+    if not isinstance(document_id, str) or not document_id.strip():
+        raise SourceMapError("document_id must be nonempty")
+    return run_dir / "source_maps" / f"{hashlib.sha256(document_id.encode('utf-8')).hexdigest()}.json"
+
+
+def write_source_map_for_document(run_dir: Path, source_map: dict[str, Any]) -> Path:
+    """Persist a document-scoped map without replacing maps for earlier papers."""
+    _validate_source_map(source_map)
+    path = source_map_document_path(run_dir, source_map["document_id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(source_map, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    legacy = run_dir / "source_map.json"
+    if not legacy.exists():
+        legacy.write_text(json.dumps(source_map, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def load_source_map_for_document(run_dir: Path, mission_id: str, document_id: str | None) -> dict[str, Any] | None:
+    """Load a document-scoped map; keep the legacy single-map path readable."""
+    if document_id is None:
+        return load_source_map(run_dir / "source_map.json", mission_id)
+    path = source_map_document_path(run_dir, document_id)
+    if path.exists():
+        return load_source_map(path, mission_id)
+    legacy = load_source_map(run_dir / "source_map.json", mission_id)
+    if legacy is not None and legacy["document_id"] == document_id:
+        return legacy
+    return None
+
+
+def iter_source_maps(run_dir: Path, mission_id: str) -> tuple[dict[str, Any], ...]:
+    """Return all document-scoped maps, deduplicated with any legacy artifact."""
+    maps: dict[str, dict[str, Any]] = {}
+    legacy = load_source_map(run_dir / "source_map.json", mission_id)
+    if legacy is not None:
+        maps[legacy["document_id"]] = legacy
+    directory = run_dir / "source_maps"
+    if directory.exists():
+        for path in sorted(directory.glob("*.json")):
+            item = load_source_map(path, mission_id)
+            if item is not None:
+                maps[item["document_id"]] = item
+    return tuple(maps[key] for key in sorted(maps))
 
 def write_source_map(run_dir: Path, source_map: dict[str, Any]) -> Path:
     _validate_source_map(source_map)
@@ -119,10 +189,18 @@ def _segments_from_selection(selection: object, document_id: str) -> list[dict[s
 
 
 def _validate_source_map(payload: object) -> None:
-    if not isinstance(payload, dict) or set(payload) != _MAP_FIELDS:
+    if not isinstance(payload, dict):
         raise SourceMapError("source map has unsupported or missing fields")
-    if payload.get("schema_version") != SOURCE_MAP_SCHEMA_VERSION or payload.get("trust_status") != "human_reviewed_parser_selection":
+    schema_version = payload.get("schema_version")
+    expected_fields = _MAP_FIELDS if schema_version == SOURCE_MAP_SCHEMA_VERSION else _POOL_BOUND_MAP_FIELDS if schema_version == "1.1" else None
+    if expected_fields is None or set(payload) != expected_fields:
+        raise SourceMapError("source map has unsupported or missing fields")
+    if payload.get("trust_status") != "human_reviewed_parser_selection":
         raise SourceMapError("source map schema or trust status is invalid")
+    if schema_version == "1.1":
+        fingerprint = payload.get("source_markdown_sha256")
+        if not isinstance(fingerprint, str) or len(fingerprint) != 64 or any(char not in "0123456789abcdef" for char in fingerprint):
+            raise SourceMapError("source map private review-pool fingerprint is invalid")
     if payload.get("provider") != "mineru" or not all(isinstance(payload.get(key), str) and payload[key].strip() for key in ("mission_id", "document_id", "task_id_sha256")):
         raise SourceMapError("source map identity is invalid")
     if len(payload["task_id_sha256"]) != 64 or any(character not in "0123456789abcdef" for character in payload["task_id_sha256"]):

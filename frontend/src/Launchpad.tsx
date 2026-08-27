@@ -1,0 +1,208 @@
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { uiLanguage } from "./zh";
+import { LAUNCH_STAGES, launchModeStatus, stageForLaunchMode, type LaunchPreviewStage } from "./launchStages";
+import { isCurrentCandidateResponse } from "./launchCandidateRequest";
+import { isLaunchMissionReady, launchMissionMissingFields, type LaunchMissionField } from "./launchMissionValidation";
+
+export type LaunchMode = "question" | "pdf" | "resume";
+export interface LaunchCandidate { id: string; question: string; material: string; property: string; scope: string; kind: "survey" | "contrast" | "mechanism"; }
+export interface LaunchMission { question: string; material: string; property: string; scope: string; }
+export interface LaunchPdfCandidateTarget { runId: string; documentId: string; title: string; }
+
+type Theme = "light" | "dark" | "eye";
+const copy = (zh: string, en: string) => uiLanguage() === "zh" ? zh : en;
+const launchFleetMasks = ["/ambient-backgrounds/launch-masks/fleet-01-flagship-mask.png", "/ambient-backgrounds/launch-masks/fleet-02-formation-mask.png", "/ambient-backgrounds/launch-masks/fleet-03-flotilla-mask.png", "/ambient-backgrounds/launch-masks/fleet-04-expedition-mask.png", "/ambient-backgrounds/launch-masks/fleet-05-surveyor-mask.png"] as const;
+
+type FleetRoute = { widthVw: number; startX: number; startY: number; endX: number; endY: number; rotation: number };
+const FLEET_ROUTES: FleetRoute[] = [
+  { widthVw: 88, startX: 92, startY: -24, endX: -152, endY: 18, rotation: 0 },
+  { widthVw: 68, startX: 86, startY: -48, endX: -124, endY: 94, rotation: 7 },
+  { widthVw: 78, startX: -118, startY: 92, endX: 74, endY: -42, rotation: -9 },
+  { widthVw: 100, startX: -146, startY: 31, endX: 88, endY: 11, rotation: 0 },
+  { widthVw: 63, startX: -96, startY: -58, endX: 96, endY: 98, rotation: 11 },
+];
+
+function nextFleetIndex(previous?: number) {
+  if (launchFleetMasks.length < 2) return 0;
+  const offset = 1 + Math.floor(Math.random() * (launchFleetMasks.length - 1));
+  return previous === undefined ? Math.floor(Math.random() * launchFleetMasks.length) : (previous + offset) % launchFleetMasks.length;
+}
+const fallbackCandidates = (question: string): LaunchCandidate[] => [
+  {
+    id: "survey",
+    question: copy(
+      `围绕该研究议题，现有文献的研究对象、报告结论与证据边界分别是什么？`,
+      `What research objects, reported outcomes, and evidence boundaries define the literature landscape for this topic?`,
+    ),
+    material: copy("由输入问题识别，待人工确认", "Inferred from the prompt; confirm manually"),
+    property: copy("研究背景与证据全景", "Research background and evidence landscape"),
+    scope: copy(`以“${question}”作为检索意图，不将原句直接作为研究任务。`, `Use “${question}” as retrieval intent, not as the task wording.`),
+    kind: "survey",
+  },
+  {
+    id: "contrast",
+    question: copy(
+      "哪些可比较的制备、几何、环境与测量条件，可能解释文献中相互不一致的报告？",
+      "Which comparable preparation, geometry, environment, and measurement conditions may explain divergent reports?",
+    ),
+    material: copy("允许多个材料或样品对象", "Multiple materials or sample objects allowed"),
+    property: copy("条件依赖的报告差异", "Condition-dependent reporting differences"),
+    scope: copy(`围绕“${question}”构建条件矩阵、可比性规则与反例检索。`, `Build a condition matrix, comparability rules, and counterexample search around “${question}”.`),
+    kind: "contrast",
+  },
+  {
+    id: "mechanism",
+    question: copy(
+      "需要优先核对哪些可定位的原文证据，才能区分竞争机制、样品差异或方法学偏差？",
+      "Which located primary-source evidence should be checked first to distinguish mechanisms, sample differences, or methodological bias?",
+    ),
+    material: copy("待由来源定位后规范化", "Normalize after source location"),
+    property: copy("可证伪解释与证据判别", "Falsifiable explanations and evidence discrimination"),
+    scope: copy(`围绕“${question}”建立来源定位、条件字段与人工审核门禁。`, `Establish source locations, condition fields, and a human review gate for “${question}”.`),
+    kind: "mechanism",
+  },
+];
+
+const MODES: Array<{ id: LaunchMode; icon: string; zh: string; en: string; zhDetail: string; enDetail: string }> = [
+  { id: "question", icon: "✦", zh: "问题启航", en: "Question", zhDetail: "问题 → 候选资料库 / 计划", enDetail: "Question → candidates / plan" },
+  { id: "pdf", icon: "▱", zh: "文献入港", en: "PDF intake", zhDetail: "PDF → 私有 Markdown / 引文", enDetail: "PDF → private Markdown / citations" },
+  { id: "resume", icon: "↗", zh: "续航任务", en: "Resume", zhDetail: "运行包 → 未完成阶段", enDetail: "Run package → unfinished stage" },
+];
+
+export function Launchpad(props: { onQuestion: (mission: LaunchMission) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; automaticExecutionAvailable?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
+  const [foregroundIndex, setForegroundIndex] = createSignal(nextFleetIndex());
+  const [mode, setMode] = createSignal<LaunchMode>("question");
+  const activeStage = () => stageForLaunchMode(mode());
+  const [prompt, setPrompt] = createSignal("");
+  const [candidates, setCandidates] = createSignal<LaunchCandidate[]>([]);
+  const [selected, setSelected] = createSignal<LaunchCandidate | null>(null);
+  const [jumping, setJumping] = createSignal(false);
+  const [pdf, setPdf] = createSignal<File | null>(null);
+  const [pdfConsent, setPdfConsent] = createSignal(false);
+  const [automaticConsent, setAutomaticConsent] = createSignal(false);
+  const [resume, setResume] = createSignal<File | null>(null);
+  const selectedMissing = () => { const candidate = selected(); return candidate ? launchMissionMissingFields(candidate) : [] as LaunchMissionField[]; };
+  const selectedReady = () => { const candidate = selected(); return Boolean(candidate && isLaunchMissionReady(candidate)); };
+  const fieldLabel = (field: LaunchMissionField) => ({ question: copy("研究问题", "research question"), material: copy("研究对象", "research objects"), property: copy("研究目标", "research target"), scope: copy("比较范围", "comparison scope") } as const)[field];
+  let latestCandidateRequest = 0;
+  createEffect(() => { if (props.candidatePdfTarget) setMode("pdf"); });
+  let fleetNode: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!fleetNode) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (reducedMotion.matches) {
+      const route = FLEET_ROUTES[foregroundIndex()];
+      fleetNode.style.width = route.widthVw + "vw";
+      fleetNode.style.opacity = ".38";
+      fleetNode.style.transform = "translate3d(" + ((route.startX + route.endX) * window.innerWidth / 200) + "px, " + ((route.startY + route.endY) * window.innerHeight / 200) + "px, 0) rotate(" + route.rotation + "deg)";
+      return;
+    }
+    const transitMs = 20_000;
+    const cycleMs = 25_000;
+    const startedAt = performance.now();
+    let frame = 0;
+    let completedCycle = 0;
+    const tick = (now: number) => {
+      const elapsed = now - startedAt;
+      const currentCycle = Math.floor(elapsed / cycleMs);
+      if (currentCycle > completedCycle) {
+        completedCycle = currentCycle;
+        setForegroundIndex((previous) => nextFleetIndex(previous));
+      }
+      const phase = elapsed % cycleMs;
+      const route = FLEET_ROUTES[foregroundIndex()];
+      fleetNode!.style.width = route.widthVw + "vw";
+      const progress = Math.min(1, phase / transitMs);
+      const offsetX = (route.startX + (route.endX - route.startX) * progress) * window.innerWidth / 100;
+      const offsetY = (route.startY + (route.endY - route.startY) * progress) * window.innerHeight / 100;
+      const opacity = phase >= transitMs ? 0 : progress < .025 ? progress / .025 : progress > .775 ? (1 - progress) / .225 : 1;
+      fleetNode!.style.opacity = String(Math.max(0, opacity));
+      fleetNode!.style.transform = "translate3d(" + offsetX + "px, " + offsetY + "px, 0) rotate(" + route.rotation + "deg)";
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    onCleanup(() => window.cancelAnimationFrame(frame));
+  });
+
+  createEffect(() => {
+    const question = prompt().trim();
+    const requestId = ++latestCandidateRequest;
+    setSelected(null);
+    setAutomaticConsent(false);
+    if (mode() !== "question" || question.length < 12) { setCandidates([]); return; }
+    setCandidates([]);
+    const timer = window.setTimeout(() => {
+      const request = props.onCandidates ? props.onCandidates(question) : Promise.resolve(fallbackCandidates(question));
+      void request
+        .then((result) => {
+          if (isCurrentCandidateResponse(requestId, latestCandidateRequest, question, prompt())) setCandidates(result);
+        })
+        .catch(() => {
+          if (isCurrentCandidateResponse(requestId, latestCandidateRequest, question, prompt())) setCandidates(fallbackCandidates(question));
+        });
+    }, 800);
+    onCleanup(() => window.clearTimeout(timer));
+  });
+
+  function updateCandidate(field: keyof LaunchMission, value: string) {
+    const current = selected();
+    if (current) setSelected({ ...current, [field]: value });
+  }
+  function beginQuestion() {
+    if (jumping()) return;
+    const candidate = selected();
+    if (!candidate || !isLaunchMissionReady(candidate) || (props.automaticExecutionAvailable && !automaticConsent())) return;
+    setJumping(true);
+    window.setTimeout(() => props.onQuestion(candidate), 680);
+  }
+  function resizeQuestionInput(textarea: HTMLTextAreaElement) {
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 208) + "px";
+  }
+
+  return <main classList={{ launchpad: true, "launch-jumping": jumping() }}>
+    <div class="launch-sky" aria-hidden="true"><i /><i /><i /><i /></div>
+    <div class="launch-fleet-extract" ref={(node) => { fleetNode = node; }} aria-hidden="true"><img class="launch-fleet-main" src={launchFleetMasks[foregroundIndex()]} alt="" /><img class="launch-fleet-echo" src={launchFleetMasks[foregroundIndex()]} alt="" /></div>
+    <section class="launch-controls" aria-label={copy("起始页显示设置", "Launch display settings")}>
+      <div class="launch-control-group"><button classList={{ active: props.language === "zh" }} type="button" onClick={() => props.onLanguage("zh")} aria-label="切换为中文" title="中文">中</button><button classList={{ active: props.language === "en" }} type="button" onClick={() => props.onLanguage("en")} aria-label="Switch to English" title="English">En</button></div>
+      <div class="launch-control-group"><button classList={{ active: props.theme === "light" }} type="button" onClick={() => props.onTheme("light")} aria-label={copy("浅色主题", "Light theme")} title={copy("浅色", "Light")}>☀</button><button classList={{ active: props.theme === "dark" }} type="button" onClick={() => props.onTheme("dark")} aria-label={copy("深色主题", "Dark theme")} title={copy("深色", "Dark")}>☾</button><button classList={{ active: props.theme === "eye" }} type="button" onClick={() => props.onTheme("eye")} aria-label={copy("护眼主题", "Eye-care theme")} title={copy("护眼", "Eye care")}>◉</button></div>
+    </section>
+
+    <section class="launch-hero">
+      <div class="launch-briefing">
+        <p class="launch-kicker">COSMATTER / {copy("材料科学证据航线", "MATERIALS EVIDENCE ROUTE")}</p>
+        <h1>{copy("从一个问题，驶向可审计的材料研究。", "From one question to auditable materials research.")}</h1>
+        <p class="launch-boundary">{copy("自动生成的候选、背景与计划均为未受信建议；只有人工核对来源定位后的 EvidenceCard 才能进入后续推论。", "Generated candidates, context and plans are untrusted suggestions. Only human-checked, located EvidenceCards can support later reasoning.")}</p>
+        <nav class="launch-modes" aria-label={copy("任务入口", "Mission entry modes")}>
+          <For each={MODES}>{(item, index) => <button classList={{ active: mode() === item.id }} type="button" disabled={jumping()} onClick={() => setMode(item.id)}><b>0{index() + 1}</b><i>{item.icon}</i><span>{copy(item.zh, item.en)}</span><small>{copy(item.zhDetail, item.enDetail)}</small></button>}</For>
+        </nav>
+      </div>
+      <aside class="launch-stage-column" aria-label={copy("科研闭环阶段", "Research evidence stages")}>
+        <header><p>RESEARCH EVIDENCE ROUTE</p><strong>{copy("科研闭环", "Research evidence loop")}</strong><span>{launchModeStatus(mode(), props.language)}</span></header>
+        <ol>
+          <For each={LAUNCH_STAGES}>{(stage, index) => <li classList={{ active: activeStage() === stage.id }}>
+            <button type="button" onClick={() => props.onPreviewStage(stage.id)} aria-label={copy(`预览：${stage.zh}`, `Preview: ${stage.en}`)}>
+              <span class="launch-stage-index">{String(index() + 1).padStart(2, "0")}</span>
+              <span class="launch-stage-copy"><strong>{copy(stage.zh, stage.en)}</strong><small>{copy(stage.inputZh, stage.inputEn)} → {copy(stage.outputZh, stage.outputEn)}</small><em>{copy(stage.gateZh, stage.gateEn)}</em></span>
+              <b aria-hidden="true">↗</b>
+            </button>
+          </li>}</For>
+        </ol>
+        <footer>{copy("点击仅打开本地只读预览；不会创建任务、上传文件或调用 API。", "Click for a local read-only preview only. No task, upload, or API call is started.")}</footer>
+      </aside>
+    </section>
+
+    <section class="launch-workspace">
+      <Show when={mode() === "question"}>
+        <section class="signal-receiver"><header><p class="launch-kicker">QUESTION SIGNAL</p><h2>{copy("提出一个可由文献证据回答的问题", "Ask a question answerable with literature evidence")}</h2><ol><li>{copy("输入研究问题", "Enter a research question")}</li><li>{copy("生成未受信候选航向", "Generate untrusted candidate routes")}</li><li>{copy("确认任务边界", "Confirm the task boundary")}</li></ol></header><label>{copy("研究问题", "Research question")}<textarea value={prompt()} rows="3" onInput={(event) => { setPrompt(event.currentTarget.value); resizeQuestionInput(event.currentTarget); }} placeholder={copy("例如：为什么不同薄膜研究对 BiFeO₃ 相稳定性有相反结论？", "Example: Why do thin-film studies disagree about BiFeO₃ phase stability?")} /></label><small>{copy("输入至少 12 个字符后，系统将在约 0.8 秒后形成候选航向。", "After at least 12 characters, candidate routes appear in about 0.8 seconds.")}</small>
+          <div classList={{ "candidate-orbits": true, ready: candidates().length > 0 }}><Show when={candidates().length > 0} fallback={<p class="launch-empty">{copy("等待研究信号。", "Waiting for a research signal.")}</p>}><For each={candidates()}>{(candidate, index) => <button type="button" disabled={jumping()} classList={{ "candidate-planet": true, selected: selected()?.id === candidate.id, [`planet-${candidate.kind}`]: true }} style={{ "--orbit-delay": `${index() * 110}ms` }} onClick={() => { setSelected(candidate); setAutomaticConsent(false); }}><small>0{index() + 1}</small><strong>{candidate.question}</strong><span>{candidate.kind === "survey" ? copy("全景梳理", "Landscape") : candidate.kind === "contrast" ? copy("条件分歧", "Contrast") : copy("机制核验", "Mechanism")}</span></button>}</For></Show></div>
+          <Show when={selected()}>{(candidate) => <section class="launch-brief-editor"><div><p>{copy("任务简报 / 可编辑边界", "MISSION BRIEF / EDITABLE BOUNDARY")}</p><label>{copy("研究问题", "Question")}<input value={candidate().question} onInput={(event) => updateCandidate("question", event.currentTarget.value)} /></label><label>{copy("研究对象", "Research objects")}<input value={candidate().material} onInput={(event) => updateCandidate("material", event.currentTarget.value)} /></label><label>{copy("研究目标", "Research target")}<input value={candidate().property} onInput={(event) => updateCandidate("property", event.currentTarget.value)} /></label><label>{copy("比较范围", "Comparison scope")}<input value={candidate().scope} onInput={(event) => updateCandidate("scope", event.currentTarget.value)} /></label></div><div class="launch-confirmation"><Show when={selectedMissing().length}><p class="launch-brief-warning">{copy("仍需人工确认：", "Still requires human confirmation: ")}<For each={selectedMissing()}>{(field, index) => <>{index() ? "、" : ""}{fieldLabel(field)}</>}</For>{copy("。候选航向不会直接成为检索任务。", ". A candidate route cannot directly become a retrieval task.")}</p></Show><Show when={props.automaticExecutionAvailable}><label class="consent launch-auto-consent"><input type="checkbox" checked={automaticConsent()} onChange={(event) => setAutomaticConsent(event.currentTarget.checked)} />{copy("我确认本次任务可向已选书目服务发送问题、对象、目标与范围，用于受控元数据检索；该授权不接受 EvidenceCard，也不上传全文。", "I authorize this task to send its question, objects, target, and scope to selected bibliographic services for controlled metadata retrieval. This does not accept EvidenceCards or upload full text.")}</label></Show><button class="launch-primary" disabled={jumping() || !selectedReady() || (props.automaticExecutionAvailable && !automaticConsent())} type="button" onClick={beginQuestion}>{props.automaticExecutionAvailable ? copy("确认并授权元数据检索", "Confirm and authorize metadata retrieval") : copy("确认任务并进入编排", "Confirm and enter orchestration")}</button></div></section>}</Show>
+        </section>
+      </Show>
+      <Show when={mode() === "pdf"}><section class="mode-panel"><p class="launch-kicker">DOCUMENT INTAKE</p><h2>{copy("将有权处理的 PDF 送入私有资料舱", "Send an authorized PDF to the private document bay")}</h2><Show when={props.candidatePdfTarget}>{(target) => <p class="candidate-pdf-context">{copy("当前将把已人工纳入的候选关联到原任务：", "The authorized PDF will be linked to the original task for the human-included candidate:")} <strong>{target().title}</strong></p>}</Show><p>{copy("文件先进入本机环回服务；确认后才提交 MinerU。完整 Markdown 不进入 UI JSON 或运行包。", "The file first enters the local loopback service; it reaches MinerU only after consent. Full Markdown never enters UI JSON or a run package.")}</p><label class="file-bay">{copy("选择 PDF", "Choose PDF")}<input type="file" accept="application/pdf,.pdf" onChange={(event) => setPdf(event.currentTarget.files?.[0] ?? null)} /></label><Show when={pdf()}>{(file) => <p class="file-name">{file().name} · {(file().size / 1024 / 1024).toFixed(1)} MB</p>}</Show><label class="consent"><input type="checkbox" checked={pdfConsent()} onChange={(event) => setPdfConsent(event.currentTarget.checked)} />{copy("我确认有权处理该 PDF，并同意提交后发送至 MinerU 云端。", "I have the right to process this PDF and consent to MinerU cloud submission.")}</label><button class="launch-primary" disabled={!pdf() || !pdfConsent()} type="button" onClick={() => pdf() && props.onPdf(pdf()!, props.candidatePdfTarget ?? undefined)}>{copy("创建解析任务", "Create parsing task")}</button></section></Show>
+      <Show when={mode() === "resume"}><section class="mode-panel"><p class="launch-kicker">RUN CONTINUATION</p><h2>{copy("恢复可执行的研究航程", "Restore an executable research voyage")}</h2><p>{copy("仅接受版本化 .cosmatter-run.json。旧 ui.json 仅可只读查看，不能恢复后端执行。", "Only versioned .cosmatter-run.json is accepted. Legacy ui.json remains read-only and cannot resume backend execution.")}</p><label class="file-bay">{copy("选择运行包", "Choose run package")}<input type="file" accept="application/json,.json" onChange={(event) => setResume(event.currentTarget.files?.[0] ?? null)} /></label><Show when={resume()}>{(file) => <p class="file-name">{file().name}</p>}</Show><button class="launch-primary" disabled={!resume()} type="button" onClick={() => resume() && props.onResume(resume()!)}>{copy("校验并继续任务", "Validate and continue")}</button></section></Show>
+    </section>
+
+    <footer class="launch-flow" aria-label={copy("证据流程", "Evidence workflow")}><p>{copy("证据流程", "EVIDENCE ROUTE")}</p><div><span>{copy("输入", "Input")}</span><i>→</i><span>{copy("编排", "Orchestrate")}</span><i>→</i><span>{copy("文献星图", "Literature map")}</span><i>→</i><span>{copy("证据核对", "Verify")}</span><i>→</i><span>Gap {copy("候选", "candidates")}</span></div></footer>
+  </main>;
+}

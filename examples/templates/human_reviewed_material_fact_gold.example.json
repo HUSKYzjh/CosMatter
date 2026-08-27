@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "mission_id": "mission_bfo_live_001",
+  "corpus_id": "bfo_90_v1",
+  "trust_status": "human_reviewed_material_fact_gold_for_evaluation",
+  "documents": [
+    {
+      "document_id": "bfo_001",
+      "expected_facts": [
+        {
+          "category": "property",
+          "name": "polarization",
+          "normalized_value": 90,
+          "normalized_unit": "uC/cm2",
+          "locator": "page:4, table:1"
+        }
+      ]
+    }
+  ]
+}

@@ -1,143 +1,197 @@
-import { For, Show, createMemo, createSignal, lazy } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, lazy } from "solid-js";
 
 import { FleetDecoration } from "./FleetDecoration";
+import { CandidateScreeningPanel } from "./CandidateScreeningPanel";
+import { fleetVisualState } from "./fleetVisualState";
 import type { GraphCanvasControls } from "./LiteratureGraphCanvas";
-import { TOPIC_KEYS, TOPIC_LABELS, isPaperNode, relatedLiteraturePairs, topicFor, type RelatedLiteraturePair, type TopicKey } from "./literatureTopology";
-import type { ImportedBundle, LiteratureGraphEdge, LiteratureGraphNode } from "./model";
+import { TOPIC_KEYS, isPaperNode, topicFor, type TopicKey } from "./literatureTopology";
+import { literatureGraphMode } from "./literatureGraphMode";
+import { documentIdForReviewablePaper, evidenceForPaper } from "./evidenceLinking";
+import { graphEdgeStillExists, graphSelectionVisibility } from "./graphSelectionState";
+import { graphNodeForSessionDocument } from "./graphSessionSelection";
+import { paperPdfIntake, pdfTaskForPaper } from "./paperPdfIntake";
+import { paperWorkflowState, type PaperWorkflowState } from "./paperWorkflowState";
+import { shouldPromptForScreening } from "./screeningActionState";
+import { candidateScreeningProgress } from "./candidateScreeningProgress";
+import type { EvidenceCard, ImportedBundle, LiteratureGraphEdge, LiteratureGraphNode } from "./model";
+import type { CandidateScreening, CandidateScreeningCandidate, CandidateScreeningDecision, PdfTaskStatus } from "./localApi";
 import "./frontier-graph.css";
-import { zh } from "./zh";
 
+type NodeGroup = "mission" | "papers" | "evidence" | "conditions" | "references" | "structure";
+type EdgeGroup = "discovery" | "evidence" | "conditions" | "bibliography" | "related" | "structure";
+type NavigateView = "discover" | "workflow" | "reader" | "horizon";
 const LiteratureGraphCanvas = lazy(() => import("./LiteratureGraphCanvas").then((module) => ({ default: module.LiteratureGraphCanvas })));
 
-type GraphView = "graph" | "cards";
-type NodeGroup = "mission" | "papers" | "evidence" | "references" | "structure";
-type EdgeGroup = "discovery" | "evidence" | "bibliography" | "related" | "structure";
-type NavigateView = "discover" | "workflow" | "reader" | "horizon";
-
-const NODE_GROUPS: Array<{ id: NodeGroup; label: string; color: string }> = [
-  { id: "mission", label: zh("Mission scope"), color: "var(--blue)" },
-  { id: "papers", label: zh("Papers"), color: "var(--teal)" },
-  { id: "evidence", label: zh("Accepted evidence"), color: "var(--orange)" },
-  { id: "references", label: zh("Reference metadata"), color: "var(--violet)" },
-  { id: "structure", label: zh("Structure / collections"), color: "var(--rose)" },
+const NODE_GROUPS: Array<{ id: NodeGroup; zh: string; en: string; color: string }> = [
+  { id: "mission", zh: "任务", en: "Mission", color: "var(--signal-blue)" },
+  { id: "papers", zh: "论文", en: "Papers", color: "var(--signal-teal)" },
+  { id: "evidence", zh: "已接受证据", en: "Accepted evidence", color: "var(--signal-violet)" },
+  { id: "conditions", zh: "条件簇与矛盾", en: "Condition clusters & conflicts", color: "var(--signal-amber)" },
+  { id: "references", zh: "书目元数据", en: "Reference metadata", color: "var(--signal-amber)" },
+  { id: "structure", zh: "集合与结构", en: "Collections", color: "var(--signal-rose)" },
 ];
-const EDGE_GROUPS: Array<{ id: EdgeGroup; label: string; color: string }> = [
-  { id: "discovery", label: zh("Discovery route"), color: "var(--teal)" },
-  { id: "evidence", label: zh("Evidence provenance"), color: "var(--orange)" },
-  { id: "bibliography", label: zh("Bibliographic links"), color: "var(--violet)" },
-  { id: "related", label: zh("Related-title suggestions"), color: "var(--blue)" },
-  { id: "structure", label: zh("Document / collection links"), color: "var(--rose)" },
+const EDGE_GROUPS: Array<{ id: EdgeGroup; zh: string; en: string }> = [
+  { id: "discovery", zh: "候选路线", en: "Discovery routes" },
+  { id: "evidence", zh: "证据溯源", en: "Evidence provenance" },
+  { id: "conditions", zh: "条件支持／矛盾", en: "Condition support / contradiction" },
+  { id: "bibliography", zh: "书目关联", en: "Bibliography" },
+  { id: "related", zh: "题名建议", en: "Title suggestions" },
+  { id: "structure", zh: "集合关系", en: "Structure" },
 ];
-
 function nodeGroup(node: LiteratureGraphNode): NodeGroup {
   if (node.kind === "mission") return "mission";
   if (isPaperNode(node)) return "papers";
-  if (node.kind === "accepted_evidence") return "evidence";
-  if (["openalex_work", "crossref_work"].includes(node.kind)) return "references";
+  if (["accepted_evidence", "research_gap_candidate"].includes(node.kind)) return "evidence";
+  if (node.kind === "condition_cluster") return "conditions";
+  if (["openalex_work", "crossref_work", "citation_work"].includes(node.kind)) return "references";
   return "structure";
 }
 function edgeGroup(edge: LiteratureGraphEdge): EdgeGroup {
   if (edge.edgeType === "retrieval_candidate") return "discovery";
-  if (edge.edgeType === "source_provenance") return "evidence";
+  if (["source_provenance", "gap_evidence_basis"].includes(edge.edgeType)) return "evidence";
+  if (["condition_support", "condition_contradiction"].includes(edge.edgeType)) return "conditions";
   if (edge.edgeType === "title_similarity_suggestion") return "related";
-  if (["citation_reference", "algorithmic_related", "crossref_reference"].includes(edge.edgeType)) return "bibliography";
+  if (["citation_reference", "citation_cited_by", "algorithmic_related", "crossref_reference"].includes(edge.edgeType)) return "bibliography";
   return "structure";
 }
-function edgeKey(edge: LiteratureGraphEdge): string { return `${edge.sourceId}|${edge.targetId}|${edge.edgeType}`; }
-function label(node: LiteratureGraphNode): string { return node.label.length > 92 ? `${node.label.slice(0, 89).trim()}...` : node.label; }
 
-export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; onNavigate: (view: NavigateView) => void }) {
-  const [view, setView] = createSignal<GraphView>("graph");
+export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; locale: "zh" | "en"; selectedDocumentId?: string | null; pdfTask: PdfTaskStatus | null; pdfTasks?: PdfTaskStatus[]; screening: CandidateScreening | null; onLoadScreening?: () => Promise<void>; onSubmitScreening?: (decisions: CandidateScreeningDecision[]) => Promise<void>; onRequestFulltext?: (candidate: CandidateScreeningCandidate) => void; onNavigate: (view: NavigateView) => void; onSelectPaper: (node: LiteratureGraphNode) => void; onSelectEvidence: (evidence: EvidenceCard) => void }) {
   const [query, setQuery] = createSignal("");
   const [selectedTopic, setSelectedTopic] = createSignal<TopicKey | "all">("all");
-  const [nodeVisibility, setNodeVisibility] = createSignal<Record<NodeGroup, boolean>>({ mission: true, papers: true, evidence: true, references: true, structure: true });
-  const [edgeVisibility, setEdgeVisibility] = createSignal<Record<EdgeGroup, boolean>>({ discovery: true, evidence: true, bibliography: true, related: true, structure: true });
+  const [advanced, setAdvanced] = createSignal(false);
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
   const [selectedEdge, setSelectedEdge] = createSignal<LiteratureGraphEdge | null>(null);
   const [focusSelection, setFocusSelection] = createSignal(false);
+  // The graph remains the primary reading surface. Details appear only after a researcher asks for them or selects an object.
+  const [inspectorOpen, setInspectorOpen] = createSignal(false);
   const [controls, setControls] = createSignal<GraphCanvasControls | null>(null);
+  const [nodeVisibility, setNodeVisibility] = createSignal<Record<NodeGroup, boolean>>({ mission: false, papers: true, evidence: true, conditions: true, references: false, structure: false });
+  const [edgeVisibility, setEdgeVisibility] = createSignal<Record<EdgeGroup, boolean>>({ discovery: true, evidence: true, conditions: true, bibliography: false, related: false, structure: false });
+  const [citationAutoShown, setCitationAutoShown] = createSignal(false);
+  const [sessionSelectionRestored, setSessionSelectionRestored] = createSignal(false);
+  const [screeningFocusId, setScreeningFocusId] = createSignal<string | null>(null);
+  const [screeningPanelOpen, setScreeningPanelOpen] = createSignal(false);
+  const t = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const graph = () => props.bundle.literatureGraph;
-  const suggestedPairs = createMemo(() => relatedLiteraturePairs(graph().nodes));
-  const graphEdges = createMemo(() => {
-    const supplied = graph().edges;
-    const keys = new Set(supplied.map(edgeKey));
-    return [...supplied, ...suggestedPairs().map((pair) => pair.edge).filter((edge) => !keys.has(edgeKey(edge)))];
-  });
-  const filteredNodes = createMemo(() => {
-    const term = query().trim().toLocaleLowerCase();
-    return graph().nodes.filter((node) => nodeVisibility()[nodeGroup(node)]
-      && (!isPaperNode(node) || selectedTopic() === "all" || topicFor(node) === selectedTopic())
-      && (!term || `${node.label} ${node.source ?? ""} ${node.kind}`.toLocaleLowerCase().includes(term)));
-  });
   const visibleNodes = createMemo(() => {
-    const nodes = filteredNodes();
-    const selected = selectedNodeId();
-    if (!focusSelection() || !selected) return nodes;
-    const neighbors = new Set([selected]);
-    graphEdges().forEach((edge) => {
-      if (edge.sourceId === selected) neighbors.add(edge.targetId);
-      if (edge.targetId === selected) neighbors.add(edge.sourceId);
-    });
-    return nodes.filter((node) => neighbors.has(node.nodeId));
+    const term = query().trim().toLocaleLowerCase();
+    const all = graph().nodes.filter((node) => nodeVisibility()[nodeGroup(node)] && (!isPaperNode(node) || selectedTopic() === "all" || topicFor(node) === selectedTopic()) && (!term || `${node.label} ${node.source ?? ""}`.toLocaleLowerCase().includes(term)));
+    if (!focusSelection() || !selectedNodeId()) return all;
+    const neighbours = new Set([selectedNodeId()!]);
+    graph().edges.forEach((edge) => { if (edge.sourceId === selectedNodeId()) neighbours.add(edge.targetId); if (edge.targetId === selectedNodeId()) neighbours.add(edge.sourceId); });
+    return all.filter((node) => neighbours.has(node.nodeId));
   });
   const visibleIds = createMemo(() => new Set(visibleNodes().map((node) => node.nodeId)));
-  const visibleEdges = createMemo(() => graphEdges().filter((edge) => edgeVisibility()[edgeGroup(edge)] && visibleIds().has(edge.sourceId) && visibleIds().has(edge.targetId)));
-  const selectedNode = createMemo(() => graph().nodes.find((node) => node.nodeId === selectedNodeId()) ?? visibleNodes().find((node) => node.kind === "mission") ?? visibleNodes()[0] ?? null);
-  const paperCards = createMemo(() => visibleNodes().filter(isPaperNode));
-  const topicCounts = createMemo(() => Object.fromEntries(TOPIC_KEYS.map((topic) => [topic, graph().nodes.filter((node) => isPaperNode(node) && topicFor(node) === topic).length])) as Record<TopicKey, number>);
-  const selectedRelated = createMemo(() => selectedEdge()?.edgeType === "title_similarity_suggestion" ? suggestedPairs().find((pair) => edgeKey(pair.edge) === edgeKey(selectedEdge()!)) ?? null : null);
-  const relatedForSelected = createMemo(() => {
-    const selected = selectedNode();
-    if (!selected || !isPaperNode(selected)) return [] as Array<{ node: LiteratureGraphNode; pair: RelatedLiteraturePair }>;
-    return suggestedPairs().flatMap((pair) => {
-      const otherId = pair.edge.sourceId === selected.nodeId ? pair.edge.targetId : pair.edge.targetId === selected.nodeId ? pair.edge.sourceId : null;
-      const node = otherId ? graph().nodes.find((item) => item.nodeId === otherId) : null;
-      return node ? [{ node, pair }] : [];
+  const visibleEdges = createMemo(() => graph().edges.filter((edge) => edgeVisibility()[edgeGroup(edge)] && visibleIds().has(edge.sourceId) && visibleIds().has(edge.targetId)));
+  const selectionState = createMemo(() => graphSelectionVisibility(selectedNodeId(), graph().nodes, visibleNodes()));
+  const selectedNode = createMemo(() => selectedNodeId() ? graph().nodes.find((node) => node.nodeId === selectedNodeId()) ?? null : null);
+  const selectedPaperHidden = createMemo(() => Boolean(selectedNode() && isPaperNode(selectedNode()!) && selectionState().exists && !selectionState().visible));
+  const linkedEvidence = createMemo(() => evidenceForPaper(props.bundle, selectedNode()));
+  const conditionEvidence = createMemo(() => {
+    const condition = selectedNode();
+    if (!condition || condition.kind !== "condition_cluster") return [];
+    const evidenceById = new Map(props.bundle.evidenceCards.map((card) => [card.evidenceId, card]));
+    return graph().edges.flatMap((edge) => {
+      if (edge.targetId !== condition.nodeId || !["condition_support", "condition_contradiction"].includes(edge.edgeType)) return [];
+      const evidence = evidenceById.get(edge.sourceId.replace(/^evidence:/, ""));
+      return evidence ? [{ evidence, relation: edge.edgeType === "condition_support" ? "support" : "contradiction" }] : [];
     });
   });
-  const countNodes = (group: NodeGroup) => graph().nodes.filter((node) => nodeGroup(node) === group).length;
-  const countEdges = (group: EdgeGroup) => graphEdges().filter((edge) => edgeGroup(edge) === group).length;
-  const selectNode = (nodeId: string) => { setSelectedNodeId(nodeId || null); setSelectedEdge(null); };
-  const selectEdge = (edge: LiteratureGraphEdge) => { setSelectedEdge(edge); setSelectedNodeId(null); };
-  const toggleNode = (group: NodeGroup) => setNodeVisibility((current) => ({ ...current, [group]: !current[group] }));
-  const toggleEdge = (group: EdgeGroup) => setEdgeVisibility((current) => ({ ...current, [group]: !current[group] }));
+  const paperStates = createMemo<Record<string, PaperWorkflowState>>(() => Object.fromEntries(
+    graph().nodes.map((node) => {
+      const documentId = documentIdForReviewablePaper(node);
+      const decision = documentId ? props.screening?.decisions.find((item) => item.document_id === documentId)?.decision ?? "unreviewed" : null;
+      const evidenceCount = evidenceForPaper(props.bundle, node).length;
+      const state = paperWorkflowState(node, props.pdfTasks ?? (props.pdfTask ? [props.pdfTask] : []), decision, evidenceCount);
+      return state ? [node.nodeId, state] : null;
+    }).filter((entry): entry is [string, PaperWorkflowState] => entry !== null),
+  ));
+  const paperStateCounts = createMemo(() => Object.values(paperStates()).reduce<Record<PaperWorkflowState, number>>((counts, state) => ({ ...counts, [state]: (counts[state] ?? 0) + 1 }), { untracked: 0, screening: 0, included: 0, parsing: 0, source_map: 0, evidence_review: 0, accepted_evidence: 0, failed: 0, excluded: 0 }));
+  const matchingPdfTask = createMemo(() => pdfTaskForPaper(props.pdfTasks ?? (props.pdfTask ? [props.pdfTask] : []), selectedNode()));
+  const paperPdf = createMemo(() => paperPdfIntake(matchingPdfTask(), selectedNode()));
+  const paperDocumentId = (node: LiteratureGraphNode | null): string | null => documentIdForReviewablePaper(node);
+  const screeningCandidate = createMemo(() => { const documentId = paperDocumentId(selectedNode()); return documentId ? props.screening?.candidates.find((candidate) => candidate.document_id === documentId) ?? null : null; });
+  const screeningDecision = createMemo(() => { const candidate = screeningCandidate(); return candidate ? props.screening?.decisions.find((decision) => decision.document_id === candidate.document_id)?.decision ?? "unreviewed" : "unreviewed"; });
+  const paperCount = createMemo(() => visibleNodes().filter(isPaperNode).length);
+  const reviewablePaperCount = createMemo(() => graph().nodes.filter((node) => Boolean(documentIdForReviewablePaper(node))).length);
+  const screeningProgress = createMemo(() => candidateScreeningProgress(
+    props.screening,
+    reviewablePaperCount(),
+    Boolean(props.onLoadScreening && props.onSubmitScreening),
+  ));
+  const screeningProgressLabel = () => {
+    const progress = screeningProgress();
+    if (progress.state === "not_loaded") return t("待载入人工筛选清单", "Human checklist not loaded");
+    if (progress.state === "unavailable") return t("仅预览：本机筛选接口不可用", "Preview only: local screening is unavailable");
+    if (progress.state === "in_progress") return t(`已审 ${progress.reviewedCount}/${progress.candidateCount}，尚余 ${progress.pendingCount}`, `Reviewed ${progress.reviewedCount}/${progress.candidateCount}; ${progress.pendingCount} remaining`);
+    return t(`筛选已提交，${progress.includedCount} 篇获准全文核对`, `Screening submitted; ${progress.includedCount} approved for full-text review`);
+  };
+  const bibliographyCount = createMemo(() => visibleNodes().filter((node) => node.kind === "citation_work").length);
+  const contentMode = createMemo(() => literatureGraphMode(graph().nodes, graph().edges));
+  const screeningActionRequired = createMemo(() => shouldPromptForScreening(hasReviewablePapers(), Boolean(props.onLoadScreening && props.onSubmitScreening), props.screening));
+  const firstUnreviewedCandidateId = createMemo(() => props.screening?.candidates.find((candidate) => (props.screening?.decisions.find((decision) => decision.document_id === candidate.document_id)?.decision ?? "unreviewed") === "unreviewed")?.document_id ?? null);
+  const hasPersistedScreening = createMemo(() => props.screening?.trust_status === "human_reviewed_candidate_screening_not_scientific_evidence");
+  const includedScreeningIds = createMemo(() => new Set((props.screening?.decisions ?? []).filter((decision) => decision.decision === "include_for_fulltext").map((decision) => decision.document_id)));
+  const firstIncludedPaper = createMemo(() => !hasPersistedScreening() ? null : graph().nodes.find((node) => isPaperNode(node) && Boolean(paperDocumentId(node)) && includedScreeningIds().has(paperDocumentId(node)!)) ?? null);
+  const hasReviewablePapers = createMemo(() => contentMode() === "evidence");
+  const hasCitationMap = createMemo(() => graph().nodes.some((node) => node.kind === "citation_work") && graph().edges.some((edge) => ["citation_reference", "citation_cited_by"].includes(edge.edgeType)));
+  const hasNavigableMap = createMemo(() => contentMode() !== "empty");
+  const openScreening = (documentId: string | null = null) => {
+    setScreeningFocusId(documentId);
+    setScreeningPanelOpen(true);
+  };
+  createEffect(() => { if (hasCitationMap() && !citationAutoShown()) { setNodeVisibility((current) => ({ ...current, references: true })); setEdgeVisibility((current) => ({ ...current, bibliography: true })); setCitationAutoShown(true); } });
+  // Restore the session paper once; later graph inspection remains user-directed.
+  createEffect(() => {
+    if (sessionSelectionRestored()) return;
+    const paper = graphNodeForSessionDocument(graph().nodes, props.selectedDocumentId);
+    if (!props.selectedDocumentId || paper) {
+      if (paper) {
+        setSelectedNodeId(paper.nodeId);
+        setSelectedEdge(null);
+      }
+      setSessionSelectionRestored(true);
+    }
+  });
+  createEffect(() => {
+    if (selectedNodeId() && !selectionState().exists) { setSelectedNodeId(null); setFocusSelection(false); }
+    if (!graphEdgeStillExists(selectedEdge(), graph().edges)) setSelectedEdge(null);
+  });
+  const topicLabel = (topic: TopicKey) => ({ ferroelectric: t("铁电性", "Ferroelectricity"), piezoelectric: t("压电性", "Piezoelectricity"), thin_film: t("薄膜与界面", "Thin films & interfaces"), domain_microstructure: t("畴与微观结构", "Domains & microstructure"), simulation_method: t("模拟与方法", "Simulation & methods"), other: t("其他题名元数据", "Other title metadata") } satisfies Record<TopicKey, string>)[topic];
+  const selectNode = (id: string) => { const node = graph().nodes.find((item) => item.nodeId === id) ?? null; setSelectedNodeId(node?.nodeId ?? null); setSelectedEdge(null); if (node) setInspectorOpen(true); if (node && documentIdForReviewablePaper(node)) props.onSelectPaper(node); };
+  const selectEdge = (edge: LiteratureGraphEdge) => { setSelectedEdge(edge); setSelectedNodeId(null); setInspectorOpen(true); };
+  const revealSelectedPaper = () => {
+    setQuery("");
+    setSelectedTopic("all");
+    setNodeVisibility((current) => ({ ...current, papers: true }));
+    setFocusSelection(false);
+  };
 
   return <main class="frontier-literature-workbench">
-    <aside class="lens-sidebar" aria-label="\u6587\u732e\u56fe\u8c31\u63a7\u5236">
-      <a class="lens-wordmark" href="/" onClick={(event) => { event.preventDefault(); props.onNavigate("discover"); }}>Cos<span>Matter</span></a>
-      <p class="lens-kicker">\u6587\u732e\u5bfc\u822a\u4e2d\u5fc3 / LITERATURE NAVIGATION</p>
-      <nav class="lens-navigation" aria-label="\u5de5\u4f5c\u53f0\u89c6\u56fe">
-        <button type="button" onClick={() => props.onNavigate("discover")}>{zh("Discover")}</button><button type="button" onClick={() => props.onNavigate("workflow")}>{zh("Workflow")}</button><button class="active" type="button">{zh("Graph")}</button><button type="button" onClick={() => props.onNavigate("reader")}>{zh("Reading")}</button><button type="button" onClick={() => props.onNavigate("horizon")}>{zh("Horizon")}</button>
-      </nav>
-      <section class="lens-stats" aria-label="\u56fe\u8c31\u8986\u76d6\u60c5\u51b5">
-        <div><strong>{paperCards().length}</strong><span>\u53ef\u89c1\u8bba\u6587</span></div><div><strong>{visibleEdges().length}</strong><span>\u53ef\u89c1\u5173\u8054</span></div><div><strong>{suggestedPairs().length}</strong><span>\u9898\u540d\u5efa\u8bae</span></div><div><strong>{new Set(paperCards().map((node) => node.source ?? "local")).size}</strong><span>\u6765\u6e90\u901a\u9053</span></div>
-      </section>
-      <section class="lens-question"><p>\u7814\u7a76\u8303\u56f4</p><strong>{props.bundle.mission.question}</strong><small>{props.bundle.mission.material} / {props.bundle.mission.property}</small></section>
-      <label class="lens-search">\u68c0\u7d22\u53ef\u89c1\u56fe\u8c31<input aria-label="\u68c0\u7d22\u6587\u732e\u56fe\u8c31" value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="\u9898\u540d\u6216\u6765\u6e90" /></label>
-      <Show when={view() === "graph"}>
-        <section class="lens-filter-section"><h2>{zh("Topic clusters")}</h2><div class="lens-topic-choices"><button type="button" classList={{ active: selectedTopic() === "all" }} onClick={() => setSelectedTopic("all")}>{zh("All")} <span>{graph().nodes.filter(isPaperNode).length}</span></button><For each={TOPIC_KEYS.filter((topic) => topicCounts()[topic])}>{(topic) => <button type="button" classList={{ active: selectedTopic() === topic }} onClick={() => setSelectedTopic(topic)}>{TOPIC_LABELS[topic]} <span>{topicCounts()[topic]}</span></button>}</For></div></section>
-        <section class="lens-filter-section"><h2>{zh("Node types")}</h2><For each={NODE_GROUPS}>{(item) => <label classList={{ "is-muted": !nodeVisibility()[item.id] }}><input type="checkbox" checked={nodeVisibility()[item.id]} onChange={() => toggleNode(item.id)} /><i style={{ background: item.color }} /><strong>{item.label}</strong><span>{countNodes(item.id)}</span></label>}</For></section>
-        <section class="lens-filter-section"><h2>{zh("Relation types")}</h2><For each={EDGE_GROUPS}>{(item) => <label classList={{ "is-muted": !edgeVisibility()[item.id] }}><input type="checkbox" checked={edgeVisibility()[item.id]} onChange={() => toggleEdge(item.id)} /><i style={{ background: item.color }} /><strong>{item.label}</strong><span>{countEdges(item.id)}</span></label>}</For></section>
-      </Show>
-      <p class="lens-boundary">Topic grouping and related-title links use display-title metadata only. They are navigation aids, never citation, content, or material-science evidence.</p>
-    </aside>
-    <section class="lens-main"><FleetDecoration kind="graph" />
-      <header class="lens-scope-banner"><div><span>\u6587\u732e\u661f\u56fe / SCIVERSE</span><h1>\u9650\u5b9a\u4efb\u52a1\u8303\u56f4\u7684\u63a2\u7d22</h1><p>{props.bundle.mission.scope}</p></div><div class="lens-view-tabs"><button type="button" classList={{ active: view() === "cards" }} onClick={() => setView("cards")}>{zh("Card view")}</button><button type="button" classList={{ active: view() === "graph" }} onClick={() => setView("graph")}>{zh("Relationship graph")}</button></div></header>
-      <Show when={view() === "graph"} fallback={<section class="lens-card-board"><For each={paperCards()}>{(node, index) => <article><span>{String(index() + 1).padStart(2, "0")}</span><small>{TOPIC_LABELS[topicFor(node)]} / {node.source ?? "local artifact"}{node.publicationYear ? ` / ${node.publicationYear}` : ""}</small><h2>{node.label}</h2><p>{node.trustStatus.replaceAll("_", " ")}</p><button type="button" onClick={() => { selectNode(node.nodeId); setView("graph"); }}>{zh("Open in graph")}</button></article>}</For><Show when={!paperCards().length}><p class="lens-empty">No paper metadata matches the current lens.</p></Show></section>}>
-        <section class="lens-canvas-region">
-          <div class="lens-canvas-tools"><button type="button" onClick={() => controls()?.fit()}>{zh("Fit")}</button><button type="button" classList={{ active: focusSelection() }} disabled={!selectedNodeId()} onClick={() => setFocusSelection((value) => !value)}>{zh("Focus")}</button><button type="button" aria-label="Zoom in graph" onClick={() => controls()?.zoomIn()}>+</button><button type="button" aria-label="Zoom out graph" onClick={() => controls()?.zoomOut()}>-</button></div>
-          <LiteratureGraphCanvas theme={() => props.theme} nodes={visibleNodes} edges={visibleEdges} selectedNodeId={selectedNodeId} selectedEdge={selectedEdge} onSelectNode={selectNode} onSelectEdge={selectEdge} onReady={setControls} />
-          <p class="lens-footnote">Showing {visibleNodes().length} bounded nodes and {visibleEdges().length} typed relations. Select a paper to inspect and focus its immediate map neighborhood.</p>
-        </section>
-      </Show>
-    </section>
-    <aside class="lens-inspector" aria-label="Selected graph artifact">
-      <Show when={selectedEdge()} fallback={<Show when={selectedNode()} fallback={<><p class="lens-kicker">{"\u68c0\u67e5\u5668"}</p><h2>{"\u9009\u62e9\u8282\u70b9\u6216\u5173\u7cfb"}</h2><p>{"\u8be6\u60c5\u7f6e\u4e8e\u56fe\u8c31\u4e4b\u5916\uff0c\u4fdd\u6301\u5173\u7cfb\u533a\u57df\u6e05\u6670\u3002"}</p></>}>
-        {(node) => <><p class="lens-kicker">{"\u8282\u70b9"}</p><i style={{ background: NODE_GROUPS.find((item) => item.id === nodeGroup(node()))?.color }} /><h2>{label(node())}</h2><small>{node().kind.replaceAll("_", " ")}</small><dl><div><dt>{"\u53ef\u4fe1\u8fb9\u754c"}</dt><dd>{node().trustStatus.replaceAll("_", " ")}</dd></div><Show when={isPaperNode(node())}><div><dt>{"\u9898\u540d\u6d3e\u751f\u4e3b\u9898\u7c07"}</dt><dd>{TOPIC_LABELS[topicFor(node())]}</dd></div></Show><Show when={node().source}><div><dt>{"\u5143\u6570\u636e\u6765\u6e90"}</dt><dd>{node().source}</dd></div></Show><Show when={node().publicationYear}><div><dt>{"\u53d1\u8868\u5e74\u4efd"}</dt><dd>{node().publicationYear}</dd></div></Show><Show when={node().isContentAccessible !== undefined}><div><dt>{"\u5185\u5bb9\u8bbf\u95ee"}</dt><dd>{node().isContentAccessible ? "\u53ef\u8bbf\u95ee\u5019\u9009" : "\u4ec5\u5143\u6570\u636e"}</dd></div></Show></dl><Show when={relatedForSelected().length}><section class="lens-related-panel"><h3>{zh("Related titles")}</h3><p>{"\u4ec5\u6309\u5171\u4eab\u9898\u540d\u5173\u952e\u8bcd\u5efa\u8bae\uff1b\u4e0d\u662f\u5f15\u6587\u6216\u8bc1\u636e\u3002"}</p><For each={relatedForSelected()}>{(item) => <button type="button" onClick={() => selectNode(item.node.nodeId)}><strong>{label(item.node)}</strong><span>{"\u5171\u4eab\u8bcd\uff1a"} {item.pair.sharedTerms.join(", ")}</span></button>}</For></section></Show></>}
-      </Show>}>
-        {(edge) => <><p class="lens-kicker">{"\u5173\u7cfb"}</p><i style={{ background: EDGE_GROUPS.find((item) => item.id === edgeGroup(edge()))?.color }} /><h2>{edge().edgeType.replaceAll("_", " ")}</h2><small>{edge().relationSource}</small><dl><div><dt>{"\u5173\u7cfb\u8fb9\u754c"}</dt><dd>{edge().trustStatus.replaceAll("_", " ")}</dd></div><div><dt>{"\u8d77\u70b9"}</dt><dd>{edge().sourceId}</dd></div><div><dt>{"\u7ec8\u70b9"}</dt><dd>{edge().targetId}</dd></div></dl><Show when={selectedRelated()}>{(pair) => <section class="lens-related-panel"><h3>{"\u4e3a\u4f55\u5efa\u8bae\uff1f"}</h3><p>{"\u4e24\u4e2a\u663e\u793a\u9898\u540d\u5747\u5305\u542b\uff1a"} {pair().sharedTerms.join(", ")}.</p></section>}</Show></>}
-      </Show>
-      <p class="lens-inspector-note">{"\u5c06\u6587\u732e\u89c6\u4e3a\u8bc1\u636e\u524d\uff0c\u8bf7\u5148\u68c0\u67e5\u6eaf\u6e90\u3002"}</p>
-    </aside>
+    <FleetDecoration kind="graph" state={fleetVisualState(props.bundle, "graph")} />
+    <header class="stage-header graph-header"><div><p class="stage-kicker">COSMATTER / {hasCitationMap() && !hasReviewablePapers() ? t("书目引文导航", "BIBLIOGRAPHY NAVIGATION") : t("文献星图", "LITERATURE MAP")}</p><h1>{hasCitationMap() && !hasReviewablePapers() ? t("浏览引文关系，再选择待核对原文", "Browse citation relations, then choose original text to verify") : t("选择文献，再核对来源", "Select literature, then verify provenance")}</h1><p>{hasCitationMap() && !hasReviewablePapers() ? t("此图来自 DOI 的双向引文扩展，只表示公开书目信息；它不能替代原文、材料事实或 EvidenceCard。", "This map comes from bidirectional DOI citation expansion and shows public bibliographic metadata only; it cannot replace source text, materials facts, or EvidenceCards.") : t("图谱只展示候选、已接受证据和条件关系；题名相似或书目连接不是材料事实。", "The map shows candidates, accepted evidence, and condition relations; title similarity and bibliography are not material facts.")}</p></div></header>
+    <Show when={hasReviewablePapers()}><section class="graph-route-status" aria-label={t("文献证据闭环状态", "Literature evidence-loop status")}>
+      <div><small>{t("候选元数据", "METADATA CANDIDATES")}</small><strong>{reviewablePaperCount()}</strong><span>{t("仅供人工筛选，不是科学证据", "For human screening only; not scientific evidence")}</span></div>
+      <i aria-hidden="true">→</i>
+      <div classList={{ "route-pending": screeningProgress().state !== "completed" }}><small>{t("人工筛选", "HUMAN SCREENING")}</small><strong>{screeningProgressLabel()}</strong><span>{t("每篇均需决定与理由", "Each paper needs a decision and reason")}</span></div>
+      <i aria-hidden="true">→</i>
+      <div classList={{ "route-ready": props.bundle.evidenceCards.length > 0 }}><small>{t("已接受 EvidenceCard", "ACCEPTED EVIDENCECARD")}</small><strong>{props.bundle.evidenceCards.length}</strong><span>{props.bundle.evidenceCards.length ? t("已具有来源定位与人工审核", "Source-located and human-reviewed") : t("全文与来源定位核对后才可建立", "Created only after full-text and provenance review")}</span></div>
+    </section></Show>
+    <Show when={hasNavigableMap()} fallback={<section class="graph-empty"><small>{t("文献星图待建立", "LITERATURE MAP PENDING")}</small><h2>{t("尚无可审查的文献或书目子图", "No reviewable literature or bibliography subgraph yet")}</h2><p>{t("当前任务只有边界标记，尚未导入或检索到论文元数据；书目关系、全文和 EvidenceCard 不会被自动虚构。", "The current task has only a boundary marker. No paper metadata has been imported or retrieved, and bibliography, full text, and EvidenceCards are never fabricated.")}</p><button type="button" class="primary-action" onClick={() => props.onNavigate("workflow")}>{t("返回舰桥查看工件状态", "Return to bridge and inspect artifact status")}</button></section>}>
+    <section class="graph-controls" aria-label={t("图谱筛选", "Map filters")}><label>{t("检索", "Search")}<input value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder={t("题名或来源", "title or source")} /></label><Show when={hasReviewablePapers()}><label>{t("主题簇", "Topic cluster")}<select value={selectedTopic()} onChange={(event) => setSelectedTopic(event.currentTarget.value as TopicKey | "all")}><option value="all">{t("全部论文", "All papers")}</option><For each={TOPIC_KEYS}>{(topic) => <option value={topic}>{topicLabel(topic)}</option>}</For></select></label></Show><button type="button" classList={{ active: advanced() }} onClick={() => setAdvanced((value) => !value)}>{advanced() ? t("收起高级筛选", "Hide advanced filters") : t("高级筛选", "Advanced filters")}</button><button type="button" onClick={() => controls()?.fit()}>{t("适配画布", "Fit canvas")}</button><button type="button" disabled={!selectedNodeId()} classList={{ active: focusSelection() }} onClick={() => setFocusSelection((value) => !value)}>{t("聚焦选择", "Focus selection")}</button><button type="button" classList={{ active: inspectorOpen() }} aria-expanded={inspectorOpen()} onClick={() => setInspectorOpen((value) => !value)}>{inspectorOpen() ? t("收起检查器", "Hide inspector") : selectedNodeId() || selectedEdge() ? t("查看当前选择", "Inspect selection") : t("打开检查器", "Open inspector")}</button></section>
+    <Show when={screeningActionRequired()} fallback={<Show when={firstIncludedPaper()}>{(paper) => <section class="graph-screening-cue graph-fulltext-cue" aria-live="polite"><div><small>{t("当前首要动作", "CURRENT PRIMARY ACTION")}</small><strong>{t("从已纳入候选开始受控全文核对", "Start controlled full-text review from an included candidate")}</strong><p>{t(`人工筛选已提交。先在星图聚焦“${paper().label}”，再显式选择你有权处理的对应 PDF；全文处理不会自动开始。`, `Human screening is submitted. Focus “${paper().label}” in the map, then explicitly choose the corresponding PDF you are authorised to process; full-text work never starts automatically.`)}</p></div><button type="button" class="primary-action" onClick={() => selectNode(paper().nodeId)}>{t("定位首篇纳入文献", "Focus first included paper")}</button></section>}</Show>}><section class="graph-screening-cue" aria-live="polite"><div><small>{t("当前首要动作", "CURRENT PRIMARY ACTION")}</small><strong>{props.screening ? t("先完成候选文献的人审筛选", "Complete human screening of candidate literature first") : t("载入候选文献人工筛选清单", "Load the human screening checklist")}</strong><p>{props.screening ? t(`已返回 ${props.screening.candidate_count} 篇元数据候选。请逐篇记录纳入、排除或补元数据的理由；这一步不会下载全文或生成 EvidenceCard。`, `${props.screening.candidate_count} metadata candidates have returned. Record an include, exclude, or metadata-review reason for each; this does not download full text or create an EvidenceCard.`) : t("图谱中已有候选论文，但人工筛选清单尚未载入。载入后请逐篇记录决定与理由；这一步不会下载全文或生成 EvidenceCard。", "Candidate papers are present in the map, but the human screening checklist is not loaded. After loading it, record one decision and reason per paper; this does not download full text or create an EvidenceCard.")}</p></div><button type="button" class="primary-action" onClick={() => openScreening(firstUnreviewedCandidateId())}>{props.screening ? t("开始人工筛选", "Start human screening") : t("载入筛选清单", "Load screening checklist")}</button></section></Show>
+    <Show when={selectedPaperHidden()}><section class="graph-hidden-selection" aria-live="polite"><div><small>{t("当前选择已被筛选隐藏", "CURRENT SELECTION HIDDEN")}</small><strong>{selectedNode()?.label ?? ""}</strong><p>{t("该论文仍是本次阅读会话的选择，但当前搜索、主题或节点筛选未将其显示在画布中。", "This paper remains selected for the current reading session, but the current search, topic, or node filter hides it from the canvas.")}</p></div><button type="button" onClick={revealSelectedPaper}>{t("显示当前论文", "Reveal current paper")}</button></section></Show>
+    <Show when={hasReviewablePapers() && props.onLoadScreening && props.onSubmitScreening && screeningPanelOpen()}><section class="graph-screening-drawer" aria-label={t("候选文献人工筛选", "Candidate literature human screening")}><button type="button" class="screening-drawer-close" onClick={() => setScreeningPanelOpen(false)}>{t("收起筛选", "Hide screening")}</button><CandidateScreeningPanel locale={props.locale} screening={props.screening} load={props.onLoadScreening!} submit={props.onSubmitScreening!} onRequestFulltext={props.onRequestFulltext} focusDocumentId={screeningFocusId()} autoOpen /></section></Show>
+    <Show when={advanced()}><section class="advanced-filters"><div><strong>{t("节点类型", "Node types")}</strong><For each={NODE_GROUPS}>{(group) => <label><input type="checkbox" checked={nodeVisibility()[group.id]} onChange={() => setNodeVisibility((current) => ({ ...current, [group.id]: !current[group.id] }))} />{t(group.zh, group.en)}</label>}</For></div><div><strong>{t("关系类型", "Relation types")}</strong><For each={EDGE_GROUPS}>{(group) => <label><input type="checkbox" checked={edgeVisibility()[group.id]} onChange={() => setEdgeVisibility((current) => ({ ...current, [group.id]: !current[group.id] }))} />{t(group.zh, group.en)}</label>}</For></div></section></Show>
+    <section class="graph-workspace" classList={{ "inspector-open": inspectorOpen() }}><section class="lens-canvas-region"><div class="lens-canvas-tools"><button type="button" aria-label={t("放大", "Zoom in")} onClick={() => controls()?.zoomIn()}>+</button><button type="button" aria-label={t("缩小", "Zoom out")} onClick={() => controls()?.zoomOut()}>−</button></div><LiteratureGraphCanvas theme={() => props.theme} nodes={visibleNodes} edges={visibleEdges} selectedNodeId={selectedNodeId} selectedEdge={selectedEdge} onSelectNode={selectNode} onSelectEdge={selectEdge} onReady={setControls} paperStates={paperStates} /><div class="paper-workflow-legend" aria-label={t("论文工作流状态图例", "Paper workflow state legend")}><small>{t("论文环表示来源处理状态", "PAPER RING = SOURCE-WORKFLOW STATE")}</small><span class="state-screening">{t(`待筛选 ${paperStateCounts().screening}`, `screen ${paperStateCounts().screening}`)}</span><span class="state-included">{t(`待全文 ${paperStateCounts().included}`, `full text ${paperStateCounts().included}`)}</span><span class="state-parsing">{t(`解析中 ${paperStateCounts().parsing}`, `parsing ${paperStateCounts().parsing}`)}</span><span class="state-source_map">{t(`待定位 ${paperStateCounts().source_map}`, `locate ${paperStateCounts().source_map}`)}</span><span class="state-evidence_review">{t(`待证据审核 ${paperStateCounts().evidence_review}`, `review ${paperStateCounts().evidence_review}`)}</span><span class="state-accepted_evidence">{t(`已接受证据 ${paperStateCounts().accepted_evidence}`, `accepted ${paperStateCounts().accepted_evidence}`)}</span><Show when={paperStateCounts().failed}><span class="state-failed">{t(`失败 ${paperStateCounts().failed}`, `failed ${paperStateCounts().failed}`)}</span></Show></div><p class="lens-footnote">{hasCitationMap() && !hasReviewablePapers() ? t(`当前显示 ${bibliographyCount()} 个书目条目、${visibleEdges().length} 条引文关系。`, `Showing ${bibliographyCount()} bibliographic entries and ${visibleEdges().length} citation relations.`) : t(`当前显示 ${paperCount()} 篇论文、${visibleEdges().length} 条可见关系。`, `Showing ${paperCount()} papers and ${visibleEdges().length} visible relations.`)}</p></section>
+      <Show when={inspectorOpen()}><aside class="evidence-inspector" aria-label={t("图谱检查器", "Map inspector")}><Show when={selectedNode()} fallback={<Show when={selectedEdge()} fallback={<><small>{t("检查器", "INSPECTOR")}</small><h2>{t("选择论文或关系", "Select a paper or relation")}</h2><p>{t("默认关闭详情，保留星图的可读性。", "Details stay closed by default so the map remains readable.")}</p></>}>{(edge) => <><small>{t("关系", "RELATION")}</small><h2>{edge().edgeType.replaceAll("_", " ")}</h2><p>{edge().relationSource}</p><dl><div><dt>{t("起点", "Source")}</dt><dd>{edge().sourceId}</dd></div><div><dt>{t("终点", "Target")}</dt><dd>{edge().targetId}</dd></div></dl></>}</Show>}>{(node) => <><small>{t("已选对象", "SELECTED ARTIFACT")}</small><h2>{node().label}</h2><p>{node().trustStatus.replaceAll("_", " ")}</p><Show when={node().kind === "citation_work"}><p class="bibliography-boundary">{t("该节点是公开书目导航条目；请获得并核对原文后，才能建立来源定位或 EvidenceCard。", "This node is a public bibliography-navigation record. Obtain and verify the original text before creating a source location or EvidenceCard.")}</p></Show><Show when={isPaperNode(node()) && !paperDocumentId(node())}><p class="bibliography-boundary">{t("该对象保留题名或书目导航信息，但没有当前任务可审核的 document ID；不能绑定授权 PDF、来源定位或 EvidenceCard。", "This object retains title or bibliography-navigation metadata but has no reviewable document ID for the current mission; it cannot bind an authorised PDF, source location, or EvidenceCard.")}</p></Show><Show when={node().kind === "condition_cluster"}><section class="condition-cluster-inspector"><small>{t("条件比较工件", "CONDITION COMPARISON ARTIFACT")}</small><p>{t("该簇由已接受 EvidenceCard 的可比条件推导；支持与矛盾关系用于定位下一轮原文核对，不构成材料科学结论。", "This cluster is derived from comparable conditions on accepted EvidenceCards. Support and contradiction links guide the next source review; they are not a materials-science conclusion.")}</p><Show when={conditionEvidence().length} fallback={<p>{t("该条件簇尚未保留可展示的已接受证据连接。请回到阅读页核对来源定位与人工审核状态。", "This cluster has no displayable accepted-evidence links. Return to the reader to check source locations and human-review status.")}</p>}><For each={conditionEvidence()}>{(link) => <button type="button" classList={{ contradiction: link.relation === "contradiction" }} onClick={() => { props.onSelectEvidence(link.evidence); props.onNavigate("reader"); }}><strong>{link.relation === "support" ? t("支持条件", "Supports condition") : t("矛盾条件", "Contradicts condition")}</strong><span>{link.evidence.evidenceId} · {link.evidence.provenance.documentId} · {link.evidence.provenance.locator}</span></button>}</For></Show></section></Show><dl><div><dt>{t("类型", "Type")}</dt><dd>{node().kind.replaceAll("_", " ")}</dd></div><Show when={node().source}><div><dt>{t("元数据来源", "Metadata source")}</dt><dd>{node().source}</dd></div></Show><Show when={node().publicationYear}><div><dt>{t("发表年份", "Publication year")}</dt><dd>{node().publicationYear}</dd></div></Show></dl><Show when={Boolean(paperDocumentId(node()))}><section class="evidence-handoff"><small>{linkedEvidence().length ? t("下一受控动作：核对已接受证据", "NEXT CONTROLLED ACTION: VERIFY ACCEPTED EVIDENCE") : paperPdf().state === "source-map" ? t("下一受控动作：登记来源定位", "NEXT CONTROLLED ACTION: REGISTER SOURCE LOCATIONS") : paperPdf().state === "evidence-review" ? t("下一受控动作：审核材料事实与 EvidenceCard", "NEXT CONTROLLED ACTION: REVIEW FACTS AND EVIDENCECARD") : paperPdf().state === "failed" ? t("下一受控动作：重新选择授权 PDF", "NEXT CONTROLLED ACTION: RETRY AUTHORIZED PDF") : paperPdf().state === "parsing" ? t("下一受控动作：等待私有解析", "NEXT CONTROLLED ACTION: WAIT FOR PRIVATE PARSING") : t("下一受控动作：建立来源关联", "NEXT CONTROLLED ACTION: ESTABLISH SOURCE LINK")}</small>
+  <Show when={linkedEvidence().length}><><p>{t("当前论文已有显式来源映射的已接受 EvidenceCard。进入阅读页核对定位符和条件字段；书目关系本身不构成材料事实。", "This paper already has an accepted EvidenceCard with an explicit source-map link. Open the reader to verify its locator and conditions; bibliography alone is not a material fact.")}</p><button type="button" class="primary-action" onClick={() => props.onNavigate("reader")}>{t("在阅读页核对来源", "Verify source in reader")}</button></></Show>
+  <Show when={!linkedEvidence().length && paperPdf().state === "source-map"}><><p>{t("该论文的授权 PDF 已解析完成并已绑定当前候选。请进入阅读页，在本机 Markdown 中人工登记最小必要的来源定位。", "The authorized PDF for this paper is parsed and bound to the current candidate. Open the reader and register the minimum necessary source locations from local Markdown by human review.")}</p><button type="button" class="primary-action" onClick={() => props.onNavigate("reader")}>{t("进入阅读页登记来源", "Open reader to register source")}</button></></Show>
+  <Show when={!linkedEvidence().length && paperPdf().state === "evidence-review"}><><p>{t("该论文已登记来源定位。请进入阅读页登记结构化材料事实，并在六项条件完整后人工接受 EvidenceCard。", "This paper already has recorded source locations. Open the reader to register structured material facts and, when all six conditions are complete, accept an EvidenceCard by human review.")}</p><button type="button" class="primary-action" onClick={() => props.onNavigate("reader")}>{t("进入阅读页继续审核", "Open reader to continue review")}</button></></Show>
+  <Show when={!linkedEvidence().length && paperPdf().state === "parsing"}><><p>{t("该论文的授权 PDF 已绑定，但私有解析尚未完成。请返回舰桥查看 MinerU 状态；解析完成前不会显示 Markdown、来源定位或 EvidenceCard。", "An authorized PDF is attached to this paper, but private parsing is not complete. Return to the bridge to inspect MinerU status; Markdown, source locations, and EvidenceCards stay unavailable until completion.")}</p><button type="button" class="primary-action" onClick={() => props.onNavigate("workflow")}>{t("返回舰桥查看解析状态", "Return to bridge for parsing status")}</button></></Show>  <Show when={!linkedEvidence().length && paperPdf().state === "failed"}><><p>{t("该论文此前关联的私有 PDF 解析失败。人工筛选记录仍然有效；请重新选择你有权处理的对应 PDF，系统不会把失败任务当作来源定位或证据。", "The previously attached private PDF for this paper failed to parse. The human screening record remains valid; choose the corresponding PDF you are authorized to process again. A failed task is never treated as a source location or evidence.")}</p><Show when={screeningCandidate()}>{(candidate) => <Show when={props.onRequestFulltext}><button type="button" class="primary-action" onClick={() => props.onRequestFulltext?.(candidate())}>{t("重新选择授权 PDF", "Choose authorized PDF again")}</button></Show>}</Show><button type="button" onClick={() => props.onNavigate("workflow")}>{t("查看失败原因", "View failure reason")}</button></></Show>
+  <Show when={!linkedEvidence().length && paperPdf().state === "none"}><Show when={screeningCandidate()} fallback={<><p>{t("此论文尚未进入当前任务的人工筛选清单，不能申请全文处理或接受 EvidenceCard。", "This paper is not in the current task’s human screening list; full-text processing and EvidenceCard acceptance are unavailable.")}</p><Show when={props.onLoadScreening}><button type="button" class="primary-action" onClick={() => openScreening(paperDocumentId(node()) ?? null)}>{t("打开候选人工筛选", "Open candidate screening")}</button></Show></>}>{(candidate) => <><p>{screeningDecision() === "include_for_fulltext" ? t("该候选已被人工纳入全文核对，但尚未绑定对应的授权 PDF。下一步请选择你有权处理的 PDF。", "This candidate is human-included for full-text review but has no matching authorized PDF attached. Next choose a PDF you are authorized to process.") : screeningDecision() === "exclude" ? t("该候选已被人工排除，不能进入全文处理。若需调整，请在筛选清单中提交新的完整决定。", "This candidate is human-excluded and cannot enter full-text processing. Submit a revised complete decision in the screening checklist to change this.") : screeningDecision() === "needs_metadata_review" ? t("该候选仍需补充或核验书目信息，暂不能请求全文。", "This candidate still needs bibliographic metadata review and cannot request full text yet.") : t("此候选尚未完成人工筛选；请先记录决定与理由。", "This candidate has not completed human screening; record a decision and reason first.")}</p><Show when={screeningDecision() === "include_for_fulltext" && props.onRequestFulltext}><button type="button" class="primary-action" onClick={() => props.onRequestFulltext?.(candidate())}>{t("选择授权 PDF", "Choose authorized PDF")}</button></Show><Show when={screeningDecision() !== "include_for_fulltext" && props.onLoadScreening}><button type="button" class="primary-action" onClick={() => openScreening(candidate().document_id)}>{t("查看或修改人工筛选", "View or revise screening")}</button></Show></>}</Show></Show>
+</section></Show><Show when={Boolean(paperDocumentId(node())) && linkedEvidence().length > 0}><section class="imported-evidence-list"><small>{t("与当前论文显式关联的已接受证据", "ACCEPTED EVIDENCE LINKED TO THIS PAPER")}</small><p>{t("只显示图谱中存在 source_provenance 路径的证据卡；未出现卡片表示该论文仍无已审核来源关联。", "Only EvidenceCards with a source_provenance path in this map are shown. An empty list means this paper has no reviewed source link yet.")}</p><For each={linkedEvidence()}>{(evidence) => <button type="button" onClick={() => props.onSelectEvidence(evidence)}><strong>{evidence.evidenceId}</strong><span>{evidence.provenance.documentId} · {evidence.provenance.locator}</span></button>}</For></section></Show></>}</Show></aside></Show></section>
+    </Show>
+    <footer class="stage-note">{t("论文选择、EvidenceCard 选择和来源定位是独立的审计事实；缺失关联必须显式显示。", "Paper selection, EvidenceCard selection, and source location are separate audit facts; missing linkage is shown explicitly.")}</footer>
   </main>;
 }

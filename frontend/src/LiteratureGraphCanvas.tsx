@@ -4,7 +4,7 @@ import { createEffect, onCleanup, onMount } from "solid-js";
 import { TOPIC_LABELS, isPaperNode, topicFor } from "./literatureTopology";
 import type { LiteratureGraphEdge, LiteratureGraphNode } from "./model";
 
-type BaseCluster = "Mission" | "Papers" | "Evidence" | "References" | "Structure";
+type BaseCluster = "Mission" | "Papers" | "Evidence" | "Conditions" | "References" | "Structure";
 type Cluster = string;
 
 export interface GraphCanvasControls {
@@ -22,12 +22,14 @@ interface Props {
   onSelectNode: (nodeId: string) => void;
   onSelectEdge: (edge: LiteratureGraphEdge) => void;
   onReady: (controls: GraphCanvasControls) => void;
+  paperStates: () => Record<string, string>;
 }
 
 const COLORS: Record<BaseCluster, string> = {
   Mission: "#2f6fec",
   Papers: "#0f8a83",
   Evidence: "#c97a18",
+  Conditions: "#b87818",
   References: "#7442db",
   Structure: "#ba4e70",
 };
@@ -35,33 +37,37 @@ const COLORS: Record<BaseCluster, string> = {
 function clusterOf(node: LiteratureGraphNode): Cluster {
   if (node.kind === "mission") return "Mission";
   if (isPaperNode(node)) return `Papers / ${TOPIC_LABELS[topicFor(node)]}`;
-  if (node.kind === "accepted_evidence") return "Evidence";
-  if (["openalex_work", "crossref_work"].includes(node.kind)) return "References";
+  if (["accepted_evidence", "research_gap_candidate"].includes(node.kind)) return "Evidence";
+  if (node.kind === "condition_cluster") return "Conditions";
+  if (["openalex_work", "crossref_work", "citation_work"].includes(node.kind)) return "References";
   return "Structure";
 }
 
 function baseClusterOf(node: LiteratureGraphNode): BaseCluster {
   if (node.kind === "mission") return "Mission";
   if (isPaperNode(node)) return "Papers";
-  if (node.kind === "accepted_evidence") return "Evidence";
-  if (["openalex_work", "crossref_work"].includes(node.kind)) return "References";
+  if (["accepted_evidence", "research_gap_candidate"].includes(node.kind)) return "Evidence";
+  if (node.kind === "condition_cluster") return "Conditions";
+  if (["openalex_work", "crossref_work", "citation_work"].includes(node.kind)) return "References";
   return "Structure";
 }
 
-function clusterColor(cluster: Cluster): string {
-  if (cluster.startsWith("Papers /")) return COLORS.Papers;
-  if (cluster === "Mission") return COLORS.Mission;
-  if (cluster === "Evidence") return COLORS.Evidence;
-  if (cluster === "References") return COLORS.References;
-  return COLORS.Structure;
+function clusterColor(cluster: Cluster, colors: Record<BaseCluster, string>): string {
+  if (cluster.startsWith("Papers /")) return colors.Papers;
+  if (cluster === "Mission") return colors.Mission;
+  if (cluster === "Evidence") return colors.Evidence;
+  if (cluster === "Conditions") return colors.Conditions;
+  if (cluster === "References") return colors.References;
+  return colors.Structure;
 }
 
-function edgeColor(edge: LiteratureGraphEdge): string {
-  if (edge.edgeType === "source_provenance") return COLORS.Evidence;
-  if (["citation_reference", "algorithmic_related", "crossref_reference"].includes(edge.edgeType)) return COLORS.References;
-  if (edge.edgeType === "title_similarity_suggestion") return COLORS.Papers;
-  if (edge.edgeType === "retrieval_candidate") return COLORS.Papers;
-  return COLORS.Structure;
+function edgeColor(edge: LiteratureGraphEdge, colors: Record<BaseCluster, string>): string {
+  if (["source_provenance", "gap_evidence_basis"].includes(edge.edgeType)) return colors.Evidence;
+  if (["condition_support", "condition_contradiction"].includes(edge.edgeType)) return colors.Conditions;
+  if (["citation_reference", "citation_cited_by", "algorithmic_related", "crossref_reference"].includes(edge.edgeType)) return colors.References;
+  if (edge.edgeType === "title_similarity_suggestion") return colors.Papers;
+  if (edge.edgeType === "retrieval_candidate") return colors.Papers;
+  return colors.Structure;
 }
 
 function degreeMap(edges: LiteratureGraphEdge[]): Map<string, number> {
@@ -94,7 +100,7 @@ function trimLabel(label: string): string {
   return label.length > 45 ? `${label.slice(0, 42).trim()}...` : label;
 }
 
-function geometry(nodes: LiteratureGraphNode[]): { clusters: ElementDefinition[]; positions: Map<string, { x: number; y: number }> } {
+function geometry(nodes: LiteratureGraphNode[], colors: Record<BaseCluster, string>): { clusters: ElementDefinition[]; positions: Map<string, { x: number; y: number }> } {
   const groups = new Map<Cluster, LiteratureGraphNode[]>();
   nodes.forEach((node) => {
     const group = clusterOf(node);
@@ -120,7 +126,7 @@ function geometry(nodes: LiteratureGraphNode[]): { clusters: ElementDefinition[]
     placed.forEach((item) => {
       item.x -= width / 2;
       const clusterId = `cluster:${rowIndex}:${item.cluster}`;
-      clusterElements.push({ data: { id: clusterId, isCluster: "yes", label: `${item.cluster}\n${item.group.length} nodes`, color: clusterColor(item.cluster), diameter: item.radius * 2 }, position: { x: item.x, y: item.y }, selectable: false, grabbable: false });
+      clusterElements.push({ data: { id: clusterId, isCluster: "yes", label: `${item.cluster}\n${item.group.length} nodes`, color: clusterColor(item.cluster, colors), diameter: item.radius * 2 }, position: { x: item.x, y: item.y }, selectable: false, grabbable: false });
       const usableRadius = Math.max(28, item.radius - 35);
       item.group.forEach((node, nodeIndex) => {
         if (item.group.length === 1) {
@@ -161,11 +167,14 @@ export function LiteratureGraphCanvas(props: Props) {
     const nodeIds = new Set(nodes.map((node) => node.nodeId));
     const edges = props.edges().filter((edge) => nodeIds.has(edge.sourceId) && nodeIds.has(edge.targetId)).slice(0, 144);
     const labelIds = sampleLabelIds(nodes, edges);
-    const { clusters, positions } = geometry(nodes);
+    const paperStates = props.paperStates();
+    const colors: Record<BaseCluster, string> = Object.fromEntries([["Mission", themeStyle.getPropertyValue("--signal-blue").trim() || COLORS.Mission], ["Papers", themeStyle.getPropertyValue("--signal-teal").trim() || COLORS.Papers], ["Evidence", themeStyle.getPropertyValue("--signal-violet").trim() || COLORS.Evidence], ["Conditions", themeStyle.getPropertyValue("--signal-amber").trim() || COLORS.Conditions], ["References", themeStyle.getPropertyValue("--signal-rose").trim() || COLORS.References], ["Structure", themeStyle.getPropertyValue("--line").trim() || COLORS.Structure]]) as Record<BaseCluster, string>;
+    const reviewColors: Record<string, string> = { screening: muted, included: themeStyle.getPropertyValue("--signal-teal").trim() || COLORS.Papers, parsing: themeStyle.getPropertyValue("--signal-blue").trim() || COLORS.Mission, source_map: themeStyle.getPropertyValue("--signal-amber").trim() || COLORS.Evidence, evidence_review: themeStyle.getPropertyValue("--signal-teal").trim() || COLORS.Papers, accepted_evidence: themeStyle.getPropertyValue("--signal-violet").trim() || COLORS.References, failed: themeStyle.getPropertyValue("--signal-rose").trim() || COLORS.Structure, excluded: muted, untracked: muted };
+    const { clusters, positions } = geometry(nodes, colors);
     const elements: ElementDefinition[] = [
       ...clusters,
-      ...nodes.map((node) => ({ data: { id: node.nodeId, isCluster: "no", label: node.label, displayLabel: labelIds.has(node.nodeId) ? trimLabel(node.label) : "", color: COLORS[baseClusterOf(node)], nodeKind: node.kind }, position: positions.get(node.nodeId) })),
-      ...edges.map((edge) => ({ data: { id: `${edge.sourceId}|${edge.targetId}|${edge.edgeType}`, source: edge.sourceId, target: edge.targetId, label: edge.edgeType.replaceAll("_", " "), color: edgeColor(edge), edgeType: edge.edgeType } })),
+      ...nodes.map((node) => { const reviewState = paperStates[node.nodeId] ?? "untracked"; return { data: { id: node.nodeId, isCluster: "no", label: node.label, displayLabel: labelIds.has(node.nodeId) ? trimLabel(node.label) : "", color: colors[baseClusterOf(node)], nodeKind: node.kind, reviewState, reviewColor: reviewColors[reviewState] ?? muted, reviewWidth: reviewState === "untracked" ? 1.5 : 2.8 }, position: positions.get(node.nodeId) }; }),
+      ...edges.map((edge) => ({ data: { id: `${edge.sourceId}|${edge.targetId}|${edge.edgeType}`, source: edge.sourceId, target: edge.targetId, label: edge.edgeType.replaceAll("_", " "), color: edgeColor(edge, colors), edgeType: edge.edgeType } })),
     ];
     cy?.destroy();
     cy = cytoscape({
@@ -178,8 +187,8 @@ export function LiteratureGraphCanvas(props: Props) {
       wheelSensitivity: 0.16,
       style: [
         { selector: 'node[isCluster = "yes"]', style: { shape: "ellipse", width: "data(diameter)", height: "data(diameter)", "background-color": "data(color)", "background-opacity": 0.065, "border-color": "data(color)", "border-opacity": 0.24, "border-width": 1.1, label: "data(label)", color: "data(color)", "font-size": "10px", "font-weight": 800, "text-wrap": "wrap", "text-valign": "top", "text-halign": "center", "text-margin-y": -10, events: "no", "z-index": -10, "overlay-opacity": 0 } },
-        { selector: 'node[isCluster = "no"]', style: { width: 11, height: 11, "background-color": "data(color)", "border-color": paper, "border-width": 1.5, label: "data(displayLabel)", color: ink, "font-size": "10px", "font-weight": 650, "text-wrap": "wrap", "text-max-width": "145px", "text-halign": "right", "text-margin-x": 9, "text-background-color": paper, "text-background-opacity": 0.78, "text-background-padding": "2px", "text-background-shape": "roundrectangle", "overlay-opacity": 0 } },
-        { selector: 'node[nodeKind = "mission"]', style: { width: 16, height: 16, shape: "round-rectangle", "background-color": COLORS.Mission } },
+        { selector: 'node[isCluster = "no"]', style: { width: 11, height: 11, "background-color": "data(color)", "border-color": "data(reviewColor)", "border-width": "data(reviewWidth)", label: "data(displayLabel)", color: ink, "font-size": "10px", "font-weight": 650, "text-wrap": "wrap", "text-max-width": "145px", "text-halign": "right", "text-margin-x": 9, "text-background-color": paper, "text-background-opacity": 0.78, "text-background-padding": "2px", "text-background-shape": "roundrectangle", "overlay-opacity": 0 } },
+        { selector: 'node[nodeKind = "mission"]', style: { width: 16, height: 16, shape: "round-rectangle", "background-color": "data(color)" } },
         { selector: "node.is-emphasized", style: { width: 16, height: 16, "border-width": 2.5, label: "data(label)", "z-index": 20 } },
         { selector: "edge", style: { width: 1.1, "line-color": "data(color)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "arrow-scale": 0.65, "curve-style": "bezier", opacity: 0.66, label: "", "overlay-opacity": 0 } },
         { selector: "edge.is-emphasized", style: { width: 2.1, opacity: 1, label: "data(label)", "font-size": "8px", color: muted, "text-background-color": paper, "text-background-opacity": 0.9, "text-background-padding": "2px", "text-rotation": "autorotate", "z-index": 20 } },
@@ -196,7 +205,7 @@ export function LiteratureGraphCanvas(props: Props) {
     applySelection();
   };
 
-  onMount(() => createEffect(() => { props.theme(); props.nodes(); props.edges(); redraw(); }));
+  onMount(() => createEffect(() => { props.theme(); props.nodes(); props.edges(); props.paperStates(); redraw(); }));
   createEffect(applySelection);
   onCleanup(() => cy?.destroy());
   return <div class="cytoscape-literature-canvas" ref={host} aria-label="Interactive literature graph" />;

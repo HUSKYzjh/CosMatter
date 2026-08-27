@@ -1,0 +1,23 @@
+{
+  "manifest_format": "cosmatter-static-harness-plugin-v1",
+  "plugin_package_id": "cosmatter-core",
+  "version": "0.1.0",
+  "upstream_design_reference": {
+    "name": "DeepSeek Harness",
+    "repository": "https://github.com/deepseek-ai/deepseek-harness",
+    "compatibility": "inspired_by_plugin_composition_not_a_claimed_official_abi"
+  },
+  "entrypoint": "cosmatter.harness_catalog:CosMatterHarnessCatalogue",
+  "authorization_entrypoint": "cosmatter.harness_policy:evaluate_mission_authorization",
+  "static_registration": true,
+  "dynamic_code_loading": false,
+  "default_policy": {
+    "external_calls": "deny_until_mission_authorized",
+    "private_content_egress": "deny_until_explicit_provider_consent",
+    "evidence_acceptance": "human_review_only",
+    "calculation_execution": "deny",
+    "scheduler_submission": "deny",
+    "model_training_or_inference": "deny"
+  },
+  "license": "MIT"
+}

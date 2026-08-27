@@ -1,0 +1,5 @@
+﻿{
+  "strain_percent": [-2.0, 2.0],
+  "temperature_k": [300.0, 900.0],
+  "oxygen_vacancy_fraction": [0.0, 0.02]
+}

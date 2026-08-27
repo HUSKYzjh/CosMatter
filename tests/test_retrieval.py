@@ -1,8 +1,10 @@
+import hashlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
+from cosmatter.models import PaperCandidate
 from cosmatter.retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 
 
@@ -32,6 +34,15 @@ class RetrievalArtifactTests(unittest.TestCase):
         self.assertTrue(candidates[0].is_content_accessible)
         self.assertNotIn("content", candidates[0].to_dict())
         self.assertNotIn("abstract", candidates[0].to_dict())
+
+    def test_malformed_provider_doi_does_not_drop_an_otherwise_valid_candidate(self) -> None:
+        candidates = candidates_from_sciverse(
+            {"hits": [{"doc_id": "doc_1", "title": "Paper", "doi": "not-a-doi"}]},
+            "BiFeO3 phase",
+            1,
+        )
+        self.assertEqual(len(candidates), 1)
+        self.assertIsNone(candidates[0].doi)
 
     def test_candidate_artifact_rejects_query_mismatch(self) -> None:
         candidates = candidates_from_sciverse({"hits": [{"doc_id": "doc_1", "title": "Paper"}]}, "query_a", 1)
@@ -66,6 +77,43 @@ class RetrievalArtifactTests(unittest.TestCase):
         self.assertTrue(selected_doc_1["is_content_accessible"])
         self.assertEqual(payload["searches"][0]["query"], "query_one")
         self.assertEqual(payload["searches"][1]["query"], "query_two")
+        self.assertEqual(len(selected_doc_1["retrieval_origins"]), 2)
+        self.assertEqual(selected_doc_1["retrieval_origins"][0]["source"], "Sciverse")
+
+    def test_candidate_artifact_deduplicates_exact_doi_across_distinct_document_ids(self) -> None:
+        first = PaperCandidate(
+            document_id="sciverse:record_1", title="First provider record", query="query_one",
+            source="Sciverse", is_content_accessible=False, doi="https://doi.org/10.1000/Shared.DOI",
+        )
+        second = PaperCandidate(
+            document_id="openalex:W2", title="Second provider record", query="query_two",
+            source="OpenAlex", is_content_accessible=True, doi="10.1000/shared.doi",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_candidate_artifact(Path(directory), "query_one", (first,))
+            path = write_candidate_artifact(Path(directory), "query_two", (second,))
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["candidate_count"], 1)
+        candidate = payload["candidates"][0]
+        self.assertEqual(candidate["document_id"], "openalex:W2")
+        self.assertEqual(candidate["doi"], "10.1000/shared.doi")
+        self.assertEqual(candidate["deduplication"], {"identity_method": "doi", "merged_candidate_count": 2, "merged_document_count": 2})
+        self.assertEqual({origin["retrieved_document_id"] for origin in candidate["retrieval_origins"]}, {"sciverse:record_1", "openalex:W2"})
+
+    def test_candidate_origin_links_a_matching_provider_receipt_without_payload(self) -> None:
+        query = "BiFeO3 phase"
+        candidates = candidates_from_sciverse({"hits": [{"doc_id": "doc_1", "title": "Paper"}]}, query, 1)
+        provenance = {"Sciverse": {"provider": "sciverse", "operation": "agentic_search", "receipt_id": "receipt_fixture", "query_sha256": hashlib.sha256(query.encode("utf-8")).hexdigest()}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_candidate_artifact(Path(directory), query, candidates, source_provenance=provenance)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        origin = payload["candidates"][0]["retrieval_origins"][0]
+        self.assertEqual(origin["receipt_id"], "receipt_fixture")
+        self.assertNotIn("abstract", json.dumps(payload))
+        with self.assertRaises(RetrievalArtifactError):
+            write_candidate_artifact(Path(tempfile.gettempdir()), query, candidates, source_provenance={"Sciverse": {**provenance["Sciverse"], "query_sha256": "0" * 64}})
+
     def test_candidate_artifact_is_metadata_only(self) -> None:
         candidates = candidates_from_sciverse({"hits": [{"doc_id": "doc_1", "title": "Paper"}]}, "query_a", 1)
         with tempfile.TemporaryDirectory() as directory:

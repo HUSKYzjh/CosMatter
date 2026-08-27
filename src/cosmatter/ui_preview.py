@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
 from .config import AGENT_ROOT
+from .harness_autorun import HarnessAutoRunError, run_authorized_automatic_mission
 from .local_api import LocalApiError, LocalMissionApi
 
 
@@ -58,9 +60,42 @@ def build_ui_preview_server(
             if path == "/api/status":
                 self._api_json(lambda: api.status() if api is not None else _api_disabled())
                 return
+            run_id = _api_run_id(path, "/api/runs/", "/status")
+            if run_id is not None:
+                self._api_json(lambda: api.run_status(run_id) if api is not None else _api_disabled())
+                return
             run_id = _api_run_id(path, "/api/runs/", "/ui")
             if run_id is not None:
                 self._api_bytes(lambda: api.ui_bundle(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/candidate-screening")
+            if run_id is not None:
+                self._api_json(lambda: api.candidate_screening_template(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/pdf/tasks")
+            if run_id is not None:
+                self._api_json(lambda: api.pdf_tasks(run_id) if api is not None else _api_disabled())
+                return
+            match = re.fullmatch(r"/api/runs/([A-Za-z0-9][A-Za-z0-9_-]*)/pdf/(pdf_[a-f0-9]{24})/(status|source-map)", path)
+            if match:
+                operation = match.group(3)
+                self._api_json(lambda: api.pdf_status(match.group(1), match.group(2)) if operation == "status" and api is not None else api.pdf_source_map_context(match.group(1), match.group(2)) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/pdf/source-map")
+            if run_id is not None:
+                self._api_json(lambda: api.pdf_source_map_context(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/pdf/status")
+            if run_id is not None:
+                self._api_json(lambda: api.pdf_status(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/package")
+            if run_id is not None:
+                self._api_bytes(lambda: api.export_run_package(run_id) if api is not None else _api_disabled())
+                return
+            match = re.fullmatch(r"/api/runs/([A-Za-z0-9][A-Za-z0-9_-]*)/pdf/(pdf_[a-f0-9]{24})/markdown", path)
+            if match:
+                self._api_bytes(lambda: api.private_markdown(match.group(1), match.group(2)) if api is not None else _api_disabled())
                 return
             if path.startswith("/api/"):
                 self.send_error(404, "Unknown local API route")
@@ -80,8 +115,64 @@ def build_ui_preview_server(
 
         def do_POST(self) -> None:
             path = urlsplit(self.path).path
+            if path == "/api/question-candidates":
+                self._api_json(lambda: api.question_candidates(self._json_body()) if api is not None else _api_disabled())
+                return
+            if path == "/api/missions/auto":
+                self._api_json(
+                    lambda: self._authorized_auto_mission(self._json_body()) if api is not None else _api_disabled(),
+                    status=201,
+                )
+                return
+            if path == "/api/pdf-runs":
+                payload, file_name, content = self._pdf_upload_body()
+                self._api_json(lambda: api.create_pdf_run(payload, file_name, content) if api is not None else _api_disabled(), status=201)
+                return
+            if path == "/api/runs/import":
+                self._api_json(lambda: api.import_run_package(self._json_body()) if api is not None else _api_disabled(), status=201)
+                return
             if path == "/api/missions":
                 self._api_json(lambda: api.create_mission(self._json_body()) if api is not None else _api_disabled(), status=201)
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/candidate-screening")
+            if run_id is not None:
+                self._api_json(lambda: api.record_candidate_screening(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            match = re.fullmatch(r"/api/runs/([A-Za-z0-9][A-Za-z0-9_-]*)/pdf/(pdf_[a-f0-9]{24})/citations", path)
+            if match:
+                self._api_json(lambda: api.expand_pdf_citations(match.group(1), match.group(2)) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/pdf/source-map")
+            if run_id is not None:
+                self._api_json(lambda: api.record_pdf_source_map(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/pdf/material-facts")
+            if run_id is not None:
+                self._api_json(lambda: api.record_pdf_material_facts(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/pdf/evidence-card")
+            if run_id is not None:
+                self._api_json(lambda: api.record_pdf_evidence_card(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/pdf/doi")
+            if run_id is not None:
+                self._api_json(lambda: api.confirm_pdf_doi(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/condition-diagnostics")
+            if run_id is not None:
+                self._api_json(lambda: api.diagnose_conditions(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/gap-candidates")
+            if run_id is not None:
+                self._api_json(lambda: api.generate_gap_candidates(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/citations")
+            if run_id is not None:
+                self._api_json(lambda: api.expand_pdf_citations(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/cancel")
+            if run_id is not None:
+                self._api_json(lambda: api.cancel(run_id) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/draft-plan")
             if run_id is not None:
@@ -109,6 +200,39 @@ def build_ui_preview_server(
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 raise LocalApiError("request body must be valid UTF-8 JSON") from error
 
+        def _pdf_upload_body(self) -> tuple[object, str, bytes]:
+            """Accept one bounded multipart PDF without forwarding a signed URL."""
+            content_type = self.headers.get("Content-Type") or ""
+            match = re.search(r"boundary=([^;]+)", content_type)
+            if not match:
+                raise LocalApiError("PDF upload must use multipart/form-data")
+            try:
+                size = int(self.headers.get("Content-Length") or "0")
+            except ValueError as error:
+                raise LocalApiError("Content-Length must be an integer") from error
+            if not 0 < size <= 200 * 1024 * 1024 + 64_000:
+                raise LocalApiError("PDF upload exceeds 200 MB")
+            boundary = b"--" + match.group(1).strip().strip('"').encode("ascii")
+            body: object | None = None; file_name: str | None = None; content: bytes | None = None
+            for part in self.rfile.read(size).split(boundary):
+                if b"\r\n\r\n" not in part:
+                    continue
+                headers, value = part.split(b"\r\n\r\n", 1)
+                if value.endswith(b"\r\n"):
+                    value = value[:-2]
+                disposition = headers.decode("utf-8", errors="ignore")
+                if 'name="payload"' in disposition:
+                    try:
+                        body = json.loads(value.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                        raise LocalApiError("PDF upload payload is invalid JSON") from error
+                elif 'name="file"' in disposition:
+                    name = re.search(r'filename="([^"\\]+)"', disposition)
+                    if name:
+                        file_name, content = name.group(1), value
+            if body is None or file_name is None or content is None:
+                raise LocalApiError("PDF upload must include payload and file")
+            return body, file_name, content
         def _api_json(self, operation: Callable[[], object], status: int = 200) -> None:
             try:
                 body = json.dumps(operation(), ensure_ascii=False).encode("utf-8")
@@ -133,6 +257,14 @@ def build_ui_preview_server(
             except LocalApiError as error:
                 self._api_error(error.status, str(error))
 
+        def _authorized_auto_mission(self, payload: object) -> dict[str, object]:
+            """Run the automatic route through its one-time Harness policy gate."""
+            if api is None:
+                return _api_disabled()  # pragma: no cover - guarded by the route
+            try:
+                return run_authorized_automatic_mission(api, payload)
+            except HarnessAutoRunError as error:
+                raise LocalApiError(str(error), 400) from error
         def _api_error(self, status: int, message: str) -> None:
             body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
@@ -151,7 +283,21 @@ def build_ui_preview_server(
         def log_message(self, format: str, *args: object) -> None:
             return
 
-    return ThreadingHTTPServer(("127.0.0.1", port), PreviewHandler)
+    class PreviewServer(ThreadingHTTPServer):
+        """Wait for an in-flight local request before its temporary root closes.
+
+        ``ThreadingHTTPServer`` defaults to daemon request threads.  On Windows
+        that can leave an ``index.html`` handle open after ``server_close()``,
+        which makes a short-lived preview root impossible to clean up during
+        tests or controlled preview shutdown.  These settings preserve
+        loopback-only behaviour while making shutdown deterministic.
+        """
+
+        daemon_threads = False
+        block_on_close = True
+        allow_reuse_address = True
+
+    return PreviewServer(("127.0.0.1", port), PreviewHandler)
 
 
 def _api_disabled() -> object:

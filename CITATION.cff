@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use CosMatter, please cite the project and disclose the specific evaluated run."
+title: "CosMatter: Evidence-first materials literature research agent"
+version: 0.1.0
+date-released: 2026-08-13
+authors:
+  - family-names: Zhai
+    given-names: Jiahui
+license: MIT
+abstract: "A review-gated workflow for materials literature retrieval, source localization, evidence cards, and Research Gap candidates."

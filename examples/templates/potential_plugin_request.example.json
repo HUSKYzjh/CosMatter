@@ -1,0 +1,11 @@
+{
+  "system_spec_id": "bfo_potential_scope_v1",
+  "system_spec_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "potential_model_ids": ["potential_a", "potential_b"],
+  "reference_method": "【人工填写：已批准的外部参考方法】",
+  "condition_axes": {
+    "strain_percent": [-2.0, 2.0],
+    "temperature_k": [300.0, 900.0]
+  },
+  "literature_source_ids": ["source_map_reviewed_001"]
+}

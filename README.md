@@ -12,6 +12,15 @@
 - 五支舰队的可校验 YAML 配置；调度中心只选择一支主舰队，并记录分派理由与所需设施；
 - 静态 HTML 舰桥：只导入已脱敏的本地 UI JSON，不调用浏览器网络接口。
 
+## 初赛提交与复现
+
+2026 年 8 月赛制要求初赛同时提供源代码与 PDF/LaTeX 文献调研报告。提交步骤、资源披露、引用审计和势函数框架测试的边界见 [`docs/competition_submission_2026_08.zh-CN.md`](docs/competition_submission_2026_08.zh-CN.md)。
+
+- 初赛报告源：`python -m cosmatter export-latex-report --run-id YOUR_RUN --compile`；
+- 可复现默认参数：[`configs/reproducibility.example.json`](configs/reproducibility.example.json)；
+- 开源许可证：MIT（仅覆盖本仓库代码与文档，不授予第三方数据或 API 内容的再分发权限）。
+- 进阶势函数边界框架：计划、人工执行协议、外部汇总结果比较与待批准的边界加密任务；不会自行提交外部计算。
+- 引用与贡献：[CITATION.cff](CITATION.cff)、[CONTRIBUTING.md](CONTRIBUTING.md)；修订要求的逐项映射见 [docs/competition_requirement_traceability.zh-CN.md](docs/competition_requirement_traceability.zh-CN.md)。
 ## 快速开始
 
 在 PowerShell 中（推荐在独立虚拟环境内）：

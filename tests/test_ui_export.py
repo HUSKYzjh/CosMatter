@@ -10,6 +10,7 @@ from cosmatter.audit import FlightRecorder
 from cosmatter.cli import main
 from cosmatter.dispatch import MissionDispatcher
 from cosmatter.models import MissionBrief, MissionState
+from cosmatter.source_map import source_map_from_review, write_source_map_for_document
 from cosmatter.ui_export import UiExportError, export_run_to_ui
 
 
@@ -148,6 +149,11 @@ class UiExportTests(unittest.TestCase):
             ]
             (run_dir / "evidence_cards.json").write_text(json.dumps(evidence), encoding="utf-8")
             (run_dir / "verification_decisions.json").write_text(json.dumps(decisions), encoding="utf-8")
+            write_source_map_for_document(run_dir, source_map_from_review(
+                mission_id="mission_ui_export_001", document_id="doc_fixture",
+                source_task={"provider": "mineru", "task_id": "task_fixture", "state": "done", "document_id": "doc_fixture"},
+                selection={"document_id": "doc_fixture", "segments": [{"segment_id": "s1", "locator": "page:1", "kind": "paragraph", "quote": "short synthetic quote"}]},
+            ))
             export_run_to_ui(runs_dir, "approved_evidence_run")
             bundle = json.loads((run_dir / "ui.json").read_text(encoding="utf-8"))
 

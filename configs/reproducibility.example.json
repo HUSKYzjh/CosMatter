@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "python": "3.12",
+  "node": "24",
+  "random_seed": 20260811,
+  "description": "Submission-safe reproducibility defaults. Replace only through a recorded experiment configuration.",
+  "key_parameters": {
+    "question_candidate_minimum_characters": 12,
+    "question_candidate_debounce_ms": 800,
+    "potential_boundary_samples_per_regime_default": 3,
+    "potential_boundary_samples_per_regime_allowed_range": [1, 32],
+    "ising_default_seed": 20260811
+  },
+  "external_resources": [
+    {"name": "DeepSeek API", "purpose": "untrusted planning or extraction drafts", "required": false, "version_or_access_date": "deepseek-v4-flash0731; record access date at execution time"},
+    {"name": "Sciverse API / Sci-Base", "purpose": "bounded metadata or authorized local corpus retrieval", "required": false, "version_or_access_date": "record version and access date at execution time"},
+    {"name": "MinerU API", "purpose": "user-authorized private PDF-to-Markdown parsing", "required": false, "version_or_access_date": "record service version and access date at execution time"},
+    {"name": "OpenAlex / Crossref", "purpose": "public bibliographic metadata and citation navigation", "required": false, "version_or_access_date": "record access date at execution time"}
+  ],
+  "prohibited_submission_content": ["API keys", "licensed PDF/full text", "private Markdown", "absolute paths", "provider raw responses", "browser caches"]
+}

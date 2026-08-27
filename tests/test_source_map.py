@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cosmatter.source_map import SourceMapError, source_map_from_review, write_source_map
+from cosmatter.source_map import SourceMapError, source_map_document_path, source_map_from_review, write_source_map, write_source_map_for_document
 
 
 def completed_task() -> dict[str, str]:
@@ -44,3 +44,18 @@ class SourceMapTests(unittest.TestCase):
             source_map_from_review(
                 mission_id="mission_1", document_id="doc_1", source_task=completed_task(), selection=selection("x" * 501)
             )
+
+
+    def test_document_scoped_writes_do_not_replace_another_document(self) -> None:
+        first = source_map_from_review(mission_id="mission_1", document_id="doc_1", source_task=completed_task(), selection=selection())
+        second_task = completed_task() | {"document_id": "doc_2", "task_id": "task_2"}
+        second_selection = selection("Second document excerpt.") | {"document_id": "doc_2"}
+        second = source_map_from_review(mission_id="mission_1", document_id="doc_2", source_task=second_task, selection=second_selection)
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            first_path = write_source_map_for_document(run_dir, first)
+            second_path = write_source_map_for_document(run_dir, second)
+            legacy = (run_dir / "source_map.json").read_text(encoding="utf-8")
+        self.assertNotEqual(first_path, second_path)
+        self.assertEqual(first_path.name, source_map_document_path(Path(directory), "doc_1").name)
+        self.assertIn('"document_id": "doc_1"', legacy)

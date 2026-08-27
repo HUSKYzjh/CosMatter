@@ -1,0 +1,28 @@
+{
+  "data_policy": {
+    "allow_imported_aggregate_results_only": true,
+    "forbid_credentials_private_paths_and_raw_calculation_files": true,
+    "input_evidence_boundary": "Only reviewer-mapped literature conditions and metadata may seed task proposals.",
+    "private_structures_and_fulltext_outside_run_directory": true
+  },
+  "execution_boundary": "This file creates planning artifacts only. DFT, potential inference, MD, MC, training and scheduler submission are disabled until a separately reviewed execution profile is introduced.",
+  "execution_mode": "plan_only",
+  "executors": {
+    "dft_reference": {"command_template": null, "enabled": false, "result_import_only": true},
+    "molecular_dynamics": {"command_template": null, "enabled": false, "result_import_only": true},
+    "monte_carlo": {"command_template": null, "enabled": false, "result_import_only": true},
+    "potential_inference": {"command_template": null, "enabled": false, "result_import_only": true}
+  },
+  "profile_id": "literature_planning_only",
+  "resources": {"max_concurrent_tasks": 0, "max_dft_tasks": 0, "max_gpu_tasks": 0, "queue_or_partition": null},
+  "scheduler": {"kind": "disabled", "polling_enabled": false, "submission_enabled": false},
+  "schema_version": "1.0",
+  "task_plugins": {
+    "defect_boundary": {"enabled": true, "execution_permitted": false, "requires_human_approval": true, "requires_literature_source_ids": true},
+    "finite_temperature": {"enabled": true, "execution_permitted": false, "requires_human_approval": true, "requires_literature_source_ids": true},
+    "reference_label": {"enabled": true, "execution_permitted": false, "requires_human_approval": true, "requires_literature_source_ids": true},
+    "static_property": {"enabled": true, "execution_permitted": false, "requires_human_approval": true, "requires_literature_source_ids": true},
+    "strain_path": {"enabled": true, "execution_permitted": false, "requires_human_approval": true, "requires_literature_source_ids": true}
+  },
+  "trust_status": "human_reviewed_machine_capability_template_no_calculations_submitted"
+}

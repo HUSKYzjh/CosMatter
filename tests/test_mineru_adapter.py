@@ -40,6 +40,7 @@ class MinerUAdapterTests(unittest.TestCase):
         self.assertEqual(task.task_id, "task_1")
         self.assertEqual(task.state, "pending")
         self.assertEqual(task.request_id, "mineru-request-test")
+        self.assertEqual(task.status_code, 200)
 
     def test_poll_has_no_request_body(self) -> None:
         with patch("cosmatter.mineru.urlopen", return_value=FakeResponse()) as mocked:

@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "trust_status": "template_requires_human_literature_review",
+  "system_spec_id": "REPLACE_WITH_ASCII_ID",
+  "material_systems": ["REPLACE_WITH_REVIEWED_MATERIAL_SYSTEM"],
+  "scope_description": "REPLACE_WITH_REVIEWED_COMPARISON_SCOPE",
+  "target_observables": ["relative_phase_energy", "forces"],
+  "condition_axes": [{
+    "axis_id": "REPLACE_WITH_AXIS_ID",
+    "unit": "REPLACE_WITH_REVIEWED_UNIT",
+    "lower_bound": 0.0,
+    "upper_bound": 1.0,
+    "source_ids": ["REPLACE_WITH_REVIEWED_SOURCE_ID"]
+  }],
+  "potential_model_ids": ["potential_a", "potential_b"],
+  "reference_method": "REPLACE_WITH_HUMAN_APPROVED_REFERENCE_METHOD",
+  "pre_registered_metrics": ["energy_mae_ev_per_atom", "force_rmse_ev_per_angstrom"],
+  "literature_source_ids": ["REPLACE_WITH_REVIEWED_SOURCE_ID"],
+  "approval": {"status": "pending_human_freeze", "reviewer": "REPLACE", "frozen_on": ""},
+  "execution_boundary": "Literature-bound planning only; no structure generation, model loading, calculation, scheduler submission or external API call is authorized."
+}

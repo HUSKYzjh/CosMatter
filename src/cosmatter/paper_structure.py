@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -29,8 +30,58 @@ def paper_structure_from_review(*, mission_id: str, source_map: dict[str, Any], 
     return {"schema_version": SCHEMA_VERSION, "mission_id": mission_id, "trust_status": "human_reviewed_paper_structure_not_scientific_evidence", "document_id": document_id, "entities": entities, "relations": relations}
 
 
-def write_paper_structure(run_dir: Path, structure: dict[str, Any]) -> Path:
+def paper_structure_document_path(run_dir: Path, document_id: str) -> Path:
+    if not isinstance(document_id, str) or not document_id.strip():
+        raise PaperStructureError("document_id must be nonempty")
+    digest = hashlib.sha256(document_id.encode("utf-8")).hexdigest()
+    return run_dir / "paper_structures" / f"{digest}.json"
+
+
+def write_paper_structure_for_document(run_dir: Path, structure: dict[str, Any]) -> Path:
+    """Persist one reviewed paper structure without replacing other papers."""
     _validate(structure)
+    path = paper_structure_document_path(run_dir, structure["document_id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(structure, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    legacy = run_dir / "paper_structure.json"
+    if not legacy.exists():
+        legacy.write_text(json.dumps(structure, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def load_paper_structure_for_document(
+    run_dir: Path, mission_id: str, document_id: str | None
+) -> dict[str, Any] | None:
+    if document_id is None:
+        return load_paper_structure(run_dir / "paper_structure.json", mission_id)
+    path = paper_structure_document_path(run_dir, document_id)
+    if path.exists():
+        return load_paper_structure(path, mission_id)
+    legacy = load_paper_structure(run_dir / "paper_structure.json", mission_id)
+    if legacy is not None and legacy["document_id"] == document_id:
+        return legacy
+    return None
+
+
+def iter_paper_structures(run_dir: Path, mission_id: str) -> tuple[dict[str, Any], ...]:
+    """Return every reviewed structure, deduplicated with the legacy artifact."""
+    structures: dict[str, dict[str, Any]] = {}
+    legacy = load_paper_structure(run_dir / "paper_structure.json", mission_id)
+    if legacy is not None:
+        structures[legacy["document_id"]] = legacy
+    directory = run_dir / "paper_structures"
+    if directory.exists():
+        for path in sorted(directory.glob("*.json")):
+            item = load_paper_structure(path, mission_id)
+            if item is not None:
+                structures[item["document_id"]] = item
+    return tuple(structures[key] for key in sorted(structures))
+
+
+def write_paper_structure(run_dir: Path, structure: dict[str, Any]) -> Path:
+    """Backward-compatible singleton writer for older callers and fixtures."""
+    _validate(structure)
+    run_dir.mkdir(parents=True, exist_ok=True)
     path = run_dir / "paper_structure.json"
     path.write_text(json.dumps(structure, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path

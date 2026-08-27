@@ -47,6 +47,8 @@ class CliDiagnosticsTests(unittest.TestCase):
             ]
             (run_dir / "mission.json").write_text(json.dumps(mission.to_dict()), encoding="utf-8")
             (run_dir / "flight_plan.json").write_text(json.dumps(plan.to_dict()), encoding="utf-8")
+            retrieval = {"schema_version": "1.1", "query": "counter query", "candidate_count": 0, "search_count": 1, "candidates": [], "searches": [{"query": "counter query", "candidate_count": 0, "candidates": []}]}
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps(retrieval), encoding="utf-8")
             (run_dir / "evidence_cards.json").write_text(json.dumps([support.to_dict(), contradict.to_dict()]), encoding="utf-8")
             (run_dir / "verification_decisions.json").write_text(json.dumps([item.to_dict() for item in decisions]), encoding="utf-8")
             output = io.StringIO()

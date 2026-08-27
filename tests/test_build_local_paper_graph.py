@@ -34,6 +34,18 @@ class LocalPaperGraphTests(unittest.TestCase):
         self.assertNotIn(str(root), str(bundle))
         self.assertTrue(all(paper["is_content_accessible"] is False for paper in papers))
 
+    def test_can_inventory_more_than_legacy_preview_limit_without_opening_pdfs(self) -> None:
+        module = _module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "library"
+            root.mkdir()
+            for index in range(60):
+                (root / f"2020 - paper {index}.pdf").write_bytes(b"%PDF")
+            bundle = module.build_bundle(root, 90)
+        papers = [node for node in bundle["literature_graph"]["nodes"] if node["kind"] == "candidate_paper"]
+        self.assertEqual(len(papers), 60)
+        self.assertTrue(all(node["trust_status"] == "local_filename_inventory_not_scientific_evidence" for node in papers))
+
 
 if __name__ == "__main__":
     unittest.main()

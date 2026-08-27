@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "mission_id": "mission_bfo_live_001",
+  "corpus_id": "bfo_90_v1",
+  "trust_status": "human_reviewed_gold_standard_for_evaluation",
+  "documents": [
+    {
+      "document_id": "bfo_001",
+      "retrieval_relevance": "relevant",
+      "evidence_annotations": [],
+      "material_fact_annotations": [],
+      "comparison_annotations": [],
+      "gap_annotations": []
+    }
+  ]
+}

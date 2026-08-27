@@ -1,0 +1,4 @@
+# CosMatter has no mandatory third-party runtime dependencies.
+# The Python standard library powers the reproducible core; build metadata is
+# declared in pyproject.toml. Optional integrations must be installed and
+# disclosed only when they are actually used in a reviewed run.

@@ -43,6 +43,37 @@ class OpenAlexAdapter:
         path = f"/works/https://doi.org/{quote(normalized, safe='/')}?select=id,referenced_works,related_works"
         return self._get(path)
 
+
+    def citing_dois_by_doi(self, doi: str, *, limit: int = 25) -> tuple[str, ...]:
+        """Return DOI-bearing citing works as public bibliographic metadata."""
+        normalized = normalize_doi(doi)
+        if not self.settings.openalex_api_key:
+            raise OpenAlexConfigurationError("OPENALEX_API_KEY is not configured")
+        if not isinstance(limit, int) or not 1 <= limit <= 25:
+            raise ValueError("limit must be between 1 and 25")
+        path = f"/works?filter=cites:https://doi.org/{quote(normalized, safe='/')}&per-page={limit}&select=doi"
+        request = Request(url=f"{self.settings.openalex_base_url}{path}", headers={"Authorization": f"Bearer {self.settings.openalex_api_key}"}, method="GET")
+        try:
+            with urlopen(request, timeout=self.settings.http_timeout_seconds) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+            raise OpenAlexRequestError("OpenAlex cited-by request failed") from error
+        results = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(results, list):
+            raise OpenAlexRequestError("OpenAlex cited-by response is invalid")
+        values: list[str] = []
+        for item in results:
+            raw = item.get("doi") if isinstance(item, dict) else None
+            if not isinstance(raw, str):
+                continue
+            try:
+                value = normalize_doi(raw)
+            except ValueError:
+                continue
+            if value not in values:
+                values.append(value)
+        return tuple(values)
+
     def _get(self, path: str) -> OpenAlexWork:
         request = Request(
             url=f"{self.settings.openalex_base_url}{path}",

@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import persist_evidence_review
+from .candidate_screening import CandidateScreeningError, require_document_screened_for_fulltext
 from .models import AccessPolicy, EvidenceCard, Provenance, Stance
-from .source_map import SourceMapError, load_source_map
+from .source_map import SourceMapError, load_source_map_for_document
 from .verification import VerificationDecision
 
 
@@ -39,7 +40,14 @@ def ingest_evidence_draft(run_dir: Path, draft: dict[str, Any]) -> VerificationD
     """
     mission_id = _mission_id(run_dir)
     card = evidence_card_from_draft(draft)
+    candidate_history = _candidate_history(run_dir)
     require_eligible_candidate(run_dir, card.provenance.document_id)
+    try:
+        require_document_screened_for_fulltext(
+            run_dir, mission_id, candidate_history, card.provenance.document_id,
+        )
+    except CandidateScreeningError as error:
+        raise EvidenceIngestionError("evidence ingestion requires completed human candidate screening") from error
     require_source_map_match(run_dir, mission_id, card)
     return persist_evidence_review(run_dir, mission_id, card)
 
@@ -53,11 +61,15 @@ def require_source_map_match(run_dir: Path, mission_id: str, card: EvidenceCard)
     silently paraphrased into evidence.
     """
     try:
-        source_map = load_source_map(run_dir / "source_map.json", mission_id)
+        source_map = load_source_map_for_document(
+            run_dir,
+            mission_id,
+            card.provenance.document_id,
+        )
     except SourceMapError as error:
         raise EvidenceIngestionError("source map is invalid for this run") from error
     if source_map is None or source_map["document_id"] != card.provenance.document_id:
-        return
+        raise EvidenceIngestionError("evidence ingestion requires a reviewed source-map segment for its document")
     matching_segment = next(
         (
             segment
@@ -103,6 +115,16 @@ def evidence_card_from_draft(draft: dict[str, Any]) -> EvidenceCard:
         )
     except (KeyError, TypeError, ValueError) as error:
         raise EvidenceIngestionError("evidence draft does not satisfy EvidenceCard") from error
+
+
+def _candidate_history(run_dir: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads((run_dir / "retrieval_candidates.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as error:
+        raise EvidenceIngestionError("run must contain a valid retrieval_candidates.json before evidence ingestion") from error
+    if not isinstance(payload, dict) or not isinstance(payload.get("candidates"), list):
+        raise EvidenceIngestionError("candidate artifact must contain a candidates array")
+    return payload
 
 
 def _mission_id(run_dir: Path) -> str:
