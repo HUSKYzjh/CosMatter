@@ -26,7 +26,7 @@
 | `independent_reproduction` | `reproduction_id` | `claim_id`, `independent_run_id`, `result_comparison`, `review_status` | 保存真正独立的复现实验结论。 |
 | `access_route` | `route_id` | `document_id`, `route_type`, `probe_status`, `license_or_terms` | 仅记录元数据与状态；不保存校园密码、Cookie、代理 URL 或全文。 |
 
-机器可读 JSON Schema 位于 [evidence_maturity_registry.schema.json](../src/cosmatter/schemas/evidence_maturity_registry.schema.json)，无第三方依赖的严格校验器位于 `src/cosmatter/evidence_maturity_registry.py`。字段定义可直接映射到 SQLite/PostgreSQL；敏感全文、会话 Cookie、校园 VPN/代理地址和令牌不得进入这些表。
+机器可读 JSON Schema 位于 [evidence_maturity_registry.schema.json](../src/cosmatter/schemas/evidence_maturity_registry.schema.json)，可直接执行的关系型表定义位于 [evidence_maturity_registry.sql](templates/evidence_maturity_registry.sql)，无第三方依赖的严格校验器位于 `src/cosmatter/evidence_maturity_registry.py`。DDL 可用于 SQLite 或 PostgreSQL；跨表的成熟度升级门禁（例如独立运行不得与原支撑运行相同）仍由严格校验器负责，不能只依赖数据库约束。敏感全文、会话 Cookie、校园 VPN/代理地址和令牌不得进入这些表。
 
 ## 运行工件与只读界面
 
