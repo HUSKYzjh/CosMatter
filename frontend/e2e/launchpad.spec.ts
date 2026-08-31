@@ -136,9 +136,14 @@ test("renders cross-source reconciliation revisions in the map without calling a
 
   await expect(page.locator(".rail-status")).toContainText("已导入 reconciliation-summary.json");
   await page.getByRole("button", { name: "03 文献星图" }).click();
+  await expect(page.locator(".frontier-literature-workbench")).toBeVisible({ timeout: 30_000 });
   const route = page.getByLabel("舰队阅读航道");
   await expect(route).toContainText("航线 01");
   await expect(route).toContainText("完成人工筛选");
+  expect(await route.locator(".fleet-formation-slot").evaluateAll((slots) => slots.every((slot) => {
+    const bounds = slot.getBoundingClientRect();
+    return [...slot.children].every((child) => child.getBoundingClientRect().bottom <= bounds.bottom + 1);
+  }))).toBe(true);
   const panel = page.getByLabel("跨源标识人工对账");
   await expect(panel).toContainText("冲突，未合并");
   const summary = panel.locator("summary");

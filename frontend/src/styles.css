@@ -687,3 +687,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* The route reason is derived from registered workflow state, never from a relevance score. */
 .fleet-reading-cards b { overflow: hidden; color: color-mix(in srgb, var(--formation-accent) 82%, var(--ink)); font: 600 .47rem/1.35 ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A route slot carries both its audited state and the next controlled action. */
+.fleet-reading-cards { grid-template-rows: repeat(3, 4.9rem); }
+@media (max-width: 900px) { .fleet-reading-cards button, .fleet-reading-cards button:nth-child(n) { min-height: 6.4rem; } }
+@media (max-width: 560px) { .fleet-reading-cards button, .fleet-reading-cards button:nth-child(n) { min-height: 6.7rem; } }
