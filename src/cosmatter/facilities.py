@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -56,10 +57,28 @@ def record_conditions(card: EvidenceCard) -> dict[str, Any]:
     return {field: card.conditions.get(field, "unknown") for field in _CONDITION_FIELDS}
 
 
+def _condition_is_missing_or_invalid(value: Any) -> bool:
+    """Return whether a condition cannot safely support a comparison."""
+    if value is None or isinstance(value, bool):
+        return True
+    if isinstance(value, str):
+        return not value.strip() or value.strip().casefold() == "unknown"
+    if isinstance(value, (int, float)):
+        return not math.isfinite(float(value))
+    return True
+
+
+def _condition_comparison_key(value: Any) -> tuple[str, object]:
+    """Create an equality-only key; this intentionally never converts units."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return ("number", float(value))
+    return ("text", value.strip())
+
+
 def review_evidence(card: EvidenceCard) -> EvidenceReview:
     """Accept only located evidence whose material conditions are explicit."""
     conditions = record_conditions(card)
-    missing = tuple(field for field, value in conditions.items() if value in (None, "", "unknown"))
+    missing = tuple(field for field, value in conditions.items() if _condition_is_missing_or_invalid(value))
     if missing:
         return EvidenceReview(card.evidence_id, ReviewStatus.REJECTED, missing, "conditions incomplete; do not compare as equivalent")
     return EvidenceReview(card.evidence_id, ReviewStatus.ACCEPTED, (), "locator, quote, and required conditions present")
@@ -85,7 +104,11 @@ def condition_differential(cards: tuple[EvidenceCard, ...], counterevidence_quer
     if not supports or not contradicts:
         raise FacilityGateError("diagnostics requires both supporting and contradicting evidence")
     profiles = {card.evidence_id: record_conditions(card) for card in cards}
-    differing = tuple(field for field in _CONDITION_FIELDS if len({str(profiles[card.evidence_id][field]) for card in cards}) > 1)
+    differing = tuple(
+        field
+        for field in _CONDITION_FIELDS
+        if len({_condition_comparison_key(profiles[card.evidence_id][field]) for card in cards}) > 1
+    )
     cluster = " / ".join(f"{field}={profiles[cards[0].evidence_id][field]}" for field in _CONDITION_FIELDS if field not in differing)
     return DiscrepancyMatrix(
         rows=(DiscrepancyRow(cluster or "no shared explicit conditions", tuple(card.evidence_id for card in supports), tuple(card.evidence_id for card in contradicts), differing, ()),),

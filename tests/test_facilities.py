@@ -17,6 +17,36 @@ class FacilityTests(unittest.TestCase):
         self.assertEqual(review.status.value, "rejected")
         self.assertIn("strain_percent", review.missing_conditions)
 
+    def test_blank_unknown_and_nonfinite_conditions_are_rejected(self) -> None:
+        conditions = dict(sample_form=" film ", strain_percent=-2.0, substrate="unknown ", thickness_nm=float("nan"), temperature_k=300, method=" ")
+        review = review_evidence(card("e1", Stance.SUPPORT, **conditions))
+        self.assertEqual(review.status.value, "rejected")
+        self.assertEqual(review.missing_conditions, ("substrate", "thickness_nm", "method"))
+
+    def test_numeric_condition_representations_do_not_create_false_differences(self) -> None:
+        support = card(
+            "e_support",
+            Stance.SUPPORT,
+            sample_form="film",
+            strain_percent=-2,
+            substrate="LAO",
+            thickness_nm=30,
+            temperature_k=300,
+            method="XRD",
+        )
+        contradict = card(
+            "e_contradict",
+            Stance.CONTRADICT,
+            sample_form="film",
+            strain_percent=-2.0,
+            substrate="LAO",
+            thickness_nm=30.0,
+            temperature_k=300.0,
+            method="XRD",
+        )
+        matrix = condition_differential((support, contradict), ("counterexample",))
+        self.assertEqual(matrix.rows[0].differing_fields, ())
+
     def test_condition_matrix_artifact_omits_quotes(self) -> None:
         shared = dict(sample_form="film", substrate="LAO", thickness_nm=30, temperature_k=300, method="XRD")
         matrix = condition_differential(
