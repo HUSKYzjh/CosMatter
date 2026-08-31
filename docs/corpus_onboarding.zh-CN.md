@@ -62,11 +62,11 @@ $env:PYTHONPATH = "src"
 $env:PYTHONPATH = "src"
 .\.venv\Scripts\python.exe -m cosmatter record-corpus-manifest-from-selection-review `
   --run-id bfo_90_v1 --input "D:\private\bfo_90_selection_reviewed.json"
-.\.venv\Scripts\python.exe -m cosmatter seed-authorized-corpus-candidates --run-id bfo_90_v1
-.\.venv\Scripts\python.exe -m cosmatter create-gold-standard-template --run-id bfo_90_v1
-.\.venv\Scripts\python.exe -m cosmatter create-bibliographic-source-template --run-id bfo_90_v1
-.\.venv\Scripts\python.exe -m cosmatter create-evaluation-run-record-template --run-id bfo_90_v1
+.\.venv\Scripts\python.exe -m cosmatter prepare-real-evaluation `
+  --run-id bfo_90_v1 --expected-count 90 --seed-candidates
 ```
+
+第二条命令一次写入冻结计数与授权边界审计、空白人工金标准、空白书目来源登记表和空白评测运行记录；`--seed-candidates` 还会把冻结清单复制为**未排序**的本地授权候选，供后续 Source Map 复核使用。它不会打开 PDF、读取路径、调用 API、生成指标或替代人工判断。若本轮不需要候选清单，可去掉 `--seed-candidates`，已有候选工件不会被改动。
 
 冻结清单仅存储文献 ID、标题、规范 DOI 和授权访问边界；不含 PDF、路径、密钥、全文或摘要。后续性能指标仅能在人工金标完成后计算。
 
@@ -113,7 +113,7 @@ $env:PYTHONPATH = "src"
 输出 `human_annotation_coverage.json` 只显示已审/未审相关性数量与各类注释覆盖数量，不会复制标题、DOI、标签、定位、事实或全文。仅当 90 篇的相关性均已人工复核时，检索指标门禁才会打开；材料事实、证据定位和 Gap 仍须各自完成独立人工审核。
 ## 冻结计数与授权边界审计
 
-在开始任何人工金标准标注或指标计算前，先生成仅含计数与哈希的冻结就绪审计：
+`prepare-real-evaluation` 已在冻结后自动生成仅含计数与哈希的冻结就绪审计。若人工修改了冻结清单或只需要重新核验计数，可单独重跑：
 
 ```powershell
 $env:PYTHONPATH = "src"

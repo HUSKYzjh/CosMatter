@@ -1,6 +1,6 @@
 # Authorized corpus and human gold standard
 
-This workflow prepares the real 90-paper BiFeO3 evaluation cohort without reading a PDF directory, collecting local paths, or redistributing institutional full text. The reviewer first creates a bibliography-only JSON selection with one stable document_id per authorized paper.
+This workflow prepares the real 90-paper BiFeO3 evaluation cohort without reading a PDF directory, collecting local paths, or redistributing institutional full text. The reviewer first creates a bibliography-only JSON selection with one stable document_id per authorized paper. The full Zotero-to-review path, including the private selection-template boundary, is in [the corpus-onboarding guide](corpus_onboarding.zh-CN.md).
 
 Run `record-corpus-manifest` with a run ID and the reviewed selection JSON. Then use the single local preparation command below to write the count-only frozen-corpus audit plus blank gold-standard, bibliographic-source, and evaluation-run-record templates. Add `--seed-candidates` only when the reviewer explicitly wants the manifest papers copied into the unranked authorized-local candidate list for later source-map work.
 
