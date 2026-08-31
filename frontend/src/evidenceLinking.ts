@@ -66,5 +66,8 @@ export function reviewablePaperCount(bundle: ImportedBundle): number {
 export function auditableAcceptedEvidence(bundle: ImportedBundle): EvidenceCard[] {
   const paperIds = new Set(bundle.literatureGraph.nodes.filter((node) => Boolean(documentIdForReviewablePaper(node))).map((node) => node.nodeId));
   const provenanceEdges = new Set(bundle.literatureGraph.edges.filter(isAcceptedProvenanceEdge).map((edge) => `${edge.sourceId}\u241f${edge.targetId}`));
-  return bundle.evidenceCards.filter((card) => card.reviewStatus === "accepted" && Boolean(card.provenance.documentId.trim()) && Boolean(card.provenance.locator.trim()) && paperIds.has(`paper:${card.provenance.documentId}`) && provenanceEdges.has(`paper:${card.provenance.documentId}\u241fevidence:${card.evidenceId}`));
+  const reviewedSourceMapDocuments = new Set(bundle.sourceMapSummary.documentIds);
+  const sourceMapInventoryIsUsable = bundle.sourceMapSummary.segmentCount > 0
+    && bundle.sourceMapSummary.documentCount === reviewedSourceMapDocuments.size;
+  return bundle.evidenceCards.filter((card) => card.reviewStatus === "accepted" && Boolean(card.provenance.documentId.trim()) && Boolean(card.provenance.locator.trim()) && sourceMapInventoryIsUsable && reviewedSourceMapDocuments.has(card.provenance.documentId) && paperIds.has(`paper:${card.provenance.documentId}`) && provenanceEdges.has(`paper:${card.provenance.documentId}\u241fevidence:${card.evidenceId}`));
 }

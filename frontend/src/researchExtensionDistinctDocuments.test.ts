@@ -13,6 +13,7 @@ describe("researchExtensionReadiness distinct document boundary", () => {
     const bundle = {
       ...demoBundle,
       evidenceCards: [card("ev-1", "support", "doc-1"), card("ev-2", "contradict", "doc-1")],
+      sourceMapSummary: { documentCount: 1, segmentCount: 2, documentIds: ["doc-1"] },
       conditionMatrix: [{ conditionCluster: "cluster", supportingEvidenceIds: ["ev-1"], contradictingEvidenceIds: ["ev-2"], differingFields: ["substrate"], unknowns: [] }],
       auditSummary: { ...demoBundle.auditSummary, evidenceProvenance: { acceptedEvidenceCount: 2, exactSourceMapMatchCount: 2, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 } },
       literatureGraph: { ...demoBundle.literatureGraph, nodes: [{ nodeId: "paper:doc-1", kind: "evidence_paper", label: "doc-1", trustStatus: "reviewed" }], edges: [

@@ -27,7 +27,7 @@ describe("mission artifact status", () => {
     const cards = deriveMissionArtifactStatus(bundle({
       conditionMatrix: [{ conditionCluster: "substrate=A", supportingEvidenceIds: ["e1"], contradictingEvidenceIds: ["e2"], differingFields: ["strain"], unknowns: ["thickness"] }],
       evidenceCards: [evidence], literatureGraph: withSourceLinks([evidence]),
-      sourceMapSummary: { documentCount: 1, segmentCount: 2, documentIds: [] },
+      sourceMapSummary: { documentCount: 1, segmentCount: 2, documentIds: ["doc"] },
       researchGapCandidates: [{ gapId: "g1", problemDescription: "gap", evidenceIds: ["e1"], conflictOrMissingEvidence: ["e2"], noveltyStatus: "pending", actionability: "review", falsifiableHypothesis: "test", suggestedValidation: ["measure"], evidenceCompleteness: 1, reviewStatus: "candidate_requires_human_review" }],
       auditSummary: { ...demoBundle.auditSummary, evidenceProvenance: { acceptedEvidenceCount: 1, exactSourceMapMatchCount: 1, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 } },
     }), false);

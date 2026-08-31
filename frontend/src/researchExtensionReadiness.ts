@@ -49,7 +49,7 @@ export function isAuditableConditionContrast(
   bundle: ImportedBundle,
 ): boolean {
   const accepted = auditableAcceptedEvidence(bundle);
-  return hasExactEvidenceProvenanceAudit(bundle, accepted.length)
+  return hasExactEvidenceProvenanceAudit(bundle, bundle.evidenceCards.length)
     && hasAuditableContrast(row, new Map(accepted.map((card) => [card.evidenceId, card])));
 }
 
@@ -65,7 +65,10 @@ export function researchExtensionReadiness(bundle: ImportedBundle): ResearchExte
   const supportingEvidenceCount = accepted.filter((card) => isSupporting(card.stance)).length;
   const contradictingEvidenceCount = accepted.filter((card) => isContradicting(card.stance)).length;
   const conditionClusterCount = bundle.conditionMatrix.length;
-  const exactProvenance = hasExactEvidenceProvenanceAudit(bundle, accepted.length);
+  // The audit applies to the complete accepted-card projection—not just the
+  // subset that happened to have graph edges.  Otherwise a stale or unlinked
+  // accepted card could be silently omitted when a comparison is unlocked.
+  const exactProvenance = hasExactEvidenceProvenanceAudit(bundle, bundle.evidenceCards.length);
   // Imported rows remain visible, but only become auditable after every accepted card has an exact reviewed map link.
   const linkedConditionClusterCount = exactProvenance
     ? bundle.conditionMatrix.filter((row) => hasAuditableContrast(row, acceptedById)).length

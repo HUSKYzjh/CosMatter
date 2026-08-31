@@ -102,6 +102,14 @@ describe("readBundle", () => {
     expect(valid.generatedAt).toBe("2026-08-03T00:00:00+00:00");
     expect(invalid.generatedAt).toBeNull();
   });
+
+  it("rejects a reviewed Source Map summary whose document count and identity inventory disagree", () => {
+    const bundle = readBundle({
+      mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
+      reviewed_source_map_summary: { document_count: 2, segment_count: 8, document_ids: ["doc_1"] },
+    });
+    expect(bundle.sourceMapSummary).toEqual({ documentCount: 0, segmentCount: 0, documentIds: [] });
+  });
 });
 
 

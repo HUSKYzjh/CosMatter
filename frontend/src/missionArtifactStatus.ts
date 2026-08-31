@@ -1,5 +1,6 @@
 import type { ImportedBundle, Mission } from "./model";
 import { auditableAcceptedEvidence } from "./evidenceLinking";
+import { evidenceProvenanceAuditComplete } from "./evidenceProvenanceAudit";
 
 export type ArtifactKey = "brief" | "conditions" | "evidence" | "counterevidence";
 export type ArtifactState = "ready" | "pending" | "recheck";
@@ -24,7 +25,7 @@ export function deriveMissionArtifactStatus(bundle: ImportedBundle, locked: bool
   const unknownCount = bundle.conditionMatrix.reduce((sum, row) => sum + row.unknowns.length, 0);
   const provenance = bundle.auditSummary.evidenceProvenance;
   const auditableEvidence = auditableAcceptedEvidence(bundle);
-  const hasLocatorAudit = Boolean(provenance && provenance.exactSourceMapMatchCount > 0);
+  const hasLocatorAudit = evidenceProvenanceAuditComplete(provenance, bundle.evidenceCards.length);
   const recheck = (state: ArtifactState): ArtifactState => locked ? "recheck" : state;
   const next = <T extends MissionArtifactStatus["next"]>(value: T): T => locked ? "reimport" as T : value;
 

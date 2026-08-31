@@ -17,14 +17,14 @@ const candidate: ResearchGapCandidate = {
 describe("missionJourney research-extension completion", () => {
   it("does not complete extension from a candidate when cross-paper comparison artifacts are absent", () => {
     const evidence = [card("ev-1", "support")];
-    const bundle = { ...demoBundle, evidenceCards: evidence, literatureGraph: graphFor(evidence), sourceMapSummary: { documentCount: 1, segmentCount: 1, documentIds: [] }, conditionMatrix: [], researchGapCandidates: [candidate] };
+    const bundle = { ...demoBundle, evidenceCards: evidence, literatureGraph: graphFor(evidence), sourceMapSummary: { documentCount: 1, segmentCount: 1, documentIds: ["doc-ev-1"] }, conditionMatrix: [], researchGapCandidates: [candidate] };
     expect(missionJourney(bundle, bundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: true }).find((stage) => stage.id === "extend")?.state).toBe("ready");
   });
 
   it("keeps extension ready when comparison exists but the counterevidence boundary is not recorded", () => {
     const evidence = [card("ev-1", "support"), card("ev-2", "contradict")];
     const bundle = {
-      ...demoBundle, evidenceCards: evidence, literatureGraph: graphFor(evidence), sourceMapSummary: { documentCount: 2, segmentCount: 2, documentIds: [] },
+      ...demoBundle, evidenceCards: evidence, literatureGraph: graphFor(evidence), sourceMapSummary: { documentCount: 2, segmentCount: 2, documentIds: ["doc-ev-1", "doc-ev-2"] },
       auditSummary: { ...demoBundle.auditSummary, evidenceProvenance: { acceptedEvidenceCount: 2, exactSourceMapMatchCount: 2, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 } },
       conditionMatrix: [{ conditionCluster: "cluster", supportingEvidenceIds: ["ev-1"], contradictingEvidenceIds: ["ev-2"], differingFields: ["substrate"], unknowns: [] }], researchGapCandidates: [candidate],
     };
@@ -40,7 +40,7 @@ describe("missionJourney counterevidence completion", () => {
       ...demoBundle,
       evidenceCards: evidence,
       literatureGraph: graphFor(evidence),
-      sourceMapSummary: { documentCount: 2, segmentCount: 2, documentIds: [] },
+      sourceMapSummary: { documentCount: 2, segmentCount: 2, documentIds: ["doc-ev-1", "doc-ev-2"] },
       conditionMatrix: [{ conditionCluster: "cluster", supportingEvidenceIds: ["ev-1"], contradictingEvidenceIds: ["ev-2"], differingFields: ["substrate"], unknowns: [] }],
       researchGapCandidates: [candidate],
       auditSummary: { ...demoBundle.auditSummary, evidenceProvenance: { acceptedEvidenceCount: 2, exactSourceMapMatchCount: 2, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 }, counterevidence: { state: "ready" as const, plannedQueryCount: 1, executedQueryCount: 1 } },
@@ -54,7 +54,7 @@ describe("missionJourney counterevidence completion", () => {
       ...demoBundle,
       evidenceCards: evidence,
       literatureGraph: graphFor(evidence),
-      sourceMapSummary: { documentCount: 2, segmentCount: 2, documentIds: [] },
+      sourceMapSummary: { documentCount: 2, segmentCount: 2, documentIds: ["doc-ev-1", "doc-ev-2"] },
       conditionMatrix: [{ conditionCluster: "cluster", supportingEvidenceIds: ["ev-1"], contradictingEvidenceIds: ["ev-2"], differingFields: ["substrate"], unknowns: [] }],
       researchGapCandidates: [candidate],
       auditSummary: { ...demoBundle.auditSummary, evidenceProvenance: { acceptedEvidenceCount: 2, exactSourceMapMatchCount: 2, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 }, counterevidence: { state: "ready" as const, plannedQueryCount: 2, executedQueryCount: 2 } },

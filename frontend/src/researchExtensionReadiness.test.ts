@@ -13,6 +13,7 @@ function bundleFor(cards: EvidenceCard[], conditionMatrix: typeof demoBundle.con
     ...demoBundle,
     evidenceCards: cards,
     conditionMatrix,
+    sourceMapSummary: { documentCount: cards.length, segmentCount: cards.length, documentIds: cards.map((card) => card.provenance.documentId) },
     auditSummary: {
       ...demoBundle.auditSummary,
       evidenceProvenance: { acceptedEvidenceCount: cards.length, exactSourceMapMatchCount: cards.length, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 },
@@ -39,6 +40,17 @@ describe("researchExtensionReadiness", () => {
     const bundle = bundleFor(observations, [{ conditionCluster: "thin films", supportingEvidenceIds: ["1"], contradictingEvidenceIds: ["2"], differingFields: ["substrate"], unknowns: [] }]);
     expect(researchExtensionReadiness({ ...bundle, auditSummary: { ...bundle.auditSummary, evidenceProvenance: null } })).toMatchObject({ ready: false, reason: "provenance-audit", linkedConditionClusterCount: 0 });
     expect(isAuditableConditionContrast(bundle.conditionMatrix[0], { ...bundle, auditSummary: { ...bundle.auditSummary, evidenceProvenance: null } })).toBe(false);
+  });
+
+  it("does not ignore an unlinked accepted card when checking a whole-run provenance audit", () => {
+    const observations = [evidence("1", "support"), evidence("2", "contradict"), evidence("unlinked", "context")];
+    const bundle = bundleFor(observations, [{ conditionCluster: "thin films", supportingEvidenceIds: ["1"], contradictingEvidenceIds: ["2"], differingFields: ["substrate"], unknowns: [] }]);
+    const withStaleAudit = {
+      ...bundle,
+      auditSummary: { ...bundle.auditSummary, evidenceProvenance: { acceptedEvidenceCount: 2, exactSourceMapMatchCount: 2, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 } },
+      literatureGraph: { ...bundle.literatureGraph, nodes: bundle.literatureGraph.nodes.slice(0, 2), edges: bundle.literatureGraph.edges.slice(0, 2) },
+    };
+    expect(researchExtensionReadiness(withStaleAudit)).toMatchObject({ ready: false, reason: "provenance-audit", acceptedEvidenceCount: 2 });
   });
 
   it("requires an imported condition matrix before a comparison is ready for interpretation", () => {

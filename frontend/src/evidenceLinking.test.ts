@@ -32,7 +32,17 @@ describe("evidenceForPaper", () => {
   it("does not count imported cards without a reviewed paper-to-evidence projection", () => {
     const withoutEdge = { ...demoBundle, evidenceCards: [evidence], literatureGraph: { ...demoBundle.literatureGraph, nodes: [paper], edges: [] } };
     expect(auditableAcceptedEvidence(withoutEdge)).toEqual([]);
-    const withEdge = { ...withoutEdge, literatureGraph: { ...withoutEdge.literatureGraph, edges: [{ sourceId: "paper:doc-1", targetId: "evidence:ev-1", edgeType: "source_provenance", relationSource: "reviewed source map", trustStatus: "accepted" }] } };
+    const withEdge = { ...withoutEdge, sourceMapSummary: { documentCount: 1, segmentCount: 1, documentIds: ["doc-1"] }, literatureGraph: { ...withoutEdge.literatureGraph, edges: [{ sourceId: "paper:doc-1", targetId: "evidence:ev-1", edgeType: "source_provenance", relationSource: "reviewed source map", trustStatus: "accepted" }] } };
     expect(auditableAcceptedEvidence(withEdge)).toEqual([evidence]);
+  });
+
+  it("does not treat a graph edge as auditable without a matching reviewed Source Map document", () => {
+    const bundle = {
+      ...demoBundle,
+      evidenceCards: [evidence],
+      sourceMapSummary: { documentCount: 1, segmentCount: 2, documentIds: ["other-document"] },
+      literatureGraph: { ...demoBundle.literatureGraph, nodes: [paper], edges: [{ sourceId: "paper:doc-1", targetId: "evidence:ev-1", edgeType: "source_provenance", relationSource: "reviewed source map", trustStatus: "accepted" }] },
+    };
+    expect(auditableAcceptedEvidence(bundle)).toEqual([]);
   });
 });

@@ -193,12 +193,16 @@ function gapCounterevidenceBoundary(value: unknown): GapCounterevidenceBoundary 
   return { status, approvedQueryCount: approved, executedQueryCount: executed };
 }
 
-function reviewedSummary(value: unknown, countKey: string): { documentCount: number; recordCount: number; documentIds: string[] } {
+function reviewedSummary(value: unknown, countKey: string, requireDocumentIds = false): { documentCount: number; recordCount: number; documentIds: string[] } {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return { documentCount: 0, recordCount: 0, documentIds: [] };
   const raw = value as JsonObject;
   const documentCount = typeof raw.document_count === "number" && Number.isSafeInteger(raw.document_count) && raw.document_count >= 0 ? raw.document_count : 0;
   const recordCount = typeof raw[countKey] === "number" && Number.isSafeInteger(raw[countKey]) && raw[countKey] >= 0 ? raw[countKey] : 0;
-  return { documentCount, recordCount, documentIds: textList(raw.document_ids).slice(0, 256) };
+  const documentIds = textList(raw.document_ids).slice(0, 256);
+  // The browser only receives this quote-free inventory.  Do not let an
+  // inconsistent aggregate count stand in for a reviewed document identity.
+  if (requireDocumentIds && (documentCount !== documentIds.length || new Set(documentIds).size !== documentIds.length)) return { documentCount: 0, recordCount: 0, documentIds: [] };
+  return { documentCount, recordCount, documentIds };
 }
 
 function auditCount(value: unknown): number {
@@ -514,7 +518,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     stations: Array.isArray(root.stations) ? root.stations.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).station_type === "string" ? [{ stationType: (entry as JsonObject).station_type as string, status: typeof (entry as JsonObject).status === "string" ? (entry as JsonObject).status as string : "unknown" }] : []) : [],
     facilities: Array.isArray(root.facilities) ? root.facilities.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).facility_type === "string" ? [{ facilityType: (entry as JsonObject).facility_type as string, status: typeof (entry as JsonObject).status === "string" ? (entry as JsonObject).status as string : "unknown" }] : []) : [],
     evidenceCards, conditionMatrix, researchGapCandidates, materialFacts,
-    sourceMapSummary: (() => { const summary = reviewedSummary(root.reviewed_source_map_summary, "segment_count"); return { documentCount: summary.documentCount, segmentCount: summary.recordCount, documentIds: summary.documentIds };  })(),
+    sourceMapSummary: (() => { const summary = reviewedSummary(root.reviewed_source_map_summary, "segment_count", true); return { documentCount: summary.documentCount, segmentCount: summary.recordCount, documentIds: summary.documentIds };  })(),
     materialFactSummary: (() => { const summary = reviewedSummary(root.reviewed_material_fact_summary, "fact_count"); return { documentCount: summary.documentCount, factCount: summary.recordCount }; })(),
     evidenceMaturityRegistry: acceptedMaturityRegistry,
     evidenceMaturityRegistryStatus,
