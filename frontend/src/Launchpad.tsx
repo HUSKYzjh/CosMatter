@@ -188,7 +188,7 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission) => void;
         <h1>{copy("从一个问题，驶向可审计的材料研究。", "From one question to auditable materials research.")}</h1>
         <p class="launch-boundary">{copy("自动生成的候选、背景与计划均为未受信建议；只有人工核对来源定位后的 EvidenceCard 才能进入后续推论。", "Generated candidates, context and plans are untrusted suggestions. Only human-checked, located EvidenceCards can support later reasoning.")}</p>
         <nav class="launch-modes" aria-label={copy("任务入口", "Mission entry modes")}>
-          <For each={MODES}>{(item, index) => <button classList={{ active: mode() === item.id }} type="button" aria-pressed={mode() === item.id} disabled={jumping()} onClick={() => setMode(item.id)}><b>0{index() + 1}</b><i>{item.icon}</i><span>{copy(item.zh, item.en)}</span><small>{copy(item.zhDetail, item.enDetail)}</small></button>}</For>
+          <For each={MODES}>{(item, index) => <button classList={{ active: mode() === item.id }} type="button" aria-label={copy(`${item.zh}：${item.zhDetail}`, `${item.en}: ${item.enDetail}`)} aria-pressed={mode() === item.id} disabled={jumping()} onClick={() => setMode(item.id)}><b>0{index() + 1}</b><i>{item.icon}</i><span>{copy(item.zh, item.en)}</span><small>{copy(item.zhDetail, item.enDetail)}</small></button>}</For>
         </nav>
       </div>
       <aside class="launch-stage-column" aria-label={copy("科研闭环阶段", "Research evidence stages")}>

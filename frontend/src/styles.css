@@ -993,3 +993,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .launchpad ::-webkit-scrollbar, .workbench ::-webkit-scrollbar { width: .62rem; height: .62rem; }
 .launchpad ::-webkit-scrollbar-thumb, .workbench ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--signal-blue) 45%, var(--surface)); background-clip: padding-box; }
 .launchpad ::-webkit-scrollbar-thumb:hover, .workbench ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--signal-teal) 55%, var(--surface)); background-clip: padding-box; }
+
+/* Mobile mission modes are compact launch switches, leaving the question signal in the first viewport. */
+@media (max-width: 560px) {
+  .launch-modes { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .2rem; margin-top: .92rem; padding: .2rem; }
+  .launch-modes button { grid-template-columns: 1rem minmax(0, 1fr); grid-template-rows: 1fr; align-items: center; min-height: 3.25rem; padding: .35rem .24rem .35rem .42rem; }
+  .launch-modes button b { grid-row: auto; align-self: center; font-size: .56rem; }
+  .launch-modes button i { display: none; }
+  .launch-modes button span { grid-column: 2; align-self: center; font-size: .7rem; line-height: 1.25; }
+  .launch-modes button small { display: none; }
+}
