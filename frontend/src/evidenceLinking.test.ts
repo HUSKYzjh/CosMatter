@@ -29,6 +29,12 @@ describe("evidenceForPaper", () => {
     expect(reviewablePaperCount(bundle)).toBe(2);
     expect(evidenceMatchesPaper(bundle, other, evidence)).toBe(false);
   });
+  it("does not let synthetic demonstration papers unlock a reviewable-paper route", () => {
+    const synthetic: LiteratureGraphNode = { ...paper, trustStatus: "synthetic_demo_candidate_not_scientific_evidence" };
+    const bundle = { ...demoBundle, literatureGraph: { ...demoBundle.literatureGraph, nodes: [synthetic], edges: [] } };
+    expect(reviewablePaperCount(bundle)).toBe(0);
+    expect(evidenceForPaper(bundle, synthetic)).toEqual([]);
+  });
   it("does not count imported cards without a reviewed paper-to-evidence projection", () => {
     const withoutEdge = { ...demoBundle, evidenceCards: [evidence], literatureGraph: { ...demoBundle.literatureGraph, nodes: [paper], edges: [] } };
     expect(auditableAcceptedEvidence(withoutEdge)).toEqual([]);

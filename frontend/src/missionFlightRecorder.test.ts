@@ -8,10 +8,18 @@ const task = (overrides: Partial<PdfTaskStatus> = {}): PdfTaskStatus => ({
   document_id: "pdf-1", candidate_document_id: "doc-1", audit_document_id: "doc-1", audit_state: "pending", file_name: "paper.pdf", state: "pending", doi: null, doi_status: "pending", markdown_ready: false, source_map_review_status: "absent", source_map_segment_count: 0, trust_status: "private_markdown_outside_run_not_scientific_evidence", ...overrides,
 });
 const at = (missionState: string): ImportedBundle => ({ ...demoBundle, status: { missionState, retryCount: 0, retryBudget: 0, returnReason: null } });
+const reviewableAt = (missionState: string): ImportedBundle => ({
+  ...at(missionState),
+  literatureGraph: {
+    ...demoBundle.literatureGraph,
+    nodes: [{ nodeId: "paper:reviewable-fixture", kind: "candidate_paper", label: "Reviewable fixture", trustStatus: "human_screening_required" }],
+    edges: [],
+  },
+});
 
 describe("mission flight recorder", () => {
   it("does not mistake candidate metadata for source evidence", () => {
-    const entries = missionFlightRecorder(at("RETRIEVE"), null);
+    const entries = missionFlightRecorder(reviewableAt("RETRIEVE"), null);
     expect(entries.find((entry) => entry.id === "candidates")).toMatchObject({ state: "complete" });
     expect(entries.find((entry) => entry.id === "source-map")).toMatchObject({ state: "waiting" });
     expect(entries.find((entry) => entry.id === "evidence")).toMatchObject({ state: "waiting" });

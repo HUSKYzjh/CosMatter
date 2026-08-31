@@ -1,5 +1,6 @@
 import type { EvidenceCard, ImportedBundle, LiteratureGraphNode } from "./model";
 const REVIEWABLE_PAPER_KINDS = new Set(["candidate_paper", "evidence_paper", "structured_paper"]);
+const SYNTHETIC_TRUST_MARKER = /(^|[_\s-])synthetic(?:[_\s-]|$)/i;
 
 /**
  * Return a document identifier only for a declared reviewable-paper node that
@@ -8,7 +9,7 @@ const REVIEWABLE_PAPER_KINDS = new Set(["candidate_paper", "evidence_paper", "st
  * source map, or EvidenceCard provenance record.
  */
 export function documentIdForReviewablePaper(node: LiteratureGraphNode | null): string | null {
-  if (!node || !REVIEWABLE_PAPER_KINDS.has(node.kind) || !node.nodeId.startsWith("paper:")) return null;
+  if (!node || !REVIEWABLE_PAPER_KINDS.has(node.kind) || !node.nodeId.startsWith("paper:") || SYNTHETIC_TRUST_MARKER.test(node.trustStatus)) return null;
   const documentId = node.nodeId.slice("paper:".length).trim();
   return documentId ? documentId : null;
 }

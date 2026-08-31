@@ -4,6 +4,15 @@ import { demoBundle } from "./model";
 import { emptyBundleForMission } from "./missionBundleFactory";
 import { hasNavigableLiteratureGraph, missionJourney } from "./missionJourney";
 
+const reviewableBundle = {
+  ...demoBundle,
+  literatureGraph: {
+    ...demoBundle.literatureGraph,
+    nodes: [{ nodeId: "paper:reviewable-fixture", kind: "candidate_paper", label: "Reviewable fixture", trustStatus: "human_screening_required" }],
+    edges: [],
+  },
+};
+
 describe("missionJourney task-boundary lock", () => {
   it("does not call a fresh question-intake shell a completed orchestration", () => {
     const shell = emptyBundleForMission(demoBundle.mission);
@@ -68,36 +77,36 @@ describe("missionJourney task-boundary lock", () => {
 
   it("does not let a completed private PDF bypass paper selection", () => {
     // A candidate-linked private PDF may prepare source intake, but a real review session still starts from a selected paper.
-    const stages = missionJourney(demoBundle, demoBundle.mission.question, "workflow", false, true);
+    const stages = missionJourney(reviewableBundle, reviewableBundle.mission.question, "workflow", false, true);
     expect(stages.find((item) => item.id === "verify")?.state).toBe("blocked");
     expect(stages.find((item) => item.id === "verify")?.reasonZh).toContain("选择一篇待核对论文");
     expect(stages.find((item) => item.id === "extend")?.state).toBe("blocked");
   });
 
   it("keeps verification blocked when a researcher only selects metadata", () => {
-    const stages = missionJourney(demoBundle, demoBundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: false });
+    const stages = missionJourney(reviewableBundle, reviewableBundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: false });
     expect(stages.find((item) => item.id === "map")?.state).toBe("current");
     expect(stages.find((item) => item.id === "verify")?.state).toBe("blocked");
     expect(stages.find((item) => item.id === "verify")?.reasonZh).toContain("人工纳入全文核对");
   });
   it("marks the literature-map stage complete after selecting a paper, without implying source review", () => {
-    const stages = missionJourney(demoBundle, demoBundle.mission.question, "workflow", false, false, { paperSelected: true, evidenceReady: false });
+    const stages = missionJourney(reviewableBundle, reviewableBundle.mission.question, "workflow", false, false, { paperSelected: true, evidenceReady: false });
     expect(stages.find((item) => item.id === "map")?.state).toBe("complete");
     expect(stages.find((item) => item.id === "verify")?.state).toBe("blocked");
   });
 
   it("unlocks verification after the current paper is human-included for full-text review", () => {
-    const stages = missionJourney(demoBundle, demoBundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: false, screeningAllowsSourceReview: true });
+    const stages = missionJourney(reviewableBundle, reviewableBundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: false, screeningAllowsSourceReview: true });
     expect(stages.find((item) => item.id === "verify")?.state).toBe("ready");
     expect(stages.find((item) => item.id === "extend")?.state).toBe("blocked");
   });
 
   it("unlocks verification when a completed private source map matches the selected paper", () => {
-    const stages = missionJourney(demoBundle, demoBundle.mission.question, "graph", false, true, { paperSelected: true, evidenceReady: false });
+    const stages = missionJourney(reviewableBundle, reviewableBundle.mission.question, "graph", false, true, { paperSelected: true, evidenceReady: false });
     expect(stages.find((item) => item.id === "verify")?.state).toBe("ready");
   });
   it("unlocks the reader for a selected paper with an imported provenance-linked accepted card", () => {
-    const stages = missionJourney(demoBundle, demoBundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: false, paperHasAcceptedEvidence: true });
+    const stages = missionJourney(reviewableBundle, reviewableBundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: false, paperHasAcceptedEvidence: true });
     expect(stages.find((item) => item.id === "verify")?.state).toBe("ready");
     expect(stages.find((item) => item.id === "extend")?.state).toBe("blocked");
   });
