@@ -137,6 +137,7 @@ test("opens a read-only evaluation audit from frozen-corpus readiness without cl
   await audit.locator("summary").click();
   await expect(page.getByLabel("评测前置门禁")).toContainText("可开始私有人工标注");
   await expect(audit).toContainText("未生成");
+  await expect(page.getByLabel("评测下一步")).toContainText("在私有位置完成相关性金标准标注");
   await expect(audit).toContainText("不代表任何指标已经生成");
   expect(apiRequests).toEqual([]);
 });

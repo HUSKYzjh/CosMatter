@@ -138,6 +138,19 @@ function EvaluationAuditPanel(props: { bundle: ImportedBundle }) {
       ? tr("书目来源覆盖已齐备", "Bibliographic-source coverage complete")
       : tr("来源登记已记录，门禁待复核", "Source registry recorded; gate needs review");
   };
+  const nextEvaluationAction = () => {
+    const frozen = readiness().frozenCorpus;
+    const annotation = readiness().humanAnnotation;
+    const bibliography = readiness().bibliographicSource;
+    if (!frozen) return tr("下一步：先冻结经人工审核且已授权的语料清单；不要以候选检索结果代替冻结语料。", "Next: freeze a human-reviewed, authorised corpus manifest; do not substitute retrieval candidates for a frozen corpus.");
+    if (!frozen.expectedCountMatched || !frozen.documentIdUniquenessValid || !frozen.authorizedAccessBoundaryValid) return tr("下一步：人工复核冻结数量、文献 ID 唯一性与授权访问边界。", "Next: manually review the frozen count, document-ID uniqueness, and authorised-access boundary.");
+    if (!annotation) return tr("下一步：在私有位置完成相关性金标准标注，并只导入聚合覆盖审计。", "Next: complete relevance-gold annotation privately, then import only its aggregate coverage audit.");
+    if (annotation.relevanceCounts.unreviewed > 0) return tr(`下一步：完成剩余 ${annotation.relevanceCounts.unreviewed} 篇的人工相关性标注；不要用默认值补齐。`, `Next: complete human relevance annotation for the remaining ${annotation.relevanceCounts.unreviewed} paper(s); do not fill them with defaults.`);
+    if (!bibliography) return tr("下一步：逐篇登记实际书目来源并运行覆盖审计；不要以模型或标题匹配替代来源。", "Next: register the actual bibliographic source for each paper and run the coverage audit; do not substitute a model or title match for a source.");
+    if (bibliography.documentsWithReviewedBibliographicSource < bibliography.frozenDocumentCount) return tr("下一步：补齐缺失的书目来源人工核对，然后重跑覆盖审计。", "Next: complete the missing human bibliographic-source checks, then rerun the coverage audit.");
+    if (!Object.values(evaluation()).some(Boolean)) return tr("下一步：在相同冻结边界下完成适用的人审评测；缺失指标必须保留为“未生成”。", "Next: complete the applicable human-reviewed evaluations against this same frozen boundary; absent metrics must remain not generated.");
+    return tr("下一步：核对每项已导入指标的人工审核声明、适用范围和失败案例；它们仍不等于科学结论。", "Next: check each imported metric's human-review declaration, scope, and failure cases; they still are not scientific conclusions.");
+  };
   return <details class="audit-details evaluation-audit" aria-label={tr("审计与评测", "Audit and evaluation")}>
     <summary>{tr("审计与评测", "Audit and evaluation")}</summary>
     <p>{tr("仅显示导出工件中带有对应人工审核声明的聚合指标；缺失指标表示未生成，不代表零分、失败或科学结论。", "Only aggregate metrics with their corresponding human-review declaration are shown from exported artifacts. A missing metric means not generated, not zero, failure, or a scientific conclusion.")}</p>
@@ -152,6 +165,7 @@ function EvaluationAuditPanel(props: { bundle: ImportedBundle }) {
       <div><dt>{tr("人工相关性标注", "Human relevance review")}</dt><dd>{readiness().humanAnnotation ? `${tr("未复核", "Unreviewed")} ${readiness().humanAnnotation!.relevanceCounts.unreviewed}` : tr("未提供", "Not provided")}</dd><p>{annotationStatus()}</p></div>
       <div><dt>{tr("书目来源覆盖", "Bibliographic-source coverage")}</dt><dd>{readiness().bibliographicSource ? `${readiness().bibliographicSource!.documentsWithReviewedBibliographicSource}/${readiness().bibliographicSource!.frozenDocumentCount}` : tr("未提供", "Not provided")}</dd><p>{bibliographicStatus()}</p></div>
     </dl>
+    <section class="evaluation-next-action" aria-label={tr("评测下一步", "Evaluation next step")}><small>{tr("评测下一步 / 只读", "EVALUATION NEXT STEP / READ ONLY")}</small><p>{nextEvaluationAction()}</p></section>
     <p class="evaluation-readiness-boundary">{tr("这些状态只说明评测前置工件的已声明聚合覆盖；它们不代表任何指标已经生成，更不代表科学结论。", "These statuses describe only declared aggregate coverage of evaluation prerequisites. They do not mean any metric has been generated or any scientific conclusion has been reached.")}</p>
   </details>;
 }
