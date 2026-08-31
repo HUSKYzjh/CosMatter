@@ -16,6 +16,12 @@ const FIXED_DAG = [
 ] as const;
 
 const sameStrings = (actual: unknown, expected: readonly string[]) => Array.isArray(actual) && actual.length === expected.length && actual.every((value, index) => typeof value === "string" && value === expected[index]);
+const exactKeys = (value: unknown, keys: readonly string[]) => Boolean(value && typeof value === "object" && !Array.isArray(value) && (() => {
+  const actual = Object.keys(value as Record<string, unknown>);
+  return actual.length === keys.length && actual.every((key) => keys.includes(key));
+})());
+const DAG_KEYS = ["schema_version", "run_id", "mission_id", "trust_status", "dag_id", "max_concurrency", "scheduler_status", "runtime_safety", "eligible_stages", "blocked_stage_count", "human_review_required", "stages"] as const;
+const DAG_STAGE_KEYS = ["stage", "depends_on", "status", "allowed_descriptors", "data_classification", "execution_class"] as const;
 
 export type WorkflowDagRail =
   | { state: "unavailable"; stages: []; eligibleStage: null }
@@ -28,6 +34,7 @@ export type WorkflowDagRail =
  */
 export function workflowDagRail(dag: WorkflowDag | null): WorkflowDagRail {
   if (!dag
+    || !exactKeys(dag, DAG_KEYS)
     || dag.schema_version !== "cosmatter.workflow-dag/v1"
     || typeof dag.run_id !== "string" || !dag.run_id.trim()
     || typeof dag.mission_id !== "string" || !dag.mission_id.trim()
@@ -42,7 +49,7 @@ export function workflowDagRail(dag: WorkflowDag | null): WorkflowDagRail {
     || dag.eligible_stages.length > 1) return { state: "unavailable", stages: [], eligibleStage: null };
 
   if (dag.stages.some((rawItem, index) => {
-    if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) return true;
+    if (!exactKeys(rawItem, DAG_STAGE_KEYS)) return true;
     const item = rawItem as unknown as Record<string, unknown>;
     const fixed = FIXED_DAG[index];
     return item.stage !== fixed.stage

@@ -51,4 +51,9 @@ it("hides malformed or nonserial declarations rather than rendering them as comm
   const missingRunIdentity = dag();
   missingRunIdentity.run_id = "";
   expect(workflowDagRail(missingRunIdentity)).toEqual({ state: "unavailable", stages: [], eligibleStage: null });
+  const extraTopLevel = { ...dag(), execution: "untrusted" } as unknown as WorkflowDag;
+  expect(workflowDagRail(extraTopLevel)).toEqual({ state: "unavailable", stages: [], eligibleStage: null });
+  const extraStageField = dag();
+  Object.assign(extraStageField.stages[2], { provider_command: "untrusted" });
+  expect(workflowDagRail(extraStageField)).toEqual({ state: "unavailable", stages: [], eligibleStage: null });
 });
