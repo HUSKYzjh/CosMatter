@@ -41,6 +41,16 @@ test("activates a BFO task template through the keyboard with an explicit presse
   await expect(page.getByRole("button", { name: "预览：任务定义" })).toHaveAttribute("aria-current", "step");
 });
 
+test("keeps synthetic launch-preview papers out of the real research route", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "预览：受控编排" }).click();
+
+  const bridge = page.locator(".fleet-command-stage");
+  await expect(bridge).toContainText("只读预览数据层");
+  await expect(bridge.locator(".workflow-next")).toContainText("等待受控检索或导入可审查文献子图");
+  await expect(bridge).not.toContainText("20 篇可审查文献");
+});
+
 test("keeps an empty task explicit, then renders a redacted exported condition matrix", async ({ page }) => {
   const importInput = await openEditableTaskDefinition(page);
 
@@ -111,6 +121,7 @@ test("renders cross-source reconciliation revisions in the map without calling a
       generated_at: "2026-08-31T09:30:00Z",
       mission: { mission_id: "reconciliation-demo", question: "Inspect reviewed bibliography mappings.", material: "BiFeO3", property_name: "phase stability", scope: "synthetic UI fixture" },
       literature_graph: { trust_status: "human_reviewed_graph_projection", nodes: [{ node_id: "paper:demo-paper", kind: "candidate_paper", label: "Reviewable synthetic candidate", trust_status: "candidate_metadata_not_scientific_evidence" }], edges: [] },
+      evidence_cards: [{ evidence_id: "evidence-demo", claim: "A reviewer-bound bibliography identity check.", stance: "context", conditions: {}, quote: "Identity mapping recorded for the selected paper.", review_status: "accepted", provenance: { document_id: "demo-paper", locator: "metadata_record:1", source: "human review", access_policy: "authorized" } }],
       relation_reconciliation: {
         trust_status: "human_reviewed_cross_source_identity_not_scientific_evidence",
         source: { evidence_id: "evidence-demo", document_id: "demo-paper" },
