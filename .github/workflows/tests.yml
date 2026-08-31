@@ -21,7 +21,7 @@ jobs:
       - name: Install document toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install --yes texlive-xetex
+          sudo apt-get install --yes texlive-xetex texlive-lang-chinese
       - name: Install DeepSeek Harness
         run: npm install --global @deepseek-ai/dsh@0.1.0-rc.7
       - name: Install package
