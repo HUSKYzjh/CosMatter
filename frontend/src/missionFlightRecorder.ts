@@ -1,4 +1,5 @@
-import { reviewablePaperCount } from "./evidenceLinking";
+import { auditableAcceptedEvidence, reviewablePaperCount } from "./evidenceLinking";
+import { hasAuditableGapEvidenceBasis } from "./gapEvidenceReferences";
 import type { PdfTaskStatus } from "./localApi";
 import type { ImportedBundle } from "./model";
 
@@ -28,8 +29,8 @@ export function missionFlightRecorder(bundle: ImportedBundle, pdfTask: PdfTaskSt
   const parseFailed = pdfTask?.state === "failed";
   const sourceCount = bundle.sourceMapSummary.segmentCount;
   const factCount = bundle.materialFactSummary.factCount;
-  const evidenceCount = bundle.evidenceCards.length;
-  const gapCount = bundle.researchGapCandidates.length;
+  const evidenceCount = auditableAcceptedEvidence(bundle).length;
+  const gapCount = bundle.researchGapCandidates.filter((candidate) => hasAuditableGapEvidenceBasis(candidate, bundle)).length;
   const extractActive = isActiveStage(missionState, ["EXTRACT"]);
   const evidenceActive = isActiveStage(missionState, ["VERIFY", "HUMAN_REVIEW"]);
   const horizonActive = isActiveStage(missionState, ["HAZARD_SCAN", "REPORT"]);

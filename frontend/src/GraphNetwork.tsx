@@ -7,7 +7,7 @@ import { fleetVisualState } from "./fleetVisualState";
 import type { GraphCanvasControls, LiteratureGraphCanvasProps } from "./LiteratureGraphCanvas";
 import { TOPIC_KEYS, isPaperNode, topicFor, type TopicKey } from "./literatureTopology";
 import { literatureGraphMode } from "./literatureGraphMode";
-import { documentIdForReviewablePaper, evidenceForPaper } from "./evidenceLinking";
+import { auditableAcceptedEvidence, documentIdForReviewablePaper, evidenceForPaper } from "./evidenceLinking";
 import { graphEdgeStillExists, graphSelectionVisibility } from "./graphSelectionState";
 import { graphNodeForSessionDocument } from "./graphSessionSelection";
 import { readerRouteAfterCommittedSelection } from "./graphReaderHandoff";
@@ -105,8 +105,8 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
       return evidence ? [{ evidence, relation: edge.edgeType === "condition_support" ? "support" : "contradiction" }] : [];
     });
   });
-  const acceptedEvidenceCount = createMemo(() => props.bundle.evidenceCards.filter((card) => card.reviewStatus === "accepted").length);
-  const acceptedEvidenceProvenanceAudited = createMemo(() => evidenceProvenanceAuditComplete(props.bundle.auditSummary.evidenceProvenance, acceptedEvidenceCount()));
+  const acceptedEvidenceCount = createMemo(() => auditableAcceptedEvidence(props.bundle).length);
+  const acceptedEvidenceProvenanceAudited = createMemo(() => evidenceProvenanceAuditComplete(props.bundle.auditSummary.evidenceProvenance, props.bundle.evidenceCards.length));
   const paperStates = createMemo<Record<string, PaperWorkflowState>>(() => Object.fromEntries(
     graph().nodes.map((node) => {
       const documentId = documentIdForReviewablePaper(node);

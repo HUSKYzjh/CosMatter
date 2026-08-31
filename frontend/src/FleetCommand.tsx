@@ -2,7 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 
 import { FleetDecoration } from "./FleetDecoration";
 import { fleetVisualState } from "./fleetVisualState";
-import { reviewablePaperCount } from "./evidenceLinking";
+import { auditableAcceptedEvidence, reviewablePaperCount } from "./evidenceLinking";
 import { FLEETS, fleetChannels, label, statusLabel, type FleetRecord, type FleetShip, type UiLocale } from "./fleetRegistry";
 import type { ImportedBundle } from "./model";
 import type { FacilityCatalogueHealth, FacilityContractManifest, HarnessAuthorization, PdfTaskStatus } from "./localApi";
@@ -43,10 +43,11 @@ export function FleetCommand(props: { bundle: ImportedBundle; locale: UiLocale; 
   const orchestration = createMemo(() => fleetOrchestration(props.bundle));
   const flightRecord = createMemo(() => missionFlightRecorder(props.bundle, props.pdfTask));
   const eventLedger = createMemo(() => missionEventLedger(props.bundle));
+  const auditableEvidenceCount = createMemo(() => auditableAcceptedEvidence(props.bundle).length);
   const flightDestination = (entry: FlightRecordEntry) => flightRecordDestination(entry.id, {
     paperCount: paperCount(),
-    hasReviewContext: Boolean(props.selectedDocumentId || props.pdfTask || props.bundle.sourceMapSummary.segmentCount || props.bundle.materialFactSummary.factCount || props.bundle.evidenceCards.length),
-    hasEvidence: props.bundle.evidenceCards.length > 0,
+    hasReviewContext: Boolean(props.selectedDocumentId || props.pdfTask || props.bundle.sourceMapSummary.segmentCount || props.bundle.materialFactSummary.factCount || auditableEvidenceCount()),
+    hasEvidence: auditableEvidenceCount() > 0,
     hasGapCandidate: props.bundle.researchGapCandidates.length > 0,
   });
   const routeStateLabel = (state: FleetRouteState) => ({
@@ -203,7 +204,7 @@ export function FleetCommand(props: { bundle: ImportedBundle; locale: UiLocale; 
         <div class="deployment-flagship"><small>{x("旗舰节点", "FLAGSHIP NODE")}</small><strong>CosMatter</strong><span>{x("任务包 / 人工门禁 / 工件登记", "task packages / human gates / artifact registry")}</span></div>
         <For each={participants()}>{(fleet, index) => <button type="button" class={`deployment-ship ${deploymentClass(index())} state-${fleetRuntimeStatus(fleet, props.bundle)}`} classList={{ selected: selectedFleet()?.id === fleet.id }} aria-controls="fleet-participant-drawer" aria-expanded={selectedFleet()?.id === fleet.id} onClick={() => inspectFleet(fleet)}><small>{x(`舰位 ${String(index() + 1).padStart(2, "0")}`, `STATION ${String(index() + 1).padStart(2, "0")}`)}</small><strong>{label(fleet, props.locale)}</strong><span>{fleetStatusLabel(fleetRuntimeStatus(fleet, props.bundle))}</span></button>}</For>
       </div>
-      <footer><span>{x("星图候选", "MAP CANDIDATES")} <strong>{paperCount()}</strong></span><i aria-hidden="true">→</i><span>{x("来源定位", "SOURCE LOCATORS")} <strong>{props.bundle.sourceMapSummary.segmentCount}</strong></span><i aria-hidden="true">→</i><span>{x("已接受 EvidenceCard", "ACCEPTED EVIDENCECARDS")} <strong>{props.bundle.evidenceCards.length}</strong></span></footer>
+      <footer><span>{x("星图候选", "MAP CANDIDATES")} <strong>{paperCount()}</strong></span><i aria-hidden="true">→</i><span>{x("来源定位", "SOURCE LOCATORS")} <strong>{props.bundle.sourceMapSummary.segmentCount}</strong></span><i aria-hidden="true">→</i><span>{x("可审计 EvidenceCard", "AUDITABLE EVIDENCECARDS")} <strong>{auditableEvidenceCount()}</strong></span></footer>
       <section class="fleet-handoff-manifest" aria-label={x("舰桥交接清单", "Bridge handoff manifest")}>
         <header><small>{x("舰队交接清单", "FLEET HANDOFF MANIFEST")}</small><span>{x("仅显示当前任务已登记的职责与允许工件；选择一项查看完整能力契约。", "Shows only the current mission's registered role and allowed artifacts; select an item for the full capability contract.")}</span></header>
         <div><For each={deploymentManifest()}>{(entry, index) => <button type="button" class={`handoff-manifest-entry state-${entry.runtime}`} aria-pressed={selectedFleet()?.id === entry.fleet.id} aria-controls="fleet-participant-drawer" aria-expanded={selectedFleet()?.id === entry.fleet.id} onClick={() => inspectFleet(entry.fleet)}><span>{String(index() + 1).padStart(2, "0")}</span><strong>{label(entry.fleet, props.locale)}</strong><em>{props.locale === "zh" ? entry.role.reasonZh : entry.role.reasonEn}</em><small>{x(`${entry.outputCount} 项允许工件`, `${entry.outputCount} allowed artifact(s)`)}</small><i>{props.locale === "zh" ? entry.role.handoffZh : entry.role.handoffEn}</i></button>}</For></div>

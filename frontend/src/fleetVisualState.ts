@@ -1,4 +1,5 @@
 import type { ImportedBundle } from "./model";
+import { auditableAcceptedEvidence } from "./evidenceLinking";
 
 export type FleetVisualMode = "idle" | "active" | "review" | "ready";
 export type FleetVisualKind = "discover" | "workflow" | "graph" | "reader" | "horizon";
@@ -37,7 +38,7 @@ function stationState(bundle: ImportedBundle) {
 
 export function fleetVisualState(bundle: ImportedBundle, kind: FleetVisualKind): FleetVisualState {
   const station = stationState(bundle);
-  const evidence = bundle.evidenceCards.length;
+  const evidence = auditableAcceptedEvidence(bundle).length;
   const graphNodes = bundle.literatureGraph.nodes.length;
   const graphEdges = bundle.literatureGraph.edges.length;
   const reportAudit = bundle.auditSummary.reportEvidence;

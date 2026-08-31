@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { missionFlightRecorder } from "./missionFlightRecorder";
-import { demoBundle, type ImportedBundle } from "./model";
+import { demoBundle, type EvidenceCard, type ImportedBundle } from "./model";
 import type { PdfTaskStatus } from "./localApi";
 
 const task = (overrides: Partial<PdfTaskStatus> = {}): PdfTaskStatus => ({
@@ -31,5 +31,11 @@ describe("mission flight recorder", () => {
     expect(entries.find((entry) => entry.id === "facts")).toMatchObject({ state: "waiting" });
     expect(entries.find((entry) => entry.id === "evidence")).toMatchObject({ state: "waiting" });
     expect(entries.find((entry) => entry.id === "horizon")).toMatchObject({ state: "waiting" });
+  });
+
+  it("does not record a synthetic or unlinked card as accepted evidence", () => {
+    const synthetic: EvidenceCard = { evidenceId: "demo", claim: "fixture", stance: "support", conditions: {}, quote: "fixture", reviewStatus: "accepted", provenance: { documentId: "doc-demo", locator: "p. 1", source: "demo", accessPolicy: "authorized" }, isSynthetic: true };
+    const entries = missionFlightRecorder({ ...at("VERIFY"), evidenceCards: [synthetic] }, task({ markdown_ready: true, audit_state: "done", state: "done" }));
+    expect(entries.find((entry) => entry.id === "evidence")).toMatchObject({ state: "waiting", valueZh: "待人工接受" });
   });
 });
