@@ -17,6 +17,7 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
     stations: [{ stationType: "question_intake", status: "active" }],
     facilities: [],
     evidenceCards: [],
+    importDiagnostics: { declaredAcceptedEvidenceCount: 0, withheldAcceptedEvidenceCount: 0 },
     conditionMatrix: [],
     researchGapCandidates: [],
     materialFacts: null,

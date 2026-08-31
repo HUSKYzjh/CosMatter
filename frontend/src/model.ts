@@ -133,6 +133,7 @@ export interface ImportedBundle {
   stations: Array<{ stationType: string; status: string }>;
   facilities: Array<{ facilityType: string; status: string }>;
   evidenceCards: EvidenceCard[];
+  importDiagnostics: { declaredAcceptedEvidenceCount: number; withheldAcceptedEvidenceCount: number };
   conditionMatrix: ConditionMatrixRow[];
   researchGapCandidates: ResearchGapCandidate[];
   materialFacts: { documentId: string; trustStatus: string; facts: MaterialFact[] } | null;
@@ -483,6 +484,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
   const evidenceMaturityRegistryStatus = acceptedMaturityRegistry ? "accepted" : maturityRegistryDeliveryStatus !== "not_supplied" || root.evidence_maturity_registry !== undefined && root.evidence_maturity_registry !== null ? "rejected" : "not_supplied";
   const rawFleet = root.fleet_assignment && typeof root.fleet_assignment === "object" && !Array.isArray(root.fleet_assignment) ? root.fleet_assignment as JsonObject : null;
   const rawStatus = root.status && typeof root.status === "object" && !Array.isArray(root.status) ? root.status as JsonObject : null;
+  const declaredAcceptedEvidenceCount = Array.isArray(root.evidence_cards) ? root.evidence_cards.filter((entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry) && (entry as JsonObject).review_status === "accepted").length : 0;
   const parsedEvidenceCards = Array.isArray(root.evidence_cards) ? root.evidence_cards.flatMap((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
     const item = entry as JsonObject;
@@ -506,6 +508,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
   const evidenceIdCounts = new Map<string, number>();
   parsedEvidenceCards.forEach((card) => evidenceIdCounts.set(card.evidenceId, (evidenceIdCounts.get(card.evidenceId) ?? 0) + 1));
   const evidenceCards = parsedEvidenceCards.filter((card) => evidenceIdCounts.get(card.evidenceId) === 1);
+  const importDiagnostics = { declaredAcceptedEvidenceCount, withheldAcceptedEvidenceCount: Math.max(0, declaredAcceptedEvidenceCount - evidenceCards.length) };
   const cardForEvidenceId = (evidenceId: string) => {
     const matches = evidenceCards.filter((card) => card.evidenceId === evidenceId);
     return matches.length === 1 ? matches[0] : null;
@@ -558,7 +561,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     status: rawStatus ? { missionState: typeof rawStatus.mission_state === "string" ? rawStatus.mission_state : "unknown", retryCount: typeof rawStatus.retry_count === "number" ? rawStatus.retry_count : 0, retryBudget: typeof rawStatus.retry_budget === "number" ? rawStatus.retry_budget : 0, returnReason: typeof rawStatus.return_reason === "string" ? rawStatus.return_reason : null } : null,
     stations: Array.isArray(root.stations) ? root.stations.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).station_type === "string" ? [{ stationType: (entry as JsonObject).station_type as string, status: typeof (entry as JsonObject).status === "string" ? (entry as JsonObject).status as string : "unknown" }] : []) : [],
     facilities: Array.isArray(root.facilities) ? root.facilities.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).facility_type === "string" ? [{ facilityType: (entry as JsonObject).facility_type as string, status: typeof (entry as JsonObject).status === "string" ? (entry as JsonObject).status as string : "unknown" }] : []) : [],
-    evidenceCards, conditionMatrix, researchGapCandidates, materialFacts,
+    evidenceCards, importDiagnostics, conditionMatrix, researchGapCandidates, materialFacts,
     sourceMapSummary: (() => { const summary = reviewedSummary(root.reviewed_source_map_summary, "segment_count", true); return { documentCount: summary.documentCount, segmentCount: summary.recordCount, documentIds: summary.documentIds };  })(),
     materialFactSummary: (() => { const summary = reviewedSummary(root.reviewed_material_fact_summary, "fact_count"); return { documentCount: summary.documentCount, factCount: summary.recordCount }; })(),
     evidenceMaturityRegistry: acceptedMaturityRegistry,
