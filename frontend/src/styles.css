@@ -888,3 +888,40 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .verification-steps li strong { font-size: .77rem; }
   .verification-steps li small { font-size: .61rem; }
 }
+
+/* Manual controls remain a clearly bounded maintenance bay, never a browser-default escape hatch. */
+.mission-api {
+  position: relative;
+  gap: .48rem;
+  margin-top: .18rem;
+  padding: .62rem .62rem .7rem .8rem;
+  border: 1px solid color-mix(in srgb, var(--signal-amber) 34%, var(--line));
+  border-inline-start: 2px solid var(--signal-amber);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--signal-amber) 5%, transparent), transparent 76%);
+}
+
+.mission-api::before { position: absolute; top: .6rem; bottom: .7rem; left: -.2rem; width: .34rem; background: var(--signal-amber); box-shadow: 0 0 .5rem var(--signal-amber); content: ""; opacity: .7; }
+.mission-api > summary { position: relative; padding-left: .9rem; color: var(--ink); font-family: Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; font-size: .73rem; list-style: none; }
+.mission-api > summary::-webkit-details-marker { display: none; }
+.mission-api > summary::before { position: absolute; top: .22rem; left: 0; width: .35rem; height: .35rem; border: 1px solid var(--signal-amber); background: color-mix(in srgb, var(--signal-amber) 16%, transparent); content: ""; transform: rotate(45deg); }
+.mission-api[open] > summary { padding-bottom: .38rem; border-bottom: 1px dashed color-mix(in srgb, var(--signal-amber) 42%, var(--line)); color: var(--signal-amber); }
+.mission-api > p { font-size: .66rem; line-height: 1.5; }
+.mission-api > button { padding: .28rem 0; font: 700 .6rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .04em; }
+.mission-api > button:hover, .mission-api > button:focus-visible { border-bottom-color: var(--signal-teal); color: var(--signal-teal); outline: 0; }
+
+.mission-api .examples { gap: .18rem; margin-top: .08rem; padding-top: .42rem; border-top: 1px dashed color-mix(in srgb, var(--line) 65%, transparent); }
+.mission-api .examples p { color: var(--signal-amber); font: .55rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .08em; }
+.mission-api .examples button { position: relative; min-height: 2.2rem; padding: .32rem .35rem .32rem .76rem; border: 1px solid transparent; border-inline-start-color: color-mix(in srgb, var(--signal-blue) 45%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--signal-blue) 4%, transparent), transparent 78%); font-size: .64rem; line-height: 1.35; }
+.mission-api .examples button::before { position: absolute; top: .68rem; left: .28rem; width: .25rem; height: .25rem; border: 1px solid var(--signal-blue); content: ""; transform: rotate(45deg); }
+.mission-api .examples button:hover, .mission-api .examples button:focus-visible { border-color: color-mix(in srgb, var(--signal-blue) 54%, var(--line)); color: var(--ink); background: linear-gradient(90deg, color-mix(in srgb, var(--signal-blue) 11%, transparent), transparent 80%); outline: 0; }
+
+.mission-api .import-control { display: grid; gap: .35rem; margin-top: .16rem; padding: .48rem .55rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 34%, var(--line)); border-inline-start: 2px solid var(--signal-teal); color: var(--signal-teal); background: linear-gradient(90deg, color-mix(in srgb, var(--signal-teal) 5%, transparent), transparent 78%); font: .57rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .05em; }
+.mission-api .import-control input { width: 100%; max-width: none; color: var(--muted); font: .61rem ui-sans-serif, system-ui, sans-serif; letter-spacing: normal; }
+.mission-api .import-control input::file-selector-button { margin-right: .5rem; padding: .34rem .48rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 62%, var(--line)); color: var(--signal-teal); background: color-mix(in srgb, var(--surface) 72%, transparent); font: 700 .58rem ui-monospace, "Cascadia Mono", monospace; cursor: pointer; }
+.mission-api .import-control input::file-selector-button:hover { color: var(--ink); background: color-mix(in srgb, var(--signal-teal) 13%, transparent); }
+
+@media (max-width: 560px) {
+  .mission-api { padding: .55rem .45rem .62rem .64rem; }
+  .mission-api > summary { font-size: .7rem; }
+  .mission-api .examples button { min-height: 2.45rem; font-size: .62rem; }
+}
