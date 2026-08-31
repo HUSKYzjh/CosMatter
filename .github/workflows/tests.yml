@@ -15,6 +15,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install document toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes texlive-xetex
+      - name: Install DeepSeek Harness
+        run: npm install --global @deepseek-ai/dsh@0.1.0-rc.7
       - name: Install package
         run: python -m pip install --upgrade pip setuptools && python -m pip install -e .
       - name: Run unit tests

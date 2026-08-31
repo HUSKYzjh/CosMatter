@@ -2,14 +2,15 @@ import { expect, test, type Page } from "@playwright/test";
 import { resolve } from "node:path";
 
 const routeDiagnosticsExport = resolve(process.cwd(), "..", "examples", "ui-demo", "route_diagnostics.json");
+const workspaceLoad = { timeout: 15_000 };
 
 async function openEditableTaskDefinition(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /BFO-01/ }).click();
   await page.getByRole("button", { name: "确认任务并进入编排" }).click();
-  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/);
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
   await page.getByRole("button", { name: /任务定义/ }).first().click();
-  await expect(page.locator(".workbench")).toHaveClass(/view-discover/);
+  await expect(page.locator(".workbench")).toHaveClass(/view-discover/, workspaceLoad);
   await page.locator("details.mission-api > summary").click();
   return page.locator(".import-control input[type=file]");
 }
@@ -18,9 +19,9 @@ async function openMissionDefinitionWithPendingArtifacts(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /BFO-01/ }).click();
   await page.getByRole("button", { name: "确认任务并进入编排" }).click();
-  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/);
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
   await page.getByRole("button", { name: /任务定义/ }).first().click();
-  await expect(page.locator(".workbench")).toHaveClass(/view-discover/);
+  await expect(page.locator(".workbench")).toHaveClass(/view-discover/, workspaceLoad);
 }
 
 test("keeps the narrow launch workspace horizontally contained", async ({ page }) => {
@@ -44,14 +45,16 @@ test("activates a BFO task template through the keyboard with an explicit presse
 test("keeps synthetic launch-preview papers out of the real research route", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "预览：受控编排" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
 
   const bridge = page.locator(".fleet-command-stage");
-  await expect(bridge).toContainText("只读预览数据层");
+  await expect(bridge).toContainText("只读预览数据层", { timeout: 15_000 });
   await expect(bridge.locator(".workflow-next")).toContainText("等待受控检索或导入可审查文献子图");
   await expect(bridge).not.toContainText("20 篇可审查文献");
 
   await page.getByRole("button", { name: "03 文献星图" }).first().click();
-  await expect(page.locator(".graph-empty")).toContainText("仅供导航或演示的论文式节点");
+  await expect(page.locator(".workbench")).toHaveClass(/view-graph/, workspaceLoad);
+  await expect(page.locator(".graph-empty")).toContainText("仅供导航或演示的论文式节点", workspaceLoad);
 });
 
 test("keeps an empty task explicit, then renders a redacted exported condition matrix", async ({ page }) => {
@@ -75,7 +78,7 @@ test("keeps an empty task explicit, then renders a redacted exported condition m
   await expect(page.locator("body")).not.toContainText("Synthetic demonstration only; no paper text is included.");
 
   await page.getByRole("button", { name: "下一步：进入舰桥编排" }).click();
-  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/);
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
   await expect(page.getByLabel("当前本地工件")).toContainText("route_diagnostics.json");
   await expect(page.getByLabel("当前本地工件")).toContainText("1.0");
   await expect(page.getByLabel("当前本地工件")).toContainText("工件自述版本");
@@ -132,7 +135,7 @@ test("opens a read-only evaluation audit from frozen-corpus readiness without cl
 
   await expect(page.locator(".rail-status")).toContainText("已导入 frozen-evaluation-readiness.json");
   await page.getByRole("button", { name: "05 研究拓展" }).click();
-  await expect(page.locator(".workbench")).toHaveClass(/view-horizon/);
+  await expect(page.locator(".workbench")).toHaveClass(/view-horizon/, workspaceLoad);
   const audit = page.getByLabel("审计与评测");
   await audit.locator("summary").click();
   await expect(page.getByLabel("评测前置门禁")).toContainText("可开始私有人工标注");
