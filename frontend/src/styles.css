@@ -851,3 +851,40 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .launch-stage-column ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .launch-stage-column li:last-child { grid-column: 1 / -1; }
 }
+
+/* Evidence review is a gated flight vector, including when no paper is available yet. */
+.verification-steps {
+  gap: .28rem;
+  max-width: 72rem;
+  padding: .28rem;
+  border: 1px solid color-mix(in srgb, var(--signal-blue) 27%, var(--line));
+  background: linear-gradient(110deg, color-mix(in srgb, var(--signal-blue) 4%, transparent), transparent 66%);
+}
+
+.verification-steps li {
+  --verification-signal: var(--signal-blue);
+  position: relative;
+  min-height: 6.05rem;
+  padding: .68rem .62rem .72rem 1.55rem;
+  border: 1px solid color-mix(in srgb, var(--verification-signal) 34%, var(--line));
+  border-inline-start: 2px solid var(--verification-signal);
+  background: linear-gradient(110deg, color-mix(in srgb, var(--verification-signal) 7%, transparent), color-mix(in srgb, var(--surface) 75%, transparent));
+  box-shadow: .18rem .25rem .72rem color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.verification-steps li:nth-child(2) { --verification-signal: var(--signal-teal); }
+.verification-steps li:nth-child(3) { --verification-signal: var(--signal-violet); }
+.verification-steps li::before { position: absolute; top: .72rem; left: .46rem; width: .38rem; height: .38rem; border: 1px solid var(--verification-signal); background: color-mix(in srgb, var(--verification-signal) 16%, transparent); box-shadow: 0 0 .42rem color-mix(in srgb, var(--verification-signal) 42%, transparent); content: ""; transform: rotate(45deg); }
+.verification-steps li.complete { border-color: color-mix(in srgb, var(--signal-teal) 62%, var(--line)); background: linear-gradient(110deg, color-mix(in srgb, var(--signal-teal) 12%, transparent), color-mix(in srgb, var(--surface) 78%, transparent)); }
+.verification-steps li span { color: var(--verification-signal); font-size: .62rem; }
+.verification-steps li strong { color: var(--ink); font-family: Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; font-size: .84rem; }
+.verification-steps li small { color: var(--muted); font-size: .66rem; line-height: 1.42; }
+
+@media (max-width: 560px) {
+  .verification-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .2rem; margin-block: .84rem; padding: .2rem; }
+  .verification-steps li { min-height: 5.35rem; padding: .54rem .38rem .55rem 1.2rem; }
+  .verification-steps li:last-child { grid-column: 1 / -1; }
+  .verification-steps li::before { top: .58rem; left: .36rem; width: .32rem; height: .32rem; }
+  .verification-steps li strong { font-size: .77rem; }
+  .verification-steps li small { font-size: .61rem; }
+}
