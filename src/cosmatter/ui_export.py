@@ -847,6 +847,7 @@ def _evidence_quality_evaluation_summary(path: Path, mission_id: str) -> dict[st
     if set(payload) != expected or payload.get("mission_id") != mission_id or payload.get("trust_status") != "metrics_from_human_reviewed_evidence_locator_condition_and_contradiction_audit":
         raise UiExportError("human evidence-quality evaluation is invalid for this mission")
     return {
+        "trust_status": payload["trust_status"],
         "evidence_count": _audit_nonnegative_int(payload, "evidence_count"),
         "predicted_contradiction_count": _audit_nonnegative_int(payload, "predicted_contradiction_count"),
         "citation_precision": _audit_rate(payload, "citation_precision"),

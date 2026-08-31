@@ -106,6 +106,27 @@ function CandidateCard(props: { candidate: ResearchGapCandidate; counterevidence
   return <article class="gap-candidate"><header><span>{String(props.index + 1).padStart(2, "0")}</span><small>{boundaryReady ? tr("待人工复核候选 · 反例边界已登记", "Candidate pending human review · counterevidence boundary recorded") : tr("待人工复核候选 · 缺少可核验反例边界", "Candidate pending human review · counterevidence boundary unavailable")}</small></header><h2>{candidate.problemDescription}</h2><dl class="gap-evidence-fields"><div><dt>{tr("问题")}</dt><dd>{candidate.problemDescription}</dd></div><div><dt>{tr("支撑证据")}</dt><dd class="gap-evidence-links"><Show when={references().linked.length} fallback={<span>{tr("未提供")}</span>}><For each={references().linked}>{(evidence) => <button type="button" onClick={() => props.onFocusEvidence(evidence)}><strong>{evidence.evidenceId}</strong><span>{evidence.provenance.documentId} · {evidence.provenance.locator} · {evidence.stance}</span></button>}</For></Show><Show when={references().missingIds.length}><small>{tr(`以下证据 ID 未出现在当前导入工件中：${references().missingIds.join(", ")}。`, `These evidence IDs are missing from the current imported artifacts: ${references().missingIds.join(", ")}.`)}</small></Show></dd></div><div><dt>{tr("缺失或冲突")}</dt><dd>{candidate.conflictOrMissingEvidence.join("；") || tr("未提供")}</dd></div><div><dt>{tr("可证伪假设")}</dt><dd>{candidate.falsifiableHypothesis}</dd></div><div><dt>{tr("建议验证")}</dt><dd>{candidate.suggestedValidation.join("；")}</dd></div><div><dt>{tr("人工审核状态")}</dt><dd>{candidate.reviewStatus.replaceAll("_", " ")}</dd></div></dl><footer><span>{tr("证据完整度")}: {Math.round(candidate.evidenceCompleteness * 100)}% · {candidate.noveltyStatus} · {candidate.actionability}</span><div class="gap-candidate-actions"><button type="button" onClick={props.onReturnToGraph}>{tr("返回星图补文献", "Return to map")}</button><button type="button" classList={{ marked: props.marked }} onClick={props.onMark}>{props.marked ? tr("已标记人工复核") : tr("标记人工复核")}</button></div></footer></article>;
 }
 
+function EvaluationAuditPanel(props: { bundle: ImportedBundle }) {
+  const evaluation = () => props.bundle.auditSummary.evaluation;
+  const readiness = () => props.bundle.auditSummary.submissionReadiness;
+  const percentage = (value: number) => `${Math.round(value * 100)}%`;
+  return <details class="audit-details evaluation-audit" aria-label={tr("审计与评测", "Audit and evaluation")}>
+    <summary>{tr("审计与评测", "Audit and evaluation")}</summary>
+    <p>{tr("仅显示导出工件中带有对应人工审核声明的聚合指标；缺失指标表示未生成，不代表零分、失败或科学结论。", "Only aggregate metrics with their corresponding human-review declaration are shown from exported artifacts. A missing metric means not generated, not zero, failure, or a scientific conclusion.")}</p>
+    <section class="evaluation-metric-grid">
+      <article><small>{tr("证据质量 / 人工复核", "EVIDENCE QUALITY / HUMAN REVIEW")}</small><Show when={evaluation().evidenceQuality} fallback={<p>{tr("未生成", "Not generated")}</p>}>{(result) => <dl><div><dt>{tr("引用定位", "Citation")}</dt><dd>{percentage(result().citationPrecision)}</dd></div><div><dt>{tr("条件完整度", "Conditions")}</dt><dd>{percentage(result().conditionCompleteness)}</dd></div><div><dt>{tr("矛盾标注", "Contradictions")}</dt><dd>{result().predictedContradictionCount ? percentage(result().contradictionPrecision) : tr("无预测矛盾", "No predicted contradictions")}</dd></div><div><dt>{tr("已复核证据", "Reviewed evidence")}</dt><dd>{result().evidenceCount}</dd></div></dl>}</Show></article>
+      <article><small>{tr("检索 / 人工金标准", "RETRIEVAL / HUMAN GOLD")}</small><Show when={evaluation().retrieval} fallback={<p>{tr("未生成", "Not generated")}</p>}>{(result) => <dl><div><dt>{`P@${result().k}`}</dt><dd>{percentage(result().precisionAtK)}</dd></div><div><dt>{`R@${result().k}`}</dt><dd>{percentage(result().recallAtK)}</dd></div><div><dt>nDCG</dt><dd>{percentage(result().ndcgAtK)}</dd></div><div><dt>{tr("已检索 / 相关", "Retrieved / relevant")}</dt><dd>{result().retrievedCount} / {result().goldRelevantCount}</dd></div></dl>}</Show></article>
+      <article><small>{tr("材料事实 / 审核闭环", "MATERIAL FACTS / REVIEW-GATED")}</small><Show when={evaluation().materialFacts} fallback={<p>{tr("未生成", "Not generated")}</p>}>{(result) => <dl><div><dt>Precision</dt><dd>{percentage(result().precision)}</dd></div><div><dt>Recall</dt><dd>{percentage(result().recall)}</dd></div><div><dt>F1</dt><dd>{percentage(result().f1)}</dd></div><div><dt>{tr("单位匹配", "Unit match")}</dt><dd>{percentage(result().unitMatchAccuracy)} · {result().reviewedFactCount}/{result().goldFactCount}</dd></div></dl>}</Show></article>
+      <article><small>{tr("Gap / 专家复核", "GAPS / EXPERT REVIEW")}</small><Show when={evaluation().researchGaps} fallback={<p>{tr("未生成", "Not generated")}</p>}>{(result) => <dl><div><dt>{tr("认可率", "Approval")}</dt><dd>{percentage(result().expertApprovalRate)}</dd></div><div><dt>{tr("新颖性", "Novelty")}</dt><dd>{result().meanNoveltyRating.toFixed(1)} / 5</dd></div><div><dt>{tr("可操作性", "Actionability")}</dt><dd>{result().meanActionabilityRating.toFixed(1)} / 5</dd></div><div><dt>{tr("证据完整度", "Evidence completeness")}</dt><dd>{percentage(result().evidenceCompletenessRate)} · {result().candidateCount}</dd></div></dl>}</Show></article>
+    </section>
+    <dl class="evaluation-readiness">
+      <div><dt>{tr("冻结语料", "Frozen corpus")}</dt><dd>{readiness().frozenCorpus ? `${readiness().frozenCorpus!.frozenDocumentCount}/${readiness().frozenCorpus!.expectedDocumentCount}` : tr("未冻结", "Not frozen")}</dd></div>
+      <div><dt>{tr("人工相关性标注", "Human relevance review")}</dt><dd>{readiness().humanAnnotation ? `${tr("未复核", "Unreviewed")} ${readiness().humanAnnotation!.relevanceCounts.unreviewed}` : tr("未提供", "Not provided")}</dd></div>
+      <div><dt>{tr("书目来源覆盖", "Bibliographic-source coverage")}</dt><dd>{readiness().bibliographicSource ? `${readiness().bibliographicSource!.documentsWithReviewedBibliographicSource}/${readiness().bibliographicSource!.frozenDocumentCount}` : tr("未提供", "Not provided")}</dd></div>
+    </dl>
+  </details>;
+}
+
 export function ResearchExpansion(props: { bundle: ImportedBundle; session: ResearchSession; onNavigate: (view: View) => void; onFocusEvidence?: (evidence: EvidenceCard) => void; onOpenTaskControl?: () => void; onBuildConditionMatrix?: () => Promise<void>; onBuildGapCandidates?: () => Promise<void>; readOnlyPreview?: boolean; onExitPreview?: () => void }) {
   const [marked, setMarked] = createSignal<string | null>(null);
   const [actionBusy, setActionBusy] = createSignal(false);
@@ -130,8 +151,6 @@ export function ResearchExpansion(props: { bundle: ImportedBundle; session: Rese
   const sessionCandidates = createMemo(() => gapCandidatesForEvidence(candidates(), evidence()));
   const comparison = createMemo(() => researchExtensionReadiness(props.bundle));
   const reason = createMemo(() => ({ paper: tr("尚未选择待核对论文。"), evidence: tr("尚未选择与当前论文关联的已接受 EvidenceCard。"), "source-link": tr("所选 EvidenceCard 没有与当前论文对应的已审核来源映射。"), locator: tr("所选 EvidenceCard 缺少来源定位。"), "source-map": tr("当前工件没有来源映射片段。"), "provenance-audit": tr("当前已接受 EvidenceCard 尚未全部通过精确来源映射审计。", "Accepted EvidenceCards have not all passed the exact source-map provenance audit.") }[gate().reason ?? "evidence"]));
-  const evaluation = () => props.bundle.auditSummary.evaluation;
-  const readiness = () => props.bundle.auditSummary.submissionReadiness;
   const comparisonReason = createMemo(() => ({
     evidence: tr("至少需要两张已接受 EvidenceCard，才可开始跨文献比较。", "At least two accepted EvidenceCards are required before an across-paper comparison."),
     "provenance-audit": tr("当前已接受 EvidenceCard 尚未全部通过精确来源映射审计；请先在证据核对页补齐来源定位与人工审核。", "Accepted EvidenceCards have not all passed the exact source-map provenance audit. Complete source location and human review first."),
@@ -196,6 +215,7 @@ export function ResearchExpansion(props: { bundle: ImportedBundle; session: Rese
         <For each={evidenceConvoy()}>{(station, index) => <button type="button" class={`convoy-station state-${station.state}`} onClick={() => props.onNavigate(station.target)}><span class="convoy-index">{String(index() + 1).padStart(2, "0")}</span><span class="convoy-ship" aria-hidden="true" /><span class="convoy-label">{station.label}</span><strong>{station.value}</strong><small>{station.detail}</small></button>}</For>
       </div>
     </section>
+    <EvaluationAuditPanel bundle={props.bundle} />
     <Show when={gate().ready} fallback={<section class="gap-empty"><h2>{tr("尚不能把候选作为后续研究方向")}</h2><p>{tr("请补齐当前会话的论文选择、已接受 EvidenceCard 和来源定位；本页不会以全局计数替代当前审计链路。")}</p></section>}>
       <section class="expansion-brief"><span>{tr("条件未知项")} <strong>{props.bundle.conditionMatrix.flatMap((row) => row.unknowns).length}</strong></span><span>{tr("已核验边界的 Gap 候选", "Gap candidates with verified boundaries")} <strong>{verifiedCandidateCount()}/{candidates().length}</strong></span><span>{tr("当前证据关联候选")} <strong>{sessionCandidates().length}</strong></span><span>{tr("当前证据")} <strong>{evidence()!.evidenceId}</strong></span></section>
       <section class="comparison-readiness" aria-live="polite">
@@ -224,18 +244,6 @@ export function ResearchExpansion(props: { bundle: ImportedBundle; session: Rese
       </section>
       <Show when={props.bundle.conditionMatrix.length}><ConditionComparisonBoard bundle={props.bundle} evidenceId={evidence()!.evidenceId} onFocusEvidence={props.onFocusEvidence} /></Show>
       <Show when={sessionCandidates().length} fallback={<section class="gap-empty"><h2>{tr("当前证据尚无关联 Gap 候选")}</h2><p>{tr("这不代表没有研究缺口，只表示当前选中的 EvidenceCard 尚未被任何导入候选显式引用。")}</p></section>}><section class="proposal-grid gap-candidate-grid"><For each={sessionCandidates()}>{(candidate, index) => <CandidateCard candidate={candidate} counterevidence={counterevidence()} basisReady={hasAuditableGapEvidenceBasis(candidate, props.bundle)} index={index()} marked={marked() === candidate.gapId} evidenceCards={props.bundle.evidenceCards} onMark={() => setMarked(marked() === candidate.gapId ? null : candidate.gapId)} onReturnToGraph={() => props.onNavigate("graph")} onFocusEvidence={(item) => props.onFocusEvidence?.(item)} />}</For></section></Show>
-      <details class="audit-details">
-        <summary>{tr("审计与评测")}</summary>
-        <p>{tr("以下指标只反映导入工件中的已记录评测；没有记录时不显示为系统性能。")}</p>
-        <dl>
-          <div><dt>{tr("来源定位覆盖")}</dt><dd>{props.bundle.auditSummary.reportEvidence ? `${Math.round(props.bundle.auditSummary.reportEvidence.acceptedEvidenceLocatorRenderedCoverage * 100)}%` : tr("未运行")}</dd></div>
-          <div><dt>{tr("证据溯源匹配")}</dt><dd>{props.bundle.auditSummary.evidenceProvenance ? `${props.bundle.auditSummary.evidenceProvenance.exactSourceMapMatchCount}/${props.bundle.auditSummary.evidenceProvenance.acceptedEvidenceCount}` : tr("未运行")}</dd></div>
-          <div><dt>{tr("检索评测")}</dt><dd>{evaluation().retrieval ? `P@${evaluation().retrieval!.k} ${Math.round(evaluation().retrieval!.precisionAtK * 100)}% / nDCG ${Math.round(evaluation().retrieval!.ndcgAtK * 100)}%` : tr("未提供")}</dd></div>
-          <div><dt>{tr("冻结语料", "Frozen corpus")}</dt><dd>{readiness().frozenCorpus ? `${readiness().frozenCorpus!.frozenDocumentCount}/${readiness().frozenCorpus!.expectedDocumentCount}` : tr("未冻结", "Not frozen")}</dd></div>
-          <div><dt>{tr("人工相关性标注", "Human relevance review")}</dt><dd>{readiness().humanAnnotation ? `${tr("未复核", "Unreviewed")} ${readiness().humanAnnotation!.relevanceCounts.unreviewed}` : tr("未提供", "Not provided")}</dd></div>
-          <div><dt>{tr("书目来源覆盖", "Bibliographic-source coverage")}</dt><dd>{readiness().bibliographicSource ? `${readiness().bibliographicSource!.documentsWithReviewedBibliographicSource}/${readiness().bibliographicSource!.frozenDocumentCount}` : tr("未提供", "Not provided")}</dd></div>
-        </dl>
-      </details>
     </Show>
     <footer class="stage-note">{tr("标记人工复核仅保留在当前浏览器会话中，不会触发检索、模型调用或正式研究任务。")}</footer>
   </main>;

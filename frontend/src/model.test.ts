@@ -28,10 +28,10 @@ describe("readBundle", () => {
       mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
       audit_summary: {
         evaluation: {
-          evidence_quality: { evidence_count: 8, predicted_contradiction_count: 3, citation_precision: 0.875, condition_completeness: 0.75, contradiction_precision: 0.666667 },
-          retrieval: { corpus_id: "private-corpus", k: 10, retrieved_count: 10, gold_relevant_count: 3, precision_at_k: 0.3, recall_at_k: 1, ndcg_at_k: 0.8 },
-          material_facts: { corpus_id: "private-corpus", gold_fact_count: 20, reviewed_fact_count: 18, precision: 0.8, recall: 0.72, f1: 0.758, unit_match_accuracy: 0.9 },
-          research_gaps: { candidate_count: 4, expert_approval_rate: 0.75, mean_novelty_rating: 4.2, mean_actionability_rating: 4, evidence_completeness_rate: 1 },
+          evidence_quality: { trust_status: "metrics_from_human_reviewed_evidence_locator_condition_and_contradiction_audit", evidence_count: 8, predicted_contradiction_count: 3, citation_precision: 0.875, condition_completeness: 0.75, contradiction_precision: 0.666667 },
+          retrieval: { trust_status: "metrics_from_human_reviewed_gold_standard", corpus_id: "private-corpus", k: 10, retrieved_count: 10, gold_relevant_count: 3, precision_at_k: 0.3, recall_at_k: 1, ndcg_at_k: 0.8 },
+          material_facts: { trust_status: "metrics_for_review_gated_material_fact_pipeline_not_raw_llm_accuracy", corpus_id: "private-corpus", gold_fact_count: 20, reviewed_fact_count: 18, precision: 0.8, recall: 0.72, f1: 0.758, unit_match_accuracy: 0.9 },
+          research_gaps: { trust_status: "metrics_from_human_expert_review_of_evidence_bound_gap_candidates", candidate_count: 4, expert_approval_rate: 0.75, mean_novelty_rating: 4.2, mean_actionability_rating: 4, evidence_completeness_rate: 1 },
         },
       },
     });
@@ -40,6 +40,21 @@ describe("readBundle", () => {
     expect(bundle.auditSummary.evaluation.materialFacts).toMatchObject({ f1: 0.758, unitMatchAccuracy: 0.9 });
     expect(bundle.auditSummary.evaluation.researchGaps).toMatchObject({ meanNoveltyRating: 4.2, candidateCount: 4 });
     expect(JSON.stringify(bundle.auditSummary.evaluation)).not.toContain("private-corpus");
+  });
+
+  it("withholds evaluation metrics that lack their specific human-review declaration", () => {
+    const bundle = readBundle({
+      mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
+      audit_summary: {
+        evaluation: {
+          evidence_quality: { trust_status: "unreviewed", evidence_count: 1, predicted_contradiction_count: 0, citation_precision: 1, condition_completeness: 1, contradiction_precision: 0 },
+          retrieval: { trust_status: "metadata_only", k: 10, retrieved_count: 1, gold_relevant_count: 1, precision_at_k: 1, recall_at_k: 1, ndcg_at_k: 1 },
+          material_facts: { trust_status: "unreviewed", gold_fact_count: 1, reviewed_fact_count: 1, precision: 1, recall: 1, f1: 1, unit_match_accuracy: 1 },
+          research_gaps: { trust_status: "unreviewed", candidate_count: 1, expert_approval_rate: 1, mean_novelty_rating: 5, mean_actionability_rating: 5, evidence_completeness_rate: 1 },
+        },
+      },
+    });
+    expect(bundle.auditSummary.evaluation).toEqual({ evidenceQuality: null, retrieval: null, materialFacts: null, researchGaps: null });
   });
 
   it("projects only aggregate corpus, annotation, and bibliography readiness", () => {

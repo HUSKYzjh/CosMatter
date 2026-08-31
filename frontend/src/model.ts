@@ -295,22 +295,22 @@ function evaluationSummary(value: unknown): EvaluationSummary {
   const materialFacts = root.material_facts && typeof root.material_facts === "object" && !Array.isArray(root.material_facts) ? root.material_facts as JsonObject : null;
   const researchGaps = root.research_gaps && typeof root.research_gaps === "object" && !Array.isArray(root.research_gaps) ? root.research_gaps as JsonObject : null;
   return {
-    evidenceQuality: evidenceQuality ? {
+    evidenceQuality: evidenceQuality?.trust_status === "metrics_from_human_reviewed_evidence_locator_condition_and_contradiction_audit" ? {
       evidenceCount: auditCount(evidenceQuality.evidence_count), predictedContradictionCount: auditCount(evidenceQuality.predicted_contradiction_count),
       citationPrecision: auditRate(evidenceQuality.citation_precision), conditionCompleteness: auditRate(evidenceQuality.condition_completeness),
       contradictionPrecision: auditRate(evidenceQuality.contradiction_precision),
     } : null,
-    retrieval: retrieval ? {
+    retrieval: retrieval?.trust_status === "metrics_from_human_reviewed_gold_standard" ? {
       k: auditCount(retrieval.k), retrievedCount: auditCount(retrieval.retrieved_count),
       goldRelevantCount: auditCount(retrieval.gold_relevant_count), precisionAtK: auditRate(retrieval.precision_at_k),
       recallAtK: auditRate(retrieval.recall_at_k), ndcgAtK: auditRate(retrieval.ndcg_at_k),
     } : null,
-    materialFacts: materialFacts ? {
+    materialFacts: materialFacts?.trust_status === "metrics_for_review_gated_material_fact_pipeline_not_raw_llm_accuracy" ? {
       goldFactCount: auditCount(materialFacts.gold_fact_count), reviewedFactCount: auditCount(materialFacts.reviewed_fact_count),
       precision: auditRate(materialFacts.precision), recall: auditRate(materialFacts.recall),
       f1: auditRate(materialFacts.f1), unitMatchAccuracy: auditRate(materialFacts.unit_match_accuracy),
     } : null,
-    researchGaps: researchGaps ? {
+    researchGaps: researchGaps?.trust_status === "metrics_from_human_expert_review_of_evidence_bound_gap_candidates" ? {
       candidateCount: auditCount(researchGaps.candidate_count), expertApprovalRate: auditRate(researchGaps.expert_approval_rate),
       meanNoveltyRating: typeof researchGaps.mean_novelty_rating === "number" && Number.isFinite(researchGaps.mean_novelty_rating) && researchGaps.mean_novelty_rating >= 1 && researchGaps.mean_novelty_rating <= 5 ? researchGaps.mean_novelty_rating : 0,
       meanActionabilityRating: typeof researchGaps.mean_actionability_rating === "number" && Number.isFinite(researchGaps.mean_actionability_rating) && researchGaps.mean_actionability_rating >= 1 && researchGaps.mean_actionability_rating <= 5 ? researchGaps.mean_actionability_rating : 0,

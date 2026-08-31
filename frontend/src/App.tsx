@@ -366,6 +366,7 @@ export function App() {
     "source-map": text("所选 EvidenceCard 对应文献没有可审计的来源映射片段。", "The paper for the selected EvidenceCard has no auditable source-map segment."),
     "provenance-audit": text("当前已接受 EvidenceCard 尚未全部通过精确来源映射审计。", "Accepted EvidenceCards have not all passed the exact source-map provenance audit."),
   } as const);
+  const hasHumanReviewedEvaluation = () => Object.values(bundle().auditSummary.evaluation).some(Boolean);
 
   function navigate(next: View) {
     if (next === "reader" && rejectNextGraphReaderNavigation) {
@@ -383,7 +384,7 @@ export function App() {
       setRouteRecovery({ view: "graph", zh: "返回文献星图选择论文", en: "Return to literature map and select a paper" });
       return;
     }
-    if (next === "horizon" && !gate().ready) {
+    if (next === "horizon" && !gate().ready && !hasHumanReviewedEvaluation()) {
       setStatus(gateCopy()[gate().reason ?? "evidence"]);
       setRouteRecovery({
         view: gate().reason === "paper" ? "graph" : "reader",
@@ -393,7 +394,7 @@ export function App() {
       return;
     }
     const stage = journey().find((item) => item.view === next);
-    if (stage?.state === "blocked") {
+    if (stage?.state === "blocked" && !(next === "horizon" && hasHumanReviewedEvaluation())) {
       setStatus(language() === "zh" ? stage.reasonZh ?? "上一步尚未完成。" : stage.reasonEn ?? "The preceding stage is not ready.");
       const recovery = ({ workflow: { view: "discover", zh: "返回任务定义补齐边界", en: "Return to task definition and complete boundaries" }, graph: { view: "workflow", zh: "返回舰桥建立任务工件", en: "Return to bridge and create mission artifacts" }, reader: { view: "graph", zh: "返回文献星图选择论文", en: "Return to literature map and select a paper" }, horizon: { view: "reader", zh: "返回证据核对补齐审计链路", en: "Return to evidence verification and complete the audit chain" } } as Partial<Record<View, RouteRecovery>>)[next];
       setRouteRecovery(recovery ?? null);

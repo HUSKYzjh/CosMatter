@@ -120,6 +120,7 @@ class UiAuditSummaryTests(unittest.TestCase):
             (run / "human_gap_evaluation.json").write_text(json.dumps(gaps), encoding="utf-8")
             summary = _audit_summary_from_run(run, mission_id)
         self.assertEqual(summary["evaluation"]["evidence_quality"]["citation_precision"], 0.875)
+        self.assertEqual(summary["evaluation"]["evidence_quality"]["trust_status"], "metrics_from_human_reviewed_evidence_locator_condition_and_contradiction_audit")
         self.assertEqual(summary["evaluation"]["retrieval"]["ndcg_at_k"], 0.8)
         self.assertEqual(summary["evaluation"]["material_facts"]["f1"], 0.782609)
         self.assertEqual(summary["evaluation"]["research_gaps"]["mean_actionability_rating"], 4.0)

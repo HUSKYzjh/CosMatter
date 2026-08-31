@@ -131,6 +131,11 @@ test("renders cross-source reconciliation revisions in the map without calling a
         mappings: [{ openalex_work_id: "https://openalex.org/W123", crossref_doi: "10.1000/demo", status: "conflict", basis: "Human review recorded a DOI disagreement." }],
         revision_history: [{ revision: 1, recorded_at: "2026-08-31T09:30:00Z", mapping_count: 1, status_counts: { matched: 0, conflict: 1, unresolved: 0 } }],
       },
+      audit_summary: {
+        evaluation: {
+          evidence_quality: { trust_status: "metrics_from_human_reviewed_evidence_locator_condition_and_contradiction_audit", evidence_count: 8, predicted_contradiction_count: 3, citation_precision: 0.875, condition_completeness: 0.75, contradiction_precision: 2 / 3 },
+        },
+      },
     })),
   });
 
@@ -151,5 +156,12 @@ test("renders cross-source reconciliation revisions in the map without calling a
   await page.keyboard.press("Enter");
   await expect(panel).toContainText("修订摘要（1 次）");
   await expect(panel).toContainText("映射 1 · 匹配 0 · 冲突 1 · 未决 0");
+  await page.getByRole("button", { name: "05 研究拓展" }).click();
+  const audit = page.locator("details.evaluation-audit");
+  await expect(audit).toBeVisible({ timeout: 30_000 });
+  await audit.locator("summary").click();
+  await expect(audit).toContainText("引用定位");
+  await expect(audit).toContainText("88%");
+  await expect(audit).toContainText("已复核证据");
   expect(apiRequests).toEqual([]);
 });
