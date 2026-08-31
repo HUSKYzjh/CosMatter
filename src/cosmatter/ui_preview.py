@@ -183,6 +183,7 @@ def build_ui_preview_server(
                 return
             match = re.fullmatch(r"/api/runs/([A-Za-z0-9][A-Za-z0-9_-]*)/pdf/(pdf_[a-f0-9]{24})/citations", path)
             if match:
+                self._discard_legacy_request_body()
                 self._api_json(_legacy_external_dispatch_disabled)
                 return
             run_id = _api_run_id(path, "/api/runs/", "/pdf/source-map")
@@ -211,6 +212,7 @@ def build_ui_preview_server(
                 return
             run_id = _api_run_id(path, "/api/runs/", "/citations")
             if run_id is not None:
+                self._discard_legacy_request_body()
                 self._api_json(_legacy_external_dispatch_disabled)
                 return
             run_id = _api_run_id(path, "/api/runs/", "/authorized-citation-expansion")
@@ -290,6 +292,26 @@ def build_ui_preview_server(
                 return json.loads(self.rfile.read(size).decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 raise LocalApiError("request body must be valid UTF-8 JSON") from error
+
+        def _discard_legacy_request_body(self) -> None:
+            """Consume a bounded body before rejecting a removed POST endpoint.
+
+            A local HTTP client can otherwise see a connection reset on Windows
+            when the server closes a socket that still contains its small POST
+            body, instead of receiving the intended 410 policy response.
+            """
+            try:
+                size = int(self.headers.get("Content-Length") or "0")
+            except ValueError as error:
+                raise LocalApiError("Content-Length must be an integer") from error
+            if not 0 <= size <= 48_000:
+                raise LocalApiError("request body must be between 0 and 48000 bytes")
+            remaining = size
+            while remaining:
+                chunk = self.rfile.read(min(remaining, 8_192))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
 
         def _pdf_upload_body(self) -> tuple[object, str, bytes]:
             """Accept one bounded multipart PDF without forwarding a signed URL."""
