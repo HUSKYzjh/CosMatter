@@ -440,6 +440,74 @@ class UiPreviewTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
 
+    def test_automatic_mission_cancel_over_http_blocks_late_retrieval_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            web = root / "web"
+            web.mkdir()
+            (web / "index.html").write_text("preview", encoding="utf-8")
+            started = threading.Event()
+            released = threading.Event()
+
+            class BlockingSciverse(_HttpFakeSciverse):
+                def agentic_search(self, query, *, top_k):
+                    started.set()
+                    if not released.wait(timeout=3):
+                        raise AssertionError("test did not release the mocked provider")
+                    return super().agentic_search(query, top_k=top_k)
+
+            api = LocalMissionApi(
+                root / "runs",
+                settings_loader=lambda: Settings.load(
+                    {"LLM_PROVIDER": "deepseek", "LLM_MODEL": "test", "DEEPSEEK_API_KEY": "test", "SCIVERSE_API_TOKEN": "test"}
+                ),
+            )
+            server = build_ui_preview_server(0, web, api=api)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                mission = Request(
+                    f"{base}/api/missions/auto",
+                    data=json.dumps(
+                        {
+                            "run_id": "auto_http_cancel",
+                            "question": "How do growth conditions change phase stability in BiFeO3 films?",
+                            "material": "BiFeO3",
+                            "property": "phase stability",
+                            "scope": "epitaxial films",
+                            "sources": ["sciverse"],
+                            "consent": True,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("cosmatter.local_api.DeepSeekAdapter", _HttpFakeDeepSeek), patch("cosmatter.local_api.SciverseAdapter", BlockingSciverse):
+                    with urlopen(mission, timeout=2) as response:
+                        self.assertEqual(response.status, 201)
+                    self.assertTrue(started.wait(timeout=3))
+                    cancel = Request(f"{base}/api/runs/auto_http_cancel/cancel", data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
+                    with urlopen(cancel, timeout=2) as response:
+                        cancelled = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(cancelled["state"], "CANCELLED")
+                    self.assertEqual(cancelled["cancellation"], "requested")
+                    released.set()
+                    for _ in range(100):
+                        with urlopen(f"{base}/api/runs/auto_http_cancel/status", timeout=2) as response:
+                            status = json.loads(response.read().decode("utf-8"))
+                        if status["automatic_execution"]["state"] == "cancelled":
+                            break
+                        time.sleep(0.01)
+                self.assertEqual(status["state"], "CANCELLED")
+                self.assertEqual(status["automatic_execution"]["state"], "cancelled")
+                self.assertFalse((root / "runs" / "auto_http_cancel" / "retrieval_candidates.json").exists())
+            finally:
+                released.set()
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
     def test_local_api_is_opt_in_loopback_only_and_never_returns_secret(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
