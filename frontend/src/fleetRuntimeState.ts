@@ -1,12 +1,33 @@
 import { FLEETS, type FleetRecord, type FleetStatus, type UiLocale } from "./fleetRegistry";
 import type { ImportedBundle } from "./model";
 
-const PARTICIPANT_FLEETS: Record<string, readonly string[]> = {
+/**
+ * The one browser-side contract for stage assignment.  It is a display of
+ * registered task stages, not a scheduler and not proof that a tool ran.
+ */
+export const FLEET_MISSION_ROUTE = [
+  "LOCAL", "INTAKE", "NEED_SCOPE", "PLAN", "RETRIEVE", "SELECT", "EXTRACT",
+  "MAP", "HAZARD_SCAN", "VERIFY", "HUMAN_REVIEW", "REPORT",
+] as const;
+
+export type FleetMissionState = typeof FLEET_MISSION_ROUTE[number];
+
+const PARTICIPANT_FLEETS: Record<FleetMissionState, readonly string[]> = {
   LOCAL: ["pioneer"], INTAKE: ["pioneer"], NEED_SCOPE: ["pioneer"],
   PLAN: ["pioneer", "observatory"], RETRIEVE: ["observatory"], SELECT: ["observatory"],
   EXTRACT: ["observatory", "sentinel"], MAP: ["constellation"], HAZARD_SCAN: ["diagnostics", "sentinel"],
-  VERIFY: ["sentinel"], HUMAN_REVIEW: ["sentinel"], REPORT: ["horizon", "diagnostics"],
+  VERIFY: ["sentinel"], HUMAN_REVIEW: ["sentinel"], REPORT: ["horizon"],
 };
+
+/** Unknown imported values never become a local stage assignment. */
+export function fleetMissionState(value: string | undefined): FleetMissionState | null {
+  return FLEET_MISSION_ROUTE.includes(value as FleetMissionState) ? value as FleetMissionState : null;
+}
+
+export function fleetIdsForMissionState(state: string | undefined): readonly string[] {
+  const recognized = fleetMissionState(state);
+  return recognized ? PARTICIPANT_FLEETS[recognized] : [];
+}
 
 export interface FleetMissionRole {
   missionState: string;
@@ -35,10 +56,12 @@ const MISSION_ROLE_COPY: Record<string, Omit<FleetMissionRole, "missionState" | 
 /** A local mission shell is ready for work, but it must never be displayed as executing. */
 export function fleetRuntimeStatus(fleet: FleetRecord, bundle: ImportedBundle): FleetStatus {
   if (fleet.status === "framework_only") return "framework_only";
-  const state = bundle.status?.missionState ?? "LOCAL";
+  const state = fleetMissionState(bundle.status?.missionState);
+  // An incomplete or future UI artifact must not turn catalogue capability
+  // into a claim that a fleet is executing.
+  if (!state) return fleet.status === "active" ? "ready" : fleet.status;
   if (state === "LOCAL") return fleet.status === "active" ? "ready" : fleet.status;
-  const active: Record<string, readonly string[]> = { pioneer: ["INTAKE", "NEED_SCOPE"], observatory: ["PLAN", "RETRIEVE", "SELECT", "EXTRACT"], constellation: ["MAP"], diagnostics: ["HAZARD_SCAN"], sentinel: ["VERIFY", "HUMAN_REVIEW"], horizon: ["REPORT"] };
-  if (active[fleet.id]?.includes(state)) return fleet.id === "sentinel" && state === "HUMAN_REVIEW" ? "waiting_approval" : "active";
+  if (fleetIdsForMissionState(state).includes(fleet.id)) return fleet.id === "sentinel" && state === "HUMAN_REVIEW" ? "waiting_approval" : "active";
   return fleet.status === "active" ? "ready" : fleet.status;
 }
 
@@ -56,7 +79,7 @@ export function fleetRuntimeLabel(status: FleetStatus, locale: UiLocale): string
 
 /** Keep the bridge focused on the stage-relevant fleet(s), not every installed capability. */
 export function fleetParticipantsForMission(bundle: ImportedBundle): FleetRecord[] {
-  const ids = PARTICIPANT_FLEETS[bundle.status?.missionState ?? "LOCAL"] ?? [];
+  const ids = fleetIdsForMissionState(bundle.status?.missionState);
   return ids.flatMap((id) => FLEETS.filter((fleet) => fleet.id === id));
 }
 
@@ -64,7 +87,7 @@ export function fleetParticipantsForMission(bundle: ImportedBundle): FleetRecord
 export function fleetMissionRole(fleet: FleetRecord, bundle: ImportedBundle): FleetMissionRole {
   const missionState = bundle.status?.missionState ?? "LOCAL";
   const role = MISSION_ROLE_COPY[missionState] ?? MISSION_ROLE_COPY.LOCAL;
-  const participates = (PARTICIPANT_FLEETS[missionState] ?? []).includes(fleet.id);
+  const participates = fleetIdsForMissionState(missionState).includes(fleet.id);
   if (participates) return { missionState, participates, ...role };
   return {
     missionState, participates: false,

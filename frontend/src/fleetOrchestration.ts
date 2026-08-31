@@ -1,5 +1,6 @@
 import { FLEETS, type FleetRecord } from "./fleetRegistry";
 import type { ImportedBundle } from "./model";
+import { FLEET_MISSION_ROUTE, fleetIdsForMissionState, fleetMissionState } from "./fleetRuntimeState";
 
 export type FleetRouteState = "active" | "next" | "standby" | "framework";
 
@@ -13,13 +14,6 @@ export interface FleetRouteEntry {
 
 const operationalFleetIds = ["pioneer", "observatory", "constellation", "diagnostics", "sentinel", "horizon", "synthesis"] as const;
 const frameworkFleetIds = ["dft", "potential", "dynamics"] as const;
-const stageFleetIds: Record<string, readonly string[]> = {
-  LOCAL: ["pioneer"], INTAKE: ["pioneer"], NEED_SCOPE: ["pioneer"],
-  PLAN: ["pioneer", "observatory"], RETRIEVE: ["observatory"], SELECT: ["observatory"], EXTRACT: ["observatory", "sentinel"],
-  MAP: ["constellation"], HAZARD_SCAN: ["diagnostics", "sentinel"], VERIFY: ["sentinel"], HUMAN_REVIEW: ["sentinel"], REPORT: ["horizon"],
-};
-const route = ["LOCAL", "INTAKE", "NEED_SCOPE", "PLAN", "RETRIEVE", "SELECT", "EXTRACT", "MAP", "HAZARD_SCAN", "VERIFY", "HUMAN_REVIEW", "REPORT"] as const;
-
 const fleetById = (id: string) => FLEETS.find((fleet) => fleet.id === id)!;
 const waitingCopy = (fleet: FleetRecord) => ({
   detailZh: `${fleet.zh}保留在待命编队中；不会在未到达其阶段时启动工具或外部操作。`,
@@ -31,12 +25,14 @@ const waitingCopy = (fleet: FleetRecord) => ({
  * coordination view: it never treats installed capability as an active run.
  */
 export function fleetOrchestration(bundle: ImportedBundle): FleetRouteEntry[] {
-  const missionState = bundle.status?.missionState ?? "LOCAL";
-  const currentIndex = Math.max(0, route.indexOf(missionState as typeof route[number]));
-  const activeIds = new Set(stageFleetIds[missionState] ?? []);
+  const rawMissionState = bundle.status?.missionState;
+  const state = fleetMissionState(rawMissionState);
+  const missionState = state ?? rawMissionState ?? "unknown";
+  const currentIndex = state ? FLEET_MISSION_ROUTE.indexOf(state) : -1;
+  const activeIds = new Set(fleetIdsForMissionState(state ?? undefined));
   const nextIds = new Set<string>();
-  for (let index = currentIndex + 1; index < route.length && nextIds.size === 0; index += 1) {
-    for (const fleetId of stageFleetIds[route[index]]) if (!activeIds.has(fleetId)) nextIds.add(fleetId);
+  for (let index = currentIndex + 1; state && index < FLEET_MISSION_ROUTE.length && nextIds.size === 0; index += 1) {
+    for (const fleetId of fleetIdsForMissionState(FLEET_MISSION_ROUTE[index])) if (!activeIds.has(fleetId)) nextIds.add(fleetId);
   }
 
   const operational = operationalFleetIds.map((id) => {
