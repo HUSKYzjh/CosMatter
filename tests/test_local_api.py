@@ -893,5 +893,36 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertEqual(final_status["state"], "CANCELLED")
         self.assertEqual(final_status["automatic_execution"]["state"], "cancelled")
         self.assertFalse((self.runs / "auto_001" / "retrieval_candidates.json").exists())
+
+    def test_automatic_mission_cancellation_after_retrieval_does_not_publish_success(self):
+        retrieval_returned = threading.Event()
+        release_retrieval = threading.Event()
+
+        def delayed_retrieval(_run_id, _mission, _query, _sources):
+            retrieval_returned.set()
+            if not release_retrieval.wait(timeout=3):
+                raise AssertionError("test did not release the mocked retrieval")
+            return {"candidate_count": 1, "failed_sources": (), "all_sources_failed": False}
+
+        payload = {
+            "run_id": "auto_cancel_after_retrieval_001",
+            "question": "How do conditions affect phase stability in epitaxial BiFeO3 films?",
+            "material": "BiFeO3",
+            "property": "phase stability",
+            "scope": "epitaxial films",
+            "sources": ["sciverse"],
+            "consent": True,
+        }
+        with patch("cosmatter.local_api.DeepSeekAdapter", _FakeDeepSeek), patch.object(self.api, "_execute_automatic_query", side_effect=delayed_retrieval):
+            self.api.auto_mission(payload)
+            self.assertTrue(retrieval_returned.wait(timeout=3))
+            self.api.cancel("auto_cancel_after_retrieval_001")
+            release_retrieval.set()
+            worker = self.api._automatic_jobs.get("auto_cancel_after_retrieval_001")
+            if worker is not None:
+                worker.join(timeout=3)
+        final_status = self.api.run_status("auto_cancel_after_retrieval_001")
+        self.assertEqual(final_status["state"], "CANCELLED")
+        self.assertEqual(final_status["automatic_execution"]["state"], "cancelled")
 if __name__ == "__main__":
     unittest.main()

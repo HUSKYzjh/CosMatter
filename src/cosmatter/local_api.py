@@ -342,6 +342,10 @@ class LocalMissionApi:
                 planning_warning = True
             require_active_run(run_dir, mission.mission_id)
             retrieval = self._execute_automatic_query(run_id, mission, mission.question, sources)
+            # A provider may have returned just as a user cancels the run.  Do
+            # not publish a success/failure terminal status after that point;
+            # the durable control marker is authoritative for all later work.
+            require_active_run(run_dir, mission.mission_id)
             candidate_count = int(retrieval["candidate_count"])
             failed_sources = tuple(str(source) for source in retrieval["failed_sources"])
             failure_count = len(failed_sources)
