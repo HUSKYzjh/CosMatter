@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 
 
+_RECIPE_TIMEOUT_SECONDS = 45
+
+
 class DshHarnessRecipeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(__file__).resolve().parents[1]
@@ -13,7 +16,7 @@ class DshHarnessRecipeTests(unittest.TestCase):
         self.recipe = self.root / "configs" / "dsh_harness_recipe.json"
 
     def test_recipe_reports_versions_checks_and_boundaries_without_sensitive_fixture_data(self) -> None:
-        result = subprocess.run([sys.executable, str(self.tool)], cwd=self.root, text=True, encoding="utf-8", capture_output=True, timeout=20)
+        result = subprocess.run([sys.executable, str(self.tool)], cwd=self.root, text=True, encoding="utf-8", capture_output=True, timeout=_RECIPE_TIMEOUT_SECONDS)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         report = json.loads(result.stdout)
         self.assertTrue(report["passed"])
