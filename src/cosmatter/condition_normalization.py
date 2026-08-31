@@ -11,6 +11,7 @@ from .verification import VerificationDecision
 
 
 _CANONICAL = {"thickness", "temperature", "strain", "pressure", "composition", "field", "energy_cutoff", "kpoint_density"}
+SCHEMA_VERSION = "1.0"
 
 
 class ConditionNormalizationError(ValueError):
@@ -31,9 +32,35 @@ def condition_normalization_from_review(mission: MissionBrief, cards: tuple[Evid
         if not all(isinstance(value, str) and value.strip() for value in (evidence_id, raw_field, canonical, unit)) or card is None or canonical not in _CANONICAL or raw_field not in card.conditions or isinstance(card.conditions[raw_field], (dict, list)) or (evidence_id, raw_field) in seen or len(unit) > 40:
             raise ConditionNormalizationError("normalization mapping values are invalid")
         seen.add((evidence_id, raw_field)); mappings.append({"evidence_id": evidence_id, "raw_field": raw_field, "canonical_field": canonical, "unit": unit})
-    return {"schema_version": "1.0", "mission_id": mission.mission_id, "trust_status": "human_reviewed_condition_normalization_no_conversion", "mappings": mappings}
+    return {"schema_version": SCHEMA_VERSION, "mission_id": mission.mission_id, "trust_status": "human_reviewed_condition_normalization_no_conversion", "mappings": mappings}
 
 
 def write_condition_normalization(run_dir: Path, artifact: dict[str, Any]) -> Path:
-    if not isinstance(artifact, dict) or set(artifact) != {"schema_version", "mission_id", "trust_status", "mappings"} or artifact.get("schema_version") != "1.0" or artifact.get("trust_status") != "human_reviewed_condition_normalization_no_conversion": raise ConditionNormalizationError("normalization artifact is invalid")
+    _validate_artifact(artifact)
     path = run_dir / "condition_normalization.json"; path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"); return path
+
+
+def load_condition_normalization(path: Path, mission_id: str) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ConditionNormalizationError("condition_normalization.json is invalid JSON") from error
+    _validate_artifact(payload)
+    if payload["mission_id"] != mission_id:
+        raise ConditionNormalizationError("condition normalization does not belong to mission")
+    return payload
+
+
+def _validate_artifact(payload: Any) -> None:
+    if not isinstance(payload, dict) or set(payload) != {"schema_version", "mission_id", "trust_status", "mappings"} or payload.get("schema_version") != SCHEMA_VERSION or payload.get("trust_status") != "human_reviewed_condition_normalization_no_conversion" or not isinstance(payload.get("mission_id"), str) or not payload["mission_id"].strip() or not isinstance(payload.get("mappings"), list) or len(payload["mappings"]) > 36:
+        raise ConditionNormalizationError("normalization artifact is invalid")
+    seen: set[tuple[str, str]] = set()
+    for item in payload["mappings"]:
+        if not isinstance(item, dict) or set(item) != {"evidence_id", "raw_field", "canonical_field", "unit"}:
+            raise ConditionNormalizationError("normalization mapping fields are invalid")
+        evidence_id, raw_field, canonical, unit = (item[key] for key in ("evidence_id", "raw_field", "canonical_field", "unit"))
+        if not all(isinstance(value, str) and value.strip() for value in (evidence_id, raw_field, canonical, unit)) or canonical not in _CANONICAL or len(evidence_id) > 200 or len(raw_field) > 120 or len(unit) > 40 or (evidence_id, raw_field) in seen:
+            raise ConditionNormalizationError("normalization mapping values are invalid")
+        seen.add((evidence_id, raw_field))

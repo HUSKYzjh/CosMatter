@@ -3,7 +3,7 @@ import { paperPdfIntake, pdfTaskForPaper, type PaperPdfIntakeState } from "./pap
 import type { CandidateScreeningDecision, PdfTaskStatus } from "./localApi";
 import type { LiteratureGraphNode } from "./model";
 
-export type PaperWorkflowState = "untracked" | "screening" | "included" | "parsing" | "source_map" | "evidence_review" | "accepted_evidence" | "failed" | "excluded";
+export type PaperWorkflowState = "untracked" | "screening" | "included" | "parsing" | "source_map" | "evidence_review" | "provenance_audit" | "accepted_evidence" | "failed" | "excluded";
 
 /**
  * A display-only projection of one candidate's audited workflow position.
@@ -14,9 +14,10 @@ export function paperWorkflowState(
   tasks: readonly PdfTaskStatus[] | null | undefined,
   decision: CandidateScreeningDecision["decision"] | "unreviewed" | null | undefined,
   acceptedEvidenceCount: number,
+  acceptedEvidenceProvenanceAudited = true,
 ): PaperWorkflowState | null {
   if (!documentIdForReviewablePaper(node)) return null;
-  if (acceptedEvidenceCount > 0) return "accepted_evidence";
+  if (acceptedEvidenceCount > 0) return acceptedEvidenceProvenanceAudited ? "accepted_evidence" : "provenance_audit";
   const intake: PaperPdfIntakeState = paperPdfIntake(pdfTaskForPaper(tasks, node), node).state;
   if (intake === "failed") return "failed";
   if (intake === "parsing") return "parsing";

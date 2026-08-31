@@ -5,11 +5,11 @@ export type FleetDecorationKind = FleetVisualKind;
 
 export const AMBIENT_ASSETS: Record<FleetDecorationKind, readonly string[]> = {
   discover: [
-    "/ambient-backgrounds/facility/facility-01-orbital-lab.png",
-    "/ambient-backgrounds/facility/facility-02-characterization.png",
-    "/ambient-backgrounds/facility/facility-03-observatory.png",
-    "/ambient-backgrounds/facility/facility-04-synthesis.png",
-    "/ambient-backgrounds/facility/facility-05-outpost.png",
+    "/ambient-backgrounds/fleet/fleet-01-flagship.png",
+    "/ambient-backgrounds/fleet/fleet-02-formation.png",
+    "/ambient-backgrounds/fleet/fleet-03-flotilla.png",
+    "/ambient-backgrounds/fleet/fleet-04-expedition.png",
+    "/ambient-backgrounds/fleet/fleet-05-surveyor.png",
   ],
   workflow: [
     "/ambient-backgrounds/fleet/fleet-01-flagship.png",
@@ -26,11 +26,11 @@ export const AMBIENT_ASSETS: Record<FleetDecorationKind, readonly string[]> = {
     "/ambient-backgrounds/starfield/stars-05-crystal.png",
   ],
   reader: [
-    "/ambient-backgrounds/facility/facility-01-orbital-lab.png",
-    "/ambient-backgrounds/facility/facility-04-synthesis.png",
-    "/ambient-backgrounds/facility/facility-02-characterization.png",
-    "/ambient-backgrounds/facility/facility-03-observatory.png",
-    "/ambient-backgrounds/facility/facility-05-outpost.png",
+    "/ambient-backgrounds/fleet/fleet-05-surveyor.png",
+    "/ambient-backgrounds/fleet/fleet-01-flagship.png",
+    "/ambient-backgrounds/fleet/fleet-02-formation.png",
+    "/ambient-backgrounds/fleet/fleet-04-expedition.png",
+    "/ambient-backgrounds/fleet/fleet-03-flotilla.png",
   ],
   horizon: [
     "/ambient-backgrounds/starfield/stars-02-horizon.png",
@@ -41,23 +41,36 @@ export const AMBIENT_ASSETS: Record<FleetDecorationKind, readonly string[]> = {
   ],
 };
 
+/** Keep the session value deliberately content-free: it is only an asset index. */
+export function ambientIndexFromSessionValue(saved: string | null, assetCount: number, random = Math.random): number {
+  const parsed = saved !== null && /^\d+$/.test(saved) ? Number.parseInt(saved, 10) : Number.NaN;
+  return Number.isInteger(parsed) && parsed >= 0 && parsed < assetCount ? parsed : Math.floor(random() * assetCount);
+}
+
 function ambientForSession(kind: FleetDecorationKind): string {
   const assets = AMBIENT_ASSETS[kind];
-  const key = `cosmatter.ambient.${kind}.v1`;
-  const saved = window.sessionStorage.getItem(key);
-  const parsed = saved === null ? Number.NaN : Number.parseInt(saved, 10);
-  const index = Number.isInteger(parsed) && parsed >= 0 && parsed < assets.length ? parsed : Math.floor(Math.random() * assets.length);
-  if (saved === null) window.sessionStorage.setItem(key, String(index));
-  return assets[index];
+  const key = `cosmatter.ambient.${kind}.v2`;
+  try {
+    const saved = window.sessionStorage.getItem(key);
+    const index = ambientIndexFromSessionValue(saved, assets.length);
+    if (saved === null) window.sessionStorage.setItem(key, String(index));
+    return assets[index];
+  } catch {
+    // Privacy-restricted contexts may deny Web Storage. Decoration must never
+    // block access to a local research workspace when that happens.
+    return assets[ambientIndexFromSessionValue(null, assets.length)];
+  }
 }
 
 function FleetMark(props: { class?: string; x: number; y: number; scale?: number; rotate?: number }) {
   const scale = props.scale ?? 1;
   const rotate = props.rotate ?? 0;
   return <g class={`fleet-mark ${props.class ?? ""}`} transform={`translate(${props.x} ${props.y}) rotate(${rotate}) scale(${scale})`}>
-    <path class="fleet-hull" d="M-42 0 -10-12 37 0 -10 12Z" />
-    <path class="fleet-hull-detail" d="M-23 0 4-6 24 0 4 6Z" />
-    <path class="fleet-engine" d="M-42-4-56 0-42 4" />
+    <path class="fleet-hull" d="M-52 0 -18-14 42-5 56 0 42 5-18 14Z" />
+    <path class="fleet-wing" d="M-16-9 8-28 28-7M-16 9 8 28 28 7" />
+    <path class="fleet-hull-detail" d="M-28 0 5-7 35 0 5 7Z" />
+    <path class="fleet-engine" d="M-52-5-70 0-52 5" />
+    <circle class="fleet-beacon" cx="14" cy="0" r="2.5" />
   </g>;
 }
 

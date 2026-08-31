@@ -65,7 +65,7 @@ export function missionJourney(
   const comparison = researchExtensionReadiness(bundle);
   const counterevidence = counterevidenceReadiness(bundle);
   // A candidate becomes a completed extension only after both comparison and the approved counterevidence boundary are recorded.
-  const extended = comparison.ready && counterevidence.ready && bundle.researchGapCandidates.some(hasExecutedGapCounterevidenceBoundary);
+  const extended = comparison.ready && counterevidence.ready && bundle.researchGapCandidates.some((candidate) => hasExecutedGapCounterevidenceBoundary(candidate, counterevidence));
   const staleReasonZh = "任务边界已改变；请重新导入匹配工件或执行受控检索。";
   const staleReasonEn = "The task boundary changed. Re-import matching artifacts or run controlled retrieval.";
   const stages: Array<Omit<JourneyStage, "state"> & { ready: boolean; complete: boolean; reasonZh?: string; reasonEn?: string }> = [

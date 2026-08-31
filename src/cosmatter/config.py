@@ -14,6 +14,21 @@ AGENT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = AGENT_ROOT.parent / ".env"
 
 
+def data_root() -> Path:
+    """Return the local-only data root, outside the distributable code tree.
+
+    A caller may set ``COSMATTER_DATA_ROOT`` for an intentionally different
+    local location.  The standard workspace layout keeps case data in
+    ``case-data/runtime`` beside ``development/CosMatter``.  The fallback
+    preserves the legacy checkout layout for a standalone source tree.
+    """
+    configured = os.environ.get("COSMATTER_DATA_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    workspace_runtime = AGENT_ROOT.parent.parent / "case-data" / "runtime"
+    return workspace_runtime if workspace_runtime.is_dir() else AGENT_ROOT
+
+
 def _read_dotenv(path: Path) -> dict[str, str]:
     """Read a simple dotenv file without printing or exporting its values."""
     if not path.is_file():
@@ -103,23 +118,11 @@ class Settings:
         )
 
     def status(self) -> dict[str, object]:
-        """Return diagnostic booleans only; secrets are never represented here."""
+        """Return provider-presence booleans only; no values or endpoints escape."""
         return {
-            "llm_provider": self.llm_provider,
-            "llm_model": self.llm_model,
-            "llm_base_url": self.llm_base_url,
-            "llm_thinking_enabled": self.llm_thinking_enabled,
-            "llm_reasoning_effort": self.llm_reasoning_effort,
             "deepseek_configured": self.deepseek_configured,
             "sciverse_configured": self.sciverse_configured,
-            "sciverse_base_url": self.sciverse_base_url,
             "mineru_configured": bool(self.mineru_api_token),
-            "mineru_base_url": self.mineru_base_url,
-            "mineru_model_version": self.mineru_model_version,
             "openalex_configured": bool(self.openalex_api_key),
-            "openalex_base_url": self.openalex_base_url,
             "crossref_polite_contact_configured": bool(self.crossref_mailto),
-            "crossref_base_url": self.crossref_base_url,
-            "http_timeout_seconds": self.http_timeout_seconds,
-            "api_max_retries": self.api_max_retries,
         }

@@ -34,4 +34,18 @@ describe("EvidenceCard form draft validation", () => {
     const confidence = base(); confidence.confidenceText = "1.1";
     expect(validateEvidenceDraft(confidence).issue).toBe("confidence");
   });
+
+  it("requires finite numeric conditions and non-negative physical dimensions", () => {
+    const negativeThickness = base();
+    negativeThickness.conditionsText = JSON.stringify({ sample_form: "film", strain_percent: -1, substrate: "STO", thickness_nm: -2, temperature_k: 300, method: "XRD" });
+    expect(validateEvidenceDraft(negativeThickness).issue).toBe("conditions-range");
+
+    const textualTemperature = base();
+    textualTemperature.conditionsText = JSON.stringify({ sample_form: "film", strain_percent: 1, substrate: "STO", thickness_nm: 20, temperature_k: "room temperature", method: "XRD" });
+    expect(validateEvidenceDraft(textualTemperature).issue).toBe("conditions-range");
+
+    const numericSubstrate = base();
+    numericSubstrate.conditionsText = JSON.stringify({ sample_form: "film", strain_percent: 1, substrate: 10, thickness_nm: 20, temperature_k: 300, method: "XRD" });
+    expect(validateEvidenceDraft(numericSubstrate).issue).toBe("conditions-text");
+  });
 });

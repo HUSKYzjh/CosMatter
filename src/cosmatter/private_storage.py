@@ -11,7 +11,7 @@ import hashlib
 import re
 from pathlib import Path
 
-from .config import AGENT_ROOT
+from .config import data_root
 
 
 class PrivateStorageError(ValueError):
@@ -19,8 +19,8 @@ class PrivateStorageError(ValueError):
 
 
 def private_root() -> Path:
-    """Return a Git-ignored sibling of runs, never a run subdirectory."""
-    root = AGENT_ROOT / ".private"
+    """Return local case data outside the code tree and run subdirectories."""
+    root = data_root() / "private"
     root.mkdir(parents=True, exist_ok=True)
     return root
 

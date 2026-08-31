@@ -5,10 +5,12 @@ from pathlib import Path
 
 from cosmatter.candidate_screening import (
     CandidateScreeningError,
+    candidate_screening_from_automated_trial,
     candidate_screening_from_review,
     candidate_screening_template,
     require_document_screened_for_fulltext,
     write_candidate_screening,
+    write_automated_trial_candidate_screening,
 )
 
 
@@ -72,6 +74,22 @@ class CandidateScreeningTests(unittest.TestCase):
         serialized = json.dumps(artifact)
         self.assertNotIn("Relevant", serialized)
         self.assertNotIn("Outside scope", serialized)
+
+    def test_delegated_automated_trial_is_separate_and_requires_explicit_gate_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            automated = candidate_screening_from_automated_trial("mission_screen", candidates(), reviewed())
+            self.assertEqual(automated["trust_status"], "delegated_automated_trial_screening_not_scientific_evidence")
+            write_automated_trial_candidate_screening(run_dir, automated)
+            with self.assertRaises(CandidateScreeningError):
+                require_document_screened_for_fulltext(run_dir, "mission_screen", candidates(), "doc_include")
+            require_document_screened_for_fulltext(
+                run_dir,
+                "mission_screen",
+                candidates(),
+                "doc_include",
+                allow_delegated_automated_trial=True,
+            )
 
 
 if __name__ == "__main__":

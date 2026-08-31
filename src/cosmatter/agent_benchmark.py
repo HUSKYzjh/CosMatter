@@ -21,6 +21,7 @@ class AgentBenchmarkError(ValueError):
 @dataclass(frozen=True)
 class AgentBenchmarkReport:
     fixture_id: str
+    fixture_sha256: str
     retrieval_precision_at_k: float
     retrieval_recall_at_k: float
     retrieval_ndcg_at_k: float
@@ -30,12 +31,13 @@ class AgentBenchmarkReport:
     gap_differing_field_recall: float
 
     def to_dict(self) -> dict[str, object]:
-        return {"fixture_id": self.fixture_id, "synthetic": True, "retrieval_precision_at_k": self.retrieval_precision_at_k, "retrieval_recall_at_k": self.retrieval_recall_at_k, "retrieval_ndcg_at_k": self.retrieval_ndcg_at_k, "extraction_fact_id_recall": self.extraction_fact_id_recall, "extraction_locator_accuracy": self.extraction_locator_accuracy, "gap_evidence_boundary_precision": self.gap_evidence_boundary_precision, "gap_differing_field_recall": self.gap_differing_field_recall}
+        return {"fixture_id": self.fixture_id, "fixture_sha256": self.fixture_sha256, "synthetic": True, "retrieval_precision_at_k": self.retrieval_precision_at_k, "retrieval_recall_at_k": self.retrieval_recall_at_k, "retrieval_ndcg_at_k": self.retrieval_ndcg_at_k, "extraction_fact_id_recall": self.extraction_fact_id_recall, "extraction_locator_accuracy": self.extraction_locator_accuracy, "gap_evidence_boundary_precision": self.gap_evidence_boundary_precision, "gap_differing_field_recall": self.gap_differing_field_recall}
 
 
 def evaluate_frozen_agent_benchmark(path: Path, mission_id: str) -> AgentBenchmarkReport:
     try:
-        fixture = json.loads(path.read_text(encoding="utf-8"))
+        fixture_bytes = path.read_bytes()
+        fixture = json.loads(fixture_bytes.decode("utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise AgentBenchmarkError("benchmark fixture is unreadable") from error
     if not isinstance(fixture, dict) or fixture.get("synthetic") is not True:
@@ -69,7 +71,7 @@ def evaluate_frozen_agent_benchmark(path: Path, mission_id: str) -> AgentBenchma
     except (KeyError, TypeError, ValueError, StopIteration) as error:
         raise AgentBenchmarkError("benchmark fixture has an invalid shape") from error
     return AgentBenchmarkReport(
-        fixture_id=f"{path.stem}_v{fixture.get('fixture_version', 'unknown')}", retrieval_precision_at_k=retrieval_precision,
+        fixture_id=f"{path.stem}_v{fixture.get('fixture_version', 'unknown')}", fixture_sha256=hashlib.sha256(fixture_bytes).hexdigest(), retrieval_precision_at_k=retrieval_precision,
         retrieval_recall_at_k=retrieval_recall, retrieval_ndcg_at_k=retrieval_ndcg,
         extraction_fact_id_recall=extraction_recall, extraction_locator_accuracy=locator_accuracy,
         gap_evidence_boundary_precision=_precision(observed_gap_evidence, expected_gap_evidence),

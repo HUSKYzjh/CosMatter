@@ -26,6 +26,7 @@ from cosmatter.models import (
     ReviewStatus,
     Stance,
     StationType,
+    normalize_public_title,
     utc_now,
 )
 
@@ -37,6 +38,8 @@ from .reading_guide import ReadingGuideError, load_reading_guide
 from .source_map import SourceMapError, iter_source_maps, load_source_map
 from .paper_structure import PaperStructureError, iter_paper_structures, load_paper_structure
 from .relation_reconciliation import RelationReconciliationError, load_relation_reconciliation
+from .condition_normalization import ConditionNormalizationError, load_condition_normalization
+from .evidence_maturity_registry import EvidenceMaturityRegistryError, audit_evidence_maturity_registry_against_runs, load_evidence_maturity_registry, validate_evidence_maturity_registry_audit
 from .verification import VerificationDecision
 from .citation_expansion import CitationExpansionError, validate_citation_expansion
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
@@ -66,6 +69,7 @@ _TIMELINE_ACTIONS = {
     "source_map_reviewed": ("evidence_extraction", "定位片段已人工复核"),
     "material_extraction_drafted": ("evidence_extraction", "材料事实草稿已生成，待人工审核"),
     "material_facts_reviewed": ("evidence_extraction", "结构化材料事实已人工复核"),
+    "condition_normalization_reviewed": ("cross_check_review", "条件字段名称与单位已人工规范化（未换算）"),
     "public_relations_expanded": ("cross_check_review", "OpenAlex 关系元数据已扩展（非科学证据）"),
     "crossref_references_expanded": ("cross_check_review", "Crossref 参考元数据已扩展（非科学证据）"),
     "citation_graph_expanded": ("cross_check_review", "双向两层引文图谱已扩展（非科学证据）"),
@@ -462,7 +466,21 @@ def _paper_source_map_projection(source_map: dict[str, Any] | None) -> dict[str,
 
 def _relation_reconciliation_projection(reconciliation: dict[str, Any] | None) -> dict[str, Any] | None:
     if reconciliation is None: return None
-    return {"trust_status": reconciliation["trust_status"], "source": reconciliation["source"], "mappings": [{key: mapping[key] for key in ("openalex_work_id", "crossref_doi", "status", "basis")} for mapping in reconciliation["mappings"]]}
+    history = reconciliation.get("revision_history", [])
+    return {"trust_status": reconciliation["trust_status"], "source": reconciliation["source"], "mappings": [{key: mapping[key] for key in ("openalex_work_id", "crossref_doi", "status", "basis")} for mapping in reconciliation["mappings"]], "revision_history": [{key: revision[key] for key in ("revision", "recorded_at", "mapping_count", "status_counts")} for revision in history]}
+
+
+def _condition_normalization_projection(normalization: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Expose only reviewer-declared field names and units, never values or conversions."""
+    if normalization is None:
+        return None
+    return {
+        "trust_status": normalization["trust_status"],
+        "mappings": [
+            {key: mapping[key] for key in ("evidence_id", "raw_field", "canonical_field", "unit")}
+            for mapping in normalization["mappings"]
+        ],
+    }
 def _paper_structure_projection(structure: dict[str, Any] | None) -> dict[str, Any] | None:
     if structure is None:
         return None
@@ -492,9 +510,13 @@ def _retrieval_candidate_projection(path: Path) -> list[dict[str, Any]]:
         year = item.get("publication_year")
         if year is not None and (not isinstance(year, int) or not 1600 <= year <= 3000):
             raise UiExportError("retrieval candidate artifact contains an invalid publication year")
+        try:
+            safe_title = normalize_public_title(title)
+        except ValueError as error:
+            raise UiExportError("retrieval candidate title is not safe for UI export") from error
         result.append({
             "document_id": document_id,
-            "title": title.strip(),
+            "title": safe_title,
             "source": source.strip(),
             "publication_year": year,
             "is_content_accessible": item.get("is_content_accessible") is True,
@@ -1029,11 +1051,14 @@ def build_ui_bundle(
     citation_expansion: dict[str, Any] | None = None,
 
     relation_reconciliation: dict[str, Any] | None = None,
+    condition_normalization: dict[str, Any] | None = None,
     retrieval_candidates: list[dict[str, Any]] | None = None,
     research_gap_candidates: list[dict[str, Any]] | None = None,
     material_facts: dict[str, Any] | None = None,
     material_fact_artifacts: tuple[dict[str, Any], ...] = (),
     audit_summary: dict[str, Any] | None = None,
+    evidence_maturity_registry: dict[str, Any] | None = None,
+    evidence_maturity_registry_delivery_status: str = "not_supplied",
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -1066,6 +1091,10 @@ def build_ui_bundle(
         candidate_ids.add(gap_id)
     if mission_report is not None and not set(mission_report.research_gap_candidate_ids).issubset(candidate_ids):
         raise UiExportError("mission report references a research gap candidate missing from this export")
+    if evidence_maturity_registry_delivery_status not in {"not_supplied", "accepted", "rejected"}:
+        raise UiExportError("evidence maturity registry delivery status is invalid")
+    if evidence_maturity_registry is not None and evidence_maturity_registry_delivery_status != "accepted":
+        raise UiExportError("evidence maturity registry requires an accepted delivery status")
     stations = [
         {
             "station_type": station.value,
@@ -1117,9 +1146,12 @@ def build_ui_bundle(
         "paper_structure": _paper_structure_projection(paper_structure),
         "material_facts": _material_facts_projection(material_facts),
         "reviewed_material_fact_summary": _reviewed_material_fact_summary(material_fact_artifacts),
+        "evidence_maturity_registry": evidence_maturity_registry,
+        "evidence_maturity_registry_delivery_status": evidence_maturity_registry_delivery_status,
         "literature_relations": literature_relations,
         "crossref_relations": crossref_relations,
         "relation_reconciliation": _relation_reconciliation_projection(relation_reconciliation),
+        "condition_normalization": _condition_normalization_projection(condition_normalization),
         "literature_graph": _literature_graph_projection(
             mission,
             projected_evidence,
@@ -1171,6 +1203,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     crossref_relations = _crossref_relation_expansion_projection(run_dir / "crossref_relation_expansion.json", mission.mission_id)
     citation_expansion = _citation_expansion_projection(run_dir / "citation_expansion.json", mission.mission_id)
     retrieval_candidates = _retrieval_candidate_projection(run_dir / "retrieval_candidates.json")
+    maturity_registry, maturity_delivery_status = _evidence_maturity_registry_projection(run_dir, runs_dir, mission.mission_id)
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         source_maps = iter_source_maps(run_dir, mission.mission_id)
@@ -1195,8 +1228,9 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         )
         material_facts = material_fact_artifacts[0] if material_fact_artifacts else None
         relation_reconciliation = load_relation_reconciliation(run_dir / "relation_reconciliation.json", mission.mission_id)
+        condition_normalization = load_condition_normalization(run_dir / "condition_normalization.json", mission.mission_id)
         audit_summary = _audit_summary_from_run(run_dir, mission.mission_id)
-    except (ReadingGuideError, SourceMapError, PaperStructureError, MaterialExtractionError, ProvenanceAuditError, RelationReconciliationError) as error:
+    except (ReadingGuideError, SourceMapError, PaperStructureError, MaterialExtractionError, ProvenanceAuditError, RelationReconciliationError, ConditionNormalizationError) as error:
         raise UiExportError(str(error)) from error
     bundle = build_ui_bundle(
         mission,
@@ -1216,11 +1250,14 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         crossref_relations=crossref_relations,
         citation_expansion=citation_expansion,
         relation_reconciliation=relation_reconciliation,
+        condition_normalization=condition_normalization,
         retrieval_candidates=retrieval_candidates,
         research_gap_candidates=research_gap_candidates,
         material_facts=material_facts,
         material_fact_artifacts=material_fact_artifacts,
         audit_summary=audit_summary,
+        evidence_maturity_registry=maturity_registry,
+        evidence_maturity_registry_delivery_status=maturity_delivery_status,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1232,5 +1269,28 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         payload={"schema_version": UI_SCHEMA_VERSION, "evidence_card_count": len(bundle["evidence_cards"])},
     )
     return destination
+
+
+def _evidence_maturity_registry_projection(run_dir: Path, runs_dir: Path, mission_id: str) -> tuple[dict[str, Any] | None, str]:
+    """Expose maturity only when the recorded count-only audit still matches."""
+    registry_path = run_dir / "evidence_maturity_registry.json"
+    audit_path = run_dir / "evidence_maturity_registry_audit.json"
+    if not registry_path.exists() and not audit_path.exists():
+        return None, "not_supplied"
+    if not registry_path.exists() or not audit_path.exists():
+        return None, "rejected"
+    try:
+        registry = load_evidence_maturity_registry(registry_path)
+        audit = _load_object(audit_path, "evidence maturity registry audit")
+        if registry.get("question_id") != mission_id:
+            return None, "rejected"
+        validate_evidence_maturity_registry_audit(audit, registry)
+        if audit["passed"] is not True:
+            return None, "rejected"
+        if audit_evidence_maturity_registry_against_runs(registry, runs_dir) != audit:
+            return None, "rejected"
+    except (EvidenceMaturityRegistryError, UiExportError):
+        return None, "rejected"
+    return registry, "accepted"
 
 

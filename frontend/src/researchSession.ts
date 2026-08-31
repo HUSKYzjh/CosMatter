@@ -1,5 +1,6 @@
 import type { EvidenceCard, ImportedBundle, LiteratureGraphNode } from "./model";
 import { documentIdForReviewablePaper, evidenceMatchesPaper } from "./evidenceLinking";
+import { evidenceProvenanceAuditComplete } from "./evidenceProvenanceAudit";
 
 export interface ResearchSession {
   selectedNode: LiteratureGraphNode | null;
@@ -16,7 +17,7 @@ export function selectPaper(session: ResearchSession, selectedNode: LiteratureGr
   // explicit reviewable-paper projection. Graph IDs never become source-map
   // document IDs by themselves.
   if (!documentIdForReviewablePaper(selectedNode)) return emptyResearchSession();
-  return { ...session, selectedNode, documentId: null, evidenceId: null, gateMessage: null };
+  return { ...session, selectedNode, documentId: null, evidenceId: null, conditionCluster: null, gateMessage: null };
 }
 
 export function selectEvidence(session: ResearchSession, evidence: EvidenceCard): ResearchSession {
@@ -35,8 +36,8 @@ export function evidenceGate(bundle: ImportedBundle, session: ResearchSession): 
   if (!evidence.provenance.documentId.trim() || !evidence.provenance.locator.trim()) return { ready: false, reason: "locator" };
   if (bundle.sourceMapSummary.segmentCount < 1 || !bundle.sourceMapSummary.documentIds.includes(evidence.provenance.documentId)) return { ready: false, reason: "source-map" };
   // UI receives no Source Map excerpts. Require the backend's quote-free exact-match audit before a current-session card appears verified.
-  const audit = bundle.auditSummary.evidenceProvenance;
-  if (!audit || audit.acceptedEvidenceCount < 1 || audit.exactSourceMapMatchCount !== audit.acceptedEvidenceCount || audit.manualLocatorOnlyCount !== 0 || audit.exactSourceMapMatchRate < 1) return { ready: false, reason: "provenance-audit" };
+  const acceptedEvidenceCount = bundle.evidenceCards.filter((item) => item.reviewStatus === "accepted").length;
+  if (!evidenceProvenanceAuditComplete(bundle.auditSummary.evidenceProvenance, acceptedEvidenceCount)) return { ready: false, reason: "provenance-audit" };
   return { ready: true, reason: null };
 }
 /**

@@ -64,11 +64,17 @@ class LiveApiEndToEndTests(unittest.TestCase):
                 try:
                     app = f"http://127.0.0.1:{server.server_port}"
                     created = post(f"{app}/api/missions", {"run_id": "e2e_live", "question": "map phase reports", "material": "BiFeO3", "property": "phase stability", "scope": "films"})
-                    draft = post(f"{app}/api/runs/{created['run_id']}/draft-plan", {})
+                    draft = post(
+                        f"{app}/api/runs/{created['run_id']}/authorized-draft-plan",
+                        {"authorizations": ["mission_scoped_egress_consent", "deepseek_request_consent"], "dsh_call_id": "e2e-draft-001"},
+                    )
                     self.assertEqual(draft["trust_status"], "untrusted_draft")
                     approved = post(f"{app}/api/runs/e2e_live/approve-plan", {"subquestions": ["conditions"], "queries": ["BiFeO3 phase stability"], "counter_queries": ["BiFeO3 contradictory phases"]})
                     self.assertEqual(approved["queries"], ["BiFeO3 phase stability"])
-                    result = post(f"{app}/api/runs/e2e_live/execute-query", {"query_index": 0, "counter": False})
+                    result = post(
+                        f"{app}/api/runs/e2e_live/authorized-execute-query",
+                        {"query_index": 0, "counter": False, "sources": ["sciverse"], "authorizations": ["mission_scoped_egress_consent", "metadata_provider_consent"], "dsh_call_id": "e2e-query-001"},
+                    )
                     self.assertEqual(result["candidates"][0]["document_id"], "fixture-paper")
                     with urlopen(f"{app}/api/runs/e2e_live/ui", timeout=3) as response:
                         bundle = response.read().decode("utf-8")

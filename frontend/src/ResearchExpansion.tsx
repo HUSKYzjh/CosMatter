@@ -10,8 +10,12 @@ import { gapCandidatesForEvidence } from "./gapLinking";
 import { gapEvidenceReferences } from "./gapEvidenceReferences";
 import { hasExecutedGapCounterevidenceBoundary } from "./gapBoundaryReadiness";
 import { isAuditableConditionContrast, researchExtensionReadiness } from "./researchExtensionReadiness";
+import { safeOperationFeedback } from "./importFeedback";
 import { researchExtensionNextAction } from "./researchExtensionNextAction";
-import { counterevidenceReadiness } from "./counterevidenceReadiness";
+import { counterevidenceReadiness, type CounterevidenceReadiness } from "./counterevidenceReadiness";
+import { ReadOnlyPreviewContext } from "./ReadOnlyPreviewContext";
+import { EvidenceMaturityPanel } from "./EvidenceMaturityPanel";
+import { ConditionNormalizationPanel } from "./ConditionNormalizationPanel";
 import { uiLanguage } from "./zh";
 
 type View = "discover" | "workflow" | "graph" | "reader" | "horizon";
@@ -91,18 +95,18 @@ function ConditionComparisonBoard(props: { bundle: ImportedBundle; evidenceId: s
   const renderEvidenceLinks = (evidenceIds: readonly string[]) => <Show when={evidenceIds.length} fallback={<span>{tr("未登记", "not recorded")}</span>}><For each={evidenceLinks(evidenceIds)}>{(link) => link.evidence && props.onFocusEvidence ? <button type="button" class="condition-evidence-link" onClick={() => props.onFocusEvidence?.(link.evidence!)}><strong>{link.evidence.evidenceId}</strong><span>{link.evidence.provenance.documentId} · {link.evidence.provenance.locator}</span></button> : <span class="condition-evidence-missing">{link.evidenceId}{tr("（当前工件缺失）", " (missing from current artifacts)")}</span>}</For></Show>;
   return <section class="condition-comparison-board">
     <header><div><small>{tr("已导入条件比较", "IMPORTED CONDITION COMPARISON")}</small><h2>{tr("条件矩阵不是结论，而是比较边界", "The condition matrix is a comparison boundary, not a conclusion")}</h2><p>{tr("它仅列出已登记的证据 ID、差异字段和未知项；缺失字段不会被系统补写。", "It lists only recorded evidence IDs, differing fields, and unknowns; the system does not fill missing fields.")}</p></div><span>{props.bundle.conditionMatrix.length}</span></header>
-    <div class="condition-cluster-tabs" role="list" aria-label={tr("条件簇", "Condition clusters")}><For each={props.bundle.conditionMatrix}>{(row) => <button type="button" role="listitem" classList={{ active: row.conditionCluster === current()?.conditionCluster }} onClick={() => setSelectedCluster(row.conditionCluster)}>{row.conditionCluster}</button>}</For></div>
+    <div class="condition-cluster-tabs" role="group" aria-label={tr("条件簇", "Condition clusters")}><For each={props.bundle.conditionMatrix}>{(row) => <button type="button" classList={{ active: row.conditionCluster === current()?.conditionCluster }} onClick={() => setSelectedCluster(row.conditionCluster)}>{row.conditionCluster}</button>}</For></div>
     <Show when={current()}>{(row) => <><dl class="condition-cluster-detail"><div><dt>{tr("支持侧证据", "supporting evidence")}</dt><dd class="condition-evidence-links">{renderEvidenceLinks(row().supportingEvidenceIds)}</dd></div><div><dt>{tr("矛盾侧证据", "contradicting evidence")}</dt><dd class="condition-evidence-links">{renderEvidenceLinks(row().contradictingEvidenceIds)}</dd></div><div><dt>{tr("差异字段", "differing fields")}</dt><dd>{row().differingFields.join("；") || tr("未登记", "not recorded")}</dd></div><div><dt>{tr("未知项", "unknowns")}</dt><dd>{row().unknowns.join("；") || tr("未登记", "not recorded")}</dd></div></dl><p class="condition-current-evidence">{roleCopy()}</p><p classList={{ "condition-comparison-ready": currentAuditable() && currentIncludesEvidence(), "condition-comparison-pending": !currentAuditable() || !currentIncludesEvidence() }}>{currentAuditable() && currentIncludesEvidence() ? tr("该条件簇已显式连接当前 EvidenceCard 与不同文献的相反已接受证据，并记录了差异字段；它可用于受控比较，但不是科学结论。", "This cluster explicitly links the current EvidenceCard with accepted opposing evidence from different papers and records differing fields. It can support controlled comparison, not a scientific conclusion.") : currentAuditable() ? tr("该条件簇本身可用于受控比较，但当前 EvidenceCard 未被该行引用；请选择对应证据或返回星图核对关联。", "This cluster can support controlled comparison, but it does not cite the current EvidenceCard. Select the linked evidence or return to the map to inspect the relation.") : tr("该条件簇尚未构成可追溯对照：需连接不同文献的相反已接受证据，并记录至少一个差异字段。", "This cluster is not yet an auditable contrast: it must link accepted opposing evidence from different papers and record at least one differing field.")}</p></>}</Show>
   </section>;
 }
-function CandidateCard(props: { candidate: ResearchGapCandidate; index: number; marked: boolean; evidenceCards: readonly EvidenceCard[]; onMark: () => void; onReturnToGraph: () => void; onFocusEvidence: (evidence: EvidenceCard) => void }) {
+function CandidateCard(props: { candidate: ResearchGapCandidate; counterevidence: CounterevidenceReadiness; index: number; marked: boolean; evidenceCards: readonly EvidenceCard[]; onMark: () => void; onReturnToGraph: () => void; onFocusEvidence: (evidence: EvidenceCard) => void }) {
   const candidate = props.candidate;
-  const boundaryReady = hasExecutedGapCounterevidenceBoundary(candidate);
+  const boundaryReady = hasExecutedGapCounterevidenceBoundary(candidate, props.counterevidence);
   const references = () => gapEvidenceReferences(candidate, props.evidenceCards);
   return <article class="gap-candidate"><header><span>{String(props.index + 1).padStart(2, "0")}</span><small>{boundaryReady ? tr("待人工复核候选 · 反例边界已登记", "Candidate pending human review · counterevidence boundary recorded") : tr("待人工复核候选 · 缺少可核验反例边界", "Candidate pending human review · counterevidence boundary unavailable")}</small></header><h2>{candidate.problemDescription}</h2><dl class="gap-evidence-fields"><div><dt>{tr("问题")}</dt><dd>{candidate.problemDescription}</dd></div><div><dt>{tr("支撑证据")}</dt><dd class="gap-evidence-links"><Show when={references().linked.length} fallback={<span>{tr("未提供")}</span>}><For each={references().linked}>{(evidence) => <button type="button" onClick={() => props.onFocusEvidence(evidence)}><strong>{evidence.evidenceId}</strong><span>{evidence.provenance.documentId} · {evidence.provenance.locator} · {evidence.stance}</span></button>}</For></Show><Show when={references().missingIds.length}><small>{tr(`以下证据 ID 未出现在当前导入工件中：${references().missingIds.join(", ")}。`, `These evidence IDs are missing from the current imported artifacts: ${references().missingIds.join(", ")}.`)}</small></Show></dd></div><div><dt>{tr("缺失或冲突")}</dt><dd>{candidate.conflictOrMissingEvidence.join("；") || tr("未提供")}</dd></div><div><dt>{tr("可证伪假设")}</dt><dd>{candidate.falsifiableHypothesis}</dd></div><div><dt>{tr("建议验证")}</dt><dd>{candidate.suggestedValidation.join("；")}</dd></div><div><dt>{tr("人工审核状态")}</dt><dd>{candidate.reviewStatus.replaceAll("_", " ")}</dd></div></dl><footer><span>{tr("证据完整度")}: {Math.round(candidate.evidenceCompleteness * 100)}% · {candidate.noveltyStatus} · {candidate.actionability}</span><div class="gap-candidate-actions"><button type="button" onClick={props.onReturnToGraph}>{tr("返回星图补文献", "Return to map")}</button><button type="button" classList={{ marked: props.marked }} onClick={props.onMark}>{props.marked ? tr("已标记人工复核") : tr("标记人工复核")}</button></div></footer></article>;
 }
 
-export function ResearchExpansion(props: { bundle: ImportedBundle; session: ResearchSession; onNavigate: (view: View) => void; onFocusEvidence?: (evidence: EvidenceCard) => void; onOpenTaskControl?: () => void; onBuildConditionMatrix?: () => Promise<void>; onBuildGapCandidates?: () => Promise<void> }) {
+export function ResearchExpansion(props: { bundle: ImportedBundle; session: ResearchSession; onNavigate: (view: View) => void; onFocusEvidence?: (evidence: EvidenceCard) => void; onOpenTaskControl?: () => void; onBuildConditionMatrix?: () => Promise<void>; onBuildGapCandidates?: () => Promise<void>; readOnlyPreview?: boolean; onExitPreview?: () => void }) {
   const [marked, setMarked] = createSignal<string | null>(null);
   const [actionBusy, setActionBusy] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -113,7 +117,7 @@ export function ResearchExpansion(props: { bundle: ImportedBundle; session: Rese
     try {
       await action();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : tr("当前工件尚不满足此操作的前置条件。", "The current artifacts do not satisfy this action's prerequisites."));
+      setActionError(safeOperationFeedback(error, tr("当前工件尚不满足此操作的前置条件。", "The current artifacts do not satisfy this action's prerequisites.")));
     } finally {
       setActionBusy(false);
     }
@@ -121,10 +125,10 @@ export function ResearchExpansion(props: { bundle: ImportedBundle; session: Rese
   const gate = createMemo(() => evidenceGate(props.bundle, props.session));
   const evidence = createMemo(() => selectedEvidence(props.bundle, props.session));
   const candidates = () => props.bundle.researchGapCandidates;
-  const verifiedCandidateCount = createMemo(() => candidates().filter(hasExecutedGapCounterevidenceBoundary).length);
+  const counterevidence = createMemo(() => counterevidenceReadiness(props.bundle));
+  const verifiedCandidateCount = createMemo(() => candidates().filter((candidate) => hasExecutedGapCounterevidenceBoundary(candidate, counterevidence())).length);
   const sessionCandidates = createMemo(() => gapCandidatesForEvidence(candidates(), evidence()));
   const comparison = createMemo(() => researchExtensionReadiness(props.bundle));
-  const counterevidence = createMemo(() => counterevidenceReadiness(props.bundle));
   const reason = createMemo(() => ({ paper: tr("尚未选择待核对论文。"), evidence: tr("尚未选择与当前论文关联的已接受 EvidenceCard。"), "source-link": tr("所选 EvidenceCard 没有与当前论文对应的已审核来源映射。"), locator: tr("所选 EvidenceCard 缺少来源定位。"), "source-map": tr("当前工件没有来源映射片段。"), "provenance-audit": tr("当前已接受 EvidenceCard 尚未全部通过精确来源映射审计。", "Accepted EvidenceCards have not all passed the exact source-map provenance audit.") }[gate().reason ?? "evidence"]));
   const evaluation = () => props.bundle.auditSummary.evaluation;
   const readiness = () => props.bundle.auditSummary.submissionReadiness;
@@ -144,11 +148,54 @@ export function ResearchExpansion(props: { bundle: ImportedBundle; session: Rese
     "gap-candidates": { title: tr("生成待人工复核的 Gap 候选", "Generate review-required Gap candidates"), detail: props.onBuildGapCandidates ? tr("已具备比较与反例边界；输出仍是待人工复核的候选，而非科学结论。", "Comparison and counterevidence boundaries are present. The output remains a human-review candidate, not a scientific conclusion.") : tr("已具备比较与反例边界，但当前页面未连接本地受控执行接口；不会在浏览器内生成候选。", "Comparison and counterevidence boundaries are present, but this page is not connected to a local controlled-execution interface; it will not generate candidates in the browser."), button: props.onBuildGapCandidates ? tr("生成待人工复核 Gap 候选", "Generate review-required Gap candidates") : tr("返回舰桥连接受控运行", "Return to bridge for controlled execution") },
     "review-candidates": { title: tr("复核当前 Gap 候选", "Review current Gap candidates"), detail: tr("现有候选将保留为待人工复核；可在下方逐项查看证据、冲突与可证伪假设。", "Existing candidates remain pending human review. Inspect their evidence, conflicts, and falsifiable hypotheses below."), button: "" },
   }[nextAction()]));
+  const evidenceConvoy = createMemo(() => [
+    {
+      id: "source",
+      target: gate().reason === "paper" ? "graph" as const : "reader" as const,
+      state: gate().ready ? "secured" : "awaiting",
+      label: tr("来源锁定", "SOURCE LOCK"),
+      value: gate().ready ? evidence()!.evidenceId : tr("待核对", "pending"),
+      detail: gate().ready ? `${evidence()!.provenance.documentId} · ${evidence()!.provenance.locator}` : reason(),
+    },
+    {
+      id: "contrast",
+      target: "graph" as const,
+      state: comparison().ready ? "secured" : comparison().acceptedEvidenceCount >= 2 ? "inbound" : "awaiting",
+      label: tr("相反证据", "OPPOSING EVIDENCE"),
+      value: `${comparison().supportingEvidenceCount} ↔ ${comparison().contradictingEvidenceCount}`,
+      detail: tr(`${comparison().distinctDocumentCount} 篇不同文献 · ${comparison().linkedConditionClusterCount}/${comparison().conditionClusterCount} 条可追溯条件簇`, `${comparison().distinctDocumentCount} distinct paper(s) · ${comparison().linkedConditionClusterCount}/${comparison().conditionClusterCount} auditable condition cluster(s)`),
+    },
+    {
+      id: "counter",
+      target: "workflow" as const,
+      state: counterevidence().ready ? "secured" : counterevidence().plannedQueryCount ? "inbound" : "awaiting",
+      label: tr("反例护航", "COUNTEREVIDENCE ESCORT"),
+      value: `${counterevidence().executedQueryCount}/${counterevidence().plannedQueryCount}`,
+      detail: counterevidence().ready ? tr("已执行的反例边界已登记", "Executed counterevidence boundary recorded") : counterevidence().nextAction,
+    },
+    {
+      id: "gap",
+      target: "horizon" as const,
+      state: verifiedCandidateCount() ? "inbound" : "awaiting",
+      label: tr("拓展候选", "HORIZON CANDIDATES"),
+      value: `${sessionCandidates().length}/${verifiedCandidateCount()}`,
+      detail: tr("当前证据关联 / 已核验边界", "linked to current evidence / verified boundary"),
+    },
+  ]);
 
   return <main class="discovery-stage expansion-stage">
     <FleetDecoration kind="horizon" state={fleetVisualState(props.bundle, "horizon")} />
     <header class="stage-header"><div><p class="stage-kicker">COSMATTER / {tr("研究拓展")}</p><h1>{tr("把条件矛盾保留为待核对候选")}</h1><p>{tr("研究缺口候选不是结论或推荐方向；只有人工审核后才能形成后续任务。", "Research Gap candidates are neither conclusions nor recommended directions; only human review can turn one into a follow-up task.")}</p></div></header>
+    <Show when={props.readOnlyPreview}><ReadOnlyPreviewContext locale={uiLanguage()} onExit={props.onExitPreview} /></Show>
+    <EvidenceMaturityPanel bundle={props.bundle} locale={uiLanguage()} />
+    <Show when={props.bundle.conditionNormalization}>{(normalization) => <ConditionNormalizationPanel normalization={normalization()} locale={uiLanguage()} onFocusEvidence={props.onFocusEvidence} evidenceCards={props.bundle.evidenceCards} />}</Show>
     <section class="evidence-session expansion-gate"><div><small>{tr("当前证据门禁")}</small><strong>{gate().ready ? tr("已选择带来源定位的已接受 EvidenceCard") : tr("研究拓展尚未解锁")}</strong><span>{gate().ready ? `${evidence()!.evidenceId} · ${evidence()!.provenance.documentId} · ${evidence()!.provenance.locator}` : reason()}</span></div><button type="button" onClick={() => props.onNavigate(gate().reason === "paper" ? "graph" : "reader")}>{gate().reason === "paper" ? tr("返回文献星图") : tr("返回证据核对")}</button></section>
+    <section class="evidence-convoy" aria-label={tr("证据护航线", "Evidence convoy")}>
+      <header><small>{tr("舰队航迹 / 可审计交接", "FLEET VECTOR / AUDITABLE HANDOFF")}</small><span>{tr("仅投影已登记状态；点击舰位回到对应核对入口。", "Projects recorded status only; select a station to return to its review entry.")}</span></header>
+      <div class="evidence-convoy-track">
+        <For each={evidenceConvoy()}>{(station, index) => <button type="button" class={`convoy-station state-${station.state}`} onClick={() => props.onNavigate(station.target)}><span class="convoy-index">{String(index() + 1).padStart(2, "0")}</span><span class="convoy-ship" aria-hidden="true" /><span class="convoy-label">{station.label}</span><strong>{station.value}</strong><small>{station.detail}</small></button>}</For>
+      </div>
+    </section>
     <Show when={gate().ready} fallback={<section class="gap-empty"><h2>{tr("尚不能把候选作为后续研究方向")}</h2><p>{tr("请补齐当前会话的论文选择、已接受 EvidenceCard 和来源定位；本页不会以全局计数替代当前审计链路。")}</p></section>}>
       <section class="expansion-brief"><span>{tr("条件未知项")} <strong>{props.bundle.conditionMatrix.flatMap((row) => row.unknowns).length}</strong></span><span>{tr("已核验边界的 Gap 候选", "Gap candidates with verified boundaries")} <strong>{verifiedCandidateCount()}/{candidates().length}</strong></span><span>{tr("当前证据关联候选")} <strong>{sessionCandidates().length}</strong></span><span>{tr("当前证据")} <strong>{evidence()!.evidenceId}</strong></span></section>
       <section class="comparison-readiness" aria-live="polite">
@@ -176,7 +223,7 @@ export function ResearchExpansion(props: { bundle: ImportedBundle; session: Rese
         <Show when={actionError()}>{(message) => <p class="comparison-action-error" role="alert">{tr("未生成新工件：", "No new artifact was generated: ")}{message()}</p>}</Show>
       </section>
       <Show when={props.bundle.conditionMatrix.length}><ConditionComparisonBoard bundle={props.bundle} evidenceId={evidence()!.evidenceId} onFocusEvidence={props.onFocusEvidence} /></Show>
-      <Show when={sessionCandidates().length} fallback={<section class="gap-empty"><h2>{tr("当前证据尚无关联 Gap 候选")}</h2><p>{tr("这不代表没有研究缺口，只表示当前选中的 EvidenceCard 尚未被任何导入候选显式引用。")}</p></section>}><section class="proposal-grid gap-candidate-grid"><For each={sessionCandidates()}>{(candidate, index) => <CandidateCard candidate={candidate} index={index()} marked={marked() === candidate.gapId} evidenceCards={props.bundle.evidenceCards} onMark={() => setMarked(marked() === candidate.gapId ? null : candidate.gapId)} onReturnToGraph={() => props.onNavigate("graph")} onFocusEvidence={(item) => props.onFocusEvidence?.(item)} />}</For></section></Show>
+      <Show when={sessionCandidates().length} fallback={<section class="gap-empty"><h2>{tr("当前证据尚无关联 Gap 候选")}</h2><p>{tr("这不代表没有研究缺口，只表示当前选中的 EvidenceCard 尚未被任何导入候选显式引用。")}</p></section>}><section class="proposal-grid gap-candidate-grid"><For each={sessionCandidates()}>{(candidate, index) => <CandidateCard candidate={candidate} counterevidence={counterevidence()} index={index()} marked={marked() === candidate.gapId} evidenceCards={props.bundle.evidenceCards} onMark={() => setMarked(marked() === candidate.gapId ? null : candidate.gapId)} onReturnToGraph={() => props.onNavigate("graph")} onFocusEvidence={(item) => props.onFocusEvidence?.(item)} />}</For></section></Show>
       <details class="audit-details">
         <summary>{tr("审计与评测")}</summary>
         <p>{tr("以下指标只反映导入工件中的已记录评测；没有记录时不显示为系统性能。")}</p>

@@ -9,6 +9,7 @@ import type { ImportedBundle, Mission } from "./model";
 export function emptyBundleForMission(mission: Mission): ImportedBundle {
   return {
     schemaVersion: "1.0",
+    generatedAt: null,
     mission,
     source: "local-file",
     fleet: null,
@@ -21,6 +22,8 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
     materialFacts: null,
     sourceMapSummary: { documentCount: 0, segmentCount: 0, documentIds: [] },
     materialFactSummary: { documentCount: 0, factCount: 0 },
+    evidenceMaturityRegistry: null,
+    evidenceMaturityRegistryStatus: "not_supplied",
     auditSummary: {
       counterevidence: { state: "plan_not_approved", plannedQueryCount: 0, executedQueryCount: 0 },
       reportEvidence: null,
@@ -32,6 +35,8 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
     timeline: [],
     literatureRelations: null,
     crossrefRelations: null,
+    relationReconciliation: null,
+    conditionNormalization: null,
     literatureGraph: {
       trustStatus: "mission_marker_only_no_literature_has_been_imported",
       nodes: [{ nodeId: `mission:${mission.missionId}`, kind: "mission", label: `${mission.material} / ${mission.property}`, trustStatus: "mission_navigation" }],

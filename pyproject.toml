@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Evidence-first materials-literature navigation agent"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["sciverse==0.7.1", "certifi>=2024.8.30"]
 
 [project.optional-dependencies]
 scibase = ["pyarrow"]

@@ -1,0 +1,39 @@
+import { normalizeConfig } from './config.js';
+const runId = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const decisionNames = new Set(['include_for_fulltext', 'exclude', 'needs_metadata_review']);
+const reasonNames = new Set(['material_match', 'property_match', 'scope_match', 'method_match', 'primary_evidence', 'counterevidence', 'out_of_scope_material', 'out_of_scope_property', 'review_or_protocol', 'duplicate_or_version', 'not_enough_metadata']);
+export class CosMatterReviewClient {
+    request;
+    config;
+    constructor(config = {}, request = fetch) {
+        this.request = request;
+        this.config = normalizeConfig(config);
+    }
+    async template(runIdValue, signal) { if (!runId.test(runIdValue))
+        throw new Error('run_id is invalid'); const value = await this.fetchJson(new URL(`/api/runs/${encodeURIComponent(runIdValue)}/candidate-screening`, this.config.baseUrl), { method: 'GET', headers: { Accept: 'application/json' }, signal }); if (!isObject(value) || value.run_id !== runIdValue || !Number.isInteger(value.candidate_count) || typeof value.candidate_count !== 'number' || value.candidate_count < 1 || value.candidate_count > 250 || !Array.isArray(value.candidates) || value.candidates.length !== value.candidate_count || !value.candidates.every(safeCandidate) || !Array.isArray(value.decisions) || value.decisions.length !== value.candidate_count || !value.decisions.every(safeTemplateDecision) || typeof value.trust_status !== 'string')
+        throw new Error('CosMatter screening template is invalid'); return value; }
+    async record(runIdValue, decisions, signal) { if (!runId.test(runIdValue) || !Array.isArray(decisions) || !decisions.length || decisions.length > 250 || !decisions.every(safeDecision) || new Set(decisions.map(item => item.document_id)).size !== decisions.length)
+        throw new Error('candidate screening review is invalid'); const value = await this.fetchJson(new URL(`/api/runs/${encodeURIComponent(runIdValue)}/candidate-screening`, this.config.baseUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ decisions }), signal }); if (!isObject(value) || value.run_id !== runIdValue || typeof value.candidate_count !== 'number' || !Number.isInteger(value.candidate_count) || !safeCounts(value.decision_counts) || value.trust_status !== 'human_reviewed_candidate_screening_not_scientific_evidence')
+        throw new Error('CosMatter screening record response is invalid'); return value; }
+    async fetchJson(url, init) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.config.timeoutMs); const outer = init.signal; const abort = () => controller.abort(); outer?.addEventListener('abort', abort, { once: true }); try {
+        const response = await this.request(url, { ...init, signal: controller.signal });
+        if (!response.ok)
+            throw new Error(`CosMatter screening request failed with HTTP ${response.status}`);
+        const declared = Number(response.headers.get('content-length') ?? 0);
+        if (declared > this.config.maxResponseBytes)
+            throw new Error('CosMatter screening response exceeds configured size');
+        const text = await response.text();
+        if (new TextEncoder().encode(text).byteLength > this.config.maxResponseBytes)
+            throw new Error('CosMatter screening response exceeds configured size');
+        return JSON.parse(text);
+    }
+    finally {
+        clearTimeout(timer);
+        outer?.removeEventListener('abort', abort);
+    } }
+}
+function safeCandidate(value) { return isObject(value) && Object.keys(value).every(key => ['document_id', 'title', 'source', 'publication_year'].includes(key)) && typeof value.document_id === 'string' && value.document_id.length <= 255 && typeof value.title === 'string' && value.title.length <= 500 && typeof value.source === 'string' && value.source.length <= 120 && (value.publication_year === null || value.publication_year === undefined || (typeof value.publication_year === 'number' && Number.isInteger(value.publication_year))); }
+function safeTemplateDecision(value) { return isObject(value) && Object.keys(value).length === 3 && typeof value.document_id === 'string' && value.decision === 'unreviewed' && Array.isArray(value.reason_codes) && value.reason_codes.length === 0; }
+function safeDecision(value) { return isObject(value) && Object.keys(value).length === 3 && typeof value.document_id === 'string' && value.document_id.length > 0 && value.document_id.length <= 255 && typeof value.decision === 'string' && decisionNames.has(value.decision) && Array.isArray(value.reason_codes) && value.reason_codes.length > 0 && value.reason_codes.length <= 6 && value.reason_codes.every(code => typeof code === 'string' && reasonNames.has(code)) && new Set(value.reason_codes).size === value.reason_codes.length; }
+function safeCounts(value) { return isObject(value) && Object.entries(value).every(([key, count]) => decisionNames.has(key) && typeof count === 'number' && Number.isInteger(count) && count >= 0 && count <= 250); }
+function isObject(value) { return !!value && typeof value === 'object' && !Array.isArray(value); }

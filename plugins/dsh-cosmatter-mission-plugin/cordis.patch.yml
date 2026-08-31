@@ -1,0 +1,6 @@
+- insert:
+    - id: cosmatter-mission
+      name: '@cosmatter/dsh-mission-plugin'
+      config:
+        baseUrl: http://127.0.0.1:8765
+        timeoutMs: 5000

@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "snapshot_id": "dsh-public-plugin-research-2026-08-29",
+  "generated_on": "2026-08-29",
+  "trust_status": "untrusted_public_plugin_discovery_not_install_authorization_or_scientific_evidence",
+  "review_status": "human_reviewed_discovery_snapshot",
+  "candidates": [
+    {"candidate_id": "dsh-plugin-reducer", "category": "diagnostic", "source_url": "https://github.com/ArmyWas/dsh-plugin-reducer", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "dsh-academic-research", "category": "literature_metadata", "source_url": "https://github.com/userInner/dsh-academic-research", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "dsh-pdf", "category": "local_pdf", "source_url": "https://github.com/sunshine-lang/dsh-pdf", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "mindspace-dsh-local-rag", "category": "local_retrieval", "source_url": "https://github.com/Spirtxiaoqi7/mindspace-dsh-local-rag", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "awesome-dsh-plugins", "category": "immutable_commit_catalogue", "source_url": "https://github.com/coolbat/awesome-dsh-plugins", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "dsh-testsuite", "category": "isolated_runtime_test_lab", "source_url": "https://github.com/cocofhu/dsh-testsuite", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "dsh-plugin-radar", "category": "automated_ecosystem_discovery", "source_url": "https://github.com/AdamPlatin123/dsh-plugin-radar", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "dsh-applications", "category": "governed_release_artifacts", "source_url": "https://github.com/sympoies/dsh-applications", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "dsh-omni-router", "category": "task_reliability_contract", "source_url": "https://github.com/qwe225380/dsh-omni-router", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "math-research-dsh", "category": "formal_research_workflow", "source_url": "https://github.com/xsoc1/math-research-dsh", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "kunpeng-smartbreed", "category": "domain_research_workbench", "source_url": "https://github.com/LIYIN2/kunpeng-smartbreed", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"},
+    {"candidate_id": "dsh-web-search-free", "category": "public_web_search", "source_url": "https://github.com/sheep-programmer/dsh-web-search-free", "observed_ref": "unversioned_public_discovery", "status": "untrusted_discovery_only"}
+  ]
+}

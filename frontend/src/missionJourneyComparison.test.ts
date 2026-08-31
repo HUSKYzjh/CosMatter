@@ -47,4 +47,18 @@ describe("missionJourney counterevidence completion", () => {
     };
     expect(missionJourney(bundle, bundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: true }).find((stage) => stage.id === "extend")?.state).toBe("complete");
   });
+
+  it("does not complete extension from a candidate whose boundary belongs to a different counterevidence summary", () => {
+    const evidence = [card("ev-1", "support"), card("ev-2", "contradict")];
+    const bundle = {
+      ...demoBundle,
+      evidenceCards: evidence,
+      literatureGraph: graphFor(evidence),
+      sourceMapSummary: { documentCount: 2, segmentCount: 2, documentIds: [] },
+      conditionMatrix: [{ conditionCluster: "cluster", supportingEvidenceIds: ["ev-1"], contradictingEvidenceIds: ["ev-2"], differingFields: ["substrate"], unknowns: [] }],
+      researchGapCandidates: [candidate],
+      auditSummary: { ...demoBundle.auditSummary, evidenceProvenance: { acceptedEvidenceCount: 2, exactSourceMapMatchCount: 2, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 }, counterevidence: { state: "ready" as const, plannedQueryCount: 2, executedQueryCount: 2 } },
+    };
+    expect(missionJourney(bundle, bundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: true }).find((stage) => stage.id === "extend")?.state).toBe("ready");
+  });
 });

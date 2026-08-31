@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cosmatter.source_map import SourceMapError, source_map_document_path, source_map_from_review, write_source_map, write_source_map_for_document
+from cosmatter.source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, SourceMapError, source_map_document_path, source_map_from_review, write_source_map, write_source_map_for_document
 
 
 def completed_task() -> dict[str, str]:
@@ -44,6 +44,16 @@ class SourceMapTests(unittest.TestCase):
             source_map_from_review(
                 mission_id="mission_1", document_id="doc_1", source_task=completed_task(), selection=selection("x" * 501)
             )
+
+    def test_delegated_automated_trial_source_map_is_explicitly_labelled(self) -> None:
+        result = source_map_from_review(
+            mission_id="mission_1",
+            document_id="doc_1",
+            source_task=completed_task(),
+            selection=selection(),
+            trust_status=AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS,
+        )
+        self.assertEqual(result["trust_status"], AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS)
 
 
     def test_document_scoped_writes_do_not_replace_another_document(self) -> None:

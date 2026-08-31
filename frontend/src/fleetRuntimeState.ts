@@ -1,4 +1,4 @@
-import { FLEETS, type FleetRecord, type FleetStatus } from "./fleetRegistry";
+import { FLEETS, type FleetRecord, type FleetStatus, type UiLocale } from "./fleetRegistry";
 import type { ImportedBundle } from "./model";
 
 const PARTICIPANT_FLEETS: Record<string, readonly string[]> = {
@@ -40,6 +40,18 @@ export function fleetRuntimeStatus(fleet: FleetRecord, bundle: ImportedBundle): 
   const active: Record<string, readonly string[]> = { pioneer: ["INTAKE", "NEED_SCOPE"], observatory: ["PLAN", "RETRIEVE", "SELECT", "EXTRACT"], constellation: ["MAP"], diagnostics: ["HAZARD_SCAN"], sentinel: ["VERIFY", "HUMAN_REVIEW"], horizon: ["REPORT"] };
   if (active[fleet.id]?.includes(state)) return fleet.id === "sentinel" && state === "HUMAN_REVIEW" ? "waiting_approval" : "active";
   return fleet.status === "active" ? "ready" : fleet.status;
+}
+
+/**
+ * `active` is a stage-assignment projection, not proof that a provider, tool,
+ * or sub-agent is executing.  The bridge uses this label while the catalogue
+ * keeps its separate capability labels.
+ */
+export function fleetRuntimeLabel(status: FleetStatus, locale: UiLocale): string {
+  if (status === "active") return locale === "zh" ? "当前编排" : "In current stage";
+  if (status === "ready") return locale === "zh" ? "就绪" : "Ready";
+  if (status === "waiting_approval") return locale === "zh" ? "等待批准" : "Awaiting approval";
+  return locale === "zh" ? "仅框架" : "Framework only";
 }
 
 /** Keep the bridge focused on the stage-relevant fleet(s), not every installed capability. */

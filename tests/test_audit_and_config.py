@@ -19,12 +19,21 @@ class AuditAndConfigTests(unittest.TestCase):
                 "DEEPSEEK_API_KEY": "another-secret",
                 "LLM_PROVIDER": "deepseek",
                 "LLM_MODEL": "example",
+                "LLM_BASE_URL": "https://private-model.invalid",
+                "MINERU_BASE_URL": "https://private-parser.invalid",
             }
         )
-        status = json.dumps(settings.status())
+        payload = settings.status()
+        status = json.dumps(payload)
         self.assertTrue(settings.sciverse_configured)
         self.assertNotIn(secret, status)
         self.assertNotIn("another-secret", status)
+        self.assertNotIn("private-model.invalid", status)
+        self.assertNotIn("private-parser.invalid", status)
+        self.assertEqual(
+            set(payload),
+            {"deepseek_configured", "sciverse_configured", "mineru_configured", "openalex_configured", "crossref_polite_contact_configured"},
+        )
 
     def test_default_config_reads_only_the_protected_workspace_env(self) -> None:
         with patch("cosmatter.config._read_dotenv", return_value={}) as dotenv_reader:

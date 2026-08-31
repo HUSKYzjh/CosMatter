@@ -56,7 +56,7 @@ class ProviderReceiptTests(unittest.TestCase):
             "tasks": [{
                 "document_id": "doc_1",
                 "source_url_sha256": source_hash,
-                "task_id": task_id,
+                "task_id": hashlib.sha256(task_id.encode("utf-8")).hexdigest(),
                 "state": "pending",
                 "model_version": "vlm",
             }],
@@ -84,7 +84,7 @@ class ProviderReceiptTests(unittest.TestCase):
             "tasks": [{
                 "document_id": "doc_1",
                 "source_url_sha256": source_hash,
-                "task_id": "task_1",
+                "task_id": hashlib.sha256(b"task_1").hexdigest(),
                 "state": "done",
                 "model_version": "vlm",
             }],

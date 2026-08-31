@@ -54,7 +54,7 @@ def prepare_mineru_markdown_review_pool(
         "mission_id": mission_id.strip(),
         "document_id": document_id,
         "trust_status": "private_unreviewed_mineru_markdown_candidate_pool_not_source_map",
-        "task_id_sha256": hashlib.sha256(source_task["task_id"].encode("utf-8")).hexdigest(),
+        "task_id_sha256": _task_digest(source_task["task_id"]),
         "source_markdown_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
         "candidate_segments": candidates,
         "review_instructions": (
@@ -198,20 +198,26 @@ def load_mineru_markdown_review_pool(
     _validate_completed_task(source_task, document_id)
     if payload["mission_id"] != mission_id or payload["document_id"] != document_id:
         raise MinerULocalReviewError("private MinerU review pool belongs to a different mission or document")
-    task_digest = hashlib.sha256(source_task["task_id"].encode("utf-8")).hexdigest()
+    task_digest = _task_digest(source_task["task_id"])
     if payload["task_id_sha256"] != task_digest:
         raise MinerULocalReviewError("private MinerU review pool does not match the recorded parse task")
     return payload
 
 
-def source_map_pool_review_template(pool: object) -> dict[str, Any]:
+def _task_digest(task_id: str) -> str:
+    if len(task_id) == 64 and all(character in "0123456789abcdef" for character in task_id):
+        return task_id
+    return hashlib.sha256(task_id.encode("utf-8")).hexdigest()
+
+
+def source_map_pool_review_template(pool: object, *, delegated_automated_trial: bool = False) -> dict[str, Any]:
     """Create an excerpt-free selection template tied to every pool candidate."""
     _validate_pool(pool)
     return {
         "schema_version": SOURCE_MAP_POOL_REVIEW_TEMPLATE_SCHEMA_VERSION,
         "mission_id": pool["mission_id"],
         "document_id": pool["document_id"],
-        "trust_status": "blank_human_source_map_pool_selection_template",
+        "trust_status": "blank_delegated_automated_trial_source_map_pool_selection_template" if delegated_automated_trial else "blank_human_source_map_pool_selection_template",
         "source_markdown_sha256": pool["source_markdown_sha256"],
         "task_id_sha256": pool["task_id_sha256"],
         "segments": [
@@ -226,24 +232,34 @@ def source_map_pool_review_template(pool: object) -> dict[str, Any]:
     }
 
 
-def write_source_map_pool_review_template(path: Path, template: object) -> Path:
-    _validate_pool_review_template(template, allow_blank=True)
+def write_source_map_pool_review_template(path: Path, template: object, *, delegated_automated_trial: bool = False) -> Path:
+    _validate_pool_review_template(template, allow_blank=True, delegated_automated_trial=delegated_automated_trial)
+    return _write_pool_review(path, template)
+
+
+def write_source_map_pool_review_selection(path: Path, selection: object, *, delegated_automated_trial: bool = False) -> Path:
+    """Write a completed, hash-bound pool selection without treating it as blank."""
+    _validate_pool_review_template(selection, allow_blank=False, delegated_automated_trial=delegated_automated_trial)
+    return _write_pool_review(path, selection)
+
+
+def _write_pool_review(path: Path, payload: object) -> Path:
     if path.suffix.casefold() != ".json":
         raise MinerULocalReviewError("source-map pool review template must use a .json filename")
     if path.exists():
         raise MinerULocalReviewError("source-map pool review template already exists and will not be overwritten")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(template, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     except OSError as error:
         raise MinerULocalReviewError("source-map pool review template cannot be written") from error
     return path
 
 
-def source_map_selection_from_pool_review(*, pool: object, review: object) -> tuple[dict[str, Any], str]:
+def source_map_selection_from_pool_review(*, pool: object, review: object, delegated_automated_trial: bool = False) -> tuple[dict[str, Any], str]:
     """Resolve selected reviewer IDs to exact pool snippets after all hashes match."""
     _validate_pool(pool)
-    _validate_pool_review_template(review, allow_blank=False)
+    _validate_pool_review_template(review, allow_blank=False, delegated_automated_trial=delegated_automated_trial)
     if any(review[key] != pool[key] for key in ("mission_id", "document_id", "source_markdown_sha256", "task_id_sha256")):
         raise MinerULocalReviewError("source-map pool review does not match the private candidate pool")
     candidates = {item["segment_id"]: item for item in pool["candidate_segments"]}
@@ -257,7 +273,7 @@ def source_map_selection_from_pool_review(*, pool: object, review: object) -> tu
         if item["quote_sha256"] != expected_hashes.get(item["segment_id"]):
             raise MinerULocalReviewError("source-map pool review candidate fingerprint does not match")
         if item["selected"] and not item["reason"].strip():
-            raise MinerULocalReviewError("selected source-map pool segments require a human review reason")
+            raise MinerULocalReviewError("selected source-map pool segments require a review reason")
     return (
         {
             "document_id": pool["document_id"],
@@ -275,12 +291,20 @@ def source_map_selection_from_pool_review(*, pool: object, review: object) -> tu
     )
 
 
-def _validate_pool_review_template(payload: object, *, allow_blank: bool) -> None:
+def _validate_pool_review_template(payload: object, *, allow_blank: bool, delegated_automated_trial: bool = False) -> None:
     expected = {"schema_version", "mission_id", "document_id", "trust_status", "source_markdown_sha256", "task_id_sha256", "segments"}
     fields = {"segment_id", "quote_sha256", "selected", "reason"}
     if not isinstance(payload, dict) or set(payload) != expected:
         raise MinerULocalReviewError("source-map pool review has unsupported or missing fields")
-    status = "blank_human_source_map_pool_selection_template" if allow_blank else "human_reviewed_source_map_pool_selection"
+    status = (
+        "blank_delegated_automated_trial_source_map_pool_selection_template"
+        if allow_blank and delegated_automated_trial
+        else "delegated_automated_trial_source_map_pool_selection"
+        if delegated_automated_trial
+        else "blank_human_source_map_pool_selection_template"
+        if allow_blank
+        else "human_reviewed_source_map_pool_selection"
+    )
     if payload.get("schema_version") != SOURCE_MAP_POOL_REVIEW_TEMPLATE_SCHEMA_VERSION or payload.get("trust_status") != status:
         raise MinerULocalReviewError("source-map pool review schema or trust status is invalid")
     if not all(isinstance(payload.get(key), str) and payload[key].strip() for key in ("mission_id", "document_id", "source_markdown_sha256", "task_id_sha256")):

@@ -1,0 +1,19 @@
+@prefix cmg: <https://cosmatter.local/graph#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+cmg:GraphSnapshotShape a sh:NodeShape ;
+  sh:targetClass cmg:GraphSnapshot ;
+  sh:property [ sh:path cmg:schemaVersion ; sh:hasValue "1.0" ] ;
+  sh:property [ sh:path cmg:trustStatus ; sh:hasValue "accepted_evidence_projection_not_scientific_conclusion" ] ;
+  sh:property [ sh:path cmg:hasNode ; sh:minCount 2 ] .
+
+cmg:EvidenceNodeShape a sh:NodeShape ;
+  sh:targetClass cmg:EvidenceCard ;
+  sh:property [ sh:path cmg:reviewStatus ; sh:hasValue "accepted" ] ;
+  sh:property [ sh:path cmg:claimDigest ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path cmg:provenanceDigest ; sh:minCount 1 ; sh:datatype xsd:string ] .
+
+cmg:GraphEdgeShape a sh:NodeShape ;
+  sh:targetClass cmg:GraphEdge ;
+  sh:property [ sh:path cmg:relation ; sh:in ("supports" "contradicts" "conditions" "mentions" "derived_from") ] .

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .candidate_screening import CandidateScreeningError, load_candidate_screening, screening_matches_candidates
+from .content_access import ContentAccessError, has_sciverse_content_access
 from .gap_analysis import GapAnalysisError, load_gap_candidates
 from .models import MissionBrief
 from .planning import PlanApprovalError, load_approved_flight_plan
@@ -46,12 +47,13 @@ def workflow_readiness(run_dir: Path, mission: MissionBrief) -> dict[str, Any]:
     gap_status = gap["status"] if gap["status"] == "blocked" else (
         "completed" if gap_count else ("ready" if fact_count and retrieval["status"] == "completed" else "blocked")
     )
+    parse_status = parse["status"] if parse["task_count"] else _next_parse_status(screening)
     stages = [
         _stage("intake", "completed", {"mission_artifact_count": 1}),
         _stage("plan", plan["status"], plan["counts"]),
         _stage("retrieval", retrieval["status"], retrieval["counts"]),
         _stage("screening", screening["status"], screening["counts"]),
-        _stage("parse", parse["status"] if parse["task_count"] else ("ready" if screening["status"] == "completed" else "blocked"), parse["counts"]),
+        _stage("parse", parse_status, parse["counts"]),
         _stage("extraction", "completed" if fact_count else ("waiting_human_review" if map_count else "blocked"), {"source_map_document_count": map_count, "fact_document_count": fact_count}),
         _stage("gap", gap_status, {**gap["counts"], "llm_draft_present": int((run_dir / "research_gap_draft.json").exists())}),
         _stage("report", report["status"] if report["status"] == "blocked" else ("completed" if report["status"] == "completed" else ("ready" if gap_status == "completed" else "blocked")), report["counts"]),
@@ -129,7 +131,62 @@ def _screening(run_dir: Path, mission: MissionBrief, retrieval: dict[str, Any]) 
         return {"status": "blocked", "counts": {"candidate_count": len(identifiers), "included_for_fulltext_count": 0, "candidate_fingerprint_current": 0}}
     if artifact is None or not screening_matches_candidates(artifact, payload):
         return {"status": "waiting_human_review", "counts": {"candidate_count": len(identifiers), "included_for_fulltext_count": 0, "candidate_fingerprint_current": 0}}
-    return {"status": "completed", "counts": {"candidate_count": len(identifiers), "included_for_fulltext_count": sum(item["decision"] == "include_for_fulltext" for item in artifact["decisions"]), "candidate_fingerprint_current": 1}}
+    included = {
+        item["document_id"]
+        for item in artifact["decisions"]
+        if item["decision"] == "include_for_fulltext"
+    }
+    upstream_accessible = {
+        item["document_id"]
+        for item in payload["candidates"]
+        if item["document_id"] in included and item.get("is_content_accessible") is True
+    }
+    try:
+        confirmed = {
+            document_id
+            for document_id in included - upstream_accessible
+            if has_sciverse_content_access(
+                run_dir,
+                mission_id=mission.mission_id,
+                candidate_payload=payload,
+                document_id=document_id,
+            )
+        }
+    except ContentAccessError:
+        return {
+            "status": "blocked",
+            "counts": {
+                "candidate_count": len(identifiers),
+                "included_for_fulltext_count": len(included),
+                "candidate_fingerprint_current": 1,
+                "upstream_content_accessible_count": len(upstream_accessible),
+                "confirmed_content_access_count": 0,
+                "fulltext_eligible_count": len(upstream_accessible),
+                "content_access_confirmation_valid": 0,
+            },
+        }
+    return {
+        "status": "completed",
+        "counts": {
+            "candidate_count": len(identifiers),
+            "included_for_fulltext_count": len(included),
+            "candidate_fingerprint_current": 1,
+            "upstream_content_accessible_count": len(upstream_accessible),
+            "confirmed_content_access_count": len(confirmed),
+            "fulltext_eligible_count": len(upstream_accessible | confirmed),
+            "content_access_confirmation_valid": 1,
+        },
+    }
+
+
+def _next_parse_status(screening: dict[str, Any]) -> str:
+    if screening["status"] != "completed":
+        return "blocked"
+    if screening["counts"].get("fulltext_eligible_count", 0):
+        return "ready"
+    if screening["counts"].get("included_for_fulltext_count", 0):
+        return "waiting_human_review"
+    return "blocked"
 
 
 def _candidate_history(path: Path) -> dict[str, Any] | None:

@@ -75,4 +75,16 @@ describe("ResearchSession evidence gate", () => {
     expect(evidenceGate({ ...reviewedBundle(), auditSummary: { ...reviewedBundle().auditSummary, evidenceProvenance: { acceptedEvidenceCount: 1, exactSourceMapMatchCount: 0, manualLocatorOnlyCount: 1, exactSourceMapMatchRate: 0 } } }, session)).toEqual({ ready: false, reason: "provenance-audit" });
   });
 
+  it("clears evidence and comparison focus when switching to another paper", () => {
+    const prior = { ...selectEvidence(selectPaper(emptyResearchSession(), paper), evidence), conditionCluster: "previous-cluster" };
+    const next = selectPaper(prior, { ...paper, nodeId: "paper:doc-2" });
+    expect(next).toMatchObject({ selectedNode: { nodeId: "paper:doc-2" }, evidenceId: null, documentId: null, conditionCluster: null });
+  });
+
+  it("does not let an exact audit for a stale subset unlock the selected card", () => {
+    const secondEvidence = { ...evidence, evidenceId: "ev-2", provenance: { ...evidence.provenance, documentId: "doc-2" } };
+    const session = selectEvidence(selectPaper(emptyResearchSession(), paper), evidence);
+    expect(evidenceGate({ ...reviewedBundle(), evidenceCards: [evidence, secondEvidence] }, session)).toEqual({ ready: false, reason: "provenance-audit" });
+  });
+
 });

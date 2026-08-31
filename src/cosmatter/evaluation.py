@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -18,6 +19,7 @@ class EvaluationError(ValueError):
 @dataclass(frozen=True)
 class EvaluationReport:
     fixture_id: str
+    fixture_sha256: str | None
     citation_precision: float
     condition_completeness: float
     contradiction_precision: float
@@ -28,7 +30,7 @@ class EvaluationReport:
     observed_differing_fields: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "fixture_id": self.fixture_id,
             "citation_precision": self.citation_precision,
             "condition_completeness": self.condition_completeness,
@@ -39,6 +41,9 @@ class EvaluationReport:
             "expected_differing_fields": list(self.expected_differing_fields),
             "observed_differing_fields": list(self.observed_differing_fields),
         }
+        if self.fixture_sha256 is not None:
+            payload["fixture_sha256"] = self.fixture_sha256
+        return payload
 
 
 def _precision(predicted: set[str], expected: set[str]) -> float:
@@ -54,6 +59,7 @@ def evaluate_route_diagnostics(
     expected_evidence_status: Mapping[str, str],
     expected_stances: Mapping[str, str],
     expected_differing_fields: tuple[str, ...],
+    fixture_sha256: str | None = None,
 ) -> EvaluationReport:
     """Evaluate deterministic gates against independently frozen expected labels.
 
@@ -64,6 +70,8 @@ def evaluate_route_diagnostics(
     """
     if not fixture_id.strip() or not mission_id.strip() or not cards:
         raise EvaluationError("fixture_id, mission_id, and cards are required")
+    if fixture_sha256 is not None and (len(fixture_sha256) != 64 or any(char not in "0123456789abcdef" for char in fixture_sha256)):
+        raise EvaluationError("fixture_sha256 must be a lowercase SHA-256 digest when supplied")
     card_ids = {card.evidence_id for card in cards}
     if len(card_ids) != len(cards):
         raise EvaluationError("evaluation cards must have unique evidence identifiers")
@@ -91,6 +99,7 @@ def evaluate_route_diagnostics(
     differing_matches = set(observed_differing) == set(expected_differing_fields)
     return EvaluationReport(
         fixture_id=fixture_id,
+        fixture_sha256=fixture_sha256,
         citation_precision=_precision(observed_accepted, expected_accepted),
         condition_completeness=explicit_conditions / condition_total if condition_total else 0.0,
         contradiction_precision=_precision(observed_contradictions, expected_contradictions),
@@ -105,7 +114,8 @@ def evaluate_route_diagnostics(
 def evaluate_frozen_route_fixture(path: Path, mission_id: str) -> EvaluationReport:
     """Load a synthetic route-diagnostics fixture without touching local papers."""
     try:
-        fixture = json.loads(path.read_text(encoding="utf-8"))
+        fixture_bytes = path.read_bytes()
+        fixture = json.loads(fixture_bytes.decode("utf-8"))
     except FileNotFoundError as error:
         raise EvaluationError(f"missing frozen fixture: {path}") from error
     except json.JSONDecodeError as error:
@@ -142,6 +152,7 @@ def evaluate_frozen_route_fixture(path: Path, mission_id: str) -> EvaluationRepo
             expected_evidence_status=fixture["expected_evidence_status"],
             expected_stances=fixture["expected_stances"],
             expected_differing_fields=tuple(str(item) for item in fixture["expected_differing_fields"]),
+            fixture_sha256=hashlib.sha256(fixture_bytes).hexdigest(),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise EvaluationError("frozen fixture has an invalid route-diagnostics shape") from error

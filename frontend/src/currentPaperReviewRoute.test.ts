@@ -28,14 +28,18 @@ function pdfTask(candidateDocumentId: string): PdfTaskStatus {
 
 describe("currentPaperReviewRoute", () => {
   it("requires a persisted include_for_fulltext decision for the current candidate", () => {
-    expect(screeningAllowsSourceReview(screening, "paper-a")).toBe(true);
-    expect(screeningAllowsSourceReview(screening, "paper-b")).toBe(false);
-    expect(screeningAllowsSourceReview(screening, "paper-missing")).toBe(false);
+    expect(screeningAllowsSourceReview(screening, "run-1", "paper-a")).toBe(true);
+    expect(screeningAllowsSourceReview(screening, "run-1", "paper-b")).toBe(false);
+    expect(screeningAllowsSourceReview(screening, "run-1", "paper-missing")).toBe(false);
   });
 
   it("does not treat an incomplete or untrusted screening record as an authorization", () => {
-    expect(screeningAllowsSourceReview({ ...screening, decisions: [] }, "paper-a")).toBe(false);
-    expect(screeningAllowsSourceReview({ ...screening, trust_status: "candidate_metadata_not_scientific_evidence" }, "paper-a")).toBe(false);
+    expect(screeningAllowsSourceReview({ ...screening, decisions: [] }, "run-1", "paper-a")).toBe(false);
+    expect(screeningAllowsSourceReview({ ...screening, trust_status: "candidate_metadata_not_scientific_evidence" }, "run-1", "paper-a")).toBe(false);
+  });
+
+  it("does not project another run's screening decision into the active reader", () => {
+    expect(screeningAllowsSourceReview(screening, "run-2", "paper-a")).toBe(false);
   });
 
   it("requires the completed private source map to belong to the selected paper", () => {

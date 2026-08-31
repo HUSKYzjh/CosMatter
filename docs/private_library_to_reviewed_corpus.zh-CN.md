@@ -2,7 +2,7 @@
 
 该流程把已获授权并私有解析的本地 Markdown 变为**人工可审核的候选清单**。它不是自动分类器，也不因为一篇文献已解析就将其视为 EvidenceCard、材料事实或评测样本。
 
-适用的当前库为 `03_Paper/MinerU_PrivateLibrary_20260818/private_library_catalog.json`：其中有 137 条解析完成的私有记录，两个来源组分别有 59 和 78 条；另有 1 个非 PDF 文件已跳过。所有数量只是目录盘点，不构成 BiFeO3 语料或实验结果。
+适用的当前库为 `case-data/papers/MinerU_PrivateLibrary_20260818/private_library_catalog.json`：其中有 137 条解析完成的私有记录，两个来源组分别有 59 和 78 条；另有 1 个非 PDF 文件已跳过。所有数量只是目录盘点，不构成 BiFeO3 语料或实验结果。
 
 ## 1. 创建私有审核表
 
@@ -10,7 +10,7 @@
 
 ```powershell
 & .\.venv\Scripts\python.exe .\tools\private_library_review_bridge.py template `
-  --catalog "..\03_Paper\MinerU_PrivateLibrary_20260818\private_library_catalog.json" `
+  --catalog "..\..\case-data\papers\MinerU_PrivateLibrary_20260818\private_library_catalog.json" `
   --mission-id mission_bfo_90_v1 `
   --corpus-id bfo_90_v1 `
   --material "BiFeO3" `
@@ -35,9 +35,9 @@
 
 ```powershell
 & .\.venv\Scripts\python.exe .\tools\private_library_review_bridge.py freeze `
-  --catalog "..\03_Paper\MinerU_PrivateLibrary_20260818\private_library_catalog.json" `
+  --catalog "..\..\case-data\papers\MinerU_PrivateLibrary_20260818\private_library_catalog.json" `
   --review "D:\private\bfo_90_private_cohort_reviewed.json" `
-  --markdown-root "..\03_Paper\MinerU_PrivateMarkdown_20260818" `
+  --markdown-root "..\..\case-data\papers\MinerU_PrivateMarkdown_20260818" `
   --mission-id mission_bfo_90_v1 `
   --corpus-id bfo_90_v1 `
   --material "BiFeO3" `

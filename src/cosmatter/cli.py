@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Sequence
 
 from cosmatter.audit import AuditPathError, FlightRecorder, safe_run_id
-from cosmatter.models import MissionBrief, MissionState
+from cosmatter.models import MissionBrief, MissionState, PaperCandidate
 from cosmatter.state_machine import MissionMachine
 
-from .config import AGENT_ROOT, Settings
+from .config import AGENT_ROOT, Settings, data_root
+from .public_candidate_discovery import PublicDiscoveryError, discover_arxiv_candidates, probe_public_pdf
 from .dispatch import MissionDispatcher
 from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .evaluation import EvaluationError, evaluate_frozen_route_fixture, write_evaluation_record
@@ -24,18 +25,23 @@ from .retrieval_route_comparison import RetrievalRouteComparisonError, compare_h
 from .material_evaluation import MaterialFactEvaluationError, load_reviewed_material_fact_gold, material_fact_evaluation_from_gold, write_material_fact_evaluation
 from .gap_evaluation import GapReviewEvaluationError, gap_evaluation_from_assessments, gap_review_template, load_reviewed_gap_assessment, write_gap_evaluation, write_gap_review_template
 from .evidence_quality_evaluation import EvidenceQualityEvaluationError, evidence_quality_evaluation_from_assessments, evidence_quality_review_template, load_reviewed_evidence_quality_assessment, write_evidence_quality_evaluation, write_evidence_quality_review_template
+from .evidence_maturity_registry import EvidenceMaturityRegistryError, audit_evidence_maturity_registry_against_runs, load_evidence_maturity_registry, write_evidence_maturity_registry, write_evidence_maturity_registry_audit
 from .report_audit import ReportAuditError, audit_report_evidence, write_report_evidence_audit
-from .provider_receipts import ProviderReceiptError, append_provider_receipt, audit_candidate_receipt_links, audit_source_parse_receipt_links, mineru_task_receipt, sciverse_content_receipt, sciverse_search_receipt, write_candidate_receipt_audit, write_source_parse_receipt_audit
+from .provider_receipts import ProviderReceiptError, append_provider_receipt, audit_candidate_receipt_links, audit_source_parse_receipt_links, mineru_output_receipt, mineru_task_receipt, sciverse_content_receipt, sciverse_search_receipt, write_candidate_receipt_audit, write_source_parse_receipt_audit
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, write_evidence_provenance_audit
 from .facilities import DiscrepancyMatrix, DiscrepancyRow, FacilityGateError, condition_differential, write_condition_matrix
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
+from .content_access import ContentAccessError, record_sciverse_content_access
 from .planning import PlanApprovalError, approved_flight_plan_from_payload, load_approved_flight_plan, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .gap_analysis import GapAnalysisError, candidates_from_discrepancies, load_gap_candidates, write_gap_candidates
 from .gap_drafting import GapDraftingError, research_gap_drafting_prompts, write_untrusted_research_gap_draft
-from .candidate_screening import CandidateScreeningError, candidate_screening_from_review, candidate_screening_template, require_document_screened_for_fulltext, write_candidate_screening, write_candidate_screening_template
+from .candidate_screening import CandidateScreeningError, candidate_screening_from_automated_trial, candidate_screening_from_review, candidate_screening_template, require_document_screened_for_fulltext, write_automated_trial_candidate_screening, write_candidate_screening, write_candidate_screening_template
 from .workflow_readiness import WorkflowReadinessError, workflow_readiness, write_workflow_readiness
+from .runtime_invariants import RuntimeInvariantError, audit_runtime_invariants, write_runtime_invariant_audit
+from .decision_memory import DecisionMemoryError, load_decision_memory_index, rebuild_decision_memory_index, write_decision_memory_entry
+from .sensitive_artifact_audit import SensitiveArtifactAuditError, audit_sensitive_artifacts, write_sensitive_artifact_audit
 from .submission_manifest import SubmissionManifestError, build_submission_execution_manifest, write_submission_execution_manifest
 from .submission_readiness import SubmissionReadinessError, submission_readiness
 from .submission_bundle import SubmissionBundleError, build_source_bundle
@@ -43,6 +49,8 @@ from .external_resources import ExternalResourceDisclosureError, load_external_r
 from .final_submission import FinalSubmissionError, build_final_submission_package
 from .material_extraction import MaterialExtractionError, iter_material_facts, material_extraction_prompts, material_fact_review_template, material_facts_from_review, validate_material_fact_source_links, write_material_fact_review_template, write_material_facts_for_document, write_untrusted_material_extraction_draft
 from .material_draft_preview import MaterialDraftPreviewError, preview_untrusted_material_draft
+from .material_draft_traceability_audit import MaterialDraftTraceabilityAuditError, audit_untrusted_material_draft, write_material_draft_traceability_audit
+from .automated_trial_fact_audit import AutomatedTrialFactAuditError, automated_trial_fact_audit_from_review, write_automated_trial_fact_audit
 from .knowledge_fusion import KnowledgeFusionError, fuse_reviewed_material_facts, load_material_fact_fusion, write_material_fact_fusion
 from .local_library import LocalLibraryError, candidates_from_zotero_export
 from .local_corpus import LocalCorpusSearchError, candidates_from_local_source_index
@@ -59,10 +67,10 @@ from .bibliographic_source_coverage import (
 )
 from .reading_guide import ReadingGuideError, build_reading_guide, write_reading_guide
 from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError
-from .mineru_local_review import MinerULocalReviewError, load_mineru_markdown_review_pool, prepare_mineru_markdown_review_pool, source_map_pool_review_template, source_map_selection_from_pool_review, write_source_map_pool_review_template
+from .mineru_local_review import MinerULocalReviewError, load_mineru_markdown_review_pool, prepare_mineru_markdown_review_pool, source_map_pool_review_template, source_map_selection_from_pool_review, write_source_map_pool_review_selection, write_source_map_pool_review_template
 from .mcp_server import serve_stdio
-from .source_parse import SourceParseArtifactError, load_source_parse_tasks, record_source_parse_task, task_for_document, update_source_parse_task
-from .source_map import SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_pool_review, source_map_from_review, write_source_map_for_document
+from .source_parse import SourceParseArtifactError, load_source_parse_tasks, migrate_legacy_source_parse_task_ids, private_task_id_for_document, record_source_parse_task, task_for_document, update_source_parse_task
+from .source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_pool_review, source_map_from_review, write_source_map_for_document
 from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexRequestError
 from .relation_expansion import RelationExpansionError, build_relation_expansion, write_relation_expansion
@@ -87,7 +95,7 @@ def _json_print(payload: object) -> None:
 
 
 def _runs_dir() -> Path:
-    return AGENT_ROOT / "runs"
+    return data_root() / "runs"
 
 
 def _run_dir(run_id: str) -> Path:
@@ -223,6 +231,85 @@ def command_audit_workflow_readiness(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_audit_runtime_invariants(args: argparse.Namespace) -> int:
+    """Audit cross-artifact safety relationships without provider calls."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        artifact = audit_runtime_invariants(run_dir, mission.mission_id)
+        path = write_runtime_invariant_audit(run_dir, artifact)
+    except (OSError, UiExportError, RuntimeInvariantError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="runtime_invariants_audited",
+        actor="runtime_invariant_companion",
+        state=_last_recorded_state(run_dir / "events.jsonl"),
+        payload={"passed": artifact["passed"], "checked_artifact_count": artifact["checked_artifact_count"]},
+    )
+    _json_print({"run_id": args.run_id, "audit_path": str(path), "passed": artifact["passed"], "trust_status": artifact["trust_status"]})
+    return 0
+
+
+def _decision_memory_dir() -> Path:
+    """Keep project operational notes local to the configured runtime data root."""
+    return data_root() / "project_decision_memory"
+
+
+def command_record_decision_memory(args: argparse.Namespace) -> int:
+    """Write a human-editable operational note; never accept research evidence."""
+    try:
+        payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        path = write_decision_memory_entry(_decision_memory_dir(), payload)
+    except (OSError, json.JSONDecodeError, DecisionMemoryError) as error:
+        _json_print({"error": str(error)})
+        return 2
+    _json_print({"entry_path": path.name, "trust_status": "project_operational_memory_not_scientific_evidence_or_report_source"})
+    return 0
+
+
+def command_rebuild_decision_memory(args: argparse.Namespace) -> int:
+    """Rebuild index from Markdown source files after a human edit/delete."""
+    try:
+        index = rebuild_decision_memory_index(_decision_memory_dir())
+    except DecisionMemoryError as error:
+        _json_print({"error": str(error)})
+        return 2
+    _json_print({"entry_count": index["entry_count"], "trust_status": index["trust_status"]})
+    return 0
+
+
+def command_list_decision_memory(args: argparse.Namespace) -> int:
+    """List compact operational metadata, never Markdown note bodies."""
+    try:
+        index = load_decision_memory_index(_decision_memory_dir())
+    except DecisionMemoryError as error:
+        _json_print({"error": str(error)})
+        return 2
+    _json_print(index)
+    return 0
+
+
+def command_audit_sensitive_artifacts(args: argparse.Namespace) -> int:
+    """Write a count-only scan of run artifacts without exposing matches."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        artifact = audit_sensitive_artifacts(run_dir, mission.mission_id)
+        path = write_sensitive_artifact_audit(run_dir, artifact)
+    except (OSError, UiExportError, SensitiveArtifactAuditError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="sensitive_artifacts_audited",
+        actor="redaction_auditor",
+        state=_last_recorded_state(run_dir / "events.jsonl"),
+        payload={"is_clean": artifact["is_clean"], "finding_category_count": len(artifact["findings"]), "scanned_text_artifact_count": artifact["scanned_text_artifact_count"]},
+    )
+    _json_print({"run_id": args.run_id, "audit_path": str(path), "is_clean": artifact["is_clean"], "finding_category_count": len(artifact["findings"]), "trust_status": artifact["trust_status"]})
+    return 0
+
+
 def command_build_submission_execution_manifest(args: argparse.Namespace) -> int:
     """Create a secret-safe, artifact-only execution index for a mission run."""
     run_dir = _run_dir(args.run_id)
@@ -261,6 +348,40 @@ def command_export_ui(args: argparse.Namespace) -> int:
         _json_print({"error": str(error), "run_id": args.run_id})
         return 2
     _json_print({"run_id": args.run_id, "ui_path": str(destination), "schema_version": "1.0"})
+    return 0
+
+
+def command_record_evidence_maturity_registry(args: argparse.Namespace) -> int:
+    """Record a reviewed registry only when its local source-map links audit cleanly."""
+    run_dir = _run_dir(args.run_id)
+    registry_path = run_dir / "evidence_maturity_registry.json"
+    audit_path = run_dir / "evidence_maturity_registry_audit.json"
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        registry = load_evidence_maturity_registry(Path(args.input))
+        if registry["question_id"] != mission.mission_id:
+            raise EvidenceMaturityRegistryError("evidence maturity registry question does not match this mission")
+        audit = audit_evidence_maturity_registry_against_runs(registry, _runs_dir())
+        if not audit["passed"]:
+            raise EvidenceMaturityRegistryError("evidence maturity registry source links did not pass audit")
+        if not audit_sensitive_artifacts(run_dir, mission.mission_id)["is_clean"]:
+            raise EvidenceMaturityRegistryError("evidence maturity registry requires a clean current redaction audit")
+        if registry_path.exists() or audit_path.exists():
+            raise EvidenceMaturityRegistryError("evidence maturity registry artifacts already exist")
+        write_evidence_maturity_registry(registry_path, registry)
+        write_evidence_maturity_registry_audit(audit_path, audit)
+        write_sensitive_artifact_audit(run_dir, audit_sensitive_artifacts(run_dir, mission.mission_id))
+    except (OSError, UiExportError, EvidenceMaturityRegistryError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    state = _last_recorded_state(run_dir / "events.jsonl")
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="evidence_maturity_registry_recorded",
+        actor="evidence_maturity_registry",
+        state=state,
+        payload={"claim_count": audit["claim_count"], "support_record_count": audit["support_record_count"], "link_error_count": audit["link_error_count"]},
+    )
+    _json_print({"run_id": args.run_id, "claim_count": audit["claim_count"], "support_record_count": audit["support_record_count"], "link_audit": "passed"})
     return 0
 
 
@@ -375,6 +496,59 @@ def command_record_candidate_screening(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_record_automated_trial_screening(args: argparse.Namespace) -> int:
+    """Record delegated-agent screening for an explicitly opted-in trial only."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        candidate_history = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate history")
+        if args.input:
+            selection = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        else:
+            selection = _automated_trial_screening_selection(candidate_history, args.include_document_id)
+        artifact = candidate_screening_from_automated_trial(mission.mission_id, candidate_history, selection)
+        path = write_automated_trial_candidate_screening(run_dir, artifact)
+    except (OSError, json.JSONDecodeError, UiExportError, CandidateScreeningError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    counts = {decision: sum(item["decision"] == decision for item in artifact["decisions"]) for decision in ("include_for_fulltext", "exclude", "needs_metadata_review")}
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="delegated_automated_trial_candidate_screening_recorded",
+        actor="delegated_automated_trial_reviewer",
+        state=MissionState.SELECT,
+        payload={"candidate_count": artifact["candidate_count"], "decision_counts": counts, "trust_status": artifact["trust_status"]},
+    )
+    _json_print({"run_id": args.run_id, "candidate_count": artifact["candidate_count"], "decision_counts": counts, "screening_path": str(path), "trust_status": artifact["trust_status"]})
+    return 0
+
+
+def _automated_trial_screening_selection(candidate_history: object, include_document_ids: Sequence[str]) -> dict[str, object]:
+    """Build a deliberately conservative complete selection for parser trials.
+
+    Only explicitly named candidates are included. Every other candidate stays
+    in ``needs_metadata_review`` rather than being silently excluded or
+    treated as scientifically screened.
+    """
+    if not isinstance(candidate_history, dict) or not isinstance(candidate_history.get("candidates"), list):
+        raise CandidateScreeningError("automated trial screening requires retrieval candidates")
+    if not isinstance(include_document_ids, list) or not 1 <= len(include_document_ids) <= 3 or any(not isinstance(item, str) or not item.strip() for item in include_document_ids) or len(set(include_document_ids)) != len(include_document_ids):
+        raise CandidateScreeningError("automated trial screening requires one to three unique included document IDs")
+    included = set(include_document_ids)
+    known = [item.get("document_id") for item in candidate_history["candidates"] if isinstance(item, dict)]
+    if any(identifier not in known for identifier in included):
+        raise CandidateScreeningError("automated trial inclusion document is not a current candidate")
+    return {
+        "decisions": [
+            {
+                "document_id": identifier,
+                "decision": "include_for_fulltext" if identifier in included else "needs_metadata_review",
+                "reason_codes": ["material_match", "property_match", "scope_match"] if identifier in included else ["not_enough_metadata"],
+            }
+            for identifier in known
+        ]
+    }
+
+
 def command_submit_mineru_source(args: argparse.Namespace) -> int:
     """Submit an explicitly authorized public source URL to MinerU.
 
@@ -385,8 +559,8 @@ def command_submit_mineru_source(args: argparse.Namespace) -> int:
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         candidate_history = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate history")
-        require_eligible_candidate(run_dir, args.document_id)
-        require_document_screened_for_fulltext(run_dir, mission.mission_id, candidate_history, args.document_id)
+        delegated_trial = bool(getattr(args, "allow_delegated_automated_trial", False))
+        require_document_screened_for_fulltext(run_dir, mission.mission_id, candidate_history, args.document_id, allow_delegated_automated_trial=delegated_trial)
         require_active_run(run_dir, mission.mission_id)
         settings = Settings.load()
         source_url = args.source_url.strip()
@@ -418,7 +592,7 @@ def command_submit_mineru_source(args: argparse.Namespace) -> int:
         event_type="source_parse_submitted",
         actor="document_parser",
         state=MissionState.EXTRACT,
-        payload={"document_id": args.document_id, "provider": "mineru", "task_state": task.state, "receipt_id": receipt["receipt_id"]},
+        payload={"document_id": args.document_id, "provider": "mineru", "task_state": task.state, "receipt_id": receipt["receipt_id"], "screening_mode": "delegated_automated_trial" if delegated_trial else "human_reviewed"},
     )
     _json_print({"run_id": args.run_id, "document_id": args.document_id, "task_state": task.state, "task_path": str(task_path)})
     return 0
@@ -432,7 +606,7 @@ def command_poll_mineru_source(args: argparse.Namespace) -> int:
         stored_task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id)
         require_active_run(run_dir, mission.mission_id)
         settings = Settings.load()
-        task = MinerUAdapter(settings).get_task(stored_task["task_id"])
+        task = MinerUAdapter(settings).get_task(private_task_id_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id))
         receipt = mineru_task_receipt(
             operation="source_parse_poll",
             document_id=args.document_id,
@@ -458,6 +632,56 @@ def command_poll_mineru_source(args: argparse.Namespace) -> int:
     _json_print({"run_id": args.run_id, "document_id": args.document_id, "task_state": task.state, "task_path": str(task_path)})
     return 0
 
+
+def command_fetch_mineru_markdown(args: argparse.Namespace) -> int:
+    """Fetch completed MinerU Markdown to a new private path outside a run.
+
+    The completed archive URL and Markdown body remain process-local except for
+    the caller-selected private file. Mission artifacts receive only a
+    hash-only provider receipt and a bounded audit event.
+    """
+    run_dir = _run_dir(args.run_id)
+    output_path = Path(args.output).resolve()
+    try:
+        if (
+            output_path.exists()
+            or output_path.suffix.casefold() not in {".md", ".markdown"}
+            or not output_path.parent.is_dir()
+            or _path_is_within(output_path, run_dir)
+        ):
+            raise MinerULocalReviewError("private Markdown output must be a new .md file outside the mission run with an existing parent")
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        require_active_run(run_dir, mission.mission_id)
+        stored_task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id)
+        if stored_task["state"] != "done":
+            raise SourceParseArtifactError("completed MinerU Markdown fetch requires a task in done state")
+        task_id = private_task_id_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id)
+        settings = Settings.load()
+        result = MinerUAdapter(settings).download_completed_markdown(task_id)
+        with output_path.open("xb") as handle:
+            handle.write(result.content)
+        receipt = mineru_output_receipt(
+            document_id=args.document_id,
+            source_url_sha256=stored_task["source_url_sha256"],
+            task_id=task_id,
+            model_version=stored_task["model_version"],
+            content=result.content,
+            status_code=result.status_code,
+            request_id=result.request_id,
+        )
+        append_provider_receipt(run_dir, receipt)
+    except (OSError, UiExportError, RunControlError, MinerUConfigurationError, MinerURequestError, MinerULocalReviewError, SourceParseArtifactError, ProviderReceiptError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="private_mineru_markdown_fetched",
+        actor="document_parser",
+        state=MissionState.EXTRACT,
+        payload={"document_id": args.document_id, "provider": "mineru", "markdown_byte_count": len(result.content), "receipt_id": receipt["receipt_id"]},
+    )
+    _json_print({"run_id": args.run_id, "document_id": args.document_id, "markdown_byte_count": len(result.content), "private_markdown_written": True})
+    return 0
+
 def command_audit_source_parse_receipts(args: argparse.Namespace) -> int:
     """Verify MinerU task-ledger entries against hash-only provider receipts."""
     run_dir = _run_dir(args.run_id)
@@ -478,6 +702,25 @@ def command_audit_source_parse_receipts(args: argparse.Namespace) -> int:
         payload={"source_parse_task_count": result["source_parse_task_count"], "receipt_linked_task_count": result["receipt_linked_task_count"], "stale_task_state_count": result["stale_task_state_count"]},
     )
     _json_print({"run_id": args.run_id, "audit_path": str(audit_path), **result})
+    return 0
+
+
+def command_migrate_source_parse_task_identifiers(args: argparse.Namespace) -> int:
+    """Move a legacy raw MinerU task identifier into private local storage."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        migrated_count = migrate_legacy_source_parse_task_ids(run_dir, mission_id=mission.mission_id)
+    except (OSError, UiExportError, SourceParseArtifactError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="source_parse_task_identifiers_migrated",
+        actor="redaction_migration",
+        state=MissionState.EXTRACT,
+        payload={"migrated_task_count": migrated_count},
+    )
+    _json_print({"run_id": args.run_id, "migrated_task_count": migrated_count, "trust_status": "private_task_identifier_migration_not_scientific_evidence"})
     return 0
 
 
@@ -562,14 +805,57 @@ def command_create_mineru_source_map_review_template(args: argparse.Namespace) -
     _json_print({"run_id": args.run_id, "document_id": args.document_id, "candidate_segment_count": len(template["segments"]), "trust_status": template["trust_status"]})
     return 0
 
+
+def command_create_automated_trial_source_map_selection(args: argparse.Namespace) -> int:
+    """Create a hash-bound delegated-agent trial selection from a private pool."""
+    run_dir = _run_dir(args.run_id)
+    pool_path = Path(args.review_pool)
+    output_path = Path(args.output)
+    try:
+        if _path_is_within(pool_path, run_dir) or _path_is_within(output_path, run_dir):
+            raise MinerULocalReviewError("private review-pool and automated trial selection must remain outside the mission run")
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id)
+        pool = load_mineru_markdown_review_pool(
+            path=pool_path,
+            mission_id=mission.mission_id,
+            document_id=args.document_id,
+            source_task=task,
+        )
+        selected_ids = args.segment_id
+        if not isinstance(selected_ids, list) or not 1 <= len(selected_ids) <= 12 or len(set(selected_ids)) != len(selected_ids):
+            raise MinerULocalReviewError("automated trial Source Map selection requires one to twelve unique segment IDs")
+        selection = source_map_pool_review_template(pool, delegated_automated_trial=True)
+        known_ids = {item["segment_id"] for item in selection["segments"]}
+        if any(identifier not in known_ids for identifier in selected_ids):
+            raise MinerULocalReviewError("automated trial Source Map selection contains an unknown pool segment")
+        selected = set(selected_ids)
+        for item in selection["segments"]:
+            if item["segment_id"] in selected:
+                item["selected"] = True
+                item["reason"] = "direct_support_for_authorized_trial_question"
+        selection["trust_status"] = "delegated_automated_trial_source_map_pool_selection"
+        write_source_map_pool_review_selection(output_path, selection, delegated_automated_trial=True)
+    except (OSError, UiExportError, SourceParseArtifactError, MinerULocalReviewError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="delegated_automated_trial_source_map_selection_created",
+        actor="delegated_automated_trial_reviewer",
+        state=MissionState.EXTRACT,
+        payload={"document_id": args.document_id, "selected_segment_count": len(selected_ids), "trust_status": selection["trust_status"]},
+    )
+    _json_print({"run_id": args.run_id, "document_id": args.document_id, "selected_segment_count": len(selected_ids), "selection_path": str(output_path), "trust_status": selection["trust_status"]})
+    return 0
+
 def command_record_source_map(args: argparse.Namespace) -> int:
     """Persist only reviewer-selected excerpts from a completed parse task."""
     run_dir = _run_dir(args.run_id)
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         candidate_history = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate history")
-        require_eligible_candidate(run_dir, args.document_id)
-        require_document_screened_for_fulltext(run_dir, mission.mission_id, candidate_history, args.document_id)
+        delegated_trial = bool(getattr(args, "allow_delegated_automated_trial", False))
+        require_document_screened_for_fulltext(run_dir, mission.mission_id, candidate_history, args.document_id, allow_delegated_automated_trial=delegated_trial)
         task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id)
         selection = json.loads(Path(args.input).read_text(encoding="utf-8"))
         if args.review_pool:
@@ -582,13 +868,14 @@ def command_record_source_map(args: argparse.Namespace) -> int:
                 document_id=args.document_id,
                 source_task=task,
             )
-            resolved_selection, markdown_sha256 = source_map_selection_from_pool_review(pool=review_pool, review=selection)
+            resolved_selection, markdown_sha256 = source_map_selection_from_pool_review(pool=review_pool, review=selection, delegated_automated_trial=delegated_trial)
             source_map = source_map_from_pool_review(
                 mission_id=mission.mission_id,
                 document_id=args.document_id,
                 source_task=task,
                 selection=resolved_selection,
                 source_markdown_sha256=markdown_sha256,
+                trust_status=AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS if delegated_trial else "human_reviewed_parser_selection",
             )
         else:
             source_map = source_map_from_review(
@@ -596,6 +883,7 @@ def command_record_source_map(args: argparse.Namespace) -> int:
                 document_id=args.document_id,
                 source_task=task,
                 selection=selection,
+                trust_status=AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS if delegated_trial else "human_reviewed_parser_selection",
             )
         source_map_path = write_source_map_for_document(run_dir, source_map)
     except (OSError, json.JSONDecodeError, UiExportError, CandidateScreeningError, EvidenceIngestionError, SourceParseArtifactError, SourceMapError, MinerULocalReviewError) as error:
@@ -603,12 +891,37 @@ def command_record_source_map(args: argparse.Namespace) -> int:
         return 2
     recorder = FlightRecorder(_runs_dir(), args.run_id)
     recorder.record(
-        event_type="source_map_reviewed",
-        actor="source_reviewer",
+        event_type="delegated_automated_trial_source_map_recorded" if delegated_trial else "source_map_reviewed",
+        actor="delegated_automated_trial_reviewer" if delegated_trial else "source_reviewer",
         state=MissionState.EXTRACT,
-        payload={"document_id": args.document_id, "segment_count": len(source_map["segments"])},
+        payload={"document_id": args.document_id, "segment_count": len(source_map["segments"]), "trust_status": source_map["trust_status"]},
     )
     _json_print({"run_id": args.run_id, "document_id": args.document_id, "segment_count": len(source_map["segments"]), "source_map_path": str(source_map_path)})
+    return 0
+
+
+def command_record_automated_trial_fact_audit(args: argparse.Namespace) -> int:
+    """Record source-map-bound delegated-agent checks without creating facts."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        source_map = load_source_map_for_document(run_dir, mission.mission_id, args.document_id)
+        if source_map is None:
+            raise AutomatedTrialFactAuditError("automated trial fact audit requires a current Source Map")
+        review = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        artifact = automated_trial_fact_audit_from_review(mission_id=mission.mission_id, source_map=source_map, review=review)
+        path = write_automated_trial_fact_audit(run_dir, artifact)
+    except (OSError, json.JSONDecodeError, UiExportError, SourceMapError, AutomatedTrialFactAuditError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    counts = {status: sum(item["determination"] == status for item in artifact["claims"]) for status in ("directly_supported", "qualified_by_source", "not_supported")}
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="delegated_automated_trial_fact_audit_recorded",
+        actor="delegated_automated_trial_fact_auditor",
+        state=MissionState.EXTRACT,
+        payload={"document_id": args.document_id, "claim_count": len(artifact["claims"]), "determination_counts": counts, "trust_status": artifact["trust_status"]},
+    )
+    _json_print({"run_id": args.run_id, "document_id": args.document_id, "claim_count": len(artifact["claims"]), "determination_counts": counts, "audit_path": str(path), "trust_status": artifact["trust_status"]})
     return 0
 
 
@@ -665,6 +978,30 @@ def command_create_material_fact_review_template(args: argparse.Namespace) -> in
         "material_fact_review_template_path": str(path),
         "next_step": "Complete facts, change trust_status to human_reviewed_material_facts_for_recording, then use record-material-facts.",
     })
+    return 0
+
+
+def command_audit_material_draft_traceability(args: argparse.Namespace) -> int:
+    """Write a count-only mechanical check for an explicitly untrusted draft."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        source_map = load_source_map_for_document(run_dir, mission.mission_id, args.document_id)
+        if source_map is None:
+            raise MaterialDraftTraceabilityAuditError("material draft audit requires a reviewed source map")
+        document_id = source_map["document_id"]
+        candidate_path = run_dir / "material_extraction_candidates" / f"{hashlib.sha256(document_id.encode('utf-8')).hexdigest()}.json"
+        candidates = _load_object(candidate_path, "structured material draft candidate")
+        audit = audit_untrusted_material_draft(mission_id=mission.mission_id, source_map=source_map, candidates=candidates)
+        path = write_material_draft_traceability_audit(run_dir, audit)
+    except (UiExportError, SourceMapError, MaterialDraftTraceabilityAuditError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="material_draft_traceability_audited", actor="material_reviewer", state=MissionState.EXTRACT,
+        payload={key: audit[key] for key in ("candidate_fact_count", "source_linked_fact_count", "reported_value_verbatim_fact_count", "automatically_accepted_fact_count")},
+    )
+    _json_print({"run_id": args.run_id, "audit_path": str(path), "candidate_fact_count": audit["candidate_fact_count"], "automatically_accepted_fact_count": 0, "review_gate": audit["review_gate"]})
     return 0
 
 
@@ -1413,8 +1750,8 @@ def command_evaluate_agent_benchmark(args: argparse.Namespace) -> int:
         return 2
     recorder = FlightRecorder(_runs_dir(), args.run_id)
     path = write_agent_benchmark_record(recorder.run_dir, report)
-    recorder.record(event_type="synthetic_agent_benchmark_evaluated", actor="evaluation", state=MissionState.REPORT, payload={"fixture_id": report.fixture_id, "synthetic": True, "metric_names": sorted(report.to_dict().keys())})
-    _json_print({"run_id": args.run_id, "fixture_id": report.fixture_id, "benchmark_path": str(path), "synthetic": True})
+    recorder.record(event_type="synthetic_agent_benchmark_evaluated", actor="evaluation", state=MissionState.REPORT, payload={"fixture_id": report.fixture_id, "fixture_sha256": report.fixture_sha256, "synthetic": True, "metric_names": sorted(report.to_dict().keys())})
+    _json_print({"run_id": args.run_id, "fixture_id": report.fixture_id, "fixture_sha256": report.fixture_sha256, "benchmark_path": str(path), "synthetic": True})
     return 0
 
 def command_ingest_evidence(args: argparse.Namespace) -> int:
@@ -1643,13 +1980,14 @@ def command_evaluate_fixture(args: argparse.Namespace) -> int:
         state=MissionState.VERIFY,
         payload={
             "fixture_id": report.fixture_id,
+            "fixture_sha256": report.fixture_sha256,
             "citation_precision": report.citation_precision,
             "condition_completeness": report.condition_completeness,
             "contradiction_precision": report.contradiction_precision,
             "reproducibility_consistency": report.reproducibility_consistency,
         },
     )
-    _json_print({"run_id": args.run_id, "fixture_id": report.fixture_id, "evaluation_path": str(record_path)})
+    _json_print({"run_id": args.run_id, "fixture_id": report.fixture_id, "fixture_sha256": report.fixture_sha256, "evaluation_path": str(record_path)})
     return 0
 
 def command_demo_flow(args: argparse.Namespace) -> int:
@@ -1797,14 +2135,120 @@ def command_execute_plan_query(args: argparse.Namespace) -> int:
     _json_print({"run_id": args.run_id, "query_kind": query_kind, "query_index": args.query_index, "candidate_count": len(candidates), "candidates_path": str(artifact_path)})
     return 0
 
+def command_register_public_pdf_candidate(args: argparse.Namespace) -> int:
+    """Register one policy-probed public PDF as a metadata-only candidate.
+
+    This is intentionally not a download, parsing, or evidence-ingestion path.
+    The plain source URL is used only for the live probe and is not retained in
+    mission artifacts, output, events, or receipts.
+    """
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        plan = load_approved_flight_plan(run_dir, mission.mission_id)
+        require_active_run(run_dir, mission.mission_id)
+        query_kind = "counter" if args.counter else "primary"
+        approved_queries = plan.counter_queries if args.counter else plan.queries
+        if not 0 <= args.query_index < len(approved_queries):
+            raise PlanApprovalError("query_index is outside the approved query list")
+        probe = probe_public_pdf(args.source_url)
+        candidate = PaperCandidate(
+            document_id=args.document_id.strip(),
+            title=args.title.strip(),
+            query=approved_queries[args.query_index],
+            source="PublicOpenAccess",
+            publication_year=args.publication_year,
+            is_content_accessible=True,
+            doi=args.doi.strip() if args.doi else None,
+        )
+        artifact_path = write_candidate_artifact(run_dir, candidate.query, (candidate,))
+        receipt_path = run_dir / "public_pdf_probe_receipts.jsonl"
+        with receipt_path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(probe, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+    except (OSError, UiExportError, PlanApprovalError, RetrievalArtifactError, PublicDiscoveryError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="public_pdf_candidate_registered",
+        actor="public_candidate_discovery",
+        state=MissionState.RETRIEVE,
+        payload={
+            "plan_id": plan.artifact_id,
+            "query_kind": query_kind,
+            "query_index": args.query_index,
+            "document_id": candidate.document_id,
+            "final_host": probe["final_host"],
+            "redirect_count": probe["redirect_count"],
+            "status_class": probe["status_class"],
+            "trust_status": probe["trust_status"],
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "document_id": candidate.document_id,
+        "candidate_count": 1,
+        "source_access": probe["trust_status"],
+        "candidates_path": str(artifact_path),
+    })
+    return 0
+
+
+def command_execute_plan_public_arxiv_discovery(args: argparse.Namespace) -> int:
+    """Discover arXiv metadata for one approved query without downloading PDFs."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        plan = load_approved_flight_plan(run_dir, mission.mission_id)
+        require_active_run(run_dir, mission.mission_id)
+        query_kind = "counter" if args.counter else "primary"
+        approved_queries = plan.counter_queries if args.counter else plan.queries
+        if not 0 <= args.query_index < len(approved_queries):
+            raise PlanApprovalError("query_index is outside the approved query list")
+        top_k = min(args.top_k, plan.max_papers)
+        raw_candidates, receipt = discover_arxiv_candidates(approved_queries[args.query_index], top_k=top_k)
+        candidates = tuple(
+            PaperCandidate(
+                document_id=item["document_id"], title=item["title"], query=item["query"], source=item["source"],
+                publication_year=item["publication_year"], is_content_accessible=False,
+            )
+            for item in raw_candidates
+        )
+        artifact_path = write_candidate_artifact(run_dir, approved_queries[args.query_index], candidates)
+        receipt_path = run_dir / "public_candidate_discovery_receipts.jsonl"
+        with receipt_path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+    except (OSError, UiExportError, PlanApprovalError, RetrievalArtifactError, PublicDiscoveryError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="approved_plan_public_arxiv_discovery_executed",
+        actor="public_candidate_discovery",
+        state=MissionState.RETRIEVE,
+        payload={
+            "plan_id": plan.artifact_id,
+            "query_kind": query_kind,
+            "query_index": args.query_index,
+            "candidate_count": len(candidates),
+            "final_host": receipt["final_host"],
+            "redirect_count": receipt["redirect_count"],
+            "status_class": receipt["status_class"],
+            "trust_status": receipt["trust_status"],
+        },
+    )
+    _json_print({"run_id": args.run_id, "query_kind": query_kind, "query_index": args.query_index, "candidate_count": len(candidates), "source": "PublicArXiv", "candidates_path": str(artifact_path)})
+    return 0
+
+
 def command_sciverse_read_context(args: argparse.Namespace) -> int:
     """Fetch one screened candidate's bounded context into an explicit local review file."""
     run_dir = _run_dir(args.run_id)
     try:
         mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
         candidate_history = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate history")
-        require_eligible_candidate(run_dir, args.document_id)
-        require_document_screened_for_fulltext(run_dir, mission.mission_id, candidate_history, args.document_id)
+        delegated_trial = bool(getattr(args, "allow_delegated_automated_trial", False))
+        require_document_screened_for_fulltext(run_dir, mission.mission_id, candidate_history, args.document_id, allow_delegated_automated_trial=delegated_trial)
         output_path = Path(args.output).resolve()
         run_path = run_dir.resolve()
         if output_path.exists() or output_path.suffix.casefold() not in {".txt", ".md"} or not output_path.parent.is_dir() or output_path.is_relative_to(run_path):
@@ -1812,12 +2256,20 @@ def command_sciverse_read_context(args: argparse.Namespace) -> int:
         response = SciverseAdapter(Settings.load()).read_content(args.document_id, offset=args.offset, limit=args.limit)
         receipt = sciverse_content_receipt(document_id=args.document_id, offset=args.offset, limit=args.limit, content=response.text, next_offset=response.next_offset, more=response.more, status_code=response.status_code, request_id=response.request_id)
         append_provider_receipt(run_dir, receipt)
+        confirmation_path = record_sciverse_content_access(
+            run_dir,
+            mission_id=mission.mission_id,
+            candidate_payload=candidate_history,
+            document_id=args.document_id,
+            receipt=receipt,
+            delegated_automated_trial=delegated_trial,
+        )
         output_path.write_text(response.text, encoding="utf-8")
-    except (OSError, UiExportError, CandidateScreeningError, EvidenceIngestionError, ProviderReceiptError, SciverseConfigurationError, SciverseRequestError, ValueError) as error:
+    except (OSError, UiExportError, CandidateScreeningError, ContentAccessError, EvidenceIngestionError, ProviderReceiptError, SciverseConfigurationError, SciverseRequestError, ValueError) as error:
         _json_print({"error": str(error), "run_id": args.run_id})
         return 2
-    FlightRecorder(_runs_dir(), args.run_id).record(event_type="sciverse_content_context_fetched", actor="evidence_context_reader", state=MissionState.RETRIEVE, payload={"offset": args.offset, "limit": args.limit, "content_char_count": receipt["content_char_count"], "more": response.more, "receipt_id": receipt["receipt_id"]})
-    _json_print({"run_id": args.run_id, "document_id": args.document_id, "offset": args.offset, "content_char_count": receipt["content_char_count"], "next_offset": response.next_offset, "more": response.more, "review_output": str(output_path)})
+    FlightRecorder(_runs_dir(), args.run_id).record(event_type="delegated_automated_trial_sciverse_content_context_fetched" if delegated_trial else "sciverse_content_context_fetched", actor="delegated_automated_trial_reviewer" if delegated_trial else "evidence_context_reader", state=MissionState.RETRIEVE, payload={"offset": args.offset, "limit": args.limit, "content_char_count": receipt["content_char_count"], "more": response.more, "receipt_id": receipt["receipt_id"], "trust_status": "delegated_automated_trial_content_access_probe_not_evidence" if delegated_trial else "explicit_human_requested_content_access_probe_not_evidence"})
+    _json_print({"run_id": args.run_id, "document_id": args.document_id, "offset": args.offset, "content_char_count": receipt["content_char_count"], "next_offset": response.next_offset, "more": response.more, "review_output": str(output_path), "content_access_confirmation": str(confirmation_path)})
     return 0
 
 
@@ -2280,6 +2732,19 @@ def build_parser() -> argparse.ArgumentParser:
     readiness = commands.add_parser("audit-workflow-readiness", help="audit plan, retrieval, screening, parsing, extraction, Gap, and report artifact readiness without provider calls")
     readiness.add_argument("--run-id", required=True)
     readiness.set_defaults(handler=command_audit_workflow_readiness)
+    invariants = commands.add_parser("audit-runtime-invariants", help="audit state, authorization, receipt/result, artifact-hash, and evidence-decision relationships without provider calls")
+    invariants.add_argument("--run-id", required=True)
+    invariants.set_defaults(handler=command_audit_runtime_invariants)
+    decision_memory = commands.add_parser("record-decision-memory", help="record one human-editable local operational note; research evidence and source text are rejected")
+    decision_memory.add_argument("--input", required=True, help="strict operational-memory JSON; it remains outside mission reports")
+    decision_memory.set_defaults(handler=command_record_decision_memory)
+    rebuild_memory = commands.add_parser("rebuild-decision-memory", help="rebuild local operational-memory index from editable Markdown notes")
+    rebuild_memory.set_defaults(handler=command_rebuild_decision_memory)
+    list_memory = commands.add_parser("list-decision-memory", help="list local operational-memory metadata without note bodies")
+    list_memory.set_defaults(handler=command_list_decision_memory)
+    sensitive_audit = commands.add_parser("audit-sensitive-artifacts", help="scan persisted run text for forbidden URL, credential, and private-path patterns without outputting matches")
+    sensitive_audit.add_argument("--run-id", required=True)
+    sensitive_audit.set_defaults(handler=command_audit_sensitive_artifacts)
     submission_manifest = commands.add_parser("build-submission-execution-manifest", help="build a secret-safe execution index from current run artifacts; it makes no provider calls")
     submission_manifest.add_argument("--run-id", required=True)
     submission_manifest.set_defaults(handler=command_build_submission_execution_manifest)
@@ -2287,6 +2752,10 @@ def build_parser() -> argparse.ArgumentParser:
     export_ui.add_argument("--run-id", required=True)
     export_ui.add_argument("--output", help="optional JSON destination; defaults to runs/<run_id>/ui.json")
     export_ui.set_defaults(handler=command_export_ui)
+    maturity_registry = commands.add_parser("record-evidence-maturity-registry", help="bind a reviewed evidence-maturity registry to one mission only after its local Source Map links pass")
+    maturity_registry.add_argument("--run-id", required=True)
+    maturity_registry.add_argument("--input", required=True, help="reviewed evidence-maturity registry JSON; the source file is not modified")
+    maturity_registry.set_defaults(handler=command_record_evidence_maturity_registry)
     approve_plan = commands.add_parser("approve-plan", help="persist a human-reviewed bounded FlightPlan JSON")
     approve_plan.add_argument("--run-id", required=True)
     approve_plan.add_argument("--input", required=True, help="path to reviewed FlightPlan JSON; never reads LLM draft implicitly")
@@ -2294,6 +2763,22 @@ def build_parser() -> argparse.ArgumentParser:
     draft_plan = commands.add_parser("draft-plan", help="generate an untrusted DeepSeek research-planning draft")
     draft_plan.add_argument("--run-id", required=True)
     draft_plan.set_defaults(handler=command_draft_plan)
+    public_pdf = commands.add_parser("register-public-pdf-candidate", help="probe an allowlisted public PDF and register its metadata-only candidate without retaining the URL")
+    public_pdf.add_argument("--run-id", required=True)
+    public_pdf.add_argument("--query-index", required=True, type=int)
+    public_pdf.add_argument("--counter", action="store_true", help="select an approved counter-evidence query")
+    public_pdf.add_argument("--document-id", required=True, help="stable public metadata identifier, not a URL")
+    public_pdf.add_argument("--title", required=True, help="public bibliographic title")
+    public_pdf.add_argument("--publication-year", type=int)
+    public_pdf.add_argument("--doi", help="optional normalized DOI")
+    public_pdf.add_argument("--source-url", required=True, help="allowlisted HTTPS PDF URL; used only for this bounded probe and not stored")
+    public_pdf.set_defaults(handler=command_register_public_pdf_candidate)
+    public_arxiv = commands.add_parser("execute-plan-public-arxiv-discovery", help="execute one approved query against allowlisted arXiv Atom metadata without downloading PDFs")
+    public_arxiv.add_argument("--run-id", required=True)
+    public_arxiv.add_argument("--query-index", required=True, type=int)
+    public_arxiv.add_argument("--counter", action="store_true", help="select an approved counter-evidence query")
+    public_arxiv.add_argument("--top-k", type=int, default=10, choices=range(1, 51), metavar="1..50")
+    public_arxiv.set_defaults(handler=command_execute_plan_public_arxiv_discovery)
     reading_guide = commands.add_parser("build-reading-guide", help="build a bounded route from approved candidates and reviewed evidence")
     reading_guide.add_argument("--run-id", required=True)
     reading_guide.set_defaults(handler=command_build_reading_guide)
@@ -2304,18 +2789,33 @@ def build_parser() -> argparse.ArgumentParser:
     screening.add_argument("--run-id", required=True)
     screening.add_argument("--input", required=True, help="complete reviewed candidate decision JSON from the current template")
     screening.set_defaults(handler=command_record_candidate_screening)
+    automated_screening = commands.add_parser("record-automated-trial-screening", help="record delegated-agent screening for an explicitly opted-in trial; it is not human review or scientific evidence")
+    automated_screening.add_argument("--run-id", required=True)
+    automated_screening_choice = automated_screening.add_mutually_exclusive_group(required=True)
+    automated_screening_choice.add_argument("--input", help="complete automated trial decision JSON from the current candidate set")
+    automated_screening_choice.add_argument("--include-document-id", action="append", help="include one to three exact candidate IDs; every other candidate remains needs_metadata_review")
+    automated_screening.set_defaults(handler=command_record_automated_trial_screening)
     mineru_submit = commands.add_parser("mineru-submit-url", help="submit one candidate-screened authorized HTTPS source URL to MinerU without downloading output")
     mineru_submit.add_argument("--run-id", required=True)
     mineru_submit.add_argument("--document-id", required=True)
     mineru_submit.add_argument("--source-url", required=True, help="explicit HTTPS remote source; its plain URL is not stored in run artifacts")
+    mineru_submit.add_argument("--allow-delegated-automated-trial", action="store_true", help="permit only a separately recorded delegated automated trial screening; never substitutes for human evidence review")
     mineru_submit.set_defaults(handler=command_submit_mineru_source)
     mineru_poll = commands.add_parser("mineru-poll", help="refresh a recorded MinerU task state without fetching parser output")
     mineru_poll.add_argument("--run-id", required=True)
     mineru_poll.add_argument("--document-id", required=True)
     mineru_poll.set_defaults(handler=command_poll_mineru_source)
+    mineru_fetch = commands.add_parser("mineru-fetch-markdown", help="fetch exactly one completed MinerU Markdown result to a new private path outside the mission run")
+    mineru_fetch.add_argument("--run-id", required=True)
+    mineru_fetch.add_argument("--document-id", required=True)
+    mineru_fetch.add_argument("--output", required=True, help="new private .md output outside the mission run; URL, ZIP and Markdown are never stored in run artifacts")
+    mineru_fetch.set_defaults(handler=command_fetch_mineru_markdown)
     mineru_receipt_audit = commands.add_parser("audit-source-parse-receipts", help="verify MinerU parse-task receipt links without reading URLs or parser output")
     mineru_receipt_audit.add_argument("--run-id", required=True)
     mineru_receipt_audit.set_defaults(handler=command_audit_source_parse_receipts)
+    mineru_task_migration = commands.add_parser("migrate-source-parse-task-identifiers", help="move legacy raw MinerU task IDs from a run ledger into private local storage")
+    mineru_task_migration.add_argument("--run-id", required=True)
+    mineru_task_migration.set_defaults(handler=command_migrate_source_parse_task_identifiers)
     mineru_review = commands.add_parser("prepare-mineru-markdown-review", help="make a private local candidate pool from a completed MinerU Markdown result; it never writes parser output into a run")
     mineru_review.add_argument("--run-id", required=True)
     mineru_review.add_argument("--document-id", required=True)
@@ -2328,12 +2828,25 @@ def build_parser() -> argparse.ArgumentParser:
     mineru_map_template.add_argument("--review-pool", required=True, help="private candidate-pool JSON outside the mission run")
     mineru_map_template.add_argument("--output", required=True, help="new private quote-free reviewer template JSON outside the mission run")
     mineru_map_template.set_defaults(handler=command_create_mineru_source_map_review_template)
+    automated_mineru_selection = commands.add_parser("create-automated-trial-source-map-selection", help="create a hash-bound delegated automated trial selection from exact private-pool segment IDs")
+    automated_mineru_selection.add_argument("--run-id", required=True)
+    automated_mineru_selection.add_argument("--document-id", required=True)
+    automated_mineru_selection.add_argument("--review-pool", required=True, help="private MinerU candidate-pool JSON outside the mission run")
+    automated_mineru_selection.add_argument("--output", required=True, help="new private automated trial selection JSON outside the mission run")
+    automated_mineru_selection.add_argument("--segment-id", action="append", required=True, help="exact private-pool segment ID to select; repeat at most 12 times")
+    automated_mineru_selection.set_defaults(handler=command_create_automated_trial_source_map_selection)
     source_map = commands.add_parser("record-source-map", help="record reviewer-selected bounded excerpts for one completed MinerU task")
     source_map.add_argument("--run-id", required=True)
     source_map.add_argument("--document-id", required=True)
     source_map.add_argument("--input", required=True, help="reviewed bounded JSON selection; parser output files are never read directly")
     source_map.add_argument("--review-pool", help="optional private MinerU candidate-pool JSON; requires its hash-bound selection template and both files outside the run")
+    source_map.add_argument("--allow-delegated-automated-trial", action="store_true", help="record a separately labelled delegated automated trial Source Map; it cannot enter human-reviewed evidence flows")
     source_map.set_defaults(handler=command_record_source_map)
+    automated_fact_audit = commands.add_parser("record-automated-trial-fact-audit", help="record segment-bound delegated-agent fact checks; it never creates human-reviewed material facts or evidence")
+    automated_fact_audit.add_argument("--run-id", required=True)
+    automated_fact_audit.add_argument("--document-id", required=True)
+    automated_fact_audit.add_argument("--input", required=True, help="private claim review JSON bound to the delegated automated trial Source Map")
+    automated_fact_audit.set_defaults(handler=command_record_automated_trial_fact_audit)
     material_draft = commands.add_parser("draft-material-extraction", help="generate an untrusted DeepSeek material-fact draft from reviewer-selected source-map excerpts")
     material_draft.add_argument("--run-id", required=True)
     material_draft.add_argument("--document-id", help="document-scoped source map; defaults to the legacy single map")
@@ -2342,6 +2855,10 @@ def build_parser() -> argparse.ArgumentParser:
     material_review_template.add_argument("--run-id", required=True)
     material_review_template.add_argument("--document-id", help="document-scoped source map; defaults to the legacy single map")
     material_review_template.set_defaults(handler=command_create_material_fact_review_template)
+    material_draft_audit = commands.add_parser("audit-material-draft-traceability", help="write a count-only, non-scientific traceability audit for untrusted material candidates")
+    material_draft_audit.add_argument("--run-id", required=True)
+    material_draft_audit.add_argument("--document-id", help="document-scoped source map; defaults to the legacy single map")
+    material_draft_audit.set_defaults(handler=command_audit_material_draft_traceability)
     material_facts = commands.add_parser("record-material-facts", help="record reviewer-approved composition, structure, property, process, condition, and simulation facts")
     material_facts.add_argument("--run-id", required=True)
     material_facts.add_argument("--document-id", help="document-scoped source map; defaults to the legacy single map")
@@ -2519,12 +3036,13 @@ def build_parser() -> argparse.ArgumentParser:
     execute_plan_query.add_argument("--query-index", type=int, required=True)
     execute_plan_query.add_argument("--counter", action="store_true", help="use the approved counterevidence query list")
     execute_plan_query.set_defaults(handler=command_execute_plan_query)
-    content = commands.add_parser("sciverse-read-context", help="fetch one human-screened candidate's bounded Sciverse context into an explicit local review file")
+    content = commands.add_parser("sciverse-read-context", help="fetch one screened candidate's bounded Sciverse context into an explicit local review file")
     content.add_argument("--run-id", required=True)
     content.add_argument("--document-id", required=True)
     content.add_argument("--offset", type=int, default=0)
     content.add_argument("--limit", type=int, default=2000)
     content.add_argument("--output", required=True, help="new local .txt/.md review file outside the run directory; content is never stored in run artifacts")
+    content.add_argument("--allow-delegated-automated-trial", action="store_true", help="permit separately recorded delegated automated trial screening; preserves a non-human content-access trust status")
     content.set_defaults(handler=command_sciverse_read_context)
     receipt_audit = commands.add_parser("audit-candidate-receipts", help="verify provider receipt links retained by retrieval candidates without reading provider payloads")
     receipt_audit.add_argument("--run-id", required=True)

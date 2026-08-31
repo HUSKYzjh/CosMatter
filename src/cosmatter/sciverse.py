@@ -1,20 +1,27 @@
-"""Narrow, auditable Sciverse HTTP adapter.
+"""Narrow, auditable adapter over the official Sciverse Python SDK.
 
-This adapter deliberately returns upstream JSON as a retrieval *candidate*.
-Only a later extraction-and-verification stage may turn it into an EvidenceCard.
+The SDK is the compatibility boundary for Sciverse authentication, pagination
+and request semantics. This synchronous facade deliberately exposes only the
+two bounded calls CosMatter needs; it never turns search snippets into
+accepted evidence or guesses that a document can be read in full.
 """
 
 from __future__ import annotations
 
-import json
-import time
-from urllib.parse import urlencode
+import asyncio
 from dataclasses import dataclass
-from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from typing import Any, Callable
 
 from .config import Settings
+
+try:
+    # Load the optional SDK during service startup.  Deferring this import to
+    # the first approved query can consume an otherwise valid local request's
+    # response window; an unavailable SDK remains a configuration error only
+    # when a Sciverse operation is actually requested.
+    from sciverse import AgentToolsClient as _OfficialAgentToolsClient
+except ImportError:
+    _OfficialAgentToolsClient = None
 
 
 class SciverseConfigurationError(RuntimeError):
@@ -42,95 +49,99 @@ class SciverseContentResponse:
 
 
 class SciverseAdapter:
-    """One narrowly scoped client, designed for logs and deterministic tests."""
+    """Bounded synchronous facade for ``sciverse.AgentToolsClient``."""
 
-    def __init__(self, settings: Settings, *, sleep=time.sleep) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        client_factory: Callable[..., Any] | None = None,
+    ) -> None:
         self.settings = settings
-        self._sleep = sleep
+        self._client_factory = client_factory or _official_client_factory
 
     def agentic_search(self, query: str, *, top_k: int = 10) -> SciverseResponse:
+        """Run the SDK's documented ``semantic_search`` operation."""
         if not query.strip():
             raise ValueError("query must not be empty")
         if not 1 <= top_k <= 50:
             raise ValueError("top_k must be between 1 and 50")
-        return self._post_json("/agentic-search", {"query": query.strip(), "top_k": top_k})
+        payload = self._run("semantic_search", query=query.strip(), top_k=top_k, mode="balanced")
+        hits = payload.get("hits")
+        if not isinstance(hits, list):
+            raise SciverseRequestError("Sciverse semantic_search response did not contain hits")
+        return SciverseResponse(payload=payload, status_code=200, request_id=_request_id(payload))
 
     def read_content(self, document_id: str, *, offset: int = 0, limit: int = 2_000) -> SciverseContentResponse:
-        """Read one bounded full-text context window after a human screening gate."""
+        """Read one explicitly requested, bounded SDK content window."""
         if not isinstance(document_id, str) or not document_id.strip() or len(document_id.strip()) > 255:
             raise ValueError("document_id must be a bounded nonempty string")
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             raise ValueError("offset must be a nonnegative integer")
         if not isinstance(limit, int) or isinstance(limit, bool) or not 200 <= limit <= 4_000:
             raise ValueError("limit must be between 200 and 4000")
-        response = self._get_json("/content", {"doc_id": document_id.strip(), "offset": offset, "limit": limit})
-        text, more, next_offset = response.payload.get("text"), response.payload.get("more"), response.payload.get("next_offset")
+        payload = self._run("read_content", doc_id=document_id.strip(), offset=offset, limit=limit)
+        text, more, next_offset = payload.get("text"), payload.get("more"), payload.get("next_offset")
         if not isinstance(text, str) or not text or len(text) > limit:
-            raise SciverseRequestError("Sciverse content response did not contain a bounded text window")
+            raise SciverseRequestError("Sciverse read_content response did not contain a bounded text window")
         if not isinstance(more, bool) or (next_offset is not None and (not isinstance(next_offset, int) or next_offset < 0)):
-            raise SciverseRequestError("Sciverse content response had invalid continuation metadata")
-        return SciverseContentResponse(text=text, next_offset=next_offset, more=more, status_code=response.status_code, request_id=response.request_id)
+            raise SciverseRequestError("Sciverse read_content response had invalid continuation metadata")
+        return SciverseContentResponse(text=text, next_offset=next_offset, more=more, status_code=200, request_id=_request_id(payload))
 
     def can_read_content(self, paper: dict[str, Any]) -> bool:
-        """Enforce upstream full-text access policy before content expansion."""
-        return paper.get("is_content_accessible") is True
+        """Decide whether a Sciverse result names a documented content route.
 
-    def _get_json(self, path: str, params: dict[str, Any]) -> SciverseResponse:
+        The SDK does not promise ``is_content_accessible`` on semantic hits.
+        Its ``doc_id`` is documented as present only for a full-text artifact,
+        while an explicit boolean remains authoritative when supplied.
+        """
+        explicit = paper.get("is_content_accessible")
+        if isinstance(explicit, bool):
+            return explicit
+        document_id = paper.get("doc_id")
+        return isinstance(document_id, str) and bool(document_id.strip())
+
+    def _run(self, operation: str, /, **kwargs: Any) -> dict[str, Any]:
         token = self.settings.sciverse_api_token
         if not token:
             raise SciverseConfigurationError("SCIVERSE_API_TOKEN is not configured")
-        request = Request(
-            url=f"{self.settings.sciverse_base_url}{path}?{urlencode(params)}",
-            headers={"Authorization": f"Bearer {token}"},
-            method="GET",
-        )
-        last_error: Exception | None = None
-        for attempt in range(self.settings.api_max_retries):
-            try:
-                with urlopen(request, timeout=self.settings.http_timeout_seconds) as response:
-                    parsed = json.loads(response.read().decode("utf-8"))
-                    if not isinstance(parsed, dict):
-                        raise SciverseRequestError("Sciverse response was not a JSON object")
-                    return SciverseResponse(parsed, getattr(response, "status", 200), response.headers.get("x-request-id"))
-            except HTTPError as error:
-                last_error = error
-                if error.code not in {429, 502, 503}:
-                    raise SciverseRequestError(f"Sciverse request failed with HTTP {error.code}") from error
-            except (URLError, TimeoutError, json.JSONDecodeError) as error:
-                last_error = error
-            if attempt + 1 < self.settings.api_max_retries:
-                self._sleep(2**attempt)
-        raise SciverseRequestError("Sciverse request failed after configured retries") from last_error
 
-    def _post_json(self, path: str, payload: dict[str, Any]) -> SciverseResponse:
-        token = self.settings.sciverse_api_token
-        if not token:
-            raise SciverseConfigurationError("SCIVERSE_API_TOKEN is not configured")
-        body = json.dumps(payload).encode("utf-8")
-        request = Request(
-            url=f"{self.settings.sciverse_base_url}{path}",
-            data=body,
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            method="POST",
-        )
-        last_error: Exception | None = None
-        for attempt in range(self.settings.api_max_retries):
+        async def invoke() -> dict[str, Any]:
             try:
-                with urlopen(request, timeout=self.settings.http_timeout_seconds) as response:
-                    parsed = json.loads(response.read().decode("utf-8"))
-                    if not isinstance(parsed, dict):
-                        raise SciverseRequestError("Sciverse response was not a JSON object")
-                    return SciverseResponse(
-                        payload=parsed,
-                        status_code=getattr(response, "status", 200),
-                        request_id=response.headers.get("x-request-id"),
-                    )
-            except HTTPError as error:
-                last_error = error
-                if error.code not in {429, 502, 503}:
-                    raise SciverseRequestError(f"Sciverse request failed with HTTP {error.code}") from error
-            except (URLError, TimeoutError, json.JSONDecodeError) as error:
-                last_error = error
-            if attempt + 1 < self.settings.api_max_retries:
-                self._sleep(2**attempt)
-        raise SciverseRequestError("Sciverse request failed after configured retries") from last_error
+                async with self._client_factory(
+                    base_url=self.settings.sciverse_base_url,
+                    token=token,
+                    timeout=float(self.settings.http_timeout_seconds),
+                ) as client:
+                    result = await getattr(client, operation)(**kwargs)
+            except Exception as error:
+                response = getattr(error, "response", None)
+                status = getattr(response, "status_code", None)
+                headers = getattr(response, "headers", {})
+                request_id = headers.get("x-request-id") if hasattr(headers, "get") else None
+                suffix = f" with HTTP {status}" if isinstance(status, int) else ""
+                request_suffix = f" (request_id={request_id})" if isinstance(request_id, str) and request_id.strip() else ""
+                raise SciverseRequestError(f"Sciverse {operation} request failed{suffix}{request_suffix}") from error
+            if not isinstance(result, dict):
+                raise SciverseRequestError(f"Sciverse {operation} response was not a JSON object")
+            return result
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(invoke())
+        raise SciverseRequestError("synchronous SciverseAdapter cannot run inside an active event loop")
+
+
+def _official_client_factory(**kwargs: Any) -> Any:
+    if _OfficialAgentToolsClient is None:
+        raise SciverseConfigurationError("official sciverse SDK is not installed")
+    return _OfficialAgentToolsClient(**kwargs)
+
+
+def _request_id(payload: dict[str, Any]) -> str | None:
+    for key in ("request_id", "x_request_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None

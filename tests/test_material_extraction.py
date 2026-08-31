@@ -88,6 +88,16 @@ class MaterialExtractionTests(unittest.TestCase):
         with self.assertRaises(MaterialExtractionError):
             material_facts_from_review(mission_id="mission_material", source_map=SOURCE_MAP, selection=selection("unknown_segment"))
 
+    def test_review_rejects_duplicate_ids_and_non_scalar_qualifiers(self) -> None:
+        duplicate = selection()
+        duplicate["facts"] = [duplicate["facts"][0], {**duplicate["facts"][1], "fact_id": "fact_comp"}]
+        with self.assertRaisesRegex(MaterialExtractionError, "identity, category, or source segment"):
+            material_facts_from_review(mission_id="mission_material", source_map=SOURCE_MAP, selection=duplicate)
+        nested_qualifier = selection()
+        nested_qualifier["facts"] = [{**nested_qualifier["facts"][0], "qualifiers": {"conditions": {"temperature_k": 300}}}, *nested_qualifier["facts"][1:]]
+        with self.assertRaisesRegex(MaterialExtractionError, "qualifier must be a scalar or null"):
+            material_facts_from_review(mission_id="mission_material", source_map=SOURCE_MAP, selection=nested_qualifier)
+
     def test_prompt_is_scoped_to_selected_short_excerpts_and_not_a_conclusion(self) -> None:
         mission = MissionBrief("What is reported?", "BiFeO3", "phase stability", "films", mission_id="mission_material")
         system, user = material_extraction_prompts(mission, SOURCE_MAP)

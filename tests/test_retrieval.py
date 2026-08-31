@@ -32,6 +32,7 @@ class RetrievalArtifactTests(unittest.TestCase):
         self.assertEqual([candidate.document_id for candidate in candidates], ["doc_1", "doc_2"])
         self.assertEqual(candidates[0].locator_hint, "page:3;offset:18")
         self.assertTrue(candidates[0].is_content_accessible)
+        self.assertTrue(candidates[1].is_content_accessible)
         self.assertNotIn("content", candidates[0].to_dict())
         self.assertNotIn("abstract", candidates[0].to_dict())
 
@@ -43,6 +44,47 @@ class RetrievalArtifactTests(unittest.TestCase):
         )
         self.assertEqual(len(candidates), 1)
         self.assertIsNone(candidates[0].doi)
+
+    def test_doc_id_is_a_documented_content_route_when_access_flag_is_absent(self) -> None:
+        candidates = candidates_from_sciverse(
+            {"hits": [{"doc_id": "fulltext-artifact", "title": "Paper"}]},
+            "BiFeO3 phase",
+            1,
+        )
+        self.assertTrue(candidates[0].is_content_accessible)
+
+    def test_mathml_title_is_normalized_without_namespace_url(self) -> None:
+        candidates = candidates_from_sciverse(
+            {
+                "hits": [
+                    {
+                        "doc_id": "doc_mathml",
+                        "title": '<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>BiFeO</mml:mi><mml:mn>3</mml:mn></mml:math> films',
+                    }
+                ]
+            },
+            "BiFeO3 phase",
+            1,
+        )
+
+        title = candidates[0].title
+        self.assertNotIn("http://", title)
+        self.assertNotIn("<mml:", title)
+        self.assertIn("BiFeO", title)
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = write_candidate_artifact(Path(directory), "BiFeO3 phase", candidates)
+            persisted = artifact.read_text(encoding="utf-8")
+        self.assertNotIn("http://", persisted)
+        self.assertNotIn("<mml:", persisted)
+
+    def test_candidate_rejects_title_that_remains_a_url_after_normalization(self) -> None:
+        with self.assertRaises(ValueError):
+            PaperCandidate(
+                document_id="doc_url_title",
+                title="https://example.invalid/not-a-title",
+                query="query",
+                source="Sciverse",
+            )
 
     def test_candidate_artifact_rejects_query_mismatch(self) -> None:
         candidates = candidates_from_sciverse({"hits": [{"doc_id": "doc_1", "title": "Paper"}]}, "query_a", 1)

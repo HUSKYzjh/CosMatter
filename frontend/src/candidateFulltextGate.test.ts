@@ -10,15 +10,19 @@ const screening = (decision = "include_for_fulltext", trust = "human_reviewed_ca
 
 describe("candidateFulltextGate", () => {
   it("opens only a persisted included candidate that remains a reviewable graph paper", () => {
-    expect(candidateFulltextGate(screening(), [paper], candidate)).toEqual({ ready: true, reason: null });
+    expect(candidateFulltextGate(screening(), "run-1", [paper], candidate)).toEqual({ ready: true, reason: null });
   });
 
   it("rejects unpersisted screening and non-included decisions", () => {
-    expect(candidateFulltextGate(screening("include_for_fulltext", "untrusted_candidate_metadata"), [paper], candidate)).toEqual({ ready: false, reason: "screening" });
-    expect(candidateFulltextGate(screening("needs_metadata_review"), [paper], candidate)).toEqual({ ready: false, reason: "decision" });
+    expect(candidateFulltextGate(screening("include_for_fulltext", "untrusted_candidate_metadata"), "run-1", [paper], candidate)).toEqual({ ready: false, reason: "screening" });
+    expect(candidateFulltextGate(screening("needs_metadata_review"), "run-1", [paper], candidate)).toEqual({ ready: false, reason: "decision" });
   });
 
   it("rejects a candidate missing from the current literature graph", () => {
-    expect(candidateFulltextGate(screening(), [], candidate)).toEqual({ ready: false, reason: "paper" });
+    expect(candidateFulltextGate(screening(), "run-1", [], candidate)).toEqual({ ready: false, reason: "paper" });
+  });
+
+  it("rejects a persisted screening artifact from another local run", () => {
+    expect(candidateFulltextGate(screening(), "run-2", [paper], candidate)).toEqual({ ready: false, reason: "run" });
   });
 });

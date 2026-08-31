@@ -9,8 +9,10 @@ separately reviewed source-map workflow.
 from __future__ import annotations
 
 import ipaddress
+import io
 import json
 import time
+import zipfile
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -29,6 +31,8 @@ class MinerURequestError(RuntimeError):
 
 
 _TASK_STATES = {"pending", "running", "done", "failed"}
+_MAX_RESULT_ARCHIVE_BYTES = 200 * 1024 * 1024
+_MAX_MARKDOWN_BYTES = 5 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,16 @@ class MinerUBatch:
     state: str
     markdown_url: str | None = None
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class MinerUCompletedMarkdown:
+    """One bounded private Markdown result, never suitable for run artifacts."""
+
+    content: bytes
+    task_state: str
+    status_code: int = 200
+    request_id: str | None = None
 
 
 class MinerUAdapter:
@@ -105,6 +119,42 @@ class MinerUAdapter:
         if not task_id or len(task_id) > 200:
             raise ValueError("task_id must be a nonempty bounded string")
         return self._request_task(method="GET", path=f"/api/v4/extract/task/{task_id}")
+
+    def download_completed_markdown(self, task_id: str) -> MinerUCompletedMarkdown:
+        """Fetch only the sole Markdown member of a completed MinerU archive.
+
+        The provider-supplied result URL is kept in memory only. ZIP members
+        other than Markdown are neither extracted nor persisted.
+        """
+        task_id = task_id.strip()
+        if not task_id or len(task_id) > 200:
+            raise ValueError("task_id must be a nonempty bounded string")
+        payload = self._request_json("GET", f"/api/v4/extract/task/{task_id}")
+        details = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(details, dict) or details.get("state") != "done":
+            raise MinerURequestError("MinerU task is not completed")
+        archive_url = details.get("full_zip_url")
+        if not isinstance(archive_url, str):
+            raise MinerURequestError("MinerU completed task did not provide an archive")
+        archive_url = validate_remote_source_url(archive_url)
+        request = Request(archive_url, headers={"Accept": "application/zip"}, method="GET")
+        try:
+            with urlopen(request, timeout=self.settings.http_timeout_seconds) as response:
+                body = response.read(_MAX_RESULT_ARCHIVE_BYTES + 1)
+                status_code = getattr(response, "status", 200)
+                request_id = response.headers.get("x-request-id")
+        except (HTTPError, URLError, TimeoutError) as error:
+            raise MinerURequestError("MinerU result archive download failed") from error
+        if not isinstance(status_code, int) or status_code not in {200, 206}:
+            raise MinerURequestError("MinerU result archive returned an unexpected status")
+        if len(body) > _MAX_RESULT_ARCHIVE_BYTES:
+            raise MinerURequestError("MinerU result archive exceeds the byte safety limit")
+        return MinerUCompletedMarkdown(
+            content=_markdown_from_zip(body),
+            task_state="done",
+            status_code=status_code,
+            request_id=request_id if isinstance(request_id, str) and request_id.strip() else None,
+        )
 
     def _request_json(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         token = self.settings.mineru_api_token
@@ -172,6 +222,36 @@ def validate_remote_source_url(value: str) -> str:
     if address is not None and (address.is_private or address.is_loopback or address.is_link_local or address.is_reserved):
         raise ValueError("source_url must not target a private or reserved address")
     return parsed.geturl()
+
+
+def _markdown_from_zip(archive: bytes) -> bytes:
+    """Read one bounded Markdown file without extracting arbitrary ZIP paths."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+            candidates = []
+            for info in bundle.infolist():
+                parts = info.filename.replace("\\", "/").split("/")
+                if not info.filename or info.filename.startswith(("/", "\\")) or any(part in {"", ".", ".."} for part in parts):
+                    raise MinerURequestError("MinerU result archive contains an unsafe path")
+                if info.is_dir() or not info.filename.casefold().endswith((".md", ".markdown")):
+                    continue
+                if not 1 <= info.file_size <= _MAX_MARKDOWN_BYTES or info.compress_size < 0:
+                    raise MinerURequestError("MinerU result Markdown is outside the byte safety limit")
+                if info.compress_size and info.file_size > info.compress_size * 200:
+                    raise MinerURequestError("MinerU result Markdown compression ratio is unsafe")
+                candidates.append(info)
+            if len(candidates) != 1:
+                raise MinerURequestError("MinerU result archive must contain exactly one Markdown file")
+            content = bundle.read(candidates[0])
+    except (OSError, zipfile.BadZipFile, RuntimeError) as error:
+        raise MinerURequestError("MinerU result archive is invalid") from error
+    if not 1 <= len(content) <= _MAX_MARKDOWN_BYTES:
+        raise MinerURequestError("MinerU result Markdown is outside the byte safety limit")
+    try:
+        content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise MinerURequestError("MinerU result Markdown is not UTF-8") from error
+    return content
 
 
 def _task_from_response(payload: Any, request_id: str | None, status_code: int) -> MinerUTask:

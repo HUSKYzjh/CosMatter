@@ -19,3 +19,17 @@ export function automaticGraphHandoffTarget(
     ? "graph"
     : null;
 }
+
+/**
+ * A researcher may open the graph manually while the automatic completion
+ * response is in flight.  That already satisfies the one-time handoff; leave
+ * no pending marker that could later pull them away from the bridge again.
+ */
+export function automaticGraphHandoffAlreadySettled(
+  pending: boolean,
+  automaticState: AutomaticHandoffState | null | undefined,
+  currentView: JourneyView,
+  hasNavigableGraph: boolean,
+): boolean {
+  return pending && automaticState === "succeeded" && currentView === "graph" && hasNavigableGraph;
+}

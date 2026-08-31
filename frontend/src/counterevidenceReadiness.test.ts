@@ -19,4 +19,9 @@ describe("counterevidenceReadiness", () => {
     const bundle = readBundle({ mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" }, audit_summary: { counterevidence: { state: "ready", planned_query_count: 1, executed_query_count: 1 } } });
     expect(counterevidenceReadiness(bundle).ready).toBe(true);
   });
+
+  it("does not trust a ready label when its approved/executed counts are inconsistent", () => {
+    const bundle = readBundle({ mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" }, audit_summary: { counterevidence: { state: "ready", planned_query_count: 2, executed_query_count: 1 } } });
+    expect(counterevidenceReadiness(bundle)).toMatchObject({ ready: false, plannedQueryCount: 2, executedQueryCount: 1 });
+  });
 });

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .facility_contracts import FacilityContractError, validate_fleet_facility_contracts
 from .models import FacilityType, FleetSpec, FleetType, StationType
 
 
@@ -97,4 +98,8 @@ def load_fleet_specs(config_dir: Path) -> dict[FleetType, FleetSpec]:
         specs[spec.fleet_type] = spec
     if not specs:
         raise FleetConfigError(f"no fleet configuration files found in {config_dir}")
+    try:
+        validate_fleet_facility_contracts(specs.values())
+    except FacilityContractError as error:
+        raise FleetConfigError(f"facility contract validation failed: {error}") from error
     return specs

@@ -10,7 +10,7 @@ The resulting corpus_manifest.json contains bibliographic metadata and the acces
 
 For the planned 90-paper cohort, use exactly 90 unique document IDs after manual bibliographic verification. Keep the downloaded PDFs and source annotation notes local. Only reviewer-selected short excerpts may enter a source-map, and only after a completed authorized parsing task. No document path, attachment key, PDF bytes, API secret, or unrestricted full text belongs in either JSON file.
 
-After annotation, report real metrics only with the frozen manifest identifier, annotation date, evaluator, model/prompt version, retrieval candidate universe, and a failure-case log. The synthetic benchmark in examples/frozen remains a regression test and is not evidence of 90-paper performance.
+After annotation, report real metrics only with the frozen manifest identifier, annotation date, evaluator, model/prompt version, retrieval candidate universe, and a failure-case log. The synthetic benchmark in examples/frozen remains a regression test and is not evidence of 90-paper performance. Its generated records include a SHA-256 of the fixture bytes, so same-named fixture edits cannot be silently compared as the same regression input; this hash identifies only the synthetic fixture content and contains no paper text, DOI, path, or credential.
 
 
 ## Annotation coverage gate

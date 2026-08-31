@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from .models import MissionBrief
+from .sensitive_artifact_audit import SensitiveArtifactAuditError, load_sensitive_artifact_audit
+from .evidence_maturity_registry import EvidenceMaturityRegistryError, audit_evidence_maturity_registry_against_runs, load_evidence_maturity_registry, validate_evidence_maturity_registry_audit
 from .workflow_readiness import workflow_readiness
 
 
@@ -35,6 +37,11 @@ _ARTIFACT_NAMES = (
     "mission_report.json",
     "research_report.md",
     "workflow_readiness.json",
+    "sensitive_artifact_audit.json",
+    "material_draft_traceability_audit.json",
+    "test_only_delegated_review.json",
+    "evidence_maturity_registry.json",
+    "evidence_maturity_registry_audit.json",
     "human_retrieval_evaluation.json",
     "human_retrieval_route_comparison.json",
     "human_material_fact_evaluation.json",
@@ -58,7 +65,7 @@ _ARTIFACT_NAMES = (
 )
 _FIELDS = {
     "schema_version", "mission_id", "material", "property_name", "scope",
-    "trust_status", "workflow", "artifact_inventory", "event_summary",
+    "trust_status", "workflow", "redaction_audit", "artifact_inventory", "event_summary",
     "provider_receipt_summary", "manifest_sha256_input", "disclosure",
 }
 
@@ -70,7 +77,12 @@ class SubmissionManifestError(ValueError):
 def build_submission_execution_manifest(*, run_dir: Path, mission: MissionBrief) -> dict[str, Any]:
     """Summarize a bounded run without reading or projecting sensitive content."""
     readiness = workflow_readiness(run_dir, mission)
+    _validate_evidence_maturity_registry_artifacts(run_dir, mission)
     artifacts = [_artifact_entry(run_dir / name, name) for name in _ARTIFACT_NAMES]
+    try:
+        redaction = load_sensitive_artifact_audit(run_dir / "sensitive_artifact_audit.json", mission.mission_id)
+    except SensitiveArtifactAuditError as error:
+        raise SubmissionManifestError(str(error)) from error
     events = _event_summary(run_dir / "events.jsonl")
     receipts = _provider_receipt_summary(run_dir / "provider_receipts.jsonl")
     digest_input = json.dumps(
@@ -79,6 +91,7 @@ def build_submission_execution_manifest(*, run_dir: Path, mission: MissionBrief)
             "artifacts": [{"name": item["name"], "sha256": item["sha256"]} for item in artifacts if item["exists"]],
             "event_summary": events,
             "provider_receipt_summary": receipts,
+            "redaction_audit": {"present": redaction is not None, "is_clean": bool(redaction and redaction["is_clean"])},
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -101,6 +114,7 @@ def build_submission_execution_manifest(*, run_dir: Path, mission: MissionBrief)
                 for item in readiness["stages"]
             ],
         },
+        "redaction_audit": {"present": redaction is not None, "is_clean": bool(redaction and redaction["is_clean"])},
         "artifact_inventory": artifacts,
         "event_summary": events,
         "provider_receipt_summary": receipts,
@@ -113,6 +127,28 @@ def build_submission_execution_manifest(*, run_dir: Path, mission: MissionBrief)
     }
     _validate_manifest(result)
     return result
+
+
+def _validate_evidence_maturity_registry_artifacts(run_dir: Path, mission: MissionBrief) -> None:
+    """Reject a manifest that would inventory a stale or mismatched maturity claim ledger."""
+    registry_path = run_dir / "evidence_maturity_registry.json"
+    audit_path = run_dir / "evidence_maturity_registry_audit.json"
+    if not registry_path.exists() and not audit_path.exists():
+        return
+    if not registry_path.is_file() or not audit_path.is_file():
+        raise SubmissionManifestError("evidence maturity registry artifacts are incomplete")
+    try:
+        registry = load_evidence_maturity_registry(registry_path)
+        audit = json.loads(audit_path.read_text(encoding="utf-8"))
+        if registry["question_id"] != mission.mission_id:
+            raise EvidenceMaturityRegistryError("evidence maturity registry question does not match this mission")
+        validate_evidence_maturity_registry_audit(audit, registry)
+        if audit["passed"] is not True:
+            raise EvidenceMaturityRegistryError("evidence maturity registry source links did not pass audit")
+        if audit_evidence_maturity_registry_against_runs(registry, run_dir.parent) != audit:
+            raise EvidenceMaturityRegistryError("evidence maturity registry source links changed after audit")
+    except (OSError, json.JSONDecodeError, EvidenceMaturityRegistryError) as error:
+        raise SubmissionManifestError("evidence maturity registry artifacts are invalid") from error
 
 
 def write_submission_execution_manifest(run_dir: Path, manifest: dict[str, Any]) -> Path:
@@ -205,6 +241,10 @@ def _validate_manifest(payload: object) -> None:
         raise SubmissionManifestError("submission execution manifest identity is invalid")
     if not isinstance(payload.get("workflow"), dict) or not isinstance(payload["workflow"].get("stages"), list):
         raise SubmissionManifestError("submission execution manifest workflow is invalid")
+    if not isinstance(payload.get("redaction_audit"), dict) or set(payload["redaction_audit"]) != {"present", "is_clean"} or not all(isinstance(payload["redaction_audit"].get(key), bool) for key in ("present", "is_clean")):
+        raise SubmissionManifestError("submission execution manifest redaction audit is invalid")
+    if not payload["redaction_audit"]["present"] and payload["redaction_audit"]["is_clean"]:
+        raise SubmissionManifestError("submission execution manifest redaction audit state is invalid")
     if not isinstance(payload.get("artifact_inventory"), list) or len(payload["artifact_inventory"]) != len(_ARTIFACT_NAMES):
         raise SubmissionManifestError("submission execution manifest artifact inventory is invalid")
     for item in payload["artifact_inventory"]:

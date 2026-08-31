@@ -7,9 +7,10 @@ import type { CandidateScreening, PdfTaskStatus } from "./localApi";
  */
 export function screeningAllowsSourceReview(
   screening: CandidateScreening | null,
+  runId: string | null | undefined,
   documentId: string | null,
 ): boolean {
-  if (!screening || !documentId) return false;
+  if (!screening || !runId || screening.run_id !== runId || !documentId) return false;
   if (screening.trust_status !== "human_reviewed_candidate_screening_not_scientific_evidence") return false;
   const isCurrentCandidate = screening.candidates.some((candidate) => candidate.document_id === documentId);
   const decision = screening.decisions.find((item) => item.document_id === documentId);

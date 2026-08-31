@@ -4,7 +4,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -13,8 +13,10 @@ from cosmatter.config import Settings
 from cosmatter.deepseek import DraftCompletion
 from cosmatter.local_api import LocalMissionApi
 from cosmatter.mineru import MinerUBatch
+from cosmatter.models import AccessPolicy, EvidenceCard, Provenance, ReviewStatus, Stance
 from cosmatter.sciverse import SciverseResponse
-from cosmatter.ui_preview import UiPreviewError, build_ui_preview_server
+from cosmatter.ui_preview import UiPreviewError, _graph_query, build_ui_preview_server
+from cosmatter.verification import VerificationDecision
 
 
 class _HttpFakeSciverse:
@@ -50,6 +52,75 @@ class _HttpFakeMinerU:
 
 
 class UiPreviewTests(unittest.TestCase):
+    def test_citation_expansion_route_requires_authorized_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            web = Path(directory)
+            (web / "index.html").write_text("<h1>preview</h1>", encoding="utf-8")
+            api = Mock()
+            api.expand_authorized_pdf_citations.return_value = {"run_id": "citation_http", "node_count": 2, "edge_count": 1, "failure_count": 0, "trust_status": "public_bibliographic_metadata_not_scientific_evidence"}
+            server = build_ui_preview_server(0, web, api=api)
+            thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                legacy = Request(f"{base}/api/runs/citation_http/pdf/pdf_0123456789abcdef01234567/citations", data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
+                with self.assertRaises(HTTPError) as context:
+                    urlopen(legacy, timeout=2)
+                self.assertEqual(context.exception.code, 410)
+                payload = {"document_id": "pdf_0123456789abcdef01234567", "authorizations": ["mission_scoped_egress_consent", "metadata_provider_consent"], "dsh_call_id": "citation-http-0001"}
+                authorized = Request(f"{base}/api/runs/citation_http/authorized-citation-expansion", data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+                with urlopen(authorized, timeout=2) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(json.loads(response.read().decode("utf-8"))["node_count"], 2)
+                api.expand_authorized_pdf_citations.assert_called_once_with("citation_http", payload)
+            finally:
+                server.shutdown(); server.server_close(); thread.join(timeout=2)
+
+    def test_graph_query_allows_only_bounded_page_controls(self) -> None:
+        self.assertEqual(_graph_query("node_type=EvidenceCard&offset=2&limit=10"), {"node_types": ("EvidenceCard",), "offset": 2, "limit": 10})
+        with self.assertRaises(Exception):
+            _graph_query("path=D%3A%2Fprivate")
+
+    def test_synthetic_graph_plan_review_round_trip_stays_loopback_and_nonexecuting(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            web = root / "web"; web.mkdir(); (web / "index.html").write_text("<h1>preview</h1>", encoding="utf-8")
+            api = LocalMissionApi(root / "runs")
+            created = api.create_mission({"run_id": "graph_round_trip", "question": "How does strain change phase stability?", "material": "BiFeO3", "property": "phase stability", "scope": "synthetic films"})
+            run_dir = root / "runs" / "graph_round_trip"
+            card = EvidenceCard("Reviewed synthetic claim", Stance.SUPPORT, "BiFeO3", "phase stability", {"strain_percent": 1.0}, "private source quote", Provenance("synthetic-doc", "line:1", "fixture", access_policy=AccessPolicy.AUTHORIZED), evidence_id="evidence-synthetic")
+            decision = VerificationDecision(str(created["mission_id"]), "evidence-synthetic", ReviewStatus.ACCEPTED, "synthetic review")
+            (run_dir / "evidence_cards.json").write_text(json.dumps([card.to_dict()]), encoding="utf-8")
+            (run_dir / "verification_decisions.json").write_text(json.dumps([decision.to_dict()]), encoding="utf-8")
+            server = build_ui_preview_server(0, web, api=api)
+            thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                project = Request(f"{base}/api/runs/graph_round_trip/graph/project", data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
+                with urlopen(project, timeout=2) as response:
+                    graph = json.loads(response.read().decode("utf-8"))
+                self.assertNotIn("private source quote", json.dumps(graph))
+                with urlopen(f"{base}/api/runs/graph_round_trip/graph?node_type=EvidenceCard", timeout=2) as response:
+                    page = json.loads(response.read().decode("utf-8"))
+                node_id = page["nodes"][0]["node_id"]
+                with urlopen(f"{base}/api/plugins", timeout=2) as response:
+                    catalogue = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(catalogue["trust_status"], "static_catalogue_not_plugin_execution_or_evidence_acceptance")
+                policy_request = Request(f"{base}/api/runs/graph_round_trip/plugin-authorization-plan", data=json.dumps({"plugin_id": "graph.plan_assist", "authorizations": ["mission_scoped_egress_consent"]}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+                with urlopen(policy_request, timeout=2) as response:
+                    policy = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(policy["trust_status"], "nonexecuting_authorization_plan_not_consent_or_execution")
+                self.assertFalse(policy["permitted"])
+                draft_request = Request(f"{base}/api/runs/graph_round_trip/graph/plan-draft", data=json.dumps({"node_ids": [node_id], "intent": "Inspect relation semantics."}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+                with urlopen(draft_request, timeout=2) as response:
+                    draft = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(draft["trust_status"], "untrusted_graph_plan_draft_not_execution_or_evidence_acceptance")
+                approval_request = Request(f"{base}/api/runs/graph_round_trip/graph/plan-approval", data=json.dumps({"plan_id": draft["plan_id"], "reviewer": "synthetic reviewer", "rationale": "Manual follow-up only."}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+                with urlopen(approval_request, timeout=2) as response:
+                    approval = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(approval["status"], "human_approved_graph_plan_follow_up_not_execution_or_evidence_acceptance")
+                self.assertNotIn("flight_plan.json", {path.name for path in run_dir.iterdir()})
+            finally:
+                server.shutdown(); server.server_close(); thread.join(timeout=2)
     def _server(self, web: Path, bundle: Path | None = None):
         server = build_ui_preview_server(0, web, ui_bundle=bundle)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -92,6 +163,52 @@ class UiPreviewTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=2)
+
+    def test_selected_bundle_preview_rejects_all_api_writes_without_api_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            web = root / "web"; web.mkdir(); (web / "index.html").write_text("<h1>preview</h1>", encoding="utf-8")
+            bundle = root / "ui.json"; bundle.write_text('{"schema_version":"1.0","mission":{"mission_id":"m"}}', encoding="utf-8")
+            server, thread = self._server(web, bundle)
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/missions",
+                    data=b'{"run_id":"must_not_write"}',
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as context:
+                    urlopen(request, timeout=2)
+                self.assertEqual(context.exception.code, 404)
+                context.exception.close()
+                with urlopen(f"http://127.0.0.1:{server.server_port}/ui.json", timeout=2) as response:
+                    self.assertEqual(response.read(), bundle.read_bytes())
+            finally:
+                server.shutdown(); server.server_close(); thread.join(timeout=2)
+
+    def test_artifact_routes_expose_only_fixed_approved_exports(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            web = root / "web"; web.mkdir(); (web / "index.html").write_text("<h1>preview</h1>", encoding="utf-8")
+            api = LocalMissionApi(root / "runs")
+            created = api.create_mission({"run_id": "artifact_routes", "question": "Synthetic artifact route", "material": "BiFeO3", "property": "phase stability", "scope": "fixture"})
+            run = root / "runs" / "artifact_routes"
+            (run / "ui.json").write_text(json.dumps({"schema_version": "1.0", "mission_id": created["mission_id"], "mission": {"mission_id": created["mission_id"]}}), encoding="utf-8")
+            server = build_ui_preview_server(0, web, api=api)
+            thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(f"{base}/api/runs/artifact_routes/artifacts", timeout=2) as response:
+                    manifest = json.loads(response.read().decode("utf-8"))
+                self.assertEqual([item["artifact_id"] for item in manifest["artifacts"]], ["ui_bundle"])
+                with urlopen(f"{base}/api/runs/artifact_routes/artifacts/ui_bundle", timeout=2) as response:
+                    self.assertEqual(response.headers["Content-Type"], "application/json; charset=utf-8")
+                    self.assertIn(b'"schema_version": "1.0"', response.read())
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(f"{base}/api/runs/artifact_routes/artifacts/private_pdf", timeout=2)
+                self.assertEqual(error.exception.code, 404)
+            finally:
+                server.shutdown(); server.server_close(); thread.join(timeout=2)
 
     def test_http_candidate_screening_then_authorized_pdf_stays_in_same_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -354,6 +471,15 @@ class UiPreviewTests(unittest.TestCase):
                 with urlopen(request, timeout=2) as response:
                     self.assertEqual(response.status, 201)
                     self.assertIn(b'"run_id": "http_live"', response.read())
+                with urlopen(f"{base}/api/runs/http_live/workflow-status", timeout=2) as response:
+                    workflow = response.read().decode("utf-8")
+                    self.assertIn('"trust_status": "loopback_workflow_status_not_scientific_evidence"', workflow)
+                    self.assertNotIn("map conditions", workflow)
+                with urlopen(f"{base}/api/facility-contracts", timeout=2) as response:
+                    contracts = response.read().decode("utf-8")
+                    self.assertIn('"schema_version": "cosmatter.facility-contract-catalogue/v1"', contracts)
+                    self.assertIn("condition_differential", contracts)
+                    self.assertNotIn("private-test-token", contracts)
                 with self.assertRaises(HTTPError) as context:
                     urlopen(f"{base}/api/runs/../../.env/ui", timeout=2)
                 self.assertEqual(context.exception.code, 404)

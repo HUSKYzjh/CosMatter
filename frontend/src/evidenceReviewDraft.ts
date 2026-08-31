@@ -1,6 +1,6 @@
 import type { RecordedSourceMapSegment } from "./localApi";
 
-export type EvidenceDraftIssue = "candidate" | "segment" | "claim" | "conditions-json" | "conditions-required" | "confidence" | "confirmation" | "handler" | null;
+export type EvidenceDraftIssue = "candidate" | "segment" | "claim" | "conditions-json" | "conditions-required" | "conditions-text" | "conditions-range" | "confidence" | "confirmation" | "handler" | null;
 
 export interface EvidenceDraftValidation {
   ready: boolean;
@@ -39,6 +39,15 @@ export function validateEvidenceDraft(input: {
     return { ready: false, issue: "conditions-json", conditions: null, confidence: null };
   }
   if (REQUIRED_CONDITIONS.some((key) => conditions[key] === null || conditions[key] === "" || conditions[key] === "unknown" || conditions[key] === undefined)) return { ready: false, issue: "conditions-required", conditions: null, confidence: null };
+  if (["sample_form", "substrate", "method"].some((key) => typeof conditions[key] !== "string" || !(conditions[key] as string).trim() || (conditions[key] as string).trim().length > 240)) return { ready: false, issue: "conditions-text", conditions: null, confidence: null };
+  const numericCondition = (key: "strain_percent" | "thickness_nm" | "temperature_k"): number | null => {
+    const value = conditions[key];
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  };
+  const strain = numericCondition("strain_percent");
+  const thickness = numericCondition("thickness_nm");
+  const temperature = numericCondition("temperature_k");
+  if (strain === null || thickness === null || temperature === null || thickness < 0 || temperature < 0) return { ready: false, issue: "conditions-range", conditions: null, confidence: null };
   const confidence = Number(input.confidenceText);
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) return { ready: false, issue: "confidence", conditions: null, confidence: null };
   if (!input.confirmed) return { ready: false, issue: "confirmation", conditions: null, confidence: null };

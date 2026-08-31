@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "trust_status": "local_plugin_allowlist_not_market_registry_or_install_instruction",
+  "owned_package_prefixes": ["@cosmatter/"],
+  "third_party_admissions": [],
+  "policy": {
+    "market_snapshot": "configs/dsh_market_snapshot.json",
+    "require_pinned_source": true,
+    "require_package_sha256": true,
+    "require_human_owner": true,
+    "require_review_expiry": true,
+    "block_high_hygiene_risk": true,
+    "production_profiles_must_not_read_market_snapshot": true,
+    "require_snapshot_diff_review": true
+  }
+}

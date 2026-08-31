@@ -1,0 +1,7 @@
+{"schema_version":"1.0","kind":"mission_create","run_id":"replay_fixture","question":"Synthetic phase-stability workflow","material":"BiFeO3","property":"phase stability","scope":"synthetic thin films"}
+{"schema_version":"1.0","kind":"plan_approve","subquestions":["Which synthetic conditions differ?"],"queries":["synthetic phase stability"],"counter_queries":["synthetic contradictory conditions"]}
+{"schema_version":"1.0","kind":"authorized_metadata_query","authorizations":["mission_scoped_egress_consent","metadata_provider_consent"],"query_index":0,"sources":["sciverse"],"dsh_call_id":"replay-query-0001"}
+{"schema_version":"1.0","kind":"candidate_screening","decisions":[{"document_id":"synthetic-doc","decision":"include_for_fulltext","reason_codes":["material_match","property_match"]}]}
+{"schema_version":"1.0","kind":"accepted_evidence_fixture","evidence_id":"synthetic-evidence","document_id":"synthetic-doc"}
+{"schema_version":"1.0","kind":"graph_project"}
+{"schema_version":"1.0","kind":"artifact_manifest"}

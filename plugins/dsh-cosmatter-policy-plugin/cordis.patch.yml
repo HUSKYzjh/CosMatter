@@ -1,0 +1,7 @@
+- insert:
+    - id: cosmatter-policy
+      name: '@cosmatter/dsh-policy-plugin'
+      config:
+        baseUrl: http://127.0.0.1:8765
+        timeoutMs: 5000
+        maxCatalogueBytes: 524288

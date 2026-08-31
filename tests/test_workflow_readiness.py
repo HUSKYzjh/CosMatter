@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import io
 import json
 import tempfile
@@ -45,7 +46,8 @@ class WorkflowReadinessTests(unittest.TestCase):
         self.assertEqual(stages["plan"]["status"], "completed")
         self.assertEqual(stages["retrieval"]["status"], "completed")
         self.assertEqual(stages["screening"]["status"], "completed")
-        self.assertEqual(stages["parse"]["status"], "ready")
+        self.assertEqual(stages["parse"]["status"], "waiting_human_review")
+        self.assertEqual(stages["screening"]["counts"]["fulltext_eligible_count"], 0)
         self.assertEqual(stored["next_stage"], "parse")
         self.assertNotIn("private question", json.dumps(stored))
         self.assertNotIn("private title", json.dumps(stored))
@@ -87,7 +89,7 @@ class WorkflowReadinessTests(unittest.TestCase):
             (run / "retrieval_candidates.json").write_text(json.dumps(self.history), encoding="utf-8")
             screening = candidate_screening_from_review(self.mission.mission_id, self.history, {"decisions": [{"document_id": "doc_1", "decision": "include_for_fulltext", "reason_codes": ["material_match"]}]})
             write_candidate_screening(run, screening)
-            ledger = {"schema_version": "1.0", "mission_id": self.mission.mission_id, "tasks": [{"document_id": "doc_1", "provider": "mineru", "source_url_sha256": "0" * 64, "task_id": "task_1", "state": "pending", "model_version": "configured"}]}
+            ledger = {"schema_version": "1.0", "mission_id": self.mission.mission_id, "tasks": [{"document_id": "doc_1", "provider": "mineru", "source_url_sha256": "0" * 64, "task_id": hashlib.sha256(b"task_1").hexdigest(), "state": "pending", "model_version": "configured"}]}
             (run / "source_parse_tasks.json").write_text(json.dumps(ledger), encoding="utf-8")
             def receipt(state: str) -> None:
                 append_provider_receipt(run, mineru_task_receipt(

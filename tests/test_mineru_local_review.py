@@ -8,10 +8,10 @@ from unittest.mock import patch
 
 from cosmatter.cli import main
 from cosmatter.mineru import MinerUTask
-from cosmatter.mineru_local_review import MinerULocalReviewError, prepare_mineru_markdown_review_pool, source_map_pool_review_template, source_map_selection_from_pool_review
+from cosmatter.mineru_local_review import MinerULocalReviewError, prepare_mineru_markdown_review_pool, source_map_pool_review_template, source_map_selection_from_pool_review, write_source_map_pool_review_selection
 from cosmatter.models import MissionBrief
 from cosmatter.source_parse import record_source_parse_task
-from cosmatter.source_map import source_map_from_pool_review
+from cosmatter.source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, source_map_from_pool_review
 
 
 class MinerULocalReviewTests(unittest.TestCase):
@@ -72,6 +72,34 @@ class MinerULocalReviewTests(unittest.TestCase):
         self.assertEqual(source_map["schema_version"], "1.1")
         self.assertEqual(source_map["source_markdown_sha256"], pool["source_markdown_sha256"])
         self.assertEqual(source_map["segments"][0]["quote"], "First exact finding.")
+
+    def test_delegated_automated_trial_selection_stays_distinct_from_human_review(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "mineru.md"
+            pool_path = root / "pool.json"
+            input_path.write_text("First exact finding.", encoding="utf-8")
+            task = {"document_id": "doc_1", "provider": "mineru", "state": "done", "task_id": "task_1"}
+            pool = prepare_mineru_markdown_review_pool(mission_id="mission_1", document_id="doc_1", source_task=task, input_path=input_path, output_path=pool_path)
+            review = source_map_pool_review_template(pool, delegated_automated_trial=True)
+            review["trust_status"] = "delegated_automated_trial_source_map_pool_selection"
+            review["segments"][0]["selected"] = True
+            review["segments"][0]["reason"] = "Direct support for authorized trial question."
+            review["trust_status"] = "delegated_automated_trial_source_map_pool_selection"
+            selection_path = root / "selection.json"
+            write_source_map_pool_review_selection(selection_path, review, delegated_automated_trial=True)
+            selection_exists = selection_path.exists()
+            selection, digest = source_map_selection_from_pool_review(pool=pool, review=review, delegated_automated_trial=True)
+            source_map = source_map_from_pool_review(
+                mission_id="mission_1",
+                document_id="doc_1",
+                source_task=task,
+                selection=selection,
+                source_markdown_sha256=digest,
+                trust_status=AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS,
+            )
+        self.assertEqual(source_map["trust_status"], AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS)
+        self.assertTrue(selection_exists)
 
     def test_cli_writes_no_markdown_or_path_into_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -14,6 +14,8 @@ from typing import Any
 
 
 SOURCE_MAP_SCHEMA_VERSION = "1.0"
+HUMAN_SOURCE_MAP_TRUST_STATUS = "human_reviewed_parser_selection"
+AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS = "delegated_automated_trial_source_map_not_scientific_evidence"
 _MAX_SEGMENTS = 12
 _MAX_QUOTE_CHARS = 500
 _INPUT_FIELDS = {"document_id", "segments"}
@@ -34,6 +36,7 @@ def source_map_from_review(
     document_id: str,
     source_task: dict[str, Any],
     selection: object,
+    trust_status: str = HUMAN_SOURCE_MAP_TRUST_STATUS,
 ) -> dict[str, Any]:
     """Create a review-only source map after a completed recorded task.
 
@@ -44,14 +47,16 @@ def source_map_from_review(
     if not isinstance(mission_id, str) or not mission_id.strip() or not isinstance(document_id, str) or not document_id.strip():
         raise SourceMapError("mission_id and document_id must be nonempty")
     _validate_completed_task(source_task, document_id)
+    if trust_status not in {HUMAN_SOURCE_MAP_TRUST_STATUS, AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS}:
+        raise SourceMapError("source map trust status is invalid")
     selected_segments = _segments_from_selection(selection, document_id)
     return {
         "schema_version": SOURCE_MAP_SCHEMA_VERSION,
         "mission_id": mission_id,
-        "trust_status": "human_reviewed_parser_selection",
+        "trust_status": trust_status,
         "document_id": document_id,
         "provider": "mineru",
-        "task_id_sha256": hashlib.sha256(source_task["task_id"].encode("utf-8")).hexdigest(),
+        "task_id_sha256": _task_digest(source_task["task_id"]),
         "segments": selected_segments,
     }
 
@@ -64,6 +69,7 @@ def source_map_from_pool_review(
     source_task: dict[str, Any],
     selection: object,
     source_markdown_sha256: str,
+    trust_status: str = HUMAN_SOURCE_MAP_TRUST_STATUS,
 ) -> dict[str, Any]:
     """Create a Source Map whose selected snippets were resolved from a private pool."""
     if not isinstance(source_markdown_sha256, str) or len(source_markdown_sha256) != 64 or any(char not in "0123456789abcdef" for char in source_markdown_sha256):
@@ -73,6 +79,7 @@ def source_map_from_pool_review(
         document_id=document_id,
         source_task=source_task,
         selection=selection,
+        trust_status=trust_status,
     )
     result["schema_version"] = "1.1"
     result["source_markdown_sha256"] = source_markdown_sha256
@@ -156,6 +163,12 @@ def _validate_completed_task(source_task: object, document_id: str) -> None:
         raise SourceMapError("source parse task identity is invalid")
 
 
+def _task_digest(task_id: str) -> str:
+    if len(task_id) == 64 and all(character in "0123456789abcdef" for character in task_id):
+        return task_id
+    return hashlib.sha256(task_id.encode("utf-8")).hexdigest()
+
+
 def _segments_from_selection(selection: object, document_id: str) -> list[dict[str, str]]:
     if not isinstance(selection, dict) or set(selection) != _INPUT_FIELDS or selection.get("document_id") != document_id:
         raise SourceMapError("review selection fields or document identity are invalid")
@@ -195,7 +208,7 @@ def _validate_source_map(payload: object) -> None:
     expected_fields = _MAP_FIELDS if schema_version == SOURCE_MAP_SCHEMA_VERSION else _POOL_BOUND_MAP_FIELDS if schema_version == "1.1" else None
     if expected_fields is None or set(payload) != expected_fields:
         raise SourceMapError("source map has unsupported or missing fields")
-    if payload.get("trust_status") != "human_reviewed_parser_selection":
+    if payload.get("trust_status") not in {HUMAN_SOURCE_MAP_TRUST_STATUS, AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS}:
         raise SourceMapError("source map schema or trust status is invalid")
     if schema_version == "1.1":
         fingerprint = payload.get("source_markdown_sha256")

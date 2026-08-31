@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "group_id": "cosmatter-loopback-safe",
+  "description": "Composable DSH adapters for CosMatter's local, review-gated domain API.",
+  "packages": [
+    {
+      "package": "@cosmatter/dsh-mission-plugin",
+      "path": "dsh-cosmatter-mission-plugin",
+      "plugin_id": "cosmatter-mission",
+      "tools": ["cosmatter_mission_create"],
+      "automation_boundary": "local_mission_creation_only"
+    },
+    {
+      "package": "@cosmatter/dsh-observability-plugin",
+      "path": "dsh-cosmatter-observability-plugin",
+      "plugin_id": "cosmatter-observability",
+      "tools": ["cosmatter_workflow_status", "cosmatter_stage_contract", "cosmatter_operational_telemetry", "cosmatter_workflow_dag", "cosmatter_artifact_manifest"],
+      "automation_boundary": "loopback_only_count_based_status_fixed_nonexecuting_stage_contract_aggregate_operational_telemetry_declared_dag_readiness_and_fixed_allowlisted_artifact_cards"
+    },
+    {
+      "package": "@cosmatter/dsh-policy-plugin",
+      "path": "dsh-cosmatter-policy-plugin",
+      "plugin_id": "cosmatter-policy",
+      "tools": ["cosmatter_plugin_catalogue", "cosmatter_plugin_authorization_plan"],
+      "automation_boundary": "static_catalogue_and_nonexecuting_authorization_plans_only"
+    },
+    {
+      "package": "@cosmatter/dsh-research-plugin",
+      "path": "dsh-cosmatter-research-plugin",
+      "plugin_id": "cosmatter-research",
+      "tools": ["cosmatter_research_plan_draft", "cosmatter_research_plan_approve", "cosmatter_research_query_execute"],
+      "automation_boundary": "explicit-consent_deepseek_drafts_and_metadata-only_provider_queries; no_fulltext_or_evidence_acceptance"
+    },
+    {
+      "package": "@cosmatter/dsh-review-plugin",
+      "path": "dsh-cosmatter-review-plugin",
+      "plugin_id": "cosmatter-review",
+      "tools": ["cosmatter_candidate_screening_template", "cosmatter_candidate_screening_record"],
+      "automation_boundary": "metadata-only_human_candidate_screening_gate; no_provider_dispatch_or_evidence_acceptance"
+    },
+    {
+      "package": "@cosmatter/dsh-document-plugin",
+      "path": "dsh-cosmatter-document-plugin",
+      "plugin_id": "cosmatter-document",
+      "tools": ["cosmatter_mineru_source_submit", "cosmatter_mineru_task_poll"],
+      "automation_boundary": "explicit-consent_screened-content-authorized_mineru_task_metadata_only; no_parser_output_or_evidence_acceptance"
+    },
+    {
+      "package": "@cosmatter/dsh-graph-plugin",
+      "path": "dsh-cosmatter-graph-plugin",
+      "plugin_id": "cosmatter-graph",
+      "tools": ["cosmatter_graph_query", "cosmatter_accepted_evidence_search", "cosmatter_graph_plan", "cosmatter_graph_review_request"],
+      "automation_boundary": "read_only_graph_and_pending_human_review_only"
+    }
+  ],
+  "catalogue_coverage": [
+    {"descriptor": "mission.define", "status": "exposed", "bundle": "@cosmatter/dsh-mission-plugin", "reason": "bounded local mission creation"},
+    {"descriptor": "planning.orchestrate", "status": "python_or_human_boundary", "bundle": null, "reason": "workflow artifact orchestration remains in the Python domain layer"},
+    {"descriptor": "workflow.status", "status": "exposed", "bundle": "@cosmatter/dsh-observability-plugin", "reason": "read-only count-based workflow readiness projection"},
+    {"descriptor": "workflow.stage_contract", "status": "exposed", "bundle": "@cosmatter/dsh-observability-plugin", "reason": "read-only fixed completion, human-gate, output-class, and nonexecuting recovery-route projection"},
+    {"descriptor": "workflow.operational_telemetry", "status": "exposed", "bundle": "@cosmatter/dsh-observability-plugin", "reason": "read-only aggregate receipt, dispatch-state, and already human-reviewed cost-latency projection"},
+    {"descriptor": "workflow.dag", "status": "exposed", "bundle": "@cosmatter/dsh-observability-plugin", "reason": "read-only fixed-DAG readiness projection; it has no scheduler or execution authority"},
+    {"descriptor": "literature.question_candidates", "status": "python_or_human_boundary", "bundle": null, "reason": "question reframing remains an untrusted domain draft, not a DSH execution tool"},
+    {"descriptor": "literature.plan_draft", "status": "exposed", "bundle": "@cosmatter/dsh-research-plugin", "reason": "explicit-consent untrusted planning draft"},
+    {"descriptor": "literature.metadata_retrieval", "status": "exposed", "bundle": "@cosmatter/dsh-research-plugin", "reason": "explicit-consent approved-plan metadata retrieval"},
+    {"descriptor": "literature.deduplicate_and_rank", "status": "exposed", "bundle": "@cosmatter/dsh-research-plugin", "reason": "backend-owned bounded post-processing of its metadata response"},
+    {"descriptor": "document.mineru_private_parse", "status": "exposed", "bundle": "@cosmatter/dsh-document-plugin", "reason": "screened-source, explicit-consent task submission and metadata polling only"},
+    {"descriptor": "bibliography.two_hop_expand", "status": "python_or_human_boundary", "bundle": null, "reason": "external bibliographic expansion is not exposed until a dedicated bounded review flow exists"},
+    {"descriptor": "evidence.material_extract", "status": "python_or_human_boundary", "bundle": null, "reason": "candidate extraction stays in the reviewed Python artifact pipeline"},
+    {"descriptor": "evidence.source_map", "status": "python_or_human_boundary", "bundle": null, "reason": "source mapping requires a human gate and private-content boundary"},
+    {"descriptor": "evidence.verify", "status": "python_or_human_boundary", "bundle": null, "reason": "evidence acceptance is an irreducible human gate"},
+    {"descriptor": "knowledge.fuse", "status": "exposed", "bundle": "@cosmatter/dsh-graph-plugin", "reason": "bounded read-only search over already accepted evidence-card metadata"},
+    {"descriptor": "graph.project_accepted_evidence", "status": "python_or_human_boundary", "bundle": null, "reason": "graph construction is an explicit backend derivation from accepted evidence"},
+    {"descriptor": "graph.export_projection", "status": "exposed", "bundle": "@cosmatter/dsh-graph-plugin", "reason": "bounded read-only accepted-evidence graph projection"},
+    {"descriptor": "graph.plan", "status": "exposed", "bundle": "@cosmatter/dsh-graph-plugin", "reason": "pending-human-review graph plan draft"},
+    {"descriptor": "graph.plan_assist", "status": "python_or_human_boundary", "bundle": null, "reason": "external model-assisted graph planning is not exposed through the DSH group"},
+    {"descriptor": "graph.review_release", "status": "python_or_human_boundary", "bundle": null, "reason": "graph release remains an irreducible human gate"},
+    {"descriptor": "graph.review_request", "status": "exposed", "bundle": "@cosmatter/dsh-graph-plugin", "reason": "pending human review request only"},
+    {"descriptor": "research.gap_candidates", "status": "python_or_human_boundary", "bundle": null, "reason": "gap candidates remain non-accepted Python-derived review artifacts"},
+    {"descriptor": "report.generate", "status": "python_or_human_boundary", "bundle": null, "reason": "report generation remains an accepted-evidence Python derivation"},
+    {"descriptor": "run_package.continue", "status": "python_or_human_boundary", "bundle": null, "reason": "run restoration remains a local artifact-management operation"},
+    {"descriptor": "potential_scope.plan_only", "status": "python_or_human_boundary", "bundle": null, "reason": "potential-scope planning has no DSH adapter in this release"},
+    {"descriptor": "potential_scope.private_triage", "status": "python_or_human_boundary", "bundle": null, "reason": "private literature triage is excluded from DSH because it needs a private-content external boundary"}
+  ],
+  "invariants": [
+    "loopback_only",
+    "no_private_fulltext_or_credentials",
+    "authorization_is_not_evidence_acceptance",
+    "external_provider_dispatch_requires_durable_explicit_mission_consent",
+    "no_private_fulltext_or_parser_output_from_dsh"
+  ]
+}

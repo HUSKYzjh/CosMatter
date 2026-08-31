@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "synthetic_review_gated_workflow",
+  "trust_status": "synthetic_replay_expectations_not_scientific_evidence",
+  "expected": {
+    "candidate_count": 1,
+    "candidate_document_ids": ["synthetic-doc"],
+    "dispatch_states": ["completed"],
+    "screening_decision_count": 1,
+    "accepted_evidence_count": 1,
+    "graph_node_type_count": 5,
+    "artifact_ids": ["graph_snapshot", "ui_bundle"],
+    "forbidden_substrings": ["fixture-token", "https://", "Synthetic phase-stability workflow"]
+  }
+}

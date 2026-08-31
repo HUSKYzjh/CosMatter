@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "recipe_id": "cosmatter-loopback-safe-synthetic-v1",
+  "trust_status": "synthetic_harness_recipe_not_scientific_evidence_or_provider_benchmark",
+  "compatibility_matrix": "configs/dsh_compatibility.json",
+  "fixture": "fixtures/dsh_replay/synthetic_review_gated_workflow.session.jsonl",
+  "expected_workspace": "fixtures/dsh_replay/synthetic_review_gated_workflow.workspace.expected.json",
+  "required_checks": [
+    "release_matrix",
+    "market_snapshot_review",
+    "third_party_admission",
+    "synthetic_replay"
+  ],
+  "quality_boundary": "Only deterministic synthetic workflow assertions; no scientific-quality score.",
+  "latency_boundary": "Local verifier elapsed time only; not provider latency or a service-level objective.",
+  "safety_boundary": "No .env, provider call, case-data, private run, paper text, URL, task ID, or token may enter the fixture or report.",
+  "known_limitations": [
+    "The recipe validates local release files and loopback-domain behavior; it does not prove real-provider availability.",
+    "The replay fakes only the network adapter and does not replace human review requirements."
+  ]
+}

@@ -1,5 +1,27 @@
 export type ContinuationView = "workflow" | "graph";
 
+export interface RestoredStageReconciliation {
+  stage: string | null;
+  source: "local_contract" | "package_snapshot";
+  differsFromPackage: boolean;
+}
+
+/**
+ * A package snapshot is useful when private caches were intentionally omitted,
+ * but a newly restored local stage contract is authoritative whenever it can
+ * be derived.  This prevents the landing view from outrunning its local gates.
+ */
+export function reconcileRestoredStage(
+  packageStage: string | null | undefined,
+  localStage: string | null | undefined,
+  localContractAvailable: boolean,
+): RestoredStageReconciliation {
+  const normalizedPackage = (packageStage ?? "").trim().toLowerCase() || null;
+  if (!localContractAvailable) return { stage: normalizedPackage, source: "package_snapshot", differsFromPackage: false };
+  const normalizedLocal = (localStage ?? "").trim().toLowerCase() || null;
+  return { stage: normalizedLocal, source: "local_contract", differsFromPackage: normalizedLocal !== normalizedPackage };
+}
+
 /**
  * A run package never restores ephemeral browser paper selection. Once its
  * audited readiness has reached human screening, reopen the literature map so

@@ -1,0 +1,17 @@
+{
+  "schema_version": "cosmatter.workflow-dag-definition/v1",
+  "dag_id": "cosmatter_review_gated_linear_workflow",
+  "execution_boundary": "declaration_and_readiness_projection_only",
+  "max_concurrency": 1,
+  "stages": [
+    {"stage": "intake", "depends_on": [], "allowed_descriptors": ["mission.define"], "data_classification": "mission", "execution_class": "local_review_gated"},
+    {"stage": "plan", "depends_on": ["intake"], "allowed_descriptors": ["planning.orchestrate"], "data_classification": "mission", "execution_class": "local_review_gated"},
+    {"stage": "retrieval", "depends_on": ["plan"], "allowed_descriptors": ["literature.metadata_retrieval", "literature.deduplicate_and_rank"], "data_classification": "public_metadata", "execution_class": "explicit_consent_required"},
+    {"stage": "screening", "depends_on": ["retrieval"], "allowed_descriptors": [], "data_classification": "public_metadata", "execution_class": "human_review_required"},
+    {"stage": "parse", "depends_on": ["screening"], "allowed_descriptors": ["document.mineru_private_parse"], "data_classification": "private_fulltext", "execution_class": "explicit_consent_required"},
+    {"stage": "extraction", "depends_on": ["parse"], "allowed_descriptors": ["evidence.material_extract", "evidence.source_map", "evidence.verify"], "data_classification": "reviewable_excerpt", "execution_class": "human_review_required"},
+    {"stage": "gap", "depends_on": ["extraction"], "allowed_descriptors": ["research.gap_candidates"], "data_classification": "accepted_evidence", "execution_class": "human_review_required"},
+    {"stage": "report", "depends_on": ["gap"], "allowed_descriptors": ["report.generate"], "data_classification": "accepted_evidence", "execution_class": "local_review_gated"},
+    {"stage": "evaluation", "depends_on": ["report"], "allowed_descriptors": [], "data_classification": "run_summary", "execution_class": "human_review_required"}
+  ]
+}

@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from html import unescape
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -196,6 +198,30 @@ def normalized_doi_or_none(value: object) -> str | None:
         return None
 
 
+_MARKUP_TAG = re.compile(r"<[^>]*>")
+_URL_IN_PUBLIC_TEXT = re.compile(r"https?://", re.IGNORECASE)
+
+
+def normalize_public_title(value: str) -> str:
+    """Return plain, bounded candidate-title metadata with no embedded URL.
+
+    Search providers sometimes send MathML/HTML titles.  Namespace attributes
+    in that markup can contain a complete URL, which must not enter a run
+    artifact or a browser projection.  This is presentation normalization,
+    not a scientific-text transformation.
+    """
+    if not isinstance(value, str):
+        raise ValueError("title must be a string")
+    title = " ".join(_MARKUP_TAG.sub(" ", unescape(value)).split())
+    if not title:
+        raise ValueError("title must not be empty")
+    if len(title) > 500:
+        raise ValueError("title exceeds safe metadata bound")
+    if _URL_IN_PUBLIC_TEXT.search(title):
+        raise ValueError("title must not contain a URL")
+    return title
+
+
 def _nonempty(value: str, field_name: str) -> str:
     value = value.strip()
     if not value:
@@ -317,7 +343,7 @@ class PaperCandidate:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "document_id", _nonempty(self.document_id, "document_id"))
-        object.__setattr__(self, "title", _nonempty(self.title, "title"))
+        object.__setattr__(self, "title", normalize_public_title(self.title))
         object.__setattr__(self, "query", _nonempty(self.query, "query"))
         object.__setattr__(self, "source", _nonempty(self.source, "source"))
         if self.publication_year is not None and not 1000 <= self.publication_year <= 3000:

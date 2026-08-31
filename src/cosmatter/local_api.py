@@ -8,6 +8,8 @@ retrieval payload, audit event payload, or arbitrary file path.
 from __future__ import annotations
 
 import json
+import hashlib
+import math
 import re
 from threading import Lock, Thread
 from dataclasses import dataclass, field
@@ -16,7 +18,7 @@ from urllib.request import Request, urlopen
 from typing import Any, Callable
 
 from .audit import AuditPathError, FlightRecorder, safe_run_id
-from .config import AGENT_ROOT, Settings
+from .config import AGENT_ROOT, Settings, data_root
 from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .dispatch import DispatchError, MissionDispatcher
 from .metadata_search import MetadataSearchAdapter, MetadataSearchConfigurationError, MetadataSearchRequestError
@@ -33,7 +35,7 @@ from .planning import (
 )
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .candidate_screening import CandidateScreeningError, candidate_screening_from_review, candidate_screening_template, load_candidate_screening, require_document_screened_for_fulltext, screening_matches_candidates, write_candidate_screening
-from .provider_receipts import ProviderReceiptError, append_provider_receipt, sciverse_search_receipt
+from .provider_receipts import ProviderReceiptError, append_provider_receipt, mineru_task_receipt, sciverse_search_receipt
 from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
@@ -41,18 +43,42 @@ from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError,
 from .private_storage import PrivateStorageError, read_markdown, safe_document_id, write_markdown, write_pdf
 from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexRequestError, normalize_doi
 from .crossref import CrossrefAdapter, CrossrefRequestError
-from .citation_expansion import CitationExpansionError, build_citation_expansion, write_citation_expansion
+from .citation_expansion import CitationExpansionError, build_citation_expansion, validate_citation_expansion, write_citation_expansion
 from .run_package import RunPackageError, export_run_package, restore_run_package
 from .source_map import SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_review, write_source_map_for_document
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, write_evidence_provenance_audit
 from .material_extraction import MaterialExtractionError, material_facts_from_review, write_material_facts_for_document
-from .ingestion import EvidenceIngestionError, ingest_evidence_draft
-from .source_parse import SourceParseArtifactError, record_source_parse_task, task_for_document, update_source_parse_task
+from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
+from .source_parse import SourceParseArtifactError, private_task_id_for_document, record_source_parse_task, task_for_document, update_source_parse_task
 from .pdf_task_registry import PdfTaskRegistryError, assert_pdf_task_slot, load_pdf_tasks, task_for_pdf_document, write_pdf_task
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
 from .facilities import DiscrepancyMatrix, DiscrepancyRow, FacilityGateError, condition_differential, write_condition_matrix
+from .facility_contracts import facility_contracts
 from .gap_analysis import GapAnalysisError, candidates_from_discrepancies, write_gap_candidates
-from .workflow_readiness import WorkflowReadinessError, continuation_next_stage
+from .workflow_readiness import WorkflowReadinessError, continuation_next_stage, workflow_readiness
+from .graph_builder import build_accepted_evidence_graph
+from .graph_projection import bounded_graph_projection, external_graph_projection
+from .graph_validation import GraphContractError, validate_graph_payload
+from .harness_receipts import PluginExecutionReceipt
+from .graph_plan import GraphPlanDraft
+from .graph_model_plan import GraphModelPlanError, graph_plan_assist_prompts, normalized_graph_model_plan_draft
+from .graph_review import GraphReviewRequest
+from .graph_plan_review import GraphPlanApproval
+from .harness_catalog import CosMatterHarnessCatalogue
+from .harness_policy import MissionAuthorization, evaluate_mission_authorization
+from .external_dispatch import (
+    ExternalDispatchError,
+    begin_external_dispatch,
+    complete_external_dispatch,
+    mark_external_dispatch_unknown,
+)
+from .accepted_evidence_search import AcceptedEvidenceSearchError, search_accepted_evidence
+from .runtime_invariants import RuntimeInvariantError, audit_runtime_invariants
+from .artifact_contract import ArtifactContractError, ArtifactDownload, approved_artifact_download, artifact_manifest
+from .stage_contract import StageContractError, stage_contract
+from .operational_telemetry import OperationalTelemetryError, operational_telemetry
+from .workflow_dag import WorkflowDagError, workflow_dag_projection
+from .reminder_board import ReminderBoardError, project_reminder_board
 
 
 class LocalApiError(ValueError):
@@ -64,7 +90,7 @@ class LocalApiError(ValueError):
 
 
 def _runs_dir() -> Path:
-    return AGENT_ROOT / "runs"
+    return data_root() / "runs"
 
 
 _RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
@@ -113,9 +139,52 @@ class LocalMissionApi:
             },
         }
 
+    def plugin_catalogue(self) -> dict[str, object]:
+        """Expose static, non-executable capability contracts to local adapters."""
+        catalogue = CosMatterHarnessCatalogue()
+        return {
+            "catalogue_api_version": "2.0",
+            "plugins": catalogue.manifests(),
+            "trust_status": "static_catalogue_not_plugin_execution_or_evidence_acceptance",
+        }
+
+    def facility_contract_catalogue(self) -> dict[str, object]:
+        """Expose static facility schemas and safety boundaries only.
+
+        This is catalogue data, not an invocation handle: it contains no task
+        content, provider route, command, retry request, or credential.
+        """
+        return {
+            "schema_version": "cosmatter.facility-contract-catalogue/v1",
+            "trust_status": "static_facility_contracts_not_execution_or_evidence_acceptance",
+            "contracts": [contract.manifest() for contract in facility_contracts()],
+        }
+
+    def plan_plugin_authorization(self, run_id: str, payload: object) -> dict[str, object]:
+        """Evaluate a prospective adapter dispatch without persisting a grant or dispatching it."""
+        _, mission = self._active_mission(run_id)
+        body = _object_payload(payload)
+        plugin_id, raw_authorizations, actor = body.get("plugin_id"), body.get("authorizations"), body.get("actor", "human_researcher")
+        if not isinstance(plugin_id, str) or not plugin_id.strip() or len(plugin_id.strip()) > 120 or not isinstance(raw_authorizations, list) or len(raw_authorizations) > 12 or not all(isinstance(item, str) and item.strip() and len(item.strip()) <= 120 for item in raw_authorizations) or not isinstance(actor, str) or not actor.strip() or len(actor.strip()) > 200:
+            raise LocalApiError("plugin authorization plan is invalid")
+        try:
+            decision = evaluate_mission_authorization(
+                CosMatterHarnessCatalogue(),
+                MissionAuthorization(mission.mission_id, plugin_id.strip(), tuple(item.strip() for item in raw_authorizations), actor.strip()),
+            )
+        except ValueError as error:
+            raise LocalApiError(str(error)) from error
+        FlightRecorder(self.runs_dir, run_id).record(
+            event_type="plugin_authorization_planned", actor="harness_policy_plan", state=MissionState.PLAN,
+            payload={"plugin_id": decision["plugin_id"], "permitted": decision["permitted"], "reason": decision["reason"], "missing_authorizations": decision["missing_authorizations"], "trust_status": "nonexecuting_authorization_plan_not_consent_or_execution"},
+        )
+        return {**decision, "trust_status": "nonexecuting_authorization_plan_not_consent_or_execution"}
+
     def question_candidates(self, payload: object) -> dict[str, object]:
         """Create bounded, explicitly untrusted mission alternatives."""
         body = _object_payload(payload)
+        if body.get("candidate_generation_authorized") is not True:
+            raise LocalApiError("question-candidate generation requires explicit consent")
         question = _bounded_text(body, "question", 3_000)
         if len(question) < 12:
             raise LocalApiError("question must contain at least 12 characters")
@@ -277,6 +346,12 @@ class LocalMissionApi:
             failed_sources = tuple(str(source) for source in retrieval["failed_sources"])
             failure_count = len(failed_sources)
             if bool(retrieval["all_sources_failed"]):
+                recorder.record(
+                    event_type="automatic_retrieval_failed",
+                    actor="search_selection",
+                    state=MissionState.FAILED,
+                    payload={"sources": list(sources), "failed_sources": list(failed_sources), "safe_reason": "all selected providers failed"},
+                )
                 self._write_automatic_execution_status(
                     run_dir,
                     mission.mission_id,
@@ -286,22 +361,7 @@ class LocalMissionApi:
                     failed_sources=failed_sources,
                     planning_warning=planning_warning,
                 )
-                recorder.record(
-                    event_type="automatic_retrieval_failed",
-                    actor="search_selection",
-                    state=MissionState.FAILED,
-                    payload={"sources": list(sources), "failed_sources": list(failed_sources), "safe_reason": "all selected providers failed"},
-                )
                 return
-            self._write_automatic_execution_status(
-                run_dir,
-                mission.mission_id,
-                state="succeeded",
-                candidate_count=candidate_count,
-                failure_count=failure_count,
-                failed_sources=failed_sources,
-                planning_warning=planning_warning,
-            )
             recorder.record(
                 event_type="automatic_execution_completed",
                 actor="mission_control",
@@ -312,6 +372,15 @@ class LocalMissionApi:
                     "planning_warning": planning_warning,
                     "trust_status": "metadata_only_not_scientific_evidence",
                 },
+            )
+            self._write_automatic_execution_status(
+                run_dir,
+                mission.mission_id,
+                state="succeeded",
+                candidate_count=candidate_count,
+                failure_count=failure_count,
+                failed_sources=failed_sources,
+                planning_warning=planning_warning,
             )
         except RunControlError:
             self._write_automatic_execution_status(
@@ -325,6 +394,7 @@ class LocalMissionApi:
             )
         except LocalApiError as error:
             failure_count = max(failure_count, 1)
+            recorder.record(event_type="automatic_retrieval_failed", actor="search_selection", state=MissionState.FAILED, payload={"sources": list(sources), "failed_sources": list(failed_sources), "safe_reason": str(error)[:300]})
             self._write_automatic_execution_status(
                 run_dir,
                 mission.mission_id,
@@ -334,7 +404,6 @@ class LocalMissionApi:
                 failed_sources=failed_sources,
                 planning_warning=planning_warning,
             )
-            recorder.record(event_type="automatic_retrieval_failed", actor="search_selection", state=MissionState.FAILED, payload={"sources": list(sources), "failed_sources": list(failed_sources), "safe_reason": str(error)[:300]})
         finally:
             with self._automatic_jobs_lock:
                 self._automatic_jobs.pop(run_id, None)
@@ -424,6 +493,33 @@ class LocalMissionApi:
         )
         return {"run_id": run_id, "trust_status": "untrusted_draft", "content": completion.content}
 
+    def draft_authorized_plan(self, run_id: str, payload: object) -> dict[str, object]:
+        """Dispatch one DeepSeek planning draft only after a durable explicit receipt."""
+        body = self._record_explicit_external_authorization(run_id, payload, "literature.plan_draft")
+        run_dir, mission = self._active_mission(run_id)
+        call_id = _dsh_call_id(body)
+        try:
+            _require_runtime_invariant_safety(run_dir, mission.mission_id)
+            dispatch = begin_external_dispatch(
+                run_dir, mission_id=mission.mission_id, dsh_call_id=call_id,
+                plugin_id="literature.plan_draft", operation="deepseek_plan_draft",
+                request_shape={"run_id": run_id, "operation": "deepseek_plan_draft"},
+            )
+            if dispatch["duplicate"]:
+                return _completed_draft_result(run_dir, run_id)
+            result = self.draft_plan(run_id)
+            complete_external_dispatch(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id)
+            return result
+        except (DeepSeekConfigurationError, DeepSeekRequestError, ExternalDispatchError, LocalApiError, OSError, ValueError) as error:
+            if not isinstance(error, ExternalDispatchError) or "already" not in str(error):
+                try:
+                    mark_external_dispatch_unknown(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id)
+                except ExternalDispatchError:
+                    pass
+            if isinstance(error, LocalApiError):
+                raise
+            raise LocalApiError(str(error), 503) from error
+
     def approve_plan(self, run_id: str, payload: object) -> dict[str, object]:
         run_dir, mission = self._active_mission(run_id)
         try:
@@ -496,6 +592,196 @@ class LocalMissionApi:
             payload={"plan_id": plan.artifact_id, "query_kind": "counter" if counter else "primary", "query_index": index, "sources": list(sources), "candidate_count": len(candidates), "source_counts": source_counts, "provider_receipt_ids": provider_receipt_ids},
         )
         return {"run_id": run_id, "query_kind": "counter" if counter else "primary", "query_index": index, "sources": list(sources), "source_counts": source_counts, "candidate_count": len(candidates), "candidates": [candidate.to_dict() for candidate in candidates]}
+
+    def execute_authorized_plan_query(self, run_id: str, payload: object) -> dict[str, object]:
+        """Run a metadata query only after recording the named provider consent."""
+        raw_body = _object_payload(payload)
+        if "sources" not in raw_body:
+            raise LocalApiError("authorized metadata retrieval requires explicitly selected sources")
+        _selected_sources(raw_body.get("sources"))
+        body = self._record_explicit_external_authorization(run_id, raw_body, "literature.metadata_retrieval")
+        run_dir, mission = self._active_mission(run_id)
+        call_id = _dsh_call_id(body)
+        request = {key: body[key] for key in ("query_index", "counter", "sources") if key in body}
+        try:
+            _require_runtime_invariant_safety(run_dir, mission.mission_id)
+            dispatch = begin_external_dispatch(
+                run_dir, mission_id=mission.mission_id, dsh_call_id=call_id,
+                plugin_id="literature.metadata_retrieval", operation="metadata_query", request_shape=request,
+            )
+            if dispatch["duplicate"]:
+                return _completed_query_result(run_dir, run_id, request)
+            result = self.execute_plan_query(run_id, request)
+            receipt_ids = _latest_provider_receipt_ids(run_dir, provider="sciverse", operation="agentic_search") if "sciverse" in request.get("sources", []) else ()
+            complete_external_dispatch(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id, provider_receipt_ids=receipt_ids)
+            return result
+        except (SciverseConfigurationError, SciverseRequestError, MetadataSearchConfigurationError, MetadataSearchRequestError, ExternalDispatchError, LocalApiError, OSError, ValueError) as error:
+            if not isinstance(error, ExternalDispatchError) or "already" not in str(error):
+                try:
+                    mark_external_dispatch_unknown(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id)
+                except ExternalDispatchError:
+                    pass
+            if isinstance(error, LocalApiError):
+                raise
+            raise LocalApiError(str(error), 503) from error
+
+    def submit_authorized_mineru_source(self, run_id: str, payload: object) -> dict[str, object]:
+        """Submit one screened, content-authorized HTTPS source to MinerU without exposing its URL."""
+        body = self._record_explicit_external_authorization(
+            run_id, payload, "document.mineru_private_parse", state=MissionState.EXTRACT,
+        )
+        document_id, source_url = body.get("document_id"), body.get("source_url")
+        if not isinstance(document_id, str) or not document_id.strip() or len(document_id.strip()) > 255:
+            raise LocalApiError("document_id is invalid")
+        if not isinstance(source_url, str):
+            raise LocalApiError("source_url is invalid")
+        run_dir, mission = self._active_mission(run_id)
+        call_id = _dsh_call_id(body)
+        try:
+            _require_runtime_invariant_safety(run_dir, mission.mission_id)
+            dispatch = begin_external_dispatch(
+                run_dir, mission_id=mission.mission_id, dsh_call_id=call_id,
+                plugin_id="document.mineru_private_parse", operation="mineru_submit",
+                request_shape={"document_id": document_id.strip(), "source_url_sha256": hashlib.sha256(source_url.encode("utf-8")).hexdigest()},
+            )
+            if dispatch["duplicate"]:
+                return _completed_mineru_result(run_dir, mission.mission_id, run_id, document_id)
+            candidates = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
+            require_eligible_candidate(run_dir, document_id)
+            require_document_screened_for_fulltext(run_dir, mission.mission_id, candidates, document_id)
+            settings = self.settings_loader()
+            task = MinerUAdapter(settings).submit_remote_source(source_url)
+            source_digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+            receipt = mineru_task_receipt(
+                operation="source_parse_submit",
+                document_id=document_id,
+                source_url_sha256=source_digest,
+                task_id=task.task_id,
+                task_state=task.state,
+                model_version=settings.mineru_model_version,
+                status_code=task.status_code,
+                request_id=task.request_id,
+            )
+            append_provider_receipt(run_dir, receipt)
+            record_source_parse_task(
+                run_dir,
+                mission_id=mission.mission_id,
+                document_id=document_id,
+                source_url=source_url,
+                task=task,
+                model_version=settings.mineru_model_version,
+            )
+            complete_external_dispatch(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id, provider_receipt_ids=(receipt["receipt_id"],))
+        except (CandidateScreeningError, EvidenceIngestionError, MinerUConfigurationError, MinerURequestError, ProviderReceiptError, SourceParseArtifactError, UiExportError, ExternalDispatchError, ValueError) as error:
+            try:
+                mark_external_dispatch_unknown(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id)
+            except ExternalDispatchError:
+                pass
+            raise LocalApiError(str(error), 503 if isinstance(error, (MinerUConfigurationError, MinerURequestError)) else 400) from error
+        FlightRecorder(self.runs_dir, run_id).record(
+            event_type="source_parse_submitted",
+            actor="document_parser",
+            state=MissionState.EXTRACT,
+            payload={"document_id": document_id, "provider": "mineru", "task_state": task.state, "receipt_id": receipt["receipt_id"]},
+        )
+        return {"run_id": run_id, "document_id": document_id, "provider": "mineru", "task_state": task.state, "trust_status": "authorized_parse_dispatch_not_evidence_acceptance"}
+
+    def poll_authorized_mineru_source(self, run_id: str, payload: object) -> dict[str, object]:
+        """Poll one prior MinerU task after the same explicit mission consent; never fetch parser output."""
+        body = self._record_explicit_external_authorization(
+            run_id, payload, "document.mineru_private_parse", state=MissionState.EXTRACT,
+        )
+        document_id = body.get("document_id")
+        if not isinstance(document_id, str) or not document_id.strip() or len(document_id.strip()) > 255:
+            raise LocalApiError("document_id is invalid")
+        run_dir, mission = self._active_mission(run_id)
+        call_id = _dsh_call_id(body)
+        try:
+            _require_runtime_invariant_safety(run_dir, mission.mission_id)
+            dispatch = begin_external_dispatch(
+                run_dir, mission_id=mission.mission_id, dsh_call_id=call_id,
+                plugin_id="document.mineru_private_parse", operation="mineru_poll",
+                request_shape={"document_id": document_id.strip()},
+            )
+            if dispatch["duplicate"]:
+                return _completed_mineru_result(run_dir, mission.mission_id, run_id, document_id)
+            stored = task_for_document(run_dir, mission_id=mission.mission_id, document_id=document_id)
+            require_active_run(run_dir, mission.mission_id)
+            settings = self.settings_loader()
+            task = MinerUAdapter(settings).get_task(private_task_id_for_document(run_dir, mission_id=mission.mission_id, document_id=document_id))
+            receipt = mineru_task_receipt(
+                operation="source_parse_poll",
+                document_id=document_id,
+                source_url_sha256=stored["source_url_sha256"],
+                task_id=task.task_id,
+                task_state=task.state,
+                model_version=stored["model_version"],
+                status_code=task.status_code,
+                request_id=task.request_id,
+            )
+            append_provider_receipt(run_dir, receipt)
+            update_source_parse_task(run_dir, mission_id=mission.mission_id, document_id=document_id, task=task)
+            complete_external_dispatch(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id, provider_receipt_ids=(receipt["receipt_id"],))
+        except (MinerUConfigurationError, MinerURequestError, ProviderReceiptError, SourceParseArtifactError, RunControlError, ExternalDispatchError, ValueError) as error:
+            try:
+                mark_external_dispatch_unknown(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id)
+            except ExternalDispatchError:
+                pass
+            raise LocalApiError(str(error), 503 if isinstance(error, (MinerUConfigurationError, MinerURequestError)) else 400) from error
+        FlightRecorder(self.runs_dir, run_id).record(
+            event_type="source_parse_polled",
+            actor="document_parser",
+            state=MissionState.EXTRACT,
+            payload={"document_id": document_id, "provider": "mineru", "task_state": task.state, "receipt_id": receipt["receipt_id"]},
+        )
+        return {"run_id": run_id, "document_id": document_id, "provider": "mineru", "task_state": task.state, "trust_status": "authorized_parse_status_not_evidence_acceptance"}
+
+    def _record_explicit_external_authorization(
+        self,
+        run_id: str,
+        payload: object,
+        plugin_id: str,
+        *,
+        state: MissionState = MissionState.PLAN,
+    ) -> dict[str, object]:
+        """Validate and persist a user-supplied, mission-scoped external dispatch receipt."""
+        body = _object_payload(payload)
+        raw_authorizations = body.get("authorizations")
+        actor = body.get("actor", "human_researcher")
+        if (
+            not isinstance(raw_authorizations, list)
+            or not raw_authorizations
+            or len(raw_authorizations) > 12
+            or not all(isinstance(item, str) and item.strip() and len(item.strip()) <= 120 for item in raw_authorizations)
+            or not isinstance(actor, str)
+            or not actor.strip()
+            or len(actor.strip()) > 200
+        ):
+            raise LocalApiError("explicit external authorization is invalid")
+        dsh_call_id = _dsh_call_id(body)
+        _, mission = self._active_mission(run_id)
+        normalized = tuple(sorted({item.strip() for item in raw_authorizations}))
+        try:
+            decision = evaluate_mission_authorization(
+                CosMatterHarnessCatalogue(),
+                MissionAuthorization(mission.mission_id, plugin_id, normalized, actor.strip()),
+            )
+        except ValueError as error:
+            raise LocalApiError(str(error)) from error
+        if not decision["permitted"]:
+            raise LocalApiError("explicit external authorization does not permit this dispatch", 403)
+        FlightRecorder(self.runs_dir, run_id).record(
+            event_type="external_plugin_dispatch_authorized",
+            actor="user_consent",
+            state=state,
+            payload={
+                "plugin_id": plugin_id,
+                "authorizations": list(normalized),
+                "dsh_call_id_sha256": hashlib.sha256(dsh_call_id.encode("utf-8")).hexdigest(),
+                "trust_status": "explicit_mission_authorization_receipt_not_execution_receipt",
+            },
+        )
+        return body
     def execute_plan_local_corpus_query(self, run_id: str, payload: object) -> dict[str, object]:
         """Search an approved query against an explicit private local corpus index.
 
@@ -614,26 +900,46 @@ class LocalMissionApi:
             raise LocalApiError("upload must contain one PDF of at most 200 MB")
         requested_run_id = body.get("run_id")
         candidate_document_id = body.get("candidate_document_id")
-        if (requested_run_id is None) != (candidate_document_id is None):
-            raise LocalApiError("candidate PDF intake requires both run_id and candidate_document_id")
+        if candidate_document_id is not None and requested_run_id is None:
+            raise LocalApiError("candidate PDF intake requires a run_id")
         if requested_run_id is not None:
-            if not isinstance(requested_run_id, str) or not isinstance(candidate_document_id, str):
-                raise LocalApiError("candidate PDF intake identifiers must be strings")
+            if not isinstance(requested_run_id, str) or (candidate_document_id is not None and not isinstance(candidate_document_id, str)):
+                raise LocalApiError("PDF intake identifiers must be strings")
             run_id = _api_safe_run_id(requested_run_id)
-            run_dir, mission = self._active_mission(run_id)
-            try:
-                candidates = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
-                require_document_screened_for_fulltext(run_dir, mission.mission_id, candidates, candidate_document_id)
-            except (CandidateScreeningError, UiExportError, ValueError) as error:
-                raise LocalApiError(str(error)) from error
-            created = {"run_id": run_id, "mission_id": mission.mission_id, "fleet_type": "fulltext_intake", "mission_type": "candidate_pdf"}
+            if (self.runs_dir / run_id).exists():
+                run_dir, mission = self._active_mission(run_id)
+                if candidate_document_id is None:
+                    expected = (_bounded_text(body, "question"), _bounded_text(body, "material", 300), _bounded_text(body, "property", 300), _bounded_text(body, "scope", 1_000))
+                    if expected != (mission.question, mission.material, mission.property_name, mission.scope):
+                        raise LocalApiError("PDF submission identity is already bound to a different mission", 409)
+                    created = {"run_id": run_id, "mission_id": mission.mission_id, "fleet_type": "fulltext_intake", "mission_type": "private_pdf"}
+                else:
+                    created = {"run_id": run_id, "mission_id": mission.mission_id, "fleet_type": "fulltext_intake", "mission_type": "candidate_pdf"}
+            elif candidate_document_id is None:
+                created = self.create_mission({**body, "run_id": run_id})
+                run_dir, mission = self._active_mission(run_id)
+            else:
+                run_dir, mission = self._active_mission(run_id)
+                created = {"run_id": run_id, "mission_id": mission.mission_id, "fleet_type": "fulltext_intake", "mission_type": "candidate_pdf"}
+            if candidate_document_id is not None:
+                try:
+                    candidates = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
+                    require_document_screened_for_fulltext(run_dir, mission.mission_id, candidates, candidate_document_id)
+                except (CandidateScreeningError, UiExportError, ValueError) as error:
+                    raise LocalApiError(str(error)) from error
         else:
             created = self.create_mission(body)
             run_id = str(created["run_id"])
             run_dir, mission = self._active_mission(run_id)
         try:
-            assert_pdf_task_slot(run_dir, mission.mission_id, candidate_document_id if isinstance(candidate_document_id, str) else None)
             document_id = safe_document_id(run_id, file_name, content)
+            try:
+                existing = task_for_pdf_document(run_dir, mission.mission_id, document_id)
+            except PdfTaskRegistryError:
+                existing = None
+            if existing is not None:
+                return {**created, "document_id": document_id, "candidate_document_id": existing.get("candidate_document_id"), "state": existing["state"], "doi_status": existing["doi_status"], "idempotency_status": "duplicate_completed"}
+            assert_pdf_task_slot(run_dir, mission.mission_id, candidate_document_id if isinstance(candidate_document_id, str) else None)
             _, pdf_sha256 = write_pdf(document_id, content)
             batch = MinerUAdapter(self.settings_loader()).submit_local_file(file_name, content)
         except (PrivateStorageError, MinerUConfigurationError, MinerURequestError, ValueError) as error:
@@ -672,6 +978,10 @@ class LocalMissionApi:
             return _pdf_public_status(artifact, _source_map_review_status(run_dir, mission.mission_id, artifact))
         try:
             result = MinerUAdapter(self.settings_loader()).get_batch(str(artifact["batch_id"]))
+            # A prior transport/download error is recoverable.  Once the
+            # provider answers again, remove that stale warning instead of
+            # making a healthy pending or completed task look broken forever.
+            artifact.pop("error", None)
             artifact["state"] = result.state
             if result.state == "done":
                 if not result.markdown_url:
@@ -688,8 +998,13 @@ class LocalMissionApi:
                 artifact["doi_status"] = "resolved" if doi else "needs_human_doi"
             elif result.state == "failed":
                 artifact["error"] = (result.error or "MinerU extraction failed")[:300]
-        except (MinerUConfigurationError, MinerURequestError, PrivateStorageError, OSError, UnicodeDecodeError) as error:
+        except MinerUConfigurationError as error:
             artifact["state"] = "failed"
+            artifact["error"] = str(error)[:300]
+        except (MinerURequestError, PrivateStorageError, OSError, UnicodeDecodeError) as error:
+            # A status/download failure does not prove that MinerU failed. Keep
+            # this task pollable so a later local refresh can reconcile it.
+            artifact["state"] = "running"
             artifact["error"] = str(error)[:300]
         try:
             update_source_parse_task(
@@ -868,6 +1183,17 @@ class LocalMissionApi:
         missing_conditions = [key for key in required_conditions if conditions.get(key) in (None, "", "unknown")]
         if missing_conditions:
             raise LocalApiError("evidence acceptance requires explicit conditions: " + ", ".join(missing_conditions))
+        for key in ("sample_form", "substrate", "method"):
+            value = conditions[key]
+            if not isinstance(value, str) or not value.strip() or len(value.strip()) > 240:
+                raise LocalApiError(f"evidence review {key} must be a non-empty short text value")
+        for key in ("strain_percent", "thickness_nm", "temperature_k"):
+            value = conditions[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                raise LocalApiError(f"evidence review {key} must be a finite number")
+        for key in ("thickness_nm", "temperature_k"):
+            if float(conditions[key]) < 0:
+                raise LocalApiError(f"evidence review {key} must be non-negative")
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1:
             raise LocalApiError("reviewer confidence must be between 0 and 1")
         run_dir, mission = self._active_mission(run_id)
@@ -966,7 +1292,39 @@ class LocalMissionApi:
         )
         return _pdf_public_status(intake, _source_map_review_status(run_dir, mission.mission_id, intake))
 
-    def expand_pdf_citations(self, run_id: str, document_id: str | None = None) -> dict[str, object]:
+    def expand_authorized_pdf_citations(self, run_id: str, payload: object) -> dict[str, object]:
+        """Expand a DOI bibliography only after recording explicit metadata consent."""
+        raw_body = _object_payload(payload)
+        document_id = raw_body.get("document_id")
+        if not isinstance(document_id, str) or not document_id.strip() or len(document_id.strip()) > 255:
+            raise LocalApiError("document_id is invalid")
+        body = self._record_explicit_external_authorization(run_id, raw_body, "bibliography.two_hop_expand", state=MissionState.RETRIEVE)
+        run_dir, mission = self._active_mission(run_id)
+        call_id = _dsh_call_id(body)
+        document_id = document_id.strip()
+        try:
+            _require_runtime_invariant_safety(run_dir, mission.mission_id)
+            dispatch = begin_external_dispatch(
+                run_dir, mission_id=mission.mission_id, dsh_call_id=call_id,
+                plugin_id="bibliography.two_hop_expand", operation="citation_expansion",
+                request_shape={"document_id": document_id},
+            )
+            if dispatch["duplicate"]:
+                return _completed_citation_result(run_dir, mission.mission_id, run_id, document_id)
+            result = self._expand_pdf_citations(run_id, document_id)
+            complete_external_dispatch(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id)
+            return result
+        except (CitationExpansionError, CrossrefRequestError, OpenAlexConfigurationError, OpenAlexRequestError, ExternalDispatchError, LocalApiError, OSError, ValueError) as error:
+            if not isinstance(error, ExternalDispatchError) or "already" not in str(error):
+                try:
+                    mark_external_dispatch_unknown(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id)
+                except ExternalDispatchError:
+                    pass
+            if isinstance(error, LocalApiError):
+                raise
+            raise LocalApiError(str(error), 503) from error
+
+    def _expand_pdf_citations(self, run_id: str, document_id: str | None = None) -> dict[str, object]:
         run_dir, mission = self._active_mission(run_id)
         intake = _pdf_intake(run_dir, mission.mission_id, document_id)
         doi = intake.get("doi")
@@ -1101,6 +1459,123 @@ class LocalMissionApi:
             summary["automatic_execution"] = automatic
         return summary
 
+    def workflow_status(self, run_id: str) -> dict[str, object]:
+        """Return a count-only workflow projection for loopback harness adapters.
+
+        It recomputes readiness from local artifacts rather than returning those
+        artifacts. Candidates, excerpts, URLs, private paths, provider payloads
+        and credentials are deliberately excluded.
+        """
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        try:
+            readiness = workflow_readiness(run_dir, mission)
+        except WorkflowReadinessError as error:
+            raise LocalApiError(str(error)) from error
+        return {
+            "schema_version": "1.0",
+            "run_id": _api_safe_run_id(run_id),
+            "mission_id": mission.mission_id,
+            "trust_status": "loopback_workflow_status_not_scientific_evidence",
+            "next_stage": readiness["next_stage"],
+            "stages": [
+                {"stage": item["stage"], "status": item["status"], "counts": item["counts"]}
+                for item in readiness["stages"]
+            ],
+        }
+
+    def stage_contract(self, run_id: str) -> dict[str, object]:
+        """Return a fixed, count-only completion and recovery contract.
+
+        This is a read-only projection: symbolic recovery routes do not grant
+        consent, dispatch a provider, mutate a run, or expose audit details.
+        """
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        try:
+            contract = stage_contract(run_dir, mission)
+        except StageContractError as error:
+            raise LocalApiError(str(error)) from error
+        return {"run_id": _api_safe_run_id(run_id), **contract}
+
+    def operational_telemetry(self, run_id: str) -> dict[str, object]:
+        """Return local aggregate operations, never a provider bill or payload."""
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        try:
+            telemetry = operational_telemetry(run_dir, mission)
+        except OperationalTelemetryError as error:
+            raise LocalApiError(str(error)) from error
+        return {"run_id": _api_safe_run_id(run_id), **telemetry}
+
+    def workflow_dag(self, run_id: str) -> dict[str, object]:
+        """Return a declared DAG readiness view; it never schedules a stage."""
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        try:
+            return workflow_dag_projection(_api_safe_run_id(run_id), run_dir, mission)
+        except WorkflowDagError as error:
+            raise LocalApiError(str(error)) from error
+
+    def reminder_board(self) -> dict[str, object]:
+        """Read bounded local cross-session reminders; never schedule work."""
+        summaries: list[dict[str, object]] = []
+        if self.runs_dir.exists():
+            for candidate in sorted(self.runs_dir.iterdir(), key=lambda item: item.name):
+                if not candidate.is_dir() or candidate.is_symlink():
+                    continue
+                try:
+                    run_id = _api_safe_run_id(candidate.name)
+                    run_dir, mission = self._active_mission(run_id, require_active=False)
+                    contract = stage_contract(run_dir, mission)
+                    telemetry = operational_telemetry(run_dir, mission)
+                    state = self.run_status(run_id)
+                except (LocalApiError, StageContractError, OperationalTelemetryError):
+                    continue
+                summaries.append({
+                    "run_id": run_id,
+                    "terminal": bool(state["terminal"]),
+                    "runtime_safety": contract["runtime_safety"],
+                    "incomplete_dispatch_count": sum(item["incomplete_count"] for item in telemetry["dispatch_operations"]),
+                    "unknown_dispatch_count": sum(item["unknown_outcome_count"] for item in telemetry["dispatch_operations"]),
+                    "stages": [{"stage": item["stage"], "status": item["status"]} for item in contract["stages"]],
+                })
+        try:
+            return project_reminder_board(summaries, self.runs_dir.parent / "project_decision_memory")
+        except ReminderBoardError as error:
+            raise LocalApiError(str(error)) from error
+
+    def approved_artifacts(self, run_id: str) -> dict[str, object]:
+        """List only fixed, already-generated safe artifacts; no filesystem paths."""
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        try:
+            return artifact_manifest(run_dir=run_dir, run_id=_api_safe_run_id(run_id), mission_id=mission.mission_id)
+        except ArtifactContractError as error:
+            raise LocalApiError(str(error), 404) from error
+
+    def approved_artifact_download(self, run_id: str, artifact_id: str) -> ArtifactDownload:
+        """Read a fixed allowlisted export, never an arbitrary run-relative file."""
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        try:
+            return approved_artifact_download(
+                run_dir=run_dir, run_id=_api_safe_run_id(run_id), mission_id=mission.mission_id, artifact_id=artifact_id,
+            )
+        except ArtifactContractError as error:
+            raise LocalApiError(str(error), 404) from error
+
+    def search_accepted_evidence(self, run_id: str, payload: object) -> dict[str, object]:
+        """Search only reviewed evidence-card metadata; never read source text."""
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        body = _object_payload(payload)
+        query, limit = body.get("query"), body.get("limit", 8)
+        try:
+            cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
+            decisions = _verification_decisions_from_payloads(_load_array_if_present(run_dir / "verification_decisions.json", "verification decisions"))
+            result = search_accepted_evidence(mission=mission, cards=cards, decisions=decisions, query=query, limit=limit)
+        except (AcceptedEvidenceSearchError, UiExportError, ValueError) as error:
+            raise LocalApiError(str(error)) from error
+        FlightRecorder(self.runs_dir, run_id).record(
+            event_type="accepted_evidence_searched", actor="accepted_evidence_search", state=MissionState.MAP,
+            payload={"query_sha256": result["query_sha256"], "result_count": result["result_count"], "trust_status": result["trust_status"]},
+        )
+        return result
+
     def cancel(self, run_id: str) -> dict[str, object]:
         run_dir, mission = self._active_mission(run_id)
         cancel_run(run_dir, mission.mission_id)
@@ -1113,6 +1588,173 @@ class LocalMissionApi:
         except (AuditPathError, UiExportError, OSError) as error:
             raise LocalApiError(str(error), 404) from error
 
+    def project_accepted_evidence_graph(self, run_id: str) -> dict[str, object]:
+        """Build one persisted, read-only graph from accepted evidence only."""
+        run_dir, mission = self._active_mission(run_id)
+        try:
+            cards = _evidence_cards_from_payloads(
+                _load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts")
+            )
+            decisions = _verification_decisions_from_payloads(
+                _load_array_if_present(run_dir / "verification_decisions.json", "verification decisions")
+            )
+            payload = external_graph_projection(build_accepted_evidence_graph(mission, cards, decisions))
+        except (UiExportError, ValueError) as error:
+            raise LocalApiError(str(error)) from error
+        _write_json(run_dir / "graph_snapshot.json", payload)
+        FlightRecorder(self.runs_dir, run_id).record(
+            event_type="graph_snapshot_projected",
+            actor="graph_projection",
+            state=MissionState.MAP,
+            payload={
+                "schema_version": payload["schema_version"],
+                "node_count": len(payload["nodes"]),
+                "edge_count": len(payload["edges"]),
+                "trust_status": payload["trust_status"],
+            },
+        )
+        return payload
+
+    def graph_projection(self, run_id: str, *, node_types: tuple[str, ...] = (), offset: int = 0, limit: int = 50) -> dict[str, object]:
+        """Read an already-projected graph; this endpoint never derives data."""
+        run_dir, _ = self._active_mission(run_id, require_active=False)
+        try:
+            payload = _load_object(run_dir / "graph_snapshot.json", "graph snapshot")
+            validated = validate_graph_payload(payload)
+            from .graph_validation import graph_snapshot_from_payload
+            page = bounded_graph_projection(graph_snapshot_from_payload(validated), node_types=node_types, offset=offset, limit=limit)
+        except (UiExportError, GraphContractError) as error:
+            raise LocalApiError(str(error), 404) from error
+        digest = hashlib.sha256(json.dumps(page, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        receipt = PluginExecutionReceipt(
+            mission_id=str(page["mission_id"]), plugin_id="graph.export_projection",
+            authorization_receipt_id="local_safe_graph_projection", outcome="completed", output_artifact_hashes=(digest,),
+        )
+        FlightRecorder(self.runs_dir, run_id).record(
+            event_type="plugin_execution_receipt", actor="graph_projection_api", state=MissionState.MAP,
+            payload=receipt.as_audit_payload(),
+        )
+        return page
+
+    def request_graph_review(self, run_id: str, payload: object) -> dict[str, object]:
+        """Record a pending human graph-review request; never accept evidence."""
+        run_dir, mission = self._active_mission(run_id)
+        body = _object_payload(payload)
+        raw_nodes, rationale = body.get("node_ids"), body.get("rationale")
+        if not isinstance(raw_nodes, list) or not raw_nodes or not all(isinstance(item, str) for item in raw_nodes) or not isinstance(rationale, str):
+            raise LocalApiError("graph review request is invalid")
+        try:
+            snapshot = validate_graph_payload(_load_object(run_dir / "graph_snapshot.json", "graph snapshot"))
+            node_ids = tuple(item.strip() for item in raw_nodes)
+            if not set(node_ids).issubset({str(node["node_id"]) for node in snapshot["nodes"]}):
+                raise LocalApiError("graph review nodes are not in this graph")
+            request = GraphReviewRequest(mission.mission_id, str(snapshot["graph_id"]), node_ids, rationale.strip())
+        except (GraphContractError, ValueError) as error:
+            raise LocalApiError(str(error)) from error
+        requests_path = run_dir / "graph_review_requests.jsonl"
+        with requests_path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(request.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
+        FlightRecorder(self.runs_dir, run_id).record(event_type="graph_review_requested", actor="human_review_request", state=MissionState.MAP, payload={"request_id": request.request_id, "graph_id": request.graph_id, "node_count": len(request.node_ids), "trust_status": "pending_human_review_not_evidence_acceptance"})
+        return request.to_dict()
+
+    def draft_graph_plan(self, run_id: str, payload: object) -> dict[str, object]:
+        """Persist an untrusted graph-inspection draft; it cannot execute or accept evidence."""
+        run_dir, mission = self._active_mission(run_id)
+        body = _object_payload(payload)
+        raw_nodes, intent = body.get("node_ids"), body.get("intent")
+        if not isinstance(raw_nodes, list) or not all(isinstance(item, str) for item in raw_nodes) or not isinstance(intent, str):
+            raise LocalApiError("graph plan draft is invalid")
+        try:
+            snapshot = validate_graph_payload(_load_object(run_dir / "graph_snapshot.json", "graph snapshot"))
+            node_ids = tuple(item.strip() for item in raw_nodes)
+            if not set(node_ids).issubset({str(node["node_id"]) for node in snapshot["nodes"]}):
+                raise LocalApiError("graph plan nodes are not in this graph")
+            draft = GraphPlanDraft(mission.mission_id, str(snapshot["graph_id"]), node_ids, intent)
+        except (GraphContractError, ValueError) as error:
+            raise LocalApiError(str(error)) from error
+        drafts_path = run_dir / "graph_plan_drafts.jsonl"
+        with drafts_path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(draft.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
+        FlightRecorder(self.runs_dir, run_id).record(
+            event_type="graph_plan_drafted", actor="graph_plan_draft", state=MissionState.MAP,
+            payload={"graph_id": draft.graph_id, "node_count": len(draft.node_ids), "trust_status": "untrusted_graph_plan_draft_not_execution_or_evidence_acceptance"},
+        )
+        return draft.to_dict()
+
+    def assist_authorized_graph_plan(self, run_id: str, payload: object) -> dict[str, object]:
+        """Request one untrusted DeepSeek graph-plan draft after a durable consent receipt."""
+        raw_body = _object_payload(payload)
+        raw_nodes, intent = raw_body.get("node_ids"), raw_body.get("intent")
+        if not isinstance(raw_nodes, list) or not all(isinstance(item, str) for item in raw_nodes) or not isinstance(intent, str):
+            raise LocalApiError("graph model plan request is invalid")
+        body = self._record_explicit_external_authorization(run_id, raw_body, "graph.plan_assist", state=MissionState.MAP)
+        run_dir, mission = self._active_mission(run_id)
+        call_id = _dsh_call_id(body)
+        node_ids = tuple(item.strip() for item in raw_nodes)
+        intent = intent.strip()
+        try:
+            _require_runtime_invariant_safety(run_dir, mission.mission_id)
+            dispatch = begin_external_dispatch(
+                run_dir, mission_id=mission.mission_id, dsh_call_id=call_id,
+                plugin_id="graph.plan_assist", operation="deepseek_graph_plan_draft",
+                request_shape={"node_ids": node_ids, "intent": intent},
+            )
+            if dispatch["duplicate"]:
+                return _completed_graph_model_plan_result(run_dir, mission.mission_id, node_ids, intent)
+            result = self._assist_graph_plan(run_id, raw_body)
+            complete_external_dispatch(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id)
+            return result
+        except (GraphContractError, GraphModelPlanError, DeepSeekConfigurationError, DeepSeekRequestError, ExternalDispatchError, LocalApiError, OSError, ValueError) as error:
+            if not isinstance(error, ExternalDispatchError) or "already" not in str(error):
+                try:
+                    mark_external_dispatch_unknown(run_dir, mission_id=mission.mission_id, dsh_call_id=call_id)
+                except ExternalDispatchError:
+                    pass
+            if isinstance(error, LocalApiError):
+                raise
+            raise LocalApiError(str(error), 503 if isinstance(error, (DeepSeekConfigurationError, DeepSeekRequestError)) else 400) from error
+
+    def _assist_graph_plan(self, run_id: str, payload: object) -> dict[str, object]:
+        """Perform one already-authorized graph-plan request; never call directly from a route."""
+        run_dir, mission = self._active_mission(run_id)
+        body = _object_payload(payload)
+        raw_nodes, intent = body.get("node_ids"), body.get("intent")
+        if not isinstance(raw_nodes, list) or not all(isinstance(item, str) for item in raw_nodes) or not isinstance(intent, str):
+            raise LocalApiError("graph model plan request is invalid")
+        try:
+            snapshot = validate_graph_payload(_load_object(run_dir / "graph_snapshot.json", "graph snapshot"))
+            node_ids = tuple(item.strip() for item in raw_nodes)
+            system_prompt, user_prompt = graph_plan_assist_prompts(snapshot, node_ids, intent)
+            completion = DeepSeekAdapter(self.settings_loader()).draft(system_prompt=system_prompt, user_prompt=user_prompt)
+            draft = normalized_graph_model_plan_draft(snapshot, node_ids, intent, completion.content, completion.model)
+        except (GraphContractError, GraphModelPlanError, DeepSeekConfigurationError, DeepSeekRequestError, ValueError) as error:
+            raise LocalApiError(str(error), 503 if isinstance(error, (DeepSeekConfigurationError, DeepSeekRequestError)) else 400) from error
+        with (run_dir / "graph_model_plan_drafts.jsonl").open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(draft, ensure_ascii=False, sort_keys=True) + "\n")
+        digest = hashlib.sha256(json.dumps(draft, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        FlightRecorder(self.runs_dir, run_id).record(event_type="graph_model_plan_drafted", actor="graph_model_plan", state=MissionState.MAP, payload={"plugin_id": "graph.plan_assist", "model": completion.model, "output_artifact_hash": digest, "trust_status": draft["trust_status"]})
+        return draft
+
+    def approve_graph_plan(self, run_id: str, payload: object) -> dict[str, object]:
+        """Record a human plan acknowledgement without granting execution capability."""
+        run_dir, mission = self._active_mission(run_id)
+        body = _object_payload(payload)
+        plan_id, reviewer, rationale = body.get("plan_id"), body.get("reviewer"), body.get("rationale")
+        if not all(isinstance(value, str) for value in (plan_id, reviewer, rationale)):
+            raise LocalApiError("graph plan approval is invalid")
+        try:
+            snapshot = validate_graph_payload(_load_object(run_dir / "graph_snapshot.json", "graph snapshot"))
+            draft = _graph_plan_draft_by_id(run_dir, plan_id.strip())
+            if draft is None or draft.get("mission_id") != mission.mission_id or draft.get("graph_id") != snapshot["graph_id"]:
+                raise LocalApiError("graph plan approval does not reference this mission graph draft")
+            approval = GraphPlanApproval(mission.mission_id, str(snapshot["graph_id"]), plan_id.strip(), reviewer, rationale)
+        except (GraphContractError, ValueError) as error:
+            raise LocalApiError(str(error)) from error
+        with (run_dir / "graph_plan_approvals.jsonl").open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(approval.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
+        FlightRecorder(self.runs_dir, run_id).record(event_type="graph_plan_human_approved", actor="human_graph_plan_review", state=MissionState.MAP, payload={"approval_id": approval.approval_id, "plan_id": approval.plan_id, "graph_id": approval.graph_id, "trust_status": "human_approved_graph_plan_follow_up_not_execution_or_evidence_acceptance"})
+        return approval.to_dict()
+
     def _active_mission(self, run_id: str, *, require_active: bool = True) -> tuple[Path, MissionBrief]:
         try:
             run_id = _api_safe_run_id(run_id)
@@ -1123,6 +1765,27 @@ class LocalMissionApi:
             return run_dir, mission
         except (AuditPathError, UiExportError, RunControlError) as error:
             raise LocalApiError(str(error), 404) from error
+
+
+def _graph_plan_draft_by_id(run_dir: Path, plan_id: str) -> dict[str, object] | None:
+    """Read only known, normalized plan-draft ledgers; never scan the run directory."""
+    if not plan_id.startswith(("graph_plan_", "graph_model_plan_")):
+        return None
+    matches: list[dict[str, object]] = []
+    for filename in ("graph_plan_drafts.jsonl", "graph_model_plan_drafts.jsonl"):
+        path = run_dir / filename
+        if not path.is_file():
+            continue
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                item = json.loads(line)
+                if isinstance(item, dict) and item.get("plan_id") == plan_id:
+                    matches.append(item)
+        except (OSError, json.JSONDecodeError) as error:
+            raise LocalApiError("graph plan draft ledger is invalid") from error
+    if len(matches) > 1:
+        raise LocalApiError("graph plan draft identifier is ambiguous")
+    return matches[0] if matches else None
 
 
 def _screening_candidate_projection(payload: object) -> list[dict[str, object]]:
@@ -1163,6 +1826,178 @@ def _selected_sources(value: object) -> tuple[str, ...]:
             raise LocalApiError("sources contains an unsupported provider")
         selected.append(item)
     return tuple(selected)
+
+
+def _dsh_call_id(payload: dict[str, Any]) -> str:
+    value = payload.get("dsh_call_id")
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > 256:
+        raise LocalApiError("DSH call identity is required for external dispatch")
+    return value.strip()
+
+
+def _require_runtime_invariant_safety(run_dir: Path, mission_id: str) -> None:
+    """Block a new sensitive dispatch on structural, not recoverable, corruption.
+
+    A prior ``unknown`` outcome is intentionally not silently cleared here.
+    It remains visible in the audit and the same call ID is rejected by the
+    ledger.  A *new* explicitly authorised call may follow human/provider
+    status review, whereas broken state history, unpaired authorization,
+    receipt/result links, or evidence decisions block all sensitive dispatch.
+    """
+    try:
+        audit = audit_runtime_invariants(run_dir, mission_id)
+    except RuntimeInvariantError as error:
+        raise LocalApiError("runtime invariant audit could not establish a safe dispatch boundary", 409) from error
+    checks = audit["checks"]
+    authorization = checks["authorization_dispatch"]
+    safe = (
+        checks["state_transitions"]["passed"]
+        and checks["provider_results"]["passed"]
+        and checks["evidence_decisions"]["passed"]
+        and authorization["unpaired_dispatch_count"] == 0
+        and authorization["incomplete_dispatch_count"] == 0
+    )
+    if not safe:
+        raise LocalApiError("runtime invariant audit blocks sensitive dispatch; repair local artifact relationships first", 409)
+
+
+def _completed_draft_result(run_dir: Path, run_id: str) -> dict[str, object]:
+    try:
+        payload = _load_object(run_dir / "research_plan_draft.json", "research plan draft")
+    except UiExportError as error:
+        raise LocalApiError("completed external draft has no safe local result") from error
+    if set(payload) != {"schema_version", "trust_status", "model", "content"} or payload.get("schema_version") != "1.0" or payload.get("trust_status") != "untrusted_draft" or not isinstance(payload.get("content"), str) or not payload["content"].strip() or len(payload["content"]) > 16_000:
+        raise LocalApiError("completed external draft has no safe local result")
+    return {"run_id": run_id, "trust_status": "untrusted_draft", "content": payload["content"], "idempotency_status": "duplicate_completed"}
+
+
+def _completed_query_result(run_dir: Path, run_id: str, request: dict[str, object]) -> dict[str, object]:
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        plan = load_approved_flight_plan(run_dir, mission.mission_id)
+        counter = request.get("counter", False)
+        index = request.get("query_index")
+        sources = _selected_sources(request.get("sources"))
+        if not isinstance(counter, bool) or not isinstance(index, int) or isinstance(index, bool):
+            raise ValueError
+        queries = plan.counter_queries if counter else plan.queries
+        query = queries[index]
+        artifact = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
+        searches = artifact.get("searches")
+        if not isinstance(searches, list):
+            raise ValueError
+        match = next((item for item in reversed(searches) if isinstance(item, dict) and item.get("query") == query and isinstance(item.get("candidates"), list)), None)
+        if match is None:
+            raise ValueError
+        candidates = match["candidates"]
+    except (IndexError, PlanApprovalError, UiExportError, ValueError) as error:
+        raise LocalApiError("completed metadata dispatch has no safe local result") from error
+    return {
+        "run_id": run_id,
+        "query_kind": "counter" if counter else "primary",
+        "query_index": index,
+        "sources": list(sources),
+        "source_counts": {},
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+        "idempotency_status": "duplicate_completed",
+    }
+
+
+def _completed_mineru_result(run_dir: Path, mission_id: str, run_id: str, document_id: str) -> dict[str, object]:
+    try:
+        task = task_for_document(run_dir, mission_id=mission_id, document_id=document_id)
+    except SourceParseArtifactError as error:
+        raise LocalApiError("completed MinerU dispatch has no safe local task record") from error
+    state = task.get("state")
+    if state not in {"pending", "running", "done", "failed"}:
+        raise LocalApiError("completed MinerU dispatch has an invalid local task record")
+    return {
+        "run_id": run_id,
+        "document_id": document_id,
+        "provider": "mineru",
+        "task_state": state,
+        "trust_status": "authorized_parse_status_not_evidence_acceptance",
+        "idempotency_status": "duplicate_completed",
+    }
+
+
+def _completed_citation_result(run_dir: Path, mission_id: str, run_id: str, document_id: str) -> dict[str, object]:
+    try:
+        intake = _pdf_intake(run_dir, mission_id, document_id)
+        payload = _load_object(run_dir / "citation_expansion.json", "citation expansion")
+        validate_citation_expansion(payload)
+        if payload.get("mission_id") != mission_id or payload.get("root_doi") != intake.get("doi"):
+            raise ValueError
+        nodes, edges, failures = payload["nodes"], payload["edges"], payload["failures"]
+        if not isinstance(failures, list):
+            raise ValueError
+    except (CitationExpansionError, LocalApiError, UiExportError, ValueError) as error:
+        raise LocalApiError("completed citation dispatch has no safe local result") from error
+    return {
+        "run_id": run_id,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "failure_count": len(failures),
+        "trust_status": payload["trust_status"],
+        "idempotency_status": "duplicate_completed",
+    }
+
+
+def _completed_graph_model_plan_result(
+    run_dir: Path,
+    mission_id: str,
+    node_ids: tuple[str, ...],
+    intent: str,
+) -> dict[str, object]:
+    """Return only a locally validated prior draft for an idempotent DeepSeek call."""
+    try:
+        snapshot = validate_graph_payload(_load_object(run_dir / "graph_snapshot.json", "graph snapshot"))
+        path = run_dir / "graph_model_plan_drafts.jsonl"
+        if not path.is_file():
+            raise ValueError
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        for draft in reversed(records):
+            if not isinstance(draft, dict):
+                continue
+            if draft.get("mission_id") != mission_id or draft.get("graph_id") != snapshot["graph_id"]:
+                continue
+            if draft.get("requested_node_ids") != list(node_ids) or draft.get("intent") != intent:
+                continue
+            model = draft.get("model")
+            if not isinstance(model, str) or not isinstance(draft.get("suggestions"), list):
+                continue
+            checked = normalized_graph_model_plan_draft(
+                snapshot, node_ids, intent, json.dumps({"suggestions": draft["suggestions"]}), model,
+            )
+            stable_fields = ("schema_version", "mission_id", "graph_id", "requested_node_ids", "intent", "model", "suggestions", "trust_status", "next_boundary")
+            if (
+                set(draft) != {"plan_id", *stable_fields, "created_at"}
+                or not isinstance(draft.get("plan_id"), str)
+                or not draft["plan_id"].startswith("graph_model_plan_")
+                or not isinstance(draft.get("created_at"), str)
+                or any(draft[field] != checked[field] for field in stable_fields)
+            ):
+                continue
+            return {**draft, "idempotency_status": "duplicate_completed"}
+    except (GraphContractError, GraphModelPlanError, OSError, UiExportError, ValueError, json.JSONDecodeError) as error:
+        raise LocalApiError("completed graph model dispatch has no safe local result") from error
+    raise LocalApiError("completed graph model dispatch has no safe local result")
+
+
+def _latest_provider_receipt_ids(run_dir: Path, *, provider: str, operation: str) -> tuple[str, ...]:
+    path = run_dir / "provider_receipts.jsonl"
+    if not path.exists():
+        return ()
+    try:
+        matches = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except (OSError, json.JSONDecodeError) as error:
+        raise LocalApiError("provider receipt ledger is invalid") from error
+    for receipt in reversed(matches):
+        if isinstance(receipt, dict) and receipt.get("provider") == provider and receipt.get("operation") == operation and isinstance(receipt.get("receipt_id"), str):
+            return (receipt["receipt_id"],)
+    return ()
+
 
 def _object_payload(payload: object) -> dict[str, Any]:
     if not isinstance(payload, dict):

@@ -17,6 +17,25 @@ export interface EvidenceCard {
   isSynthetic: boolean;
 }
 
+export type EvidenceMaturityLevel = "literature_mentioned" | "data_supported" | "reproducibility_ready" | "independently_reproduced";
+export interface EvidenceMaturityClaim {
+  claimId: string;
+  claimText: string;
+  maturityLevel: EvidenceMaturityLevel;
+  assessmentAuthority: string;
+  supportRecordCount: number;
+  supportDocumentCount: number;
+  independenceGroupCount: number;
+  sourceMapStatuses: string[];
+  limitations: string[];
+}
+export interface EvidenceMaturityRegistry {
+  registryId: string;
+  questionId: string;
+  trustStatus: string;
+  claims: EvidenceMaturityClaim[];
+}
+
 export interface TimelineEntry { stationType: string; action: string; state: string; occurredAt: string; }
 export interface ConditionMatrixRow { conditionCluster: string; supportingEvidenceIds: string[]; contradictingEvidenceIds: string[]; differingFields: string[]; unknowns: string[]; }
 export interface MaterialFact { factId: string; segmentId: string; category: string; name: string; value: string | number | null; unit: string | null; normalizedValue: string | number | null; normalizedUnit: string | null; qualifiers: Record<string, string | number | boolean | null>; locator: string; }
@@ -42,6 +61,36 @@ export interface ResearchGapCandidate {
   counterevidenceBoundary?: GapCounterevidenceBoundary | null;
 }
 export interface RelationBundle { trustStatus: string; edgeCount: number; }
+export type RelationReconciliationStatus = "matched" | "conflict" | "unresolved";
+export interface RelationReconciliationMapping {
+  openAlexWorkId: string;
+  crossrefDoi: string;
+  status: RelationReconciliationStatus;
+  basis: string;
+}
+export interface RelationReconciliationRevision {
+  revision: number;
+  recordedAt: string;
+  mappingCount: number;
+  statusCounts: Record<RelationReconciliationStatus, number>;
+}
+export interface RelationReconciliation {
+  trustStatus: "human_reviewed_cross_source_identity_not_scientific_evidence";
+  sourceEvidenceId: string;
+  sourceDocumentId: string;
+  mappings: RelationReconciliationMapping[];
+  revisionHistory: RelationReconciliationRevision[];
+}
+export interface ConditionNormalizationMapping {
+  evidenceId: string;
+  rawField: string;
+  canonicalField: string;
+  unit: string;
+}
+export interface ConditionNormalization {
+  trustStatus: "human_reviewed_condition_normalization_no_conversion";
+  mappings: ConditionNormalizationMapping[];
+}
 export interface LiteratureGraphNode {
   nodeId: string;
   kind: string;
@@ -76,6 +125,7 @@ export interface AuditSummary {
 
 export interface ImportedBundle {
   schemaVersion: string;
+  generatedAt: string | null;
   mission: Mission;
   source: "demo" | "local-file" | "loopback";
   fleet: { displayName: string; missionType: string; releaseGate: string } | null;
@@ -88,10 +138,14 @@ export interface ImportedBundle {
   materialFacts: { documentId: string; trustStatus: string; facts: MaterialFact[] } | null;
   sourceMapSummary: { documentCount: number; segmentCount: number; documentIds: string[] };
   materialFactSummary: { documentCount: number; factCount: number };
+  evidenceMaturityRegistry: EvidenceMaturityRegistry | null;
+  evidenceMaturityRegistryStatus: "not_supplied" | "rejected" | "accepted";
   auditSummary: AuditSummary;
   timeline: TimelineEntry[];
   literatureRelations: RelationBundle | null;
   crossrefRelations: RelationBundle | null;
+  relationReconciliation: RelationReconciliation | null;
+  conditionNormalization: ConditionNormalization | null;
   literatureGraph: LiteratureGraph;
   report: { summary: string; limitations: string[]; nextSteps: string[] } | null;
 }
@@ -105,6 +159,12 @@ function object(value: unknown, label: string): JsonObject {
 function text(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty string.`);
   return value.trim();
+}
+function generatedAt(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const candidate = value.trim();
+  if (candidate.length > 64 || !/^\d{4}-\d{2}-\d{2}T/.test(candidate) || !Number.isFinite(Date.parse(candidate))) return null;
+  return candidate;
 }
 function textList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
@@ -149,6 +209,69 @@ function auditRate(value: unknown): number {
 }
 function auditFlag(value: unknown): boolean { return value === true; }
 function auditText(value: unknown): string { return typeof value === "string" ? value.slice(0, 160) : "unavailable"; }
+function evidenceMaturityRegistry(value: unknown): EvidenceMaturityRegistry | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject;
+  const trustStatuses = new Set(["blank_human_evidence_maturity_registry_template_not_evidence", "delegated_automated_trial_evidence_maturity_registry_not_scientific_evidence", "human_reviewed_evidence_maturity_registry_not_scientific_conclusion"]);
+  const levels = new Set<EvidenceMaturityLevel>(["literature_mentioned", "data_supported", "reproducibility_ready", "independently_reproduced"]);
+  const authorities = new Set(["unreviewed", "delegated_automated_trial", "human_source_review", "human_data_review", "human_reproducibility_review", "independent_reproduction_review"]);
+  const dataAuthorities = new Set(["human_data_review", "human_reproducibility_review", "independent_reproduction_review"]);
+  const reproducibilityAuthorities = new Set(["human_reproducibility_review", "independent_reproduction_review"]);
+  const supportVersions = new Set(["publisher_version", "accepted_manuscript", "preprint", "unknown", "publisher_open_access_mirror_version_not_human_verified"]);
+  const sourceMapStatuses = new Set(["none", "automated_trial_only", "human_reviewed"]);
+  const dataStatuses = new Set(["not_checked", "narrative_only", "numeric_or_figure_data_human_checked"]);
+  const conditionStatuses = new Set(["not_checked", "partial", "complete_human_checked"]);
+  const stances = new Set(["supports", "contradicts", "mixed", "boundary_counterexample", "context_only"]);
+  const reproducibilityStatuses = new Set(["not_checked", "partial", "complete_human_checked"]);
+  const rawDataStatuses = new Set(["not_checked", "available", "not_available", "not_required"]);
+  const reproductionStatuses = new Set(["not_attempted", "planned", "in_progress", "replicated", "not_replicated", "inconclusive"]);
+  const comparisonStatuses = new Set(["not_available", "within_predefined_tolerance", "outside_predefined_tolerance", "inconclusive"]);
+  const exactFields = (candidate: JsonObject, fields: string[]) => Object.keys(candidate).length === fields.length && fields.every((field) => Object.prototype.hasOwnProperty.call(candidate, field));
+  const shortText = (candidate: unknown, maximum: number) => typeof candidate === "string" && candidate.trim().length > 0 && candidate.length <= maximum ? candidate.trim() : "";
+  const runId = (candidate: unknown) => typeof candidate === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(candidate) ? candidate : "";
+  const registryId = shortText(raw.registry_id, 120);
+  const questionId = shortText(raw.question_id, 120);
+  const trustStatus = typeof raw.trust_status === "string" && trustStatuses.has(raw.trust_status) ? raw.trust_status : "";
+  if (!exactFields(raw, ["schema_version", "registry_id", "question_id", "trust_status", "claims"]) || raw.schema_version !== "cosmatter.evidence-maturity-registry/v1" || !registryId || !questionId || !trustStatus || !Array.isArray(raw.claims) || !raw.claims.length || raw.claims.length > 500) return null;
+  const claims: EvidenceMaturityClaim[] = [];
+  const claimIds = new Set<string>();
+  for (const entry of raw.claims) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const claim = entry as JsonObject;
+    if (!exactFields(claim, ["claim_id", "claim_text", "maturity_level", "assessment_authority", "support_records", "reproducibility", "independent_reproduction", "limitations"])) return null;
+    const claimId = shortText(claim.claim_id, 120);
+    const claimText = shortText(claim.claim_text, 1000);
+    const maturityLevel = typeof claim.maturity_level === "string" && levels.has(claim.maturity_level as EvidenceMaturityLevel) ? claim.maturity_level as EvidenceMaturityLevel : null;
+    const assessmentAuthority = typeof claim.assessment_authority === "string" && authorities.has(claim.assessment_authority) ? claim.assessment_authority : "";
+    if (!claimId || !claimText || claimIds.has(claimId) || !maturityLevel || !assessmentAuthority || !Array.isArray(claim.support_records) || !claim.support_records.length || claim.support_records.length > 50 || !Array.isArray(claim.limitations) || !claim.limitations.length || claim.limitations.length > 30) return null;
+    const supportIsValid = claim.support_records.every((entry) => {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return false;
+      const support = entry as JsonObject;
+      return exactFields(support, ["run_id", "document_id", "document_version", "independence_group", "source_map_status", "data_status", "conditions_status", "stance"])
+        && Boolean(runId(support.run_id)) && Boolean(shortText(support.document_id, 200)) && Boolean(shortText(support.independence_group, 200))
+        && typeof support.document_version === "string" && supportVersions.has(support.document_version)
+        && typeof support.source_map_status === "string" && sourceMapStatuses.has(support.source_map_status)
+        && typeof support.data_status === "string" && dataStatuses.has(support.data_status)
+        && typeof support.conditions_status === "string" && conditionStatuses.has(support.conditions_status)
+        && typeof support.stance === "string" && stances.has(support.stance);
+    });
+    const limitations = claim.limitations.map((item) => shortText(item, 500));
+    const reproducibility = claim.reproducibility;
+    const independentReproduction = claim.independent_reproduction;
+    if (!supportIsValid || limitations.some((item) => !item) || reproducibility === null || typeof reproducibility !== "object" || Array.isArray(reproducibility) || independentReproduction === null || typeof independentReproduction !== "object" || Array.isArray(independentReproduction)) return null;
+    const supportRows = claim.support_records as JsonObject[];
+    const repro = reproducibility as JsonObject;
+    const reproduction = independentReproduction as JsonObject;
+    if (!exactFields(repro, ["protocol_status", "materials_status", "measurement_status", "raw_data_status", "assessment"]) || !exactFields(reproduction, ["status", "independent_run_id", "result_comparison", "review_status"]) || ![repro.protocol_status, repro.materials_status, repro.measurement_status].every((status) => typeof status === "string" && reproducibilityStatuses.has(status)) || typeof repro.raw_data_status !== "string" || !rawDataStatuses.has(repro.raw_data_status) || !["not_assessed", "insufficient", "reproducibility_ready_human_reviewed"].includes(repro.assessment as string) || typeof reproduction.status !== "string" || !reproductionStatuses.has(reproduction.status) || typeof reproduction.result_comparison !== "string" || !comparisonStatuses.has(reproduction.result_comparison) || (reproduction.review_status !== "not_reviewed" && reproduction.review_status !== "human_reviewed") || (reproduction.independent_run_id !== null && !shortText(reproduction.independent_run_id, 160))) return null;
+    const hasHumanCheckedDataSupport = supportRows.some((support) => support.source_map_status === "human_reviewed" && support.data_status === "numeric_or_figure_data_human_checked" && support.conditions_status === "complete_human_checked" && ["supports", "contradicts", "mixed"].includes(support.stance as string));
+    const maturityAboveLiterature = ["data_supported", "reproducibility_ready", "independently_reproduced"].includes(maturityLevel);
+    const supportRunIds = new Set(supportRows.map((support) => support.run_id as string));
+    if ((assessmentAuthority === "delegated_automated_trial" && maturityLevel !== "literature_mentioned") || (maturityLevel === "data_supported" && !dataAuthorities.has(assessmentAuthority)) || (maturityAboveLiterature && !hasHumanCheckedDataSupport) || (maturityLevel === "reproducibility_ready" && (!reproducibilityAuthorities.has(assessmentAuthority) || repro.assessment !== "reproducibility_ready_human_reviewed")) || (maturityLevel === "independently_reproduced" && (assessmentAuthority !== "independent_reproduction_review" || reproduction.status !== "replicated" || reproduction.result_comparison !== "within_predefined_tolerance" || reproduction.review_status !== "human_reviewed" || !shortText(reproduction.independent_run_id, 160) || supportRunIds.has(reproduction.independent_run_id as string)))) return null;
+    claimIds.add(claimId);
+    claims.push({ claimId, claimText, maturityLevel, assessmentAuthority, supportRecordCount: supportRows.length, supportDocumentCount: new Set(supportRows.map((support) => support.document_id as string)).size, independenceGroupCount: new Set(supportRows.map((support) => support.independence_group as string)).size, sourceMapStatuses: [...new Set(supportRows.map((support) => support.source_map_status as string))].sort(), limitations });
+  }
+  return { registryId, questionId, trustStatus, claims };
+}
 function evaluationSummary(value: unknown): EvaluationSummary {
   const root = value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
   const evidenceQuality = root.evidence_quality && typeof root.evidence_quality === "object" && !Array.isArray(root.evidence_quality) ? root.evidence_quality as JsonObject : null;
@@ -233,6 +356,74 @@ function relation(value: unknown): RelationBundle | null {
   const raw = value as JsonObject;
   return { trustStatus: typeof raw.trust_status === "string" ? raw.trust_status : "unclassified", edgeCount: Array.isArray(raw.edges) ? raw.edges.length : 0 };
 }
+function relationReconciliation(value: unknown): RelationReconciliation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject;
+  const shortText = (candidate: unknown, maximum: number) => typeof candidate === "string" && candidate.trim().length > 0 && candidate.length <= maximum ? candidate.trim() : "";
+  const hasHistory = Object.prototype.hasOwnProperty.call(raw, "revision_history");
+  if ((Object.keys(raw).length !== (hasHistory ? 4 : 3)) || !["trust_status", "source", "mappings", ...(hasHistory ? ["revision_history"] : [])].every((field) => Object.prototype.hasOwnProperty.call(raw, field)) || raw.trust_status !== "human_reviewed_cross_source_identity_not_scientific_evidence" || !raw.source || typeof raw.source !== "object" || Array.isArray(raw.source) || !Array.isArray(raw.mappings) || raw.mappings.length > 12 || (hasHistory && (!Array.isArray(raw.revision_history) || raw.revision_history.length > 48))) return null;
+  const source = raw.source as JsonObject;
+  const sourceEvidenceId = shortText(source.evidence_id, 200);
+  const sourceDocumentId = shortText(source.document_id, 200);
+  if (Object.keys(source).length !== 2 || !Object.prototype.hasOwnProperty.call(source, "evidence_id") || !Object.prototype.hasOwnProperty.call(source, "document_id") || !sourceEvidenceId || !sourceDocumentId) return null;
+  const statuses = new Set<RelationReconciliationStatus>(["matched", "conflict", "unresolved"]);
+  const seen = new Set<string>();
+  const mappings: RelationReconciliationMapping[] = [];
+  for (const entry of raw.mappings) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const mapping = entry as JsonObject;
+    if (Object.keys(mapping).length !== 4 || !["openalex_work_id", "crossref_doi", "status", "basis"].every((field) => Object.prototype.hasOwnProperty.call(mapping, field))) return null;
+    const openAlexWorkId = shortText(mapping.openalex_work_id, 255);
+    const crossrefDoi = shortText(mapping.crossref_doi, 255);
+    const status = typeof mapping.status === "string" && statuses.has(mapping.status as RelationReconciliationStatus) ? mapping.status as RelationReconciliationStatus : null;
+    const basis = shortText(mapping.basis, 120);
+    const identity = `${openAlexWorkId}\u0000${crossrefDoi}`;
+    if (!openAlexWorkId || !crossrefDoi || !status || !basis || seen.has(identity)) return null;
+    seen.add(identity);
+    mappings.push({ openAlexWorkId, crossrefDoi, status, basis });
+  }
+  const revisionHistory: RelationReconciliationRevision[] = [];
+  if (hasHistory) {
+    for (const entry of raw.revision_history as unknown[]) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const revision = entry as JsonObject;
+      const recordedAt = typeof revision.recorded_at === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(revision.recorded_at) && Number.isFinite(Date.parse(revision.recorded_at)) ? revision.recorded_at : "";
+      const mappingCount = typeof revision.mapping_count === "number" && Number.isSafeInteger(revision.mapping_count) && revision.mapping_count >= 0 && revision.mapping_count <= 12 ? revision.mapping_count : -1;
+      const counts = revision.status_counts;
+      if (Object.keys(revision).length !== 4 || !["revision", "recorded_at", "mapping_count", "status_counts"].every((field) => Object.prototype.hasOwnProperty.call(revision, field)) || typeof revision.revision !== "number" || !Number.isSafeInteger(revision.revision) || revision.revision !== revisionHistory.length + 1 || !recordedAt || mappingCount < 0 || !counts || typeof counts !== "object" || Array.isArray(counts)) return null;
+      const statusCounts = counts as JsonObject;
+      const matched = statusCounts.matched;
+      const conflict = statusCounts.conflict;
+      const unresolved = statusCounts.unresolved;
+      if (Object.keys(statusCounts).length !== 3 || [matched, conflict, unresolved].some((count) => typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) || typeof matched !== "number" || typeof conflict !== "number" || typeof unresolved !== "number" || matched + conflict + unresolved !== mappingCount) return null;
+      revisionHistory.push({ revision: revision.revision, recordedAt, mappingCount, statusCounts: { matched, conflict, unresolved } });
+    }
+  }
+  return { trustStatus: "human_reviewed_cross_source_identity_not_scientific_evidence", sourceEvidenceId, sourceDocumentId, mappings, revisionHistory };
+}
+function conditionNormalization(value: unknown): ConditionNormalization | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject;
+  const shortText = (candidate: unknown, maximum: number) => typeof candidate === "string" && candidate.trim().length > 0 && candidate.length <= maximum ? candidate.trim() : "";
+  if (Object.keys(raw).length !== 2 || !["trust_status", "mappings"].every((field) => Object.prototype.hasOwnProperty.call(raw, field)) || raw.trust_status !== "human_reviewed_condition_normalization_no_conversion" || !Array.isArray(raw.mappings) || raw.mappings.length > 36) return null;
+  const canonicalFields = new Set(["thickness", "temperature", "strain", "pressure", "composition", "field", "energy_cutoff", "kpoint_density"]);
+  const seen = new Set<string>();
+  const mappings: ConditionNormalizationMapping[] = [];
+  for (const entry of raw.mappings) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const mapping = entry as JsonObject;
+    if (Object.keys(mapping).length !== 4 || !["evidence_id", "raw_field", "canonical_field", "unit"].every((field) => Object.prototype.hasOwnProperty.call(mapping, field))) return null;
+    const evidenceId = shortText(mapping.evidence_id, 200);
+    const rawField = shortText(mapping.raw_field, 120);
+    const canonicalField = shortText(mapping.canonical_field, 120);
+    const unit = shortText(mapping.unit, 40);
+    const identity = `${evidenceId}\u0000${rawField}`;
+    if (!evidenceId || !rawField || !canonicalField || !unit || !canonicalFields.has(canonicalField) || seen.has(identity)) return null;
+    seen.add(identity);
+    mappings.push({ evidenceId, rawField, canonicalField, unit });
+  }
+  return { trustStatus: "human_reviewed_condition_normalization_no_conversion", mappings };
+}
 
 function literatureGraph(value: unknown): LiteratureGraph {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return { trustStatus: "unavailable", nodes: [], edges: [] };
@@ -262,6 +453,8 @@ function literatureGraph(value: unknown): LiteratureGraph {
 }
 export function readBundle(value: unknown, source: ImportedBundle["source"] = "local-file"): ImportedBundle {
   const root = object(value, "UI JSON");
+  const parsedEvidenceMaturityRegistry = evidenceMaturityRegistry(root.evidence_maturity_registry);
+  const maturityRegistryDeliveryStatus = root.evidence_maturity_registry_delivery_status === "rejected" ? "rejected" : root.evidence_maturity_registry_delivery_status === "accepted" ? "accepted" : "not_supplied";
   const rawMission = object(root.mission, "mission");
   const mission: Mission = {
     missionId: text(rawMission.mission_id, "mission.mission_id"),
@@ -270,6 +463,9 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     property: text(rawMission.property_name, "mission.property_name"),
     scope: text(rawMission.scope, "mission.scope"),
   };
+  const maturityRegistryMatchesMission = parsedEvidenceMaturityRegistry?.questionId === mission.missionId;
+  const acceptedMaturityRegistry = parsedEvidenceMaturityRegistry && maturityRegistryDeliveryStatus === "accepted" && maturityRegistryMatchesMission ? parsedEvidenceMaturityRegistry : null;
+  const evidenceMaturityRegistryStatus = acceptedMaturityRegistry ? "accepted" : maturityRegistryDeliveryStatus !== "not_supplied" || root.evidence_maturity_registry !== undefined && root.evidence_maturity_registry !== null ? "rejected" : "not_supplied";
   const rawFleet = root.fleet_assignment && typeof root.fleet_assignment === "object" && !Array.isArray(root.fleet_assignment) ? root.fleet_assignment as JsonObject : null;
   const rawStatus = root.status && typeof root.status === "object" && !Array.isArray(root.status) ? root.status as JsonObject : null;
   const evidenceCards = Array.isArray(root.evidence_cards) ? root.evidence_cards.flatMap((entry) => {
@@ -311,6 +507,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
   } : null;
   return {
     schemaVersion: typeof root.schema_version === "string" ? root.schema_version : "unknown",
+    generatedAt: generatedAt(root.generated_at),
     mission, source,
     fleet: rawFleet ? { displayName: typeof rawFleet.display_name_zh === "string" ? rawFleet.display_name_zh : typeof rawFleet.display_name_en === "string" ? rawFleet.display_name_en : "Unclassified fleet", missionType: typeof rawFleet.mission_type === "string" ? rawFleet.mission_type : "unknown", releaseGate: typeof rawFleet.release_gate === "string" ? rawFleet.release_gate : "unknown" } : null,
     status: rawStatus ? { missionState: typeof rawStatus.mission_state === "string" ? rawStatus.mission_state : "unknown", retryCount: typeof rawStatus.retry_count === "number" ? rawStatus.retry_count : 0, retryBudget: typeof rawStatus.retry_budget === "number" ? rawStatus.retry_budget : 0, returnReason: typeof rawStatus.return_reason === "string" ? rawStatus.return_reason : null } : null,
@@ -319,9 +516,11 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     evidenceCards, conditionMatrix, researchGapCandidates, materialFacts,
     sourceMapSummary: (() => { const summary = reviewedSummary(root.reviewed_source_map_summary, "segment_count"); return { documentCount: summary.documentCount, segmentCount: summary.recordCount, documentIds: summary.documentIds };  })(),
     materialFactSummary: (() => { const summary = reviewedSummary(root.reviewed_material_fact_summary, "fact_count"); return { documentCount: summary.documentCount, factCount: summary.recordCount }; })(),
+    evidenceMaturityRegistry: acceptedMaturityRegistry,
+    evidenceMaturityRegistryStatus,
     auditSummary: auditSummary(root.audit_summary),
     timeline: Array.isArray(root.timeline) ? root.timeline.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).station_type === "string" && typeof (entry as JsonObject).action === "string" ? [{ stationType: (entry as JsonObject).station_type as string, action: (entry as JsonObject).action as string, state: typeof (entry as JsonObject).state === "string" ? (entry as JsonObject).state as string : "unknown", occurredAt: typeof (entry as JsonObject).occurred_at === "string" ? (entry as JsonObject).occurred_at as string : "" }] : []) : [],
-    literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), literatureGraph: literatureGraph(root.literature_graph),
+    literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), relationReconciliation: relationReconciliation(root.relation_reconciliation), conditionNormalization: conditionNormalization(root.condition_normalization), literatureGraph: literatureGraph(root.literature_graph),
     report: root.mission_report && typeof root.mission_report === "object" && !Array.isArray(root.mission_report) && typeof (root.mission_report as JsonObject).summary === "string" ? { summary: (root.mission_report as JsonObject).summary as string, limitations: textList((root.mission_report as JsonObject).limitations), nextSteps: textList((root.mission_report as JsonObject).next_steps) } : null,
   };
 }

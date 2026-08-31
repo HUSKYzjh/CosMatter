@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import io
 import json
 import tempfile
@@ -46,6 +47,18 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report.contradiction_precision, 1.0)
         self.assertEqual(report.reproducibility_consistency, 1.0)
 
+    def test_frozen_fixture_hash_changes_when_the_same_fixture_id_content_changes(self) -> None:
+        fixture_path = AGENT_ROOT / "examples" / "frozen" / "bfo_route_diagnostics.json"
+        original = evaluate_frozen_route_fixture(fixture_path, "evaluation_mission")
+        with tempfile.TemporaryDirectory() as directory:
+            changed_path = Path(directory) / fixture_path.name
+            payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+            changed_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            changed = evaluate_frozen_route_fixture(changed_path, "evaluation_mission")
+        self.assertEqual(original.fixture_id, changed.fixture_id)
+        self.assertNotEqual(original.fixture_sha256, changed.fixture_sha256)
+        self.assertEqual(original.fixture_sha256, hashlib.sha256(fixture_path.read_bytes()).hexdigest())
+
     def test_cli_writes_an_evaluation_record_and_a_summary_audit_event(self) -> None:
         fixture_path = AGENT_ROOT / "examples" / "frozen" / "bfo_route_diagnostics.json"
         with tempfile.TemporaryDirectory() as directory:
@@ -60,6 +73,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(payload["fixture_id"], "bfo_route_diagnostics_v0.1")
         self.assertEqual(report["reproducibility_consistency"], 1.0)
+        self.assertEqual(report["fixture_sha256"], hashlib.sha256(fixture_path.read_bytes()).hexdigest())
         self.assertIn("frozen_fixture_evaluated", audit)
         self.assertNotIn("Synthetic fixture only", audit)
     def test_loader_rejects_non_synthetic_fixture(self) -> None:
@@ -84,6 +98,7 @@ class EvaluationTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
 
         self.assertEqual(payload["fixture_id"], "bfo_route_diagnostics_v0_1")
+        self.assertNotIn("fixture_sha256", payload)
         self.assertNotIn("quote", payload)
         self.assertNotIn("api_key", json.dumps(payload).lower())
 

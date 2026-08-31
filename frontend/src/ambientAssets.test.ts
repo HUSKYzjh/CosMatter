@@ -8,4 +8,13 @@ describe("ambient background asset pools", () => {
       expect(assets.every((asset) => asset.startsWith("/ambient-backgrounds/") && asset.endsWith(".png"))).toBe(true);
     }
   });
+
+  it("keeps a distinct, stage-specific dynamic background pool", () => {
+    expect(Object.keys(AMBIENT_ASSETS).sort()).toEqual(["discover", "graph", "horizon", "reader", "workflow"]);
+    expect(new Set(AMBIENT_ASSETS.workflow)).toHaveLength(5);
+    expect(AMBIENT_ASSETS.workflow.every((asset) => asset.includes("/fleet/"))).toBe(true);
+    expect(AMBIENT_ASSETS.graph.every((asset) => asset.includes("/starfield/"))).toBe(true);
+    expect(AMBIENT_ASSETS.discover.every((asset) => asset.includes("/fleet/"))).toBe(true);
+    expect(AMBIENT_ASSETS.reader.every((asset) => asset.includes("/fleet/"))).toBe(true);
+  });
 });

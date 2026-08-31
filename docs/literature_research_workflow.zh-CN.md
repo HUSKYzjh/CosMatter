@@ -181,17 +181,30 @@ cd CosMatter
 
 **输出：** 完整的人工筛选工件。只有状态为 `include_for_fulltext` 且来源确有授权访问边界的文献，才能进入全文解析和 Source Map。元数据检索结果、本地 Zotero 搜索结果或人工手写文献 ID均不能绕过此门禁。
 
+**受委托自动试点例外：** 当用户明确授权仅为跑通链路时，可使用 `record-automated-trial-screening --include-document-id <精确候选 ID>`，并在 `sciverse-read-context`、`mineru-submit-url` 和 `record-source-map` 上同时显式加 `--allow-delegated-automated-trial`。该路径将未选候选保留为 `needs_metadata_review`，工件一律标记为 `delegated_automated_trial_*_not_scientific_evidence`，与人工筛选文件分开存储；它**不能**进入正式材料事实、证据卡、融合、报告或提交包。
+
+自动试点的 Source Map 只能由 `create-automated-trial-source-map-selection` 从私有 MinerU 候选池的精确 `segment_id` 构建；随后 `record-automated-trial-fact-audit` 可记录逐条的 `directly_supported`、`qualified_by_source` 或 `not_supported` 判断。该审核绑定 Source Map 摘录哈希，但不是人工审核，也不产生正式 `material_facts`。
+
+**实现取舍：** 此处借鉴了 [Sciverse Frontier Lens 的数据支持审计](https://github.com/Shannon4Science/sciverse-frontier-lens/blob/main/docs/DATA_SUPPORT_AUDIT.md)：模型输出只能是绑定来源的派生工件，不能新增证据实体或关系；上游失败保留为有类型的失败，不以模型猜测补齐。CosMatter 未接入该项目的代码、图谱或本地明文配置；本项目仍以 `.env`、私有全文区和上述人工门禁为边界。
+
 ### 步骤 4：MinerU 解析与 Source Map 建立
 
 **输入：** 已通过全文筛选的 `document_id`，以及由人工确认可用的 HTTPS 来源地址。
 
-**处理：** MinerU 只接收一次显式授权的解析请求。系统记录任务 ID、状态和不泄露 URL 的回执关联；不把下载的解析输出或 PDF 写进运行工件。任务完成后，人工在自己有权访问的解析结果中选择必要短摘录，填写段落/页码/章节定位并建立 Source Map。
+**处理：** MinerU 只接收一次显式授权的解析请求。系统记录任务 ID、状态和不泄露 URL 的回执关联；不把下载的解析输出或 PDF 写进运行工件。任务完成后，可显式用 `mineru-fetch-markdown` 将服务端结果中的唯一 Markdown 文件写到运行目录外、由使用者指定的新私有文件；ZIP 链接、ZIP 内容和 Markdown 都不会进入运行工件。随后人工在自己有权访问的解析结果中选择必要短摘录，填写段落/页码/章节定位并建立 Source Map。
 
 ```powershell
 .\.venv\Scripts\python.exe -m cosmatter mineru-submit-url `
   --run-id bfo_001 --document-id <document_id> --source-url <authorized_https_url>
 .\.venv\Scripts\python.exe -m cosmatter mineru-poll `
   --run-id bfo_001 --document-id <document_id>
+.\.venv\Scripts\python.exe -m cosmatter mineru-fetch-markdown `
+  --run-id bfo_001 --document-id <document_id> `
+  --output D:\private-review\<document_id>.md
+.\.venv\Scripts\python.exe -m cosmatter prepare-mineru-markdown-review `
+  --run-id bfo_001 --document-id <document_id> `
+  --input D:\private-review\<document_id>.md `
+  --output D:\private-review\<document_id>_pool.json
 .\.venv\Scripts\python.exe -m cosmatter audit-source-parse-receipts --run-id bfo_001
 .\.venv\Scripts\python.exe -m cosmatter record-source-map `
   --run-id bfo_001 --document-id <document_id> --input .\reviewed_source_map.json
@@ -199,7 +212,7 @@ cd CosMatter
 
 **输出：** 文献级 `source_map_<sha256>.json`。每一段只保留必要短摘录、`segment_id`、定位符和摘录 SHA-256；后续不依赖“模型说它看过全文”，而是强制回到这个定位图。未完成解析、未筛选或与文献 ID 不一致都会令该步骤失败。
 
-**必须保留的解析回执链：** `mineru-submit-url` 与 `mineru-poll` 会将每个 `document_id` 的任务状态写入本次 run 的供应商回执清单。`audit-source-parse-receipts` 核对：(1) 任务对应的是已筛选的文献；(2) 任务及来源 URL 指纹未被替换；(3) 最终状态与当前 Source Map 合法。没有这个审计通过结果，解析阶段在 `workflow_readiness.json` 中将被标记为 `blocked`，而不是“已完成”。回执工件只保留安全标识与指纹，不保存 PDF、原始 Markdown 或服务响应正文。
+**必须保留的解析回执链：** `mineru-submit-url`、`mineru-poll` 与（如使用）`mineru-fetch-markdown` 会将每个 `document_id` 的任务状态或 Markdown 哈希写入本次 run 的供应商回执清单。`audit-source-parse-receipts` 核对：(1) 任务对应的是已筛选的文献；(2) 任务及来源 URL 指纹未被替换；(3) 最终状态与当前 Source Map 合法。没有这个审计通过结果，解析阶段在 `workflow_readiness.json` 中将被标记为 `blocked`，而不是“已完成”。回执工件只保留安全标识、内容哈希与长度，不保存 PDF、原始 Markdown 或服务响应正文。
 
 
 ### 步骤 5：材料事实抽取、实体规范与人工确认

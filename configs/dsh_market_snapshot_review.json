@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "trust_status": "human_reviewed_market_snapshot_diff_not_admission_or_install_authorization",
+  "baseline_snapshot_sha256": "97a6d03f1f143d46cb18d22df27708ba311cefab20cc3cc341cc9a77003f17e7",
+  "current_snapshot_sha256": "97a6d03f1f143d46cb18d22df27708ba311cefab20cc3cc341cc9a77003f17e7",
+  "reviewed_on": "2026-08-29",
+  "reviewer": "local_project_owner",
+  "added_count": 0,
+  "removed_count": 0,
+  "changed_count": 0,
+  "change_fingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+}

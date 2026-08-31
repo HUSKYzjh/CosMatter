@@ -16,7 +16,7 @@ from .models import new_id, utc_now
 
 RECEIPT_SCHEMA_VERSION = "1.0"
 _PROVIDERS = {"sciverse", "mineru"}
-_OPERATIONS = {"agentic_search", "content", "source_parse_submit", "source_parse_poll"}
+_OPERATIONS = {"agentic_search", "content", "source_parse_submit", "source_parse_poll", "source_parse_output_fetch"}
 _AGENTIC_RECEIPT_FIELDS = {
     "schema_version", "receipt_id", "provider", "operation", "request_id",
     "status_code", "query_sha256", "query_char_count", "requested_top_k",
@@ -34,7 +34,8 @@ _MINERU_RECEIPT_FIELDS = {
     "document_id_sha256", "source_url_sha256", "task_id_sha256", "task_state",
     "model_version", "recorded_at",
 }
-_MINERU_OPERATIONS = {"source_parse_submit", "source_parse_poll"}
+_MINERU_OUTPUT_RECEIPT_FIELDS = _MINERU_RECEIPT_FIELDS | {"source_markdown_sha256", "source_markdown_byte_count"}
+_MINERU_OPERATIONS = {"source_parse_submit", "source_parse_poll", "source_parse_output_fetch"}
 _TASK_STATES = {"pending", "running", "done", "failed"}
 
 
@@ -150,6 +151,35 @@ def mineru_task_receipt(
     }
 
 
+def mineru_output_receipt(
+    *,
+    document_id: str,
+    source_url_sha256: str,
+    task_id: str,
+    model_version: str,
+    content: bytes,
+    status_code: int,
+    request_id: str | None,
+) -> dict[str, Any]:
+    """Record a private MinerU Markdown fetch without retaining its text or URL."""
+    if not isinstance(content, bytes) or not 1 <= len(content) <= 5 * 1024 * 1024:
+        raise ProviderReceiptError("MinerU output receipt content is outside the byte safety limit")
+    receipt = mineru_task_receipt(
+        operation="source_parse_output_fetch",
+        document_id=document_id,
+        source_url_sha256=source_url_sha256,
+        task_id=task_id,
+        task_state="done",
+        model_version=model_version,
+        status_code=status_code,
+        request_id=request_id,
+    )
+    receipt["source_markdown_sha256"] = hashlib.sha256(content).hexdigest()
+    receipt["source_markdown_byte_count"] = len(content)
+    _validate_receipt(receipt)
+    return receipt
+
+
 def _is_sha256(value: object) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
@@ -164,6 +194,11 @@ def append_provider_receipt(run_dir: Path, receipt: dict[str, Any]) -> Path:
     return path
 
 
+def load_provider_receipts(run_dir: Path) -> list[dict[str, Any]]:
+    """Load validated, hash-only receipts for a local aggregate projection."""
+    return _load_receipts(run_dir / "provider_receipts.jsonl")
+
+
 def _validate_receipt(receipt: object) -> None:
     if not isinstance(receipt, dict):
         raise ProviderReceiptError("provider receipt schema is invalid")
@@ -173,7 +208,8 @@ def _validate_receipt(receipt: object) -> None:
     elif operation == "content":
         fields, provider = _CONTENT_RECEIPT_FIELDS, "sciverse"
     elif operation in _MINERU_OPERATIONS:
-        fields, provider = _MINERU_RECEIPT_FIELDS, "mineru"
+        fields = _MINERU_OUTPUT_RECEIPT_FIELDS if operation == "source_parse_output_fetch" else _MINERU_RECEIPT_FIELDS
+        provider = "mineru"
     else:
         raise ProviderReceiptError("provider receipt schema version or operation is invalid")
     if set(receipt) != fields or receipt.get("schema_version") != RECEIPT_SCHEMA_VERSION:
@@ -206,6 +242,9 @@ def _validate_receipt(receipt: object) -> None:
                 raise ProviderReceiptError("MinerU receipt digest is invalid")
         if receipt.get("task_state") not in _TASK_STATES or not isinstance(receipt.get("model_version"), str) or not receipt["model_version"].strip():
             raise ProviderReceiptError("MinerU receipt task metadata is invalid")
+        if operation == "source_parse_output_fetch":
+            if not _is_sha256(receipt.get("source_markdown_sha256")) or not isinstance(receipt.get("source_markdown_byte_count"), int) or not 1 <= receipt["source_markdown_byte_count"] <= 5 * 1024 * 1024:
+                raise ProviderReceiptError("MinerU output receipt metadata is invalid")
 
 def audit_source_parse_receipt_links(source_parse_payload: object, receipts_path: Path) -> dict[str, Any]:
     """Check MinerU task-ledger entries against hash-only provider receipts."""
@@ -217,11 +256,10 @@ def audit_source_parse_receipt_links(source_parse_payload: object, receipts_path
     for task in tasks:
         if not isinstance(task, dict):
             raise ProviderReceiptError("source parse task entry is invalid")
-        document_id, source_digest, task_id = task.get("document_id"), task.get("source_url_sha256"), task.get("task_id")
-        if not isinstance(document_id, str) or not document_id.strip() or not _is_sha256(source_digest) or not isinstance(task_id, str) or not task_id.strip() or task.get("state") not in _TASK_STATES:
+        document_id, source_digest, task_digest = task.get("document_id"), task.get("source_url_sha256"), task.get("task_id")
+        if not isinstance(document_id, str) or not document_id.strip() or not _is_sha256(source_digest) or not _is_sha256(task_digest) or task.get("state") not in _TASK_STATES:
             raise ProviderReceiptError("source parse task identity is invalid")
         document_digest = hashlib.sha256(document_id.encode("utf-8")).hexdigest()
-        task_digest = hashlib.sha256(task_id.encode("utf-8")).hexdigest()
         links = [
             receipt for receipt in receipts
             if receipt.get("provider") == "mineru"

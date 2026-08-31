@@ -8,6 +8,7 @@ from typing import Any
 
 from .artifacts import persist_evidence_review
 from .candidate_screening import CandidateScreeningError, require_document_screened_for_fulltext
+from .content_access import ContentAccessError, has_sciverse_content_access
 from .models import AccessPolicy, EvidenceCard, Provenance, Stance
 from .source_map import SourceMapError, load_source_map_for_document
 from .verification import VerificationDecision
@@ -151,5 +152,17 @@ def require_eligible_candidate(run_dir: Path, document_id: str) -> None:
     candidate = next((item for item in candidates if isinstance(item, dict) and item.get("document_id") == document_id), None)
     if candidate is None:
         raise EvidenceIngestionError("evidence document_id is not a candidate from this run")
-    if candidate.get("is_content_accessible") is not True:
-        raise EvidenceIngestionError("candidate lacks full-text access authorization")
+    if candidate.get("is_content_accessible") is True:
+        return
+    try:
+        mission_id = _mission_id(run_dir)
+        confirmed = has_sciverse_content_access(
+            run_dir,
+            mission_id=mission_id,
+            candidate_payload=payload,
+            document_id=document_id,
+        )
+    except ContentAccessError as error:
+        raise EvidenceIngestionError("content access confirmation is invalid") from error
+    if not confirmed:
+        raise EvidenceIngestionError("candidate lacks upstream or explicitly confirmed full-text access")

@@ -45,7 +45,7 @@ def candidates_from_sciverse(payload: dict[str, Any], query: str, top_k: int) ->
                 publication_year=year if isinstance(year, int) else None,
                 locator_hint=_locator_hint(hit),
                 score=float(score) if isinstance(score, (int, float)) else None,
-                is_content_accessible=hit.get("is_content_accessible") is True,
+                is_content_accessible=_sciverse_content_accessible(hit),
                 doi=_hit_doi(hit),
             )
         except ValueError:
@@ -55,6 +55,22 @@ def candidates_from_sciverse(payload: dict[str, Any], query: str, top_k: int) ->
         if len(candidates) == top_k:
             break
     return tuple(candidates)
+
+
+def _sciverse_content_accessible(hit: dict[str, Any]) -> bool:
+    """Map Sciverse's documented full-text identifier without guessing access.
+
+    ``semantic_search`` returns chunks and does not promise the optional
+    ``is_content_accessible`` convenience flag.  The official SDK documents a
+    nonempty ``doc_id`` as a full-text artifact identifier suitable for
+    ``read_content``; metadata-only records lack it.  An explicit provider
+    boolean still takes precedence when present.
+    """
+    explicit = hit.get("is_content_accessible")
+    if isinstance(explicit, bool):
+        return explicit
+    document_id = hit.get("doc_id")
+    return isinstance(document_id, str) and bool(document_id.strip())
 
 
 def _hit_doi(hit: dict[str, Any]) -> str | None:

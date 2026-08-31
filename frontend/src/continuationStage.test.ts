@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { continuationStageLabel, viewForContinuationStage, viewForRestoredRun } from "./continuationStage";
+import { continuationStageLabel, reconcileRestoredStage, viewForContinuationStage, viewForRestoredRun } from "./continuationStage";
 
 describe("viewForContinuationStage", () => {
   it("keeps plan and retrieval recovery on the controlled bridge", () => {
@@ -23,5 +23,10 @@ describe("viewForContinuationStage", () => {
     for (const stage of ["screening", "parse", "extraction", "gap", "report", "evaluation"]) {
       expect(viewForContinuationStage(stage)).toBe("graph");
     }
+  });
+
+  it("uses a newly derived local stage over an older package snapshot", () => {
+    expect(reconcileRestoredStage("screening", "plan", true)).toEqual({ stage: "plan", source: "local_contract", differsFromPackage: true });
+    expect(reconcileRestoredStage("screening", undefined, false)).toEqual({ stage: "screening", source: "package_snapshot", differsFromPackage: false });
   });
 });

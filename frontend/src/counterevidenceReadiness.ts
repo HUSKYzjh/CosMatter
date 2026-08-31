@@ -12,7 +12,15 @@ export interface CounterevidenceReadiness {
 /** This is an operational UI gate, not evidence of a scientific conclusion. */
 export function counterevidenceReadiness(bundle: ImportedBundle): CounterevidenceReadiness {
   const record = bundle.auditSummary.counterevidence;
-  if (record.state === "ready") return { ready: true, plannedQueryCount: record.plannedQueryCount, executedQueryCount: record.executedQueryCount, message: "", nextAction: "" };
+  const complete = record.plannedQueryCount > 0 && record.executedQueryCount === record.plannedQueryCount;
+  if (record.state === "ready" && complete) return { ready: true, plannedQueryCount: record.plannedQueryCount, executedQueryCount: record.executedQueryCount, message: "", nextAction: "" };
+  if (record.state === "ready") return {
+    ready: false,
+    plannedQueryCount: record.plannedQueryCount,
+    executedQueryCount: record.executedQueryCount,
+    message: zh("反例边界摘要的已批准/已执行计数不一致；不会将其当作完成。请回到任务控制核对本地检索历史。", "The counterevidence summary has inconsistent approved/executed counts and is not treated as complete. Return to task control to inspect local retrieval history."),
+    nextAction: zh("返回任务控制核对反例检索", "Return to task control to verify counterevidence retrieval"),
+  };
   if (record.state === "awaiting_counterevidence_execution") return { ready: false, plannedQueryCount: record.plannedQueryCount, executedQueryCount: record.executedQueryCount, message: zh("Every approved counterevidence query must run before condition comparison; candidate papers or a matrix alone do not attest this boundary.", "条件比较前，必须在已批准计划内完成每条反例检索；仅有候选文献或条件矩阵不足以证明该边界。"), nextAction: zh("Return to task control and run remaining counterevidence queries", "返回任务控制执行剩余反例检索") };
   return { ready: false, plannedQueryCount: 0, executedQueryCount: 0, message: zh("A human-reviewed plan with counterevidence queries is required before condition comparison; the system never infers a boundary from papers or Gap candidates.", "条件比较前，需要先人工批准含反例检索式的计划；系统不会从现有文献或 Gap 候选自动推断反例边界。"), nextAction: zh("Return to task control to approve and run counterevidence", "返回任务控制批准并执行反例检索") };
 }

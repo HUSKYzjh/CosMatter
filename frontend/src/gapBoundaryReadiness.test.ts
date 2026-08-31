@@ -15,4 +15,10 @@ describe("hasExecutedGapCounterevidenceBoundary", () => {
   it("keeps legacy or missing-boundary candidates out of completion state", () => {
     expect(hasExecutedGapCounterevidenceBoundary(candidate())).toBe(false);
   });
+
+  it("requires a candidate boundary to match the current run-level counterevidence summary", () => {
+    const bounded = candidate({ status: EXECUTED_GAP_COUNTEREVIDENCE_BOUNDARY, approvedQueryCount: 1, executedQueryCount: 1 });
+    expect(hasExecutedGapCounterevidenceBoundary(bounded, { ready: true, plannedQueryCount: 1, executedQueryCount: 1 })).toBe(true);
+    expect(hasExecutedGapCounterevidenceBoundary(bounded, { ready: true, plannedQueryCount: 2, executedQueryCount: 2 })).toBe(false);
+  });
 });

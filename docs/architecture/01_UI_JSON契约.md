@@ -1,6 +1,6 @@
 # CosMatter UI JSON 契约（v1.0）
 
-`cosmatter export-ui` 是 Python 运行时与静态浏览器页面之间的唯一数据边界。浏览器只读取由该命令导出的 JSON 文件，或由用户通过“导入 JSON 工件”明确选择的同格式文件；首版没有 HTTP API。
+`cosmatter export-ui` 是 Python 运行时与浏览器页面之间的唯一数据边界。浏览器只读取由该命令导出的 JSON 文件、用户通过“导入 JSON 工件”明确选择的同格式文件，或 `preview-ui --solid --run-id <run_id>` 在 `127.0.0.1` 上暴露的该单一 `/ui.json`。后者不是通用 HTTP API：不附加 `--api` 时所有 `/api` 写入请求均被拒绝；带写能力的本机任务 API 必须显式启用并遵守独立授权门禁。
 
 ## 安全边界
 

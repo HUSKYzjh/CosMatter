@@ -1,6 +1,6 @@
 # Frontier Lens 覆盖审计（2026-08）
 
-本审计以本地 `02_Reference/11_sciverse_frontier_lens` 的架构、用户指南与
+本审计以本地 `case-data/references/11_sciverse_frontier_lens` 的架构、用户指南与
 前端交互为参照，逐项以现有代码、工件与测试为证据。它不宣称 CosMatter
 复制了 Frontier Lens；目标是将其文献探索思路安全地适配为材料科学证据工作流。
 

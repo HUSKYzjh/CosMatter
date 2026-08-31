@@ -1,9 +1,11 @@
+import io
 import json
 import unittest
 from unittest.mock import patch
+import zipfile
 
 from cosmatter.config import Settings
-from cosmatter.mineru import MinerUAdapter, validate_remote_source_url
+from cosmatter.mineru import MinerUAdapter, MinerURequestError, _markdown_from_zip, validate_remote_source_url
 
 
 class FakeResponse:
@@ -54,3 +56,17 @@ class MinerUAdapterTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
                     validate_remote_source_url(value)
+
+    def test_completed_archive_extracts_exactly_one_bounded_utf8_markdown_file(self) -> None:
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            archive.writestr("result/full.md", "# Parsed paper\n")
+            archive.writestr("result/layout.json", "{}")
+        self.assertEqual(_markdown_from_zip(stream.getvalue()), b"# Parsed paper\n")
+
+        ambiguous = io.BytesIO()
+        with zipfile.ZipFile(ambiguous, "w") as archive:
+            archive.writestr("a.md", "one")
+            archive.writestr("b.md", "two")
+        with self.assertRaises(MinerURequestError):
+            _markdown_from_zip(ambiguous.getvalue())

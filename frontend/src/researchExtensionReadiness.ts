@@ -1,5 +1,6 @@
 import type { ImportedBundle } from "./model";
 import { auditableAcceptedEvidence } from "./evidenceLinking";
+import { evidenceProvenanceAuditComplete } from "./evidenceProvenanceAudit";
 
 export type ComparisonReadinessReason = "evidence" | "provenance-audit" | "documents" | "comparison" | "conditions" | null;
 
@@ -24,14 +25,7 @@ function isContradicting(stance: string): boolean {
 
 /** A cross-paper comparison may only use cards covered by the exact reviewed Source Map audit. */
 export function hasExactEvidenceProvenanceAudit(bundle: ImportedBundle, acceptedEvidenceCount: number): boolean {
-  const audit = bundle.auditSummary.evidenceProvenance;
-  return Boolean(
-    audit
-    && audit.acceptedEvidenceCount === acceptedEvidenceCount
-    && audit.exactSourceMapMatchCount === acceptedEvidenceCount
-    && audit.manualLocatorOnlyCount === 0
-    && audit.exactSourceMapMatchRate === 1,
-  );
+  return evidenceProvenanceAuditComplete(bundle.auditSummary.evidenceProvenance, acceptedEvidenceCount);
 }
 
 /** A comparison row must point at accepted evidence on both opposing sides. */

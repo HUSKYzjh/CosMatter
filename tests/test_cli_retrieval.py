@@ -9,6 +9,7 @@ from unittest.mock import patch
 from cosmatter.cli import main
 from cosmatter.sciverse import SciverseContentResponse, SciverseResponse
 from cosmatter.candidate_screening import candidate_screening_from_review, write_candidate_screening
+from cosmatter.ingestion import require_eligible_candidate
 from cosmatter.models import MissionBrief
 
 
@@ -77,7 +78,7 @@ class CliRetrievalTests(unittest.TestCase):
             run.mkdir(parents=True)
             mission = MissionBrief("why", "BiFeO3", "phase stability", "films", mission_id="mission_context")
             (run / "mission.json").write_text(json.dumps(mission.to_dict()), encoding="utf-8")
-            history = {"candidates": [{"document_id": "doc_1", "title": "paper", "is_content_accessible": True}]}
+            history = {"candidates": [{"document_id": "doc_1", "title": "paper", "is_content_accessible": False}]}
             (run / "retrieval_candidates.json").write_text(json.dumps(history), encoding="utf-8")
             screening = candidate_screening_from_review(mission.mission_id, history, {"decisions": [{"document_id": "doc_1", "decision": "include_for_fulltext", "reason_codes": ["material_match"]}]})
             write_candidate_screening(run, screening)
@@ -89,11 +90,14 @@ class CliRetrievalTests(unittest.TestCase):
             reviewed_context = output_path.read_text(encoding="utf-8")
             event_log = (run / "events.jsonl").read_text(encoding="utf-8")
             receipt_log = (run / "provider_receipts.jsonl").read_text(encoding="utf-8")
+            confirmation = (run / "content_access_confirmations.json").read_text(encoding="utf-8")
             run_contents = "\n".join(path.read_text(encoding="utf-8") for path in run.rglob("*") if path.is_file())
+            require_eligible_candidate(run, "doc_1")
         self.assertEqual(status, 0, output.getvalue())
         self.assertEqual(reviewed_context, context)
         self.assertNotIn(context, event_log)
         self.assertNotIn(context, receipt_log)
+        self.assertNotIn(context, confirmation)
         self.assertNotIn(context, run_contents)
 
     def test_sciverse_context_refuses_unscreened_candidate_before_provider_call(self) -> None:

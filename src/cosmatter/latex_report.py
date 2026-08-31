@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -40,7 +41,7 @@ class LatexReportExport:
 
 def compile_latex_report(export: LatexReportExport) -> Path:
     """Compile an already audited source package without shell interpolation."""
-    xelatex, bibtex = shutil.which("xelatex"), shutil.which("bibtex")
+    xelatex, bibtex = _latex_command("xelatex"), _latex_command("bibtex")
     if xelatex is None or bibtex is None:
         raise LatexReportError("XeLaTeX and BibTeX are required to compile the submission PDF")
     commands = (
@@ -60,6 +61,20 @@ def compile_latex_report(export: LatexReportExport) -> Path:
     if not pdf_path.is_file() or pdf_path.stat().st_size < 1024:
         raise LatexReportError("LaTeX compilation did not produce a usable PDF")
     return pdf_path
+
+
+def _latex_command(name: str) -> str | None:
+    """Resolve a TeX command, including MiKTeX's standard per-user Windows path."""
+    resolved = shutil.which(name)
+    if resolved is not None:
+        return resolved
+    if os.name != "nt":
+        return None
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        return None
+    candidate = Path(local_app_data) / "Programs" / "MiKTeX" / "miktex" / "bin" / "x64" / f"{name}.exe"
+    return str(candidate) if candidate.is_file() else None
 
 def export_latex_report(
     *,

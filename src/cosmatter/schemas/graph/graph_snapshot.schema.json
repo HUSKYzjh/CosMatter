@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cosmatter.local/schema/graph_snapshot-1.0.json",
+  "title": "CosMatter accepted-evidence graph snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "graph_id", "mission_id", "trust_status", "source_artifact_hashes", "nodes", "edges"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "graph_id": {"type": "string", "pattern": "^graph:[a-f0-9]{16,64}$"},
+    "mission_id": {"type": "string", "minLength": 1},
+    "trust_status": {"const": "accepted_evidence_projection_not_scientific_conclusion"},
+    "source_artifact_hashes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+    "nodes": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/node"}},
+    "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}}
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "node_type", "label", "attributes"],
+      "properties": {
+        "node_id": {"type": "string", "pattern": "^[a-z_]+:[a-f0-9]{16,64}$"},
+        "node_type": {"enum": ["Mission", "Paper", "Entity", "Condition", "EvidenceCard"]},
+        "label": {"type": "string", "minLength": 1, "maxLength": 300},
+        "attributes": {"type": "object"}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edge_id", "source_id", "target_id", "relation"],
+      "properties": {
+        "edge_id": {"type": "string", "pattern": "^edge:[a-f0-9]{16,64}$"},
+        "source_id": {"type": "string", "pattern": "^[a-z_]+:[a-f0-9]{16,64}$"},
+        "target_id": {"type": "string", "pattern": "^[a-z_]+:[a-f0-9]{16,64}$"},
+        "relation": {"enum": ["supports", "contradicts", "conditions", "mentions", "derived_from"]}
+      }
+    }
+  }
+}

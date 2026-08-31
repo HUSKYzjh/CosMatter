@@ -9,7 +9,7 @@ from unittest.mock import patch
 from cosmatter.cli import main
 from cosmatter.candidate_screening import candidate_screening_from_review, write_candidate_screening
 from cosmatter.config import Settings
-from cosmatter.mineru import MinerUTask
+from cosmatter.mineru import MinerUCompletedMarkdown, MinerUTask
 from cosmatter.models import MissionBrief
 from cosmatter.source_parse import record_source_parse_task
 
@@ -86,6 +86,38 @@ class CliMinerUTests(unittest.TestCase):
         self.assertNotIn(task_id, events)
         self.assertEqual(audit["receipt_linked_task_count"], 1)
         self.assertEqual(audit["receipt_link_coverage"], 1.0)
+
+    def test_fetch_completed_markdown_writes_only_private_output_and_hash_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runs_dir = root / "runs"
+            run_dir = runs_dir / "mineru_fetch_cli"
+            run_dir.mkdir(parents=True)
+            mission = MissionBrief(question="test question", material="BiFeO3", property_name="phase stability", scope="test scope", mission_id="mission_fetch")
+            (run_dir / "mission.json").write_text(json.dumps(mission.to_dict()), encoding="utf-8")
+            source_url = "https://publisher.example/paper.pdf?temporary=1"
+            task_id = "task_private_fetch"
+            record_source_parse_task(run_dir, mission_id=mission.mission_id, document_id="doc_1", source_url=source_url, task=MinerUTask(task_id, "done", "request_submit"), model_version="vlm")
+            output_path = root / "private.md"
+            markdown = b"# Private MinerU output\n"
+            output = io.StringIO()
+            settings = Settings.load({"MINERU_API_TOKEN": "test-token", "API_MAX_RETRIES": "1", "MINERU_MODEL_VERSION": "vlm"})
+            with (
+                patch("cosmatter.cli._runs_dir", return_value=runs_dir),
+                patch("cosmatter.cli.Settings.load", return_value=settings),
+                patch("cosmatter.cli.MinerUAdapter.download_completed_markdown", return_value=MinerUCompletedMarkdown(markdown, "done", 200, "archive_request")),
+                contextlib.redirect_stdout(output),
+            ):
+                status = main(["mineru-fetch-markdown", "--run-id", "mineru_fetch_cli", "--document-id", "doc_1", "--output", str(output_path)])
+            receipt_log = (run_dir / "provider_receipts.jsonl").read_text(encoding="utf-8")
+            event_log = (run_dir / "events.jsonl").read_text(encoding="utf-8")
+            private_markdown = output_path.read_bytes()
+            self.assertEqual(status, 0, output.getvalue())
+            self.assertEqual(private_markdown, markdown)
+            self.assertNotIn(markdown.decode(), receipt_log + event_log + output.getvalue())
+            self.assertNotIn(source_url, receipt_log + event_log + output.getvalue())
+            self.assertNotIn(task_id, receipt_log + event_log + output.getvalue())
+            self.assertIn("source_parse_output_fetch", receipt_log)
 
     def test_source_map_requires_completed_task_and_keeps_quote_out_of_audit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

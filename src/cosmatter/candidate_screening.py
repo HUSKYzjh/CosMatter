@@ -15,6 +15,7 @@ class CandidateScreeningError(ValueError):
 _SCHEMA_VERSION = "1.1"
 _TEMPLATE_STATUS = "blank_human_candidate_screening_template_not_a_result"
 _REVIEW_STATUS = "human_reviewed_candidate_screening_not_scientific_evidence"
+_AUTOMATED_TRIAL_REVIEW_STATUS = "delegated_automated_trial_screening_not_scientific_evidence"
 _DECISIONS = {"include_for_fulltext", "exclude", "needs_metadata_review"}
 _REASONS = {
     "material_match", "property_match", "scope_match", "method_match", "primary_evidence", "counterevidence",
@@ -83,6 +84,22 @@ def candidate_screening_from_review(
     }
 
 
+def candidate_screening_from_automated_trial(
+    mission_id: str,
+    candidate_payload: object,
+    selection: object,
+) -> dict[str, Any]:
+    """Validate a complete delegated-agent trial screening without humanising it.
+
+    This artifact may authorize only an explicitly opted-in parser trial.  It
+    is intentionally written separately from the human screening artifact and
+    never upgrades a candidate to accepted scientific evidence.
+    """
+    artifact = candidate_screening_from_review(mission_id, candidate_payload, selection)
+    artifact["trust_status"] = _AUTOMATED_TRIAL_REVIEW_STATUS
+    return artifact
+
+
 def write_candidate_screening_template(run_dir: Path, template: dict[str, Any]) -> Path:
     _validate_template(template)
     return _write(run_dir / "candidate_screening_template.json", template)
@@ -93,29 +110,44 @@ def write_candidate_screening(run_dir: Path, artifact: dict[str, Any]) -> Path:
     return _write(run_dir / "candidate_screening.json", artifact)
 
 
+def write_automated_trial_candidate_screening(run_dir: Path, artifact: dict[str, Any]) -> Path:
+    _validate_screening(artifact, allowed_statuses={_AUTOMATED_TRIAL_REVIEW_STATUS})
+    return _write(run_dir / "automated_trial_candidate_screening.json", artifact)
+
+
 def require_document_screened_for_fulltext(
     run_dir: Path,
     mission_id: str,
     candidate_payload: object,
     document_id: str,
+    *,
+    allow_delegated_automated_trial: bool = False,
 ) -> None:
     """Require a current explicit include decision before an external parser call."""
     if not isinstance(document_id, str) or not document_id.strip():
         raise CandidateScreeningError("document_id must be nonempty")
     artifact = load_candidate_screening(run_dir / "candidate_screening.json", mission_id)
+    if artifact is None and allow_delegated_automated_trial:
+        artifact = load_automated_trial_candidate_screening(run_dir / "automated_trial_candidate_screening.json", mission_id)
     if artifact is None:
-        raise CandidateScreeningError("full-text parsing requires a completed human candidate screening")
-    if not screening_matches_candidates(artifact, candidate_payload):
+        raise CandidateScreeningError("full-text parsing requires a completed human candidate screening or explicit delegated automated trial screening")
+    allowed_statuses = {_REVIEW_STATUS, _AUTOMATED_TRIAL_REVIEW_STATUS} if allow_delegated_automated_trial else {_REVIEW_STATUS}
+    if not screening_matches_candidates(artifact, candidate_payload, allowed_statuses=allowed_statuses):
         raise CandidateScreeningError("candidate screening is stale; review the current retrieval candidate set")
     reviewed = {item["document_id"]: item["decision"] for item in artifact["decisions"]}
     if reviewed.get(document_id) != "include_for_fulltext":
         raise CandidateScreeningError("document is not approved for full-text parsing by candidate screening")
 
 
-def screening_matches_candidates(artifact: object, candidate_payload: object) -> bool:
+def screening_matches_candidates(
+    artifact: object,
+    candidate_payload: object,
+    *,
+    allowed_statuses: set[str] | None = None,
+) -> bool:
     """Return whether a reviewed screening still matches the complete candidate set."""
     try:
-        _validate_screening(artifact)
+        _validate_screening(artifact, allowed_statuses=allowed_statuses)
         expected = _candidate_document_ids(candidate_payload)
         reviewed = {item["document_id"] for item in artifact["decisions"]}
         return (
@@ -127,14 +159,28 @@ def screening_matches_candidates(artifact: object, candidate_payload: object) ->
         return False
 
 
+def candidate_fingerprint(candidate_payload: object) -> str:
+    """Return the bounded candidate-set identity used by human gates."""
+    return _candidate_fingerprint(candidate_payload)
+
+
 def load_candidate_screening(path: Path, mission_id: str) -> dict[str, Any] | None:
+    return _load_screening(path, mission_id, {_REVIEW_STATUS})
+
+
+def load_automated_trial_candidate_screening(path: Path, mission_id: str) -> dict[str, Any] | None:
+    """Load an explicitly separate delegated-agent trial screening artifact."""
+    return _load_screening(path, mission_id, {_AUTOMATED_TRIAL_REVIEW_STATUS})
+
+
+def _load_screening(path: Path, mission_id: str, allowed_statuses: set[str]) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
         artifact = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise CandidateScreeningError("candidate screening artifact is invalid JSON") from error
-    _validate_screening(artifact)
+    _validate_screening(artifact, allowed_statuses=allowed_statuses)
     if artifact["mission_id"] != _mission_id(mission_id):
         raise CandidateScreeningError("candidate screening does not belong to this mission")
     return artifact
@@ -181,10 +227,11 @@ def _validate_template(payload: object) -> None:
         raise CandidateScreeningError("candidate screening template decisions are invalid")
 
 
-def _validate_screening(payload: object) -> None:
+def _validate_screening(payload: object, *, allowed_statuses: set[str] | None = None) -> None:
     if not isinstance(payload, dict) or set(payload) != {"schema_version", "mission_id", "trust_status", "candidate_count", "candidate_fingerprint", "decisions"}:
         raise CandidateScreeningError("candidate screening artifact fields are invalid")
-    if payload.get("schema_version") != _SCHEMA_VERSION or payload.get("trust_status") != _REVIEW_STATUS:
+    allowed_statuses = allowed_statuses or {_REVIEW_STATUS}
+    if payload.get("schema_version") != _SCHEMA_VERSION or payload.get("trust_status") not in allowed_statuses:
         raise CandidateScreeningError("candidate screening review boundary is invalid")
     if not isinstance(payload.get("mission_id"), str) or not payload["mission_id"].strip() or not isinstance(payload.get("candidate_count"), int) or not _is_fingerprint(payload.get("candidate_fingerprint")) or not isinstance(payload.get("decisions"), list):
         raise CandidateScreeningError("candidate screening artifact identity is invalid")

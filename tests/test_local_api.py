@@ -11,12 +11,14 @@ from unittest.mock import patch
 from cosmatter.config import Settings
 from cosmatter.corpus_preparation import corpus_manifest_from_review, write_corpus_manifest
 from cosmatter.deepseek import DraftCompletion
+from cosmatter.external_dispatch import begin_external_dispatch
 from cosmatter.local_api import LocalApiError, LocalMissionApi, _candidate_payload
 from cosmatter.pdf_task_registry import write_pdf_task
 from cosmatter.source_map import write_source_map_for_document
 from cosmatter.workflow_readiness import write_workflow_readiness
-from cosmatter.mineru import MinerUBatch
+from cosmatter.mineru import MinerUBatch, MinerURequestError, MinerUTask
 from cosmatter.sciverse import SciverseResponse
+from cosmatter.sciverse import SciverseRequestError
 
 
 class _FakeDeepSeek:
@@ -52,6 +54,12 @@ class _FakeMinerU:
 
     def get_batch(self, _batch_id):
         return MinerUBatch(batch_id="batch-test", upload_url="redacted", state="pending")
+
+    def submit_remote_source(self, _source_url):
+        return MinerUTask(task_id="task-test", state="pending", request_id="mineru-submit")
+
+    def get_task(self, _task_id):
+        return MinerUTask(task_id="task-test", state="done", request_id="mineru-poll")
 
 
 class _FakeCrossref:
@@ -122,6 +130,97 @@ class LocalMissionApiTests(unittest.TestCase):
         restored = self.api.import_run_package({"run_id": "resume_001", "package": package})
         self.assertEqual(restored["next_stage"], "screening")
 
+    def test_workflow_status_projects_only_stage_counts(self):
+        created = self.api.create_mission({
+            "question": "How does strain affect BiFeO3 phase stability?",
+            "material": "BiFeO3", "property": "phase stability",
+            "scope": "thin films", "run_id": "workflow_status_001",
+        })
+        status = self.api.workflow_status("workflow_status_001")
+        self.assertEqual(status["run_id"], "workflow_status_001")
+        self.assertEqual(status["mission_id"], created["mission_id"])
+        self.assertEqual(status["trust_status"], "loopback_workflow_status_not_scientific_evidence")
+        self.assertEqual(
+            [item["stage"] for item in status["stages"]],
+            ["intake", "plan", "retrieval", "screening", "parse", "extraction", "gap", "report", "evaluation"],
+        )
+        self.assertNotIn("question", json.dumps(status))
+
+    def test_stage_contract_projects_fixed_gates_without_question_or_execution_surface(self):
+        self.api.create_mission({
+            "question": "Private question must stay outside the stage contract", "material": "BiFeO3", "property": "phase stability",
+            "scope": "private synthetic scope", "run_id": "stage_contract_001",
+        })
+        contract = self.api.stage_contract("stage_contract_001")
+        self.assertEqual(contract["run_id"], "stage_contract_001")
+        self.assertEqual(contract["schema_version"], "cosmatter.stage-contract/v1")
+        self.assertEqual(contract["next_stage"], "plan")
+        self.assertEqual(contract["stages"][1]["recovery_route"], "plan_review")
+        rendered = json.dumps(contract)
+        self.assertNotIn("Private question", rendered)
+        self.assertNotIn("BiFeO3", rendered)
+        self.assertNotIn("private synthetic scope", rendered)
+
+    def test_operational_telemetry_is_empty_and_non_billing_before_any_dispatch(self):
+        self.api.create_mission({
+            "question": "Private telemetry question", "material": "BiFeO3", "property": "phase stability",
+            "scope": "private synthetic scope", "run_id": "operational_telemetry_001",
+        })
+        telemetry = self.api.operational_telemetry("operational_telemetry_001")
+        self.assertEqual(telemetry["run_id"], "operational_telemetry_001")
+        self.assertEqual(telemetry["provider_operations"], [])
+        self.assertEqual(telemetry["dispatch_operations"], [])
+        self.assertEqual(telemetry["cost_latency_status"], "not_recorded")
+        self.assertNotIn("Private telemetry question", json.dumps(telemetry))
+
+    def test_workflow_dag_is_declared_serial_and_nonexecuting(self):
+        self.api.create_mission({
+            "question": "Private DAG question", "material": "BiFeO3", "property": "phase stability",
+            "scope": "private synthetic scope", "run_id": "workflow_dag_001",
+        })
+        dag = self.api.workflow_dag("workflow_dag_001")
+        self.assertEqual(dag["schema_version"], "cosmatter.workflow-dag/v1")
+        self.assertEqual(dag["max_concurrency"], 1)
+        self.assertEqual(dag["scheduler_status"], "declarative_only_no_execution_authorization")
+        self.assertEqual(dag["eligible_stages"], [])
+        self.assertNotIn("Private DAG question", json.dumps(dag))
+
+    def test_facility_contract_catalogue_is_static_and_nonexecuting(self):
+        catalogue = self.api.facility_contract_catalogue()
+        self.assertEqual(catalogue["schema_version"], "cosmatter.facility-contract-catalogue/v1")
+        self.assertEqual(len(catalogue["contracts"]), 15)
+        rendered = json.dumps(catalogue)
+        self.assertIn("condition_differential", rendered)
+        self.assertIn("static_contract_only_not_execution_authorization", rendered)
+        self.assertNotIn("command", rendered)
+        self.assertNotIn("https://", rendered)
+
+    def test_reminder_board_aggregates_local_control_state_without_question(self):
+        self.api.create_mission({
+            "question": "Private reminder question", "material": "BiFeO3", "property": "phase stability",
+            "scope": "private synthetic scope", "run_id": "reminder_001",
+        })
+        board = self.api.reminder_board()
+        self.assertEqual(board["schema_version"], "cosmatter.project-reminder-board/v1")
+        self.assertEqual(board["scheduler_status"], "not_scheduled_local_observation_only")
+        self.assertTrue(any(item["kind"] == "human_review_required" for item in board["reminders"]))
+        self.assertNotIn("Private reminder question", json.dumps(board))
+
+    def test_reminder_board_surfaces_an_incomplete_external_dispatch(self):
+        mission = self._mission()
+        begin_external_dispatch(
+            self.runs / "live_001", mission_id=mission["mission_id"], dsh_call_id="reminder-incomplete-0001",
+            plugin_id="literature.metadata_retrieval", operation="metadata_query", request_shape={"query_index": 0},
+        )
+
+        board = self.api.reminder_board()
+
+        self.assertIn({
+            "scope": "run", "identifier": "live_001", "kind": "external_dispatch_incomplete",
+            "status": "open", "priority": "attention", "stage": None,
+            "action_label": "verify_dispatch_before_recovery",
+        }, board["reminders"])
+
     def test_live_draft_requires_review_before_sciverse_query(self):
         self._mission()
         with patch("cosmatter.local_api.DeepSeekAdapter", _FakeDeepSeek):
@@ -144,6 +243,118 @@ class LocalMissionApiTests(unittest.TestCase):
         artifact = json.loads((self.runs / "live_001" / "retrieval_candidates.json").read_text(encoding="utf-8"))
         self.assertEqual(artifact["candidates"][0]["retrieval_origins"][0]["provider"], "sciverse")
         self.assertNotIn("request-1", json.dumps(result))
+
+    def test_dsh_external_dispatch_requires_exact_explicit_authorizations(self):
+        self._mission()
+        with self.assertRaises(LocalApiError):
+            self.api.draft_authorized_plan("live_001", {"authorizations": ["mission_scoped_egress_consent"]})
+        with patch("cosmatter.local_api.DeepSeekAdapter", _FakeDeepSeek):
+            draft = self.api.draft_authorized_plan(
+                "live_001",
+                {"authorizations": ["mission_scoped_egress_consent", "deepseek_request_consent"], "dsh_call_id": "draft-call-0001"},
+            )
+        self.assertEqual(draft["trust_status"], "untrusted_draft")
+        self.api.approve_plan(
+            "live_001",
+            {"subquestions": ["Which conditions differ?"], "queries": ["BiFeO3 phase stability epitaxial"], "counter_queries": ["BiFeO3 contradictory phase reports"]},
+        )
+        with self.assertRaisesRegex(LocalApiError, "explicitly selected sources"):
+            self.api.execute_authorized_plan_query(
+                "live_001",
+                {"authorizations": ["mission_scoped_egress_consent", "metadata_provider_consent"], "query_index": 0, "dsh_call_id": "query-call-missing-source"},
+            )
+        with self.assertRaises(LocalApiError):
+            self.api.execute_authorized_plan_query(
+                "live_001",
+                {"authorizations": ["mission_scoped_egress_consent"], "query_index": 0, "sources": ["sciverse"]},
+            )
+        with patch("cosmatter.local_api.SciverseAdapter", _FakeSciverse):
+            result = self.api.execute_authorized_plan_query(
+                "live_001",
+                {"authorizations": ["mission_scoped_egress_consent", "metadata_provider_consent"], "query_index": 0, "sources": ["sciverse"], "dsh_call_id": "query-call-0001"},
+            )
+        self.assertEqual(result["candidate_count"], 1)
+        events = (self.runs / "live_001" / "events.jsonl").read_text(encoding="utf-8")
+        self.assertGreaterEqual(events.count('"event_type": "external_plugin_dispatch_authorized"'), 2)
+
+    def test_dsh_call_id_reuses_completed_metadata_query_without_second_provider_call(self):
+        self._mission()
+        self.api.approve_plan(
+            "live_001",
+            {"subquestions": ["Which conditions differ?"], "queries": ["BiFeO3 phase stability epitaxial"], "counter_queries": ["BiFeO3 contradictory phase reports"]},
+        )
+        calls: list[str] = []
+
+        class CountingSciverse(_FakeSciverse):
+            def agentic_search(self, query, *, top_k):
+                calls.append(query)
+                return super().agentic_search(query, top_k=top_k)
+
+        payload = {"authorizations": ["mission_scoped_egress_consent", "metadata_provider_consent"], "query_index": 0, "sources": ["sciverse"], "dsh_call_id": "retry-safe-query-0001"}
+        with patch("cosmatter.local_api.SciverseAdapter", CountingSciverse):
+            first = self.api.execute_authorized_plan_query("live_001", payload)
+            repeated = self.api.execute_authorized_plan_query("live_001", payload)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(first["candidate_count"], 1)
+        self.assertEqual(repeated["candidate_count"], 1)
+        self.assertEqual(repeated["idempotency_status"], "duplicate_completed")
+        ledger = (self.runs / "live_001" / "external_dispatch_ledger.json").read_text(encoding="utf-8")
+        self.assertNotIn("retry-safe-query-0001", ledger)
+        self.assertNotIn("BiFeO3 phase stability", ledger)
+
+    def test_uncertain_metadata_provider_failure_records_unknown_and_refuses_same_call_retry(self):
+        self._mission()
+        self.api.approve_plan(
+            "live_001",
+            {"subquestions": ["Which conditions differ?"], "queries": ["BiFeO3 phase stability epitaxial"], "counter_queries": ["BiFeO3 contradictory phase reports"]},
+        )
+
+        class FailingSciverse:
+            def __init__(self, _settings):
+                pass
+
+            def agentic_search(self, _query, *, top_k):
+                raise SciverseRequestError("simulated network uncertainty")
+
+        payload = {"authorizations": ["mission_scoped_egress_consent", "metadata_provider_consent"], "query_index": 0, "sources": ["sciverse"], "dsh_call_id": "unknown-query-0001"}
+        with patch("cosmatter.local_api.SciverseAdapter", FailingSciverse):
+            with self.assertRaisesRegex(LocalApiError, "simulated network uncertainty"):
+                self.api.execute_authorized_plan_query("live_001", payload)
+            with self.assertRaisesRegex(LocalApiError, "outcome is unknown"):
+                self.api.execute_authorized_plan_query("live_001", payload)
+        ledger = json.loads((self.runs / "live_001" / "external_dispatch_ledger.json").read_text(encoding="utf-8"))
+        self.assertEqual(ledger["entries"][0]["state"], "unknown")
+
+    def test_authorized_mineru_source_requires_screening_and_never_returns_the_source_url(self):
+        self._mission()
+        self.api.approve_plan(
+            "live_001",
+            {"subquestions": ["Which conditions differ?"], "queries": ["BiFeO3 phase stability epitaxial"], "counter_queries": ["BiFeO3 contradictory phase reports"]},
+        )
+        with patch("cosmatter.local_api.SciverseAdapter", _FakeSciverse):
+            self.api.execute_plan_query("live_001", {"query_index": 0, "sources": ["sciverse"]})
+        authorizations = ["mission_scoped_egress_consent", "mineru_file_consent", "private_content_to_mineru"]
+        with self.assertRaises(LocalApiError):
+            self.api.submit_authorized_mineru_source(
+                "live_001",
+                {"authorizations": authorizations, "document_id": "doc-1", "source_url": "https://example.org/paper.pdf", "dsh_call_id": "mineru-submit-0001"},
+            )
+        self.api.record_candidate_screening(
+            "live_001",
+            {"decisions": [{"document_id": "doc-1", "decision": "include_for_fulltext", "reason_codes": ["material_match", "property_match"]}]},
+        )
+        with patch("cosmatter.local_api.MinerUAdapter", _FakeMinerU):
+            submitted = self.api.submit_authorized_mineru_source(
+                "live_001",
+                {"authorizations": authorizations, "document_id": "doc-1", "source_url": "https://example.org/paper.pdf", "dsh_call_id": "mineru-submit-0002"},
+            )
+            polled = self.api.poll_authorized_mineru_source(
+                "live_001",
+                {"authorizations": authorizations, "document_id": "doc-1", "dsh_call_id": "mineru-poll-0001"},
+            )
+        self.assertEqual(submitted["task_state"], "pending")
+        self.assertEqual(polled["task_state"], "done")
+        self.assertNotIn("example.org", json.dumps({"submitted": submitted, "polled": polled}))
 
 
     def test_condition_diagnostics_and_gap_candidates_require_cross_paper_accepted_evidence(self):
@@ -293,9 +504,26 @@ class LocalMissionApiTests(unittest.TestCase):
         result = self.api.confirm_pdf_doi("live_001", {"doi": "https://doi.org/10.1000/Example", "human_confirmed": True})
         self.assertEqual(result["doi"], "10.1000/example")
         self.assertEqual(result["doi_status"], "human_confirmed")
+        payload = {
+            "document_id": intake["document_id"],
+            "authorizations": ["mission_scoped_egress_consent", "metadata_provider_consent"],
+            "dsh_call_id": "citation-expand-0001",
+        }
+        with self.assertRaisesRegex(LocalApiError, "explicit external authorization"):
+            self.api.expand_authorized_pdf_citations("live_001", {"document_id": intake["document_id"]})
         with patch("cosmatter.local_api.CrossrefAdapter", _FakeCrossref), patch("cosmatter.local_api.OpenAlexAdapter", _FakeOpenAlex):
-            expansion = self.api.expand_pdf_citations("live_001")
+            expansion = self.api.expand_authorized_pdf_citations("live_001", payload)
+            repeated = self.api.expand_authorized_pdf_citations("live_001", payload)
         self.assertEqual(expansion["node_count"], 1)
+        self.assertEqual(repeated["idempotency_status"], "duplicate_completed")
+        ledger = json.loads((run_dir / "external_dispatch_ledger.json").read_text(encoding="utf-8"))
+        self.assertEqual(ledger["entries"][0]["operation"], "citation_expansion")
+        self.assertEqual(ledger["entries"][0]["state"], "completed")
+        telemetry = self.api.operational_telemetry("live_001")
+        self.assertEqual(telemetry["dispatch_operations"], [{
+            "operation": "citation_expansion", "dispatch_count": 1,
+            "completed_count": 1, "incomplete_count": 0, "unknown_outcome_count": 0,
+        }])
         events = (run_dir / "events.jsonl").read_text(encoding="utf-8")
         self.assertIn("pdf_doi_human_confirmed", events)
     def test_pdf_task_registry_requires_document_scope_and_preserves_other_tasks(self):
@@ -393,7 +621,8 @@ class LocalMissionApiTests(unittest.TestCase):
         ledger = json.loads((self.runs / "live_001" / "source_parse_tasks.json").read_text(encoding="utf-8"))
         task = ledger["tasks"][0]
         self.assertEqual(task["document_id"], "doc-1")
-        self.assertEqual(task["task_id"], "batch-test")
+        self.assertEqual(task["task_id"], hashlib.sha256(b"batch-test").hexdigest())
+        self.assertNotIn("batch-test", json.dumps(ledger))
         self.assertEqual(task["state"], "pending")
         self.assertNotEqual(task["document_id"], intake["document_id"])
         status = self.api.pdf_status("live_001")
@@ -408,7 +637,14 @@ class LocalMissionApiTests(unittest.TestCase):
             self.api.record_pdf_source_map("live_001", {"human_confirmed": True, "segments": [{"locator": "markdown_line:2-2", "kind": "paragraph", "quote": "Reviewed source excerpt."}]})
         with self.assertRaisesRegex(LocalApiError, "explicit human confirmation"):
             self.api.record_pdf_evidence_card("live_001", {"segment_id": "private_md_001", "claim": "A human-reviewed claim", "stance": "support", "conditions": {}, "reviewer_confidence": 0.8})
-        evidence = self.api.record_pdf_evidence_card("live_001", {"human_confirmed": True, "segment_id": "private_md_001", "claim": "A human-reviewed claim", "stance": "support", "conditions": {"sample_form": "film", "strain_percent": 0, "substrate": "synthetic", "thickness_nm": 10, "temperature_k": 300, "method": "xrd"}, "reviewer_confidence": 0.8})
+        valid_conditions = {"sample_form": "film", "strain_percent": 0, "substrate": "synthetic", "thickness_nm": 10, "temperature_k": 300, "method": "xrd"}
+        with self.assertRaisesRegex(LocalApiError, "thickness_nm must be non-negative"):
+            self.api.record_pdf_evidence_card("live_001", {"human_confirmed": True, "segment_id": "private_md_001", "claim": "A human-reviewed claim", "stance": "support", "conditions": valid_conditions | {"thickness_nm": -10}, "reviewer_confidence": 0.8})
+        with self.assertRaisesRegex(LocalApiError, "temperature_k must be a finite number"):
+            self.api.record_pdf_evidence_card("live_001", {"human_confirmed": True, "segment_id": "private_md_001", "claim": "A human-reviewed claim", "stance": "support", "conditions": valid_conditions | {"temperature_k": "ambient"}, "reviewer_confidence": 0.8})
+        with self.assertRaisesRegex(LocalApiError, "substrate must be a non-empty short text value"):
+            self.api.record_pdf_evidence_card("live_001", {"human_confirmed": True, "segment_id": "private_md_001", "claim": "A human-reviewed claim", "stance": "support", "conditions": valid_conditions | {"substrate": 10}, "reviewer_confidence": 0.8})
+        evidence = self.api.record_pdf_evidence_card("live_001", {"human_confirmed": True, "segment_id": "private_md_001", "claim": "A human-reviewed claim", "stance": "support", "conditions": valid_conditions, "reviewer_confidence": 0.8})
         self.assertEqual(evidence["document_id"], "doc-1")
         self.assertEqual(evidence["review_status"], "accepted")
         stored_evidence = json.loads((self.runs / "live_001" / "evidence_cards.json").read_text(encoding="utf-8"))
@@ -424,6 +660,53 @@ class LocalMissionApiTests(unittest.TestCase):
                 "unauthorized.pdf",
                 b"%PDF-1.7 test",
             )
+
+    def test_new_pdf_submission_reuses_the_same_run_and_task_after_response_loss(self):
+        calls = []
+
+        class CountingMinerU(_FakeMinerU):
+            def __init__(self, settings):
+                calls.append(settings)
+                super().__init__(settings)
+
+        payload = {
+            "run_id": "pdf_retry_001",
+            "question": "Parse one locally authorized PDF without duplicate provider submission.",
+            "material": "User-authorized PDF",
+            "property": "Markdown conversion",
+            "scope": "private retry safety",
+            "consent": True,
+        }
+        with patch("cosmatter.local_api.MinerUAdapter", CountingMinerU), patch("cosmatter.local_api.write_pdf", return_value=(Path("private.pdf"), "digest")):
+            first = self.api.create_pdf_run(payload, "retry.pdf", b"%PDF-1.7 retry")
+            repeated = self.api.create_pdf_run(payload, "retry.pdf", b"%PDF-1.7 retry")
+        self.assertEqual(first["run_id"], "pdf_retry_001")
+        self.assertEqual(repeated["document_id"], first["document_id"])
+        self.assertEqual(repeated["idempotency_status"], "duplicate_completed")
+        self.assertEqual(len(calls), 1)
+
+    def test_pdf_polling_request_failure_remains_recoverable(self):
+        self._mission()
+        with patch("cosmatter.local_api.MinerUAdapter", _FakeMinerU), patch("cosmatter.local_api.write_pdf", return_value=(Path("private.pdf"), "digest")):
+            created = self.api.create_pdf_run({"run_id": "pdf_poll_retry", "question": "Retry a private PDF status without converting a transient error to failure.", "material": "User-authorized PDF", "property": "Markdown conversion", "scope": "retry test", "consent": True}, "retry.pdf", b"%PDF-1.7 retry")
+
+        class FailingMinerU:
+            def __init__(self, _settings): pass
+            def get_batch(self, _batch_id): raise MinerURequestError("temporary provider timeout")
+
+        with patch("cosmatter.local_api.MinerUAdapter", FailingMinerU):
+            status = self.api.pdf_status(created["run_id"], created["document_id"])
+        self.assertEqual(status["state"], "running")
+        self.assertIn("temporary provider timeout", status["error"])
+
+        class RecoveringMinerU:
+            def __init__(self, _settings): pass
+            def get_batch(self, _batch_id): return MinerUBatch(batch_id="batch-test", upload_url="redacted", state="pending")
+
+        with patch("cosmatter.local_api.MinerUAdapter", RecoveringMinerU):
+            recovered = self.api.pdf_status(created["run_id"], created["document_id"])
+        self.assertEqual(recovered["state"], "pending")
+        self.assertIsNone(recovered["error"])
     def test_question_candidates_require_distinct_reframed_focuses(self):
         original = "Why do thin-film studies disagree about phase stability?"
         valid = {
@@ -441,6 +724,12 @@ class LocalMissionApiTests(unittest.TestCase):
         missing_focus = {"candidates": [{**item, "kind": "survey"} for item in valid["candidates"]]}
         with self.assertRaisesRegex(ValueError, "cover survey"):
             _candidate_payload(missing_focus, original_question=original)
+
+    def test_question_candidates_require_explicit_model_consent(self):
+        with patch("cosmatter.local_api.DeepSeekAdapter") as adapter:
+            with self.assertRaisesRegex(LocalApiError, "explicit consent"):
+                self.api.question_candidates({"question": "Why do thin-film studies disagree about phase stability?"})
+        adapter.assert_not_called()
     def test_candidate_screening_is_complete_human_gate_before_fulltext(self):
         self._mission()
         self.api.approve_plan(
@@ -495,6 +784,10 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertEqual(artifact["candidate_count"], 1)
         self.assertEqual(artifact["search_count"], 1)
         self.assertFalse((self.runs / "auto_success_001" / "evidence_cards.json").exists())
+        worker = self.api._automatic_jobs.get("auto_success_001")
+        if worker is not None:
+            worker.join(timeout=1)
+        self.assertNotIn("auto_success_001", self.api._automatic_jobs)
     def test_automatic_mission_keeps_successful_provider_candidates_when_another_source_fails(self):
         class FailingCrossrefMetadata:
             def __init__(self, _settings):

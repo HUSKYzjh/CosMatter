@@ -7,11 +7,12 @@ import re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from .config import AGENT_ROOT
 from .harness_autorun import HarnessAutoRunError, run_authorized_automatic_mission
 from .local_api import LocalApiError, LocalMissionApi
+from .artifact_contract import ArtifactDownload
 
 
 class UiPreviewError(ValueError):
@@ -56,17 +57,55 @@ def build_ui_preview_server(
             super().__init__(*args, directory=str(directory), **kwargs)
 
         def do_GET(self) -> None:
-            path = urlsplit(self.path).path
+            parsed = urlsplit(self.path)
+            path = parsed.path
             if path == "/api/status":
                 self._api_json(lambda: api.status() if api is not None else _api_disabled())
+                return
+            if path == "/api/plugins":
+                self._api_json(lambda: api.plugin_catalogue() if api is not None else _api_disabled())
+                return
+            if path == "/api/facility-contracts":
+                self._api_json(lambda: api.facility_contract_catalogue() if api is not None else _api_disabled())
+                return
+            if path == "/api/reminder-board":
+                self._api_json(lambda: api.reminder_board() if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/status")
             if run_id is not None:
                 self._api_json(lambda: api.run_status(run_id) if api is not None else _api_disabled())
                 return
+            run_id = _api_run_id(path, "/api/runs/", "/workflow-status")
+            if run_id is not None:
+                self._api_json(lambda: api.workflow_status(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/stage-contract")
+            if run_id is not None:
+                self._api_json(lambda: api.stage_contract(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/operational-telemetry")
+            if run_id is not None:
+                self._api_json(lambda: api.operational_telemetry(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/workflow-dag")
+            if run_id is not None:
+                self._api_json(lambda: api.workflow_dag(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/artifacts")
+            if run_id is not None:
+                self._api_json(lambda: api.approved_artifacts(run_id) if api is not None else _api_disabled())
+                return
+            match = re.fullmatch(r"/api/runs/([A-Za-z0-9][A-Za-z0-9_-]*)/artifacts/(ui_bundle|graph_snapshot|workflow_readiness|runtime_invariants|mission_report|research_report)", path)
+            if match:
+                self._api_artifact(lambda: api.approved_artifact_download(match.group(1), match.group(2)) if api is not None else _api_disabled())
+                return
             run_id = _api_run_id(path, "/api/runs/", "/ui")
             if run_id is not None:
                 self._api_bytes(lambda: api.ui_bundle(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/graph")
+            if run_id is not None:
+                self._api_json(lambda: api.graph_projection(run_id, **_graph_query(parsed.query)) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/candidate-screening")
             if run_id is not None:
@@ -134,13 +173,17 @@ def build_ui_preview_server(
             if path == "/api/missions":
                 self._api_json(lambda: api.create_mission(self._json_body()) if api is not None else _api_disabled(), status=201)
                 return
+            run_id = _api_run_id(path, "/api/runs/", "/plugin-authorization-plan")
+            if run_id is not None:
+                self._api_json(lambda: api.plan_plugin_authorization(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
             run_id = _api_run_id(path, "/api/runs/", "/candidate-screening")
             if run_id is not None:
                 self._api_json(lambda: api.record_candidate_screening(run_id, self._json_body()) if api is not None else _api_disabled())
                 return
             match = re.fullmatch(r"/api/runs/([A-Za-z0-9][A-Za-z0-9_-]*)/pdf/(pdf_[a-f0-9]{24})/citations", path)
             if match:
-                self._api_json(lambda: api.expand_pdf_citations(match.group(1), match.group(2)) if api is not None else _api_disabled())
+                self._api_json(_legacy_external_dispatch_disabled)
                 return
             run_id = _api_run_id(path, "/api/runs/", "/pdf/source-map")
             if run_id is not None:
@@ -168,7 +211,11 @@ def build_ui_preview_server(
                 return
             run_id = _api_run_id(path, "/api/runs/", "/citations")
             if run_id is not None:
-                self._api_json(lambda: api.expand_pdf_citations(run_id) if api is not None else _api_disabled())
+                self._api_json(_legacy_external_dispatch_disabled)
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/authorized-citation-expansion")
+            if run_id is not None:
+                self._api_json(lambda: api.expand_authorized_pdf_citations(run_id, self._json_body()) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/cancel")
             if run_id is not None:
@@ -176,7 +223,11 @@ def build_ui_preview_server(
                 return
             run_id = _api_run_id(path, "/api/runs/", "/draft-plan")
             if run_id is not None:
-                self._api_json(lambda: api.draft_plan(run_id) if api is not None else _api_disabled())
+                self._api_json(_legacy_external_dispatch_disabled)
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/authorized-draft-plan")
+            if run_id is not None:
+                self._api_json(lambda: api.draft_authorized_plan(run_id, self._json_body()) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/approve-plan")
             if run_id is not None:
@@ -184,7 +235,47 @@ def build_ui_preview_server(
                 return
             run_id = _api_run_id(path, "/api/runs/", "/execute-query")
             if run_id is not None:
-                self._api_json(lambda: api.execute_plan_query(run_id, self._json_body()) if api is not None else _api_disabled())
+                self._api_json(_legacy_external_dispatch_disabled)
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/authorized-execute-query")
+            if run_id is not None:
+                self._api_json(lambda: api.execute_authorized_plan_query(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/authorized-mineru-submit")
+            if run_id is not None:
+                self._api_json(lambda: api.submit_authorized_mineru_source(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/authorized-mineru-poll")
+            if run_id is not None:
+                self._api_json(lambda: api.poll_authorized_mineru_source(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/accepted-evidence/search")
+            if run_id is not None:
+                self._api_json(lambda: api.search_accepted_evidence(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/graph/project")
+            if run_id is not None:
+                self._api_json(lambda: api.project_accepted_evidence_graph(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/graph/review-request")
+            if run_id is not None:
+                self._api_json(lambda: api.request_graph_review(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/graph/plan-draft")
+            if run_id is not None:
+                self._api_json(lambda: api.draft_graph_plan(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/graph/model-plan-draft")
+            if run_id is not None:
+                self._api_json(_legacy_external_dispatch_disabled)
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/graph/authorized-model-plan-draft")
+            if run_id is not None:
+                self._api_json(lambda: api.assist_authorized_graph_plan(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/graph/plan-approval")
+            if run_id is not None:
+                self._api_json(lambda: api.approve_graph_plan(run_id, self._json_body()) if api is not None else _api_disabled())
                 return
             self.send_error(404, "Unknown local API route")
 
@@ -257,6 +348,20 @@ def build_ui_preview_server(
             except LocalApiError as error:
                 self._api_error(error.status, str(error))
 
+        def _api_artifact(self, operation: Callable[[], object]) -> None:
+            try:
+                artifact = operation()
+                if not isinstance(artifact, ArtifactDownload):
+                    raise LocalApiError("local API did not return an approved artifact", 500)
+                self.send_response(200)
+                self.send_header("Content-Type", artifact.media_type)
+                self.send_header("Content-Disposition", f'attachment; filename="{artifact.filename}"')
+                self.send_header("Content-Length", str(len(artifact.data)))
+                self.end_headers()
+                self.wfile.write(artifact.data)
+            except LocalApiError as error:
+                self._api_error(error.status, str(error))
+
         def _authorized_auto_mission(self, payload: object) -> dict[str, object]:
             """Run the automatic route through its one-time Harness policy gate."""
             if api is None:
@@ -304,6 +409,10 @@ def _api_disabled() -> object:
     raise LocalApiError("local API mode was not enabled", 404)
 
 
+def _legacy_external_dispatch_disabled() -> object:
+    raise LocalApiError("legacy external dispatch is disabled; use the explicit authorization endpoint", 410)
+
+
 def _api_run_id(path: str, prefix: str, suffix: str) -> str | None:
     if not path.startswith(prefix) or not path.endswith(suffix):
         return None
@@ -311,6 +420,25 @@ def _api_run_id(path: str, prefix: str, suffix: str) -> str | None:
     if not candidate or "/" in candidate:
         return None
     return candidate
+
+
+def _graph_query(query: str) -> dict[str, object]:
+    """Parse a tiny allowlist of bounded graph-page arguments."""
+    values = parse_qs(query, keep_blank_values=True, strict_parsing=True)
+    if set(values) - {"node_type", "offset", "limit"}:
+        raise LocalApiError("unsupported graph query parameter")
+    types = values.get("node_type", [])
+    if any(not item or len(item) > 32 for item in types):
+        raise LocalApiError("graph node_type is invalid")
+    parsed: dict[str, object] = {"node_types": tuple(types)}
+    for key in ("offset", "limit"):
+        raw = values.get(key)
+        if raw is None:
+            continue
+        if len(raw) != 1 or not raw[0].isdigit():
+            raise LocalApiError(f"graph {key} is invalid")
+        parsed[key] = int(raw[0])
+    return parsed
 
 
 def serve_ui_preview(port: int = 8765, *, solid: bool = False, ui_bundle: Path | None = None, api: bool = False) -> None:

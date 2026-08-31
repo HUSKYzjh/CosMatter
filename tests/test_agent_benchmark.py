@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import io
 import json
 import tempfile
@@ -18,6 +19,7 @@ class AgentBenchmarkTests(unittest.TestCase):
         self.assertEqual(report.retrieval_ndcg_at_k, 1.0)
         self.assertEqual(report.extraction_locator_accuracy, 1.0)
         self.assertEqual(report.gap_evidence_boundary_precision, 1.0)
+        self.assertEqual(report.fixture_sha256, hashlib.sha256((AGENT_ROOT / "examples" / "frozen" / "bfo_agent_benchmark.json").read_bytes()).hexdigest())
 
     def test_cli_writes_explicitly_synthetic_metric_record(self) -> None:
         fixture = AGENT_ROOT / "examples" / "frozen" / "bfo_agent_benchmark.json"
@@ -29,6 +31,7 @@ class AgentBenchmarkTests(unittest.TestCase):
             payload = json.loads((runs / "benchmark_cli" / "agent_benchmark.json").read_text(encoding="utf-8"))
             audit = (runs / "benchmark_cli" / "events.jsonl").read_text(encoding="utf-8")
         self.assertTrue(payload["synthetic"])
+        self.assertEqual(payload["fixture_sha256"], hashlib.sha256(fixture.read_bytes()).hexdigest())
         self.assertIn("synthetic_agent_benchmark_evaluated", audit)
         self.assertNotIn("Synthetic material composition statement", audit)
 
