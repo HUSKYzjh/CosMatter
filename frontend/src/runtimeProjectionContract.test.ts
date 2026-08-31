@@ -43,6 +43,19 @@ describe("trusted runtime projections", () => {
     expect(trustedRuntimeProjections("run_1", contract(), dag(), badTelemetry)).toBe(false);
   });
 
+  it("fails closed when individually valid projections disagree about runtime state", () => {
+    const mismatchedStatus = dag();
+    mismatchedStatus.stages[2].status = "waiting_human_review";
+    mismatchedStatus.eligible_stages = [];
+    mismatchedStatus.human_review_required = true;
+    expect(trustedRuntimeProjections("run_1", contract(), mismatchedStatus, telemetry())).toBe(false);
+
+    const mismatchedSafety = dag();
+    mismatchedSafety.runtime_safety = "attention_required";
+    mismatchedSafety.eligible_stages = [];
+    expect(trustedRuntimeProjections("run_1", contract(), mismatchedSafety, telemetry())).toBe(false);
+  });
+
   it("accepts every ledger-backed dispatch operation", () => {
     const snapshot = telemetry();
     snapshot.dispatch_operations = [

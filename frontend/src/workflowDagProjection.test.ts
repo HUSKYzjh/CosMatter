@@ -48,4 +48,7 @@ it("hides malformed or nonserial declarations rather than rendering them as comm
   const malformed = dag();
   malformed.stages[2].allowed_descriptors = null as unknown as string[];
   expect(workflowDagRail(malformed)).toEqual({ state: "unavailable", stages: [], eligibleStage: null });
+  const missingRunIdentity = dag();
+  missingRunIdentity.run_id = "";
+  expect(workflowDagRail(missingRunIdentity)).toEqual({ state: "unavailable", stages: [], eligibleStage: null });
 });

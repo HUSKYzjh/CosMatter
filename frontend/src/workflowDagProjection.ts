@@ -29,6 +29,8 @@ export type WorkflowDagRail =
 export function workflowDagRail(dag: WorkflowDag | null): WorkflowDagRail {
   if (!dag
     || dag.schema_version !== "cosmatter.workflow-dag/v1"
+    || typeof dag.run_id !== "string" || !dag.run_id.trim()
+    || typeof dag.mission_id !== "string" || !dag.mission_id.trim()
     || dag.trust_status !== DAG_TRUST_STATUS
     || dag.dag_id !== "cosmatter_review_gated_linear_workflow"
     || dag.max_concurrency !== 1

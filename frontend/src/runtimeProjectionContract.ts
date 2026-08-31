@@ -71,10 +71,12 @@ function trustedTelemetry(runId: string, telemetry: OperationalTelemetry): boole
 
 /** A runtime snapshot is usable only when all three local projections are valid and bound together. */
 export function trustedRuntimeProjections(runId: string, contract: StageContract, dag: WorkflowDag, telemetry: OperationalTelemetry): boolean {
-  return trustedStageContract(runId, contract)
-    && workflowDagRail(dag).state === "declared"
-    && dag.run_id === runId
-    && trustedTelemetry(runId, telemetry)
-    && contract.mission_id === dag.mission_id
-    && contract.mission_id === telemetry.mission_id;
+  if (!trustedStageContract(runId, contract)
+    || workflowDagRail(dag).state !== "declared"
+    || dag.run_id !== runId
+    || !trustedTelemetry(runId, telemetry)
+    || contract.mission_id !== dag.mission_id
+    || contract.mission_id !== telemetry.mission_id
+    || contract.runtime_safety !== dag.runtime_safety) return false;
+  return contract.stages.every((stage, index) => stage.stage === dag.stages[index]?.stage && stage.status === dag.stages[index]?.status);
 }
