@@ -110,6 +110,37 @@ test("opens the pending-condition navigation card through the keyboard without s
   await expect(page.locator(".rail-status")).toContainText("已打开高级手动受控执行");
 });
 
+test("opens a read-only evaluation audit from frozen-corpus readiness without claiming a metric", async ({ page }) => {
+  const apiRequests: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) apiRequests.push(request.url());
+  });
+  const importInput = await openEditableTaskDefinition(page);
+  await importInput.setInputFiles({
+    name: "frozen-evaluation-readiness.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      schema_version: "1.0",
+      mission: { mission_id: "frozen-evaluation-demo", question: "Inspect evaluation readiness only.", material: "BiFeO3", property_name: "phase stability", scope: "private review cohort" },
+      audit_summary: {
+        submission_readiness: {
+          frozen_corpus: { expected_document_count: 90, frozen_document_count: 90, expected_count_matched: true, document_id_uniqueness_valid: true, doi_present_count: 88, doi_missing_count: 2, authorized_access_boundary_valid: true, evaluation_gate: "ready_for_private_human_annotation" },
+        },
+      },
+    })),
+  });
+
+  await expect(page.locator(".rail-status")).toContainText("已导入 frozen-evaluation-readiness.json");
+  await page.getByRole("button", { name: "05 研究拓展" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-horizon/);
+  const audit = page.getByLabel("审计与评测");
+  await audit.locator("summary").click();
+  await expect(page.getByLabel("评测前置门禁")).toContainText("可开始私有人工标注");
+  await expect(audit).toContainText("未生成");
+  await expect(audit).toContainText("不代表任何指标已经生成");
+  expect(apiRequests).toEqual([]);
+});
+
 test("renders cross-source reconciliation revisions in the map without calling a local API", async ({ page }) => {
   const apiRequests: string[] = [];
   page.on("request", (request) => {
