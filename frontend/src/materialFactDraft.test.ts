@@ -35,4 +35,18 @@ describe("validateMaterialFactDraft", () => {
     blank.facts[0].qualifiersJson = '{"substrate":" "}';
     expect(validateMaterialFactDraft(blank).issue).toBe("qualifiers");
   });
+
+  it("preflights only provably inconsistent known numeric conversions", () => {
+    const converted = valid();
+    converted.facts[0] = { ...converted.facts[0], value: "1000", unit: "nm", normalizedValue: "1", normalizedUnit: "μm" };
+    expect(validateMaterialFactDraft(converted)).toEqual({ ready: true, issue: null });
+
+    const inconsistent = valid();
+    inconsistent.facts[0] = { ...inconsistent.facts[0], value: "1000", unit: "nm", normalizedValue: "2", normalizedUnit: "um" };
+    expect(validateMaterialFactDraft(inconsistent)).toEqual({ ready: false, issue: "conversion" });
+
+    const unknown = valid();
+    unknown.facts[0] = { ...unknown.facts[0], value: "about one", unit: "arb.", normalizedValue: "about one", normalizedUnit: "arb." };
+    expect(validateMaterialFactDraft(unknown)).toEqual({ ready: true, issue: null });
+  });
 });

@@ -34,6 +34,8 @@ It rejects only a numeric pair that is demonstrably inconsistent or belongs to
 different supported dimensions. This prevents a UI or fusion step from silently
 turning a unit typo into a material-science conclusion.
 
+材料事实表单会在浏览器中对同一组已支持单位的有限数值对做一次即时一致性预检，以便在提交前发现明显的换算笔误。该预检不认识未知单位、不处理文本量，也不能绕过本机服务的同一规则复核或人工来源审核。
+
 `fuse-material-facts` groups the reviewed normalized values only when the
 reviewer supplied a normalized unit. It still treats observations under
 different qualifiers as not directly comparable. The unit check therefore

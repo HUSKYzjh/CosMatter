@@ -28,7 +28,7 @@
 - [x] 增加语义关系星图：用候选论文、证据、条件簇和未知项组成图谱，图例明确区分检索候选、出处、审核支持/反驳与待核查关系。
 - [x] 增加受限论文导读：从阅读路线查看候选、访问状态、`document_id + locator` 与已批准短证据；没有授权解析工件时不显示全文。
 - [x] 增加任务运行时间线：将已批准计划、主检索、反例检索、证据审核、条件诊断和报告交付映射为只读白名单动作；不输出失败原文、actor、请求 ID 或 payload。
-- [x] 增加本地演示与可访问性验收：为键盘操作、窄屏布局、空工件、错误 JSON 和含条件矩阵的真实导出工件补充浏览器级测试与截图基线（`npm run test:e2e`：5/5 通过）。
+- [x] 增加本地演示与可访问性验收：为键盘操作、窄屏布局、空工件、错误 JSON、含条件矩阵的导出工件和跨源对账修订摘要补充浏览器级测试与截图基线（`npm run test:e2e`：6/6 通过）。
   - [x] Playwright / 本机 Edge：390 px 窄屏工作区无横向溢出、截图基线，以及 BFO 模板的键盘激活与 `aria-pressed` 回归。
   - [x] 补充空工件、错误 JSON 和含条件矩阵的真实导出工件的浏览器场景；使用 `examples/ui-demo/route_diagnostics.json` 脱敏夹具，不读取 `.env`、运行目录或私有全文。
 - [x] 评估并提供仅监听 `127.0.0.1` 的本地只读服务：`preview-ui --solid --run-id <run_id>` / `start-solid-preview.ps1 -RunId <run_id>` 仅暴露指定的已导出 `/ui.json`；未启用 `--api` / `-Api` 时拒绝所有 API 写入，也不代理模型、论文全文或第三方检索 API。
@@ -37,5 +37,5 @@
 
 - [ ] 建立冻结问题集和人工核查记录。
 - [ ] 报告 Citation Precision、Condition Completeness、Contradiction Precision 与复跑一致性。
-- [ ] 增加数据治理、评测和安全文档。
+- [x] 增加数据治理、评测和安全文档：[`docs/data-governance.md`](docs/data-governance.md)、[`docs/evaluation.md`](docs/evaluation.md) 与 [`SECURITY.md`](SECURITY.md) 已纳入 README，并由无私有路径/凭据的回归测试覆盖。
 - [ ] 选择许可证后，再决定是否将仓库由私有改为公开。
