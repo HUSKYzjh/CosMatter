@@ -185,6 +185,106 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 @media (prefers-reduced-motion: reduce) {
   .fleet-decoration .fleet-dashed, .fleet-decoration .fleet-formation, .fleet-decoration .fleet-signal-point, .fleet-decoration .fleet-beacon { animation: none !important; }
 }
+
+/* Make lazy workspace handoffs feel like a deliberate bridge transition. */
+.route-loading {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: clamp(1.5rem, 4vw, 4rem);
+  background:
+    radial-gradient(circle at 78% 17%, color-mix(in srgb, var(--signal-blue) 12%, transparent), transparent 26rem),
+    linear-gradient(90deg, color-mix(in srgb, var(--signal-blue) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--signal-blue) 3%, transparent) 1px, transparent 1px),
+    var(--paper);
+  background-size: auto, 2.5rem 2.5rem, 2.5rem 2.5rem, auto;
+}
+
+.route-loading::before {
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  right: -12rem;
+  width: 27rem;
+  height: 13rem;
+  border: 1px solid color-mix(in srgb, var(--signal-teal) 38%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4rem color-mix(in srgb, var(--signal-blue) 3%, transparent);
+  content: "";
+  transform: translateY(-50%) rotate(-12deg);
+}
+
+.route-loading-beacon {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  margin-bottom: .28rem;
+}
+
+.route-loading-beacon i {
+  width: .42rem;
+  height: .42rem;
+  border: 1px solid var(--signal-teal);
+  background: color-mix(in srgb, var(--signal-teal) 16%, transparent);
+  box-shadow: 0 0 .42rem color-mix(in srgb, var(--signal-teal) 45%, transparent);
+  transform: rotate(45deg);
+  animation: route-loading-ping 1.7s ease-in-out infinite;
+}
+
+.route-loading-beacon i:nth-child(2) { border-color: var(--signal-blue); animation-delay: .16s; }
+.route-loading-beacon i:nth-child(3) { border-color: var(--signal-violet); animation-delay: .32s; }
+
+.route-loading h1 {
+  max-width: 47rem;
+  font-family: Bahnschrift, "Aptos Display", "Noto Sans SC", sans-serif;
+  font-size: clamp(1.65rem, 3vw, 2.55rem);
+}
+
+.route-loading p { font-size: .9rem; line-height: 1.6; }
+
+.route-loading-radar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 9rem));
+  gap: .28rem;
+  max-width: 29rem;
+  margin-top: 1.1rem;
+  padding-top: .65rem;
+  border-top: 1px solid color-mix(in srgb, var(--signal-blue) 35%, var(--line));
+}
+
+.route-loading-radar i {
+  display: block;
+  height: .2rem;
+  background: linear-gradient(90deg, var(--signal-blue), transparent);
+  box-shadow: 0 0 .4rem color-mix(in srgb, var(--signal-blue) 45%, transparent);
+  animation: route-loading-scan 1.85s ease-in-out infinite;
+}
+
+.route-loading-radar i:nth-child(2) { background: linear-gradient(90deg, var(--signal-teal), transparent); animation-delay: .2s; }
+.route-loading-radar i:nth-child(3) { background: linear-gradient(90deg, var(--signal-violet), transparent); animation-delay: .4s; }
+
+@keyframes route-loading-ping {
+  50% { opacity: .42; transform: rotate(45deg) scale(.76); }
+}
+
+@keyframes route-loading-scan {
+  50% { transform: scaleX(.48); transform-origin: left; opacity: .45; }
+}
+
+@media (max-width: 560px) {
+  .route-loading { align-content: start; padding: 1.35rem .95rem; background-size: auto, 2rem 2rem, 2rem 2rem, auto; }
+  .route-loading h1 { font-size: 1.48rem; }
+  .route-loading p { font-size: .82rem; }
+  .route-loading-radar { grid-template-columns: repeat(3, 1fr); max-width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-loading-beacon i,
+  .route-loading-radar i { animation: none; }
+}
 /* Launch route: compact read-only evidence-loop preview. */
 .launch-stage-column { align-self: start; display: grid; align-content: start; justify-self: end; width: min(21rem, 100%); min-height: 0; padding: .45rem 0 .35rem .9rem; border-left: 1px solid color-mix(in srgb, var(--signal-blue) 28%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--paper) 24%, transparent), color-mix(in srgb, var(--paper) 70%, transparent)); backdrop-filter: blur(5px); }.launch-stage-column header { display: grid; gap: .15rem; padding: 0 .65rem .5rem .8rem; border-bottom: 1px solid color-mix(in srgb, var(--line) 78%, transparent); }.launch-stage-column header p { margin: 0; color: var(--signal-teal); font: 700 .53rem ui-monospace, monospace; letter-spacing: .12em; }.launch-stage-column header strong { color: var(--ink); font: 700 .9rem/1.1 ui-serif, Georgia, serif; }.launch-stage-column header span { color: var(--muted); font-size: .57rem; line-height: 1.35; }.launch-stage-column ol { display: grid; gap: 0; margin: .15rem 0 0; padding: 0; list-style: none; }.launch-stage-column li { position: relative; padding-left: .08rem; }.launch-stage-column li::before { position: absolute; z-index: 1; top: .76rem; left: -.27rem; width: .38rem; height: .38rem; border: 1px solid color-mix(in srgb, var(--line) 82%, var(--signal-blue)); border-radius: 50%; background: var(--paper); content: ""; }.launch-stage-column li:not(:last-child)::after { position: absolute; top: 1.14rem; bottom: -.22rem; left: -.08rem; border-left: 1px dashed color-mix(in srgb, var(--line) 80%, var(--signal-blue)); content: ""; }.launch-stage-column li.active::before { border-color: var(--signal-teal); background: var(--signal-teal); box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--signal-teal) 10%, transparent); animation: launch-stage-signal 3.8s ease-in-out infinite; }.launch-stage-column li.active:not(:last-child)::after { border-left-style: solid; border-left-color: color-mix(in srgb, var(--signal-teal) 56%, var(--line)); }.launch-stage-column li button { display: grid; grid-template-columns: 1.45rem minmax(0, 1fr) auto; align-items: start; width: 100%; gap: .2rem; padding: .38rem .55rem .38rem .8rem; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 40%, transparent); color: var(--muted); background: transparent; text-align: left; transition: color .18s ease, background-color .18s ease; }.launch-stage-column li button:hover, .launch-stage-column li button:focus-visible { color: var(--ink); background: color-mix(in srgb, var(--signal-blue) 6%, transparent); outline: none; }.launch-stage-index { color: var(--signal-blue); font: .54rem ui-monospace, monospace; letter-spacing: .04em; }.launch-stage-copy { display: grid; min-width: 0; gap: .08rem; }.launch-stage-copy strong { color: var(--ink); font-size: .67rem; font-weight: 800; }.launch-stage-copy small, .launch-stage-copy em { font-size: .53rem; font-style: normal; line-height: 1.25; }.launch-stage-copy small { color: var(--muted); }.launch-stage-copy em { color: color-mix(in srgb, var(--signal-amber) 76%, var(--muted)); }.launch-stage-column li b { align-self: center; color: var(--signal-teal); font-size: .8rem; font-weight: 500; }.launch-stage-column li.active button { background: linear-gradient(90deg, color-mix(in srgb, var(--signal-teal) 8%, transparent), transparent 80%); }.launch-stage-column footer { padding: .42rem .65rem .02rem .8rem; color: var(--muted); font-size: .53rem; line-height: 1.35; }.rail-preview-note { margin: .5rem 0 0; padding: .55rem 0; border-top: 1px solid color-mix(in srgb, var(--signal-amber) 38%, var(--line)); border-bottom: 1px solid color-mix(in srgb, var(--signal-amber) 28%, var(--line)); color: color-mix(in srgb, var(--signal-amber) 78%, var(--ink)); font-size: .64rem; line-height: 1.45; } @keyframes launch-stage-signal { 50% { transform: scale(1.18); opacity: .72; } }
 @media (max-width: 880px) { .launch-stage-column { justify-self: start; width: min(44rem, 100%); padding: .6rem 0 .55rem .8rem; border-top: 1px solid color-mix(in srgb, var(--signal-blue) 28%, var(--line)); }.launch-stage-column ol { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: .35rem; }.launch-stage-column li:nth-child(odd)::after { display: none; } }
@@ -724,3 +824,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 :root { font-size: 17px; }.launchpad, .workbench { font-family: "Aptos", "Noto Sans SC", "Microsoft YaHei", Inter, system-ui, sans-serif; }.launch-briefing h1, .stage-header h1 { font-family: Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; font-weight: 760; letter-spacing: -.045em; }.launch-briefing h1 { max-width: 45rem; font-size: clamp(2.18rem, 4.2vw, 4rem); line-height: 1.1; }.launch-kicker { font-size: .73rem; }.launch-boundary { max-width: 43rem; font-size: .88rem; line-height: 1.64; }.launch-modes button b { font-size: .66rem; }.launch-modes button i { font-size: .9rem; }.launch-modes button span { font-size: .83rem; }.launch-modes button small { font-size: .66rem; line-height: 1.4; }.launch-stage-column header p { font-size: .61rem; }.launch-stage-column header strong { font-size: 1rem; }.launch-stage-column header span, .launch-stage-column footer { font-size: .65rem; line-height: 1.42; }.launch-stage-column li button { min-height: 4.05rem; }.launch-stage-index { font-size: .61rem; }.launch-stage-copy { gap: .14rem; }.launch-stage-copy strong { font-size: .76rem; }.launch-stage-copy small, .launch-stage-copy em { font-size: .62rem; line-height: 1.38; }.launch-stage-column li b { font-size: .92rem; }.signal-receiver h2, .mode-panel h2 { font-size: 1.38rem; }.signal-receiver ol, .signal-receiver > small, .mode-panel > p, .file-name, .consent { font-size: .75rem; line-height: 1.55; }.signal-receiver > label { font-size: .82rem; }.signal-receiver textarea { font-size: 1.02rem; line-height: 1.58; }.candidate-planet small, .candidate-planet span { font-size: .68rem; }.candidate-planet strong { font-size: 1rem; }.launch-brief-editor p { font-size: .69rem; }.launch-brief-editor label { font-size: .72rem; }.launch-primary { font-size: .92rem; }
 .wordmark { font-family: Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; font-size: 1.36rem; }.rail-kicker { font-size: .7rem; }.journey-track button span { font-size: .66rem; }.journey-track button strong { font-size: .82rem; }.journey-track button small { font-size: .65rem; line-height: 1.34; }.rail-status small, .rail-runtime small, .rail-execution small { font-size: .64rem; }.rail-status p, .rail-runtime p, .rail-execution p { font-size: .72rem; line-height: 1.5; }.rail-footer { font-size: .7rem; }.stage-header h1 { font-size: clamp(1.95rem, 3.5vw, 2.85rem); line-height: 1.18; }.stage-header p:not(.stage-kicker) { font-size: .92rem; line-height: 1.62; }.stage-kicker { font-size: .7rem; }.scope-strip, .expansion-brief { font-size: .84rem; line-height: 1.52; }.mission-preview small, .workflow-artifact-flow article > small, .workflow-next small { font-size: .68rem; }.mission-preview h2, .workflow-artifact-flow h2 { font-size: 1.14rem; }.mission-preview p, .workflow-artifact-flow p { font-size: .82rem; line-height: 1.58; }
 @media (max-width: 560px) { :root { font-size: 16px; }.launch-briefing h1 { font-size: clamp(2rem, 8.9vw, 2.45rem); line-height: 1.12; }.launch-boundary { font-size: .86rem; }.launch-modes button { min-height: 4.9rem; }.launch-modes button span { font-size: .78rem; }.launch-modes button small { font-size: .62rem; }.launch-stage-column li button { min-height: 4.25rem; }.launch-stage-copy strong { font-size: .73rem; }.launch-stage-copy small, .launch-stage-copy em { font-size: .59rem; }.signal-receiver h2, .mode-panel h2 { font-size: 1.28rem; }.signal-receiver > label { font-size: .78rem; }.stage-header h1 { font-size: clamp(1.68rem, 7.3vw, 2.15rem); }.stage-header p:not(.stage-kicker) { font-size: .86rem; }.scope-strip, .expansion-brief { font-size: .78rem; } }
+
+/* A phone keeps the route visible as a compact flight strip, not a full-height sidebar. */
+.fleet-map-command small, .graph-route-status small { font-size: .64rem; }.fleet-command-call strong { font-family: Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; font-size: 1.04rem; }.fleet-command-call span, .fleet-command-boundary p { font-size: .72rem; line-height: 1.52; }.fleet-command-telemetry small { font-size: .57rem; }.fleet-command-telemetry strong { font-size: 1.08rem; }.graph-route-status strong { font-size: .8rem; }.graph-route-status span { font-size: .68rem; line-height: 1.45; }
+@media (max-width: 560px) { .journey-track { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .18rem; padding: .36rem .22rem; }.journey-track li { padding: 0; }.journey-track li::before, .journey-track li:not(:last-child)::after { display: none; }.journey-track li:last-child { grid-column: 1 / -1; }.journey-track button { grid-template-columns: 1.28rem minmax(0, 1fr); min-height: 2.62rem; padding: .32rem .34rem; }.journey-track button small { display: none; }.journey-track button span { align-self: center; font-size: .61rem; }.journey-track button strong { align-self: center; font-size: .74rem; }.fleet-map-command { margin-top: .72rem; }.fleet-map-command > div { padding-block: .45rem .58rem; }.fleet-command-call strong { font-size: 1rem; }.fleet-command-call span, .fleet-command-boundary p { font-size: .69rem; }.fleet-command-telemetry small { font-size: .53rem; }.fleet-command-telemetry strong { font-size: 1rem; } }
