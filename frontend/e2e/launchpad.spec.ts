@@ -49,6 +49,9 @@ test("keeps synthetic launch-preview papers out of the real research route", asy
   await expect(bridge).toContainText("只读预览数据层");
   await expect(bridge.locator(".workflow-next")).toContainText("等待受控检索或导入可审查文献子图");
   await expect(bridge).not.toContainText("20 篇可审查文献");
+
+  await page.getByRole("button", { name: "03 文献星图" }).first().click();
+  await expect(page.locator(".graph-empty")).toContainText("仅供导航或演示的论文式节点");
 });
 
 test("keeps an empty task explicit, then renders a redacted exported condition matrix", async ({ page }) => {
