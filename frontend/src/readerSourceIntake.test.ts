@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { demoBundle, type EvidenceCard, type LiteratureGraphNode } from "./model";
+import type { PdfTaskStatus } from "./localApi";
 import { readerSourceIntake, sourceMapTaskKey } from "./readerSourceIntake";
 import { emptyResearchSession, selectPaper } from "./researchSession";
 
 const paper: LiteratureGraphNode = { nodeId: "paper:doc-1", kind: "candidate_paper", label: "Candidate", trustStatus: "candidate" };
 const otherPaper: LiteratureGraphNode = { ...paper, nodeId: "paper:doc-2" };
-const pdfTask = { document_id: "private-1", candidate_document_id: "doc-1", audit_document_id: "doc-1", audit_state: "done" as const, file_name: "authorised.pdf", state: "done", doi: null, doi_status: "pending", markdown_ready: true, source_map_review_status: "recorded" as const, source_map_segment_count: 1, trust_status: "private" };
+const pdfTask: PdfTaskStatus = { document_id: "private-1", candidate_document_id: "doc-1", audit_document_id: "doc-1", audit_state: "done", file_name: "authorised.pdf", state: "done", doi: null, doi_status: "needs_human_doi", markdown_ready: true, source_map_review_status: "recorded", source_map_segment_count: 1, trust_status: "private" };
 const evidence: EvidenceCard = { evidenceId: "ev-1", claim: "Claim", stance: "support", conditions: {}, quote: "Excerpt", reviewStatus: "accepted", provenance: { documentId: "doc-1", locator: "markdown_line:1-1", source: "reviewed", accessPolicy: "authorised" }, isSynthetic: false };
 
 describe("readerSourceIntake", () => {

@@ -165,8 +165,12 @@ export function isReminderBoard(value: unknown): value is ReminderBoard {
 }
 export interface HarnessAuthorization { mission_id: string; plugin_authorization_decisions: Array<{ plugin_id: string; permitted: boolean }>; trust_status: "authorization_checked_before_automatic_dispatch"; }
 export interface AutoMissionResult extends LiveMission { candidate_count: number; failures: string[]; status: RunStatus; trust_status: string; harness_authorization?: HarnessAuthorization; }
-export interface PdfRunResult extends LiveMission { document_id: string; candidate_document_id?: string | null; doi_status: string; state: string; }
-export interface PdfTaskStatus { document_id: string; candidate_document_id?: string | null; audit_document_id: string; audit_state: "pending" | "running" | "done" | "failed"; file_name: string; state: string; doi: string | null; doi_status: string; markdown_ready: boolean; source_map_review_status: "absent" | "recorded" | "invalid"; source_map_segment_count: number; error?: string; trust_status: string; }
+export const PDF_TASK_STATES = ["waiting-file", "uploading", "pending", "converting", "running", "done", "failed"] as const;
+export type PdfTaskState = typeof PDF_TASK_STATES[number];
+export const PDF_DOI_STATUSES = ["pending", "resolved", "needs_human_doi", "human_confirmed"] as const;
+export type PdfDoiStatus = typeof PDF_DOI_STATUSES[number];
+export interface PdfRunResult extends LiveMission { document_id: string; candidate_document_id?: string | null; doi_status: PdfDoiStatus; state: PdfTaskState; }
+export interface PdfTaskStatus { document_id: string; candidate_document_id?: string | null; audit_document_id: string; audit_state: "pending" | "running" | "done" | "failed"; file_name: string; state: PdfTaskState; doi: string | null; doi_status: PdfDoiStatus; markdown_ready: boolean; source_map_review_status: "absent" | "recorded" | "invalid"; source_map_segment_count: number; error?: string | null; trust_status: string; }
 export function createAutomaticMission(payload: { question: string; material: string; property: string; scope: string; sources: RetrievalSource[] }): Promise<AutoMissionResult> { return jsonPost<AutoMissionResult>("./api/missions/auto", { ...payload, consent: true }); }
 export function getRunStatus(runId: string): Promise<RunStatus> { return request<RunStatus>(`./api/runs/${encodeURIComponent(runId)}/status`); }
 export function getStageContract(runId: string): Promise<StageContract> { return request<StageContract>(`./api/runs/${encodeURIComponent(runId)}/stage-contract`); }
@@ -177,9 +181,39 @@ export function getCandidateScreening(runId: string): Promise<CandidateScreening
 export function recordCandidateScreening(runId: string, decisions: CandidateScreeningDecision[]): Promise<CandidateScreeningResult> { return jsonPost<CandidateScreeningResult>(`./api/runs/${encodeURIComponent(runId)}/candidate-screening`, { decisions }); }
 export function cancelRun(runId: string): Promise<RunStatus> { return jsonPost<RunStatus>(`./api/runs/${encodeURIComponent(runId)}/cancel`, {}); }
 export function createPdfRun(file: File, mission: { missionId?: string; question: string; material: string; property: string; scope: string }, candidateTarget?: { runId: string; documentId: string }): Promise<PdfRunResult> { const form = new FormData(); form.append("payload", JSON.stringify(candidateTarget ? { run_id: candidateTarget.runId, candidate_document_id: candidateTarget.documentId, consent: true } : { ...mission, run_id: mission.missionId, consent: true })); form.append("file", file, file.name); return request<PdfRunResult>("./api/pdf-runs", { method: "POST", body: form }); }
-export interface PdfTaskRegistry { run_id: string; tasks: PdfTaskStatus[]; trust_status: string; }
-export function getPdfTasks(runId: string): Promise<PdfTaskRegistry> { return request<PdfTaskRegistry>(`./api/runs/${encodeURIComponent(runId)}/pdf/tasks`); }
-export function getPdfStatus(runId: string, documentId: string): Promise<PdfTaskStatus> { return request<PdfTaskStatus>(`./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/status`); }
+export interface PdfTaskRegistry { run_id: string; tasks: PdfTaskStatus[]; trust_status: "private_pdf_task_registry_metadata_only"; }
+const PDF_TASK_KEYS = ["document_id", "candidate_document_id", "audit_document_id", "audit_state", "file_name", "state", "doi", "doi_status", "markdown_ready", "source_map_review_status", "source_map_segment_count", "error", "trust_status"] as const;
+const PDF_REGISTRY_KEYS = ["run_id", "tasks", "trust_status"] as const;
+const boundedString = (value: unknown, maximum: number) => typeof value === "string" && value.trim().length > 0 && value.length <= maximum;
+
+/** Parse only the fixed metadata projection; private PDF and Markdown never cross this boundary. */
+export function isPdfTaskStatus(value: unknown): value is PdfTaskStatus {
+  if (!exactObjectKeys(value, PDF_TASK_KEYS)) return false;
+  const task = value as Record<string, unknown>;
+  const state = task.state;
+  const doiStatus = task.doi_status;
+  if (!boundedString(task.document_id, 255) || task.candidate_document_id !== null && !boundedString(task.candidate_document_id, 255)
+    || !boundedString(task.audit_document_id, 255) || !boundedString(task.file_name, 240)
+    || !(PDF_TASK_STATES as readonly string[]).includes(state as string) || !(PDF_DOI_STATUSES as readonly string[]).includes(doiStatus as string)
+    || !["pending", "running", "done", "failed"].includes(task.audit_state as string)
+    || typeof task.markdown_ready !== "boolean" || !["absent", "recorded", "invalid"].includes(task.source_map_review_status as string)
+    || !Number.isInteger(task.source_map_segment_count) || (task.source_map_segment_count as number) < 0 || (task.source_map_segment_count as number) > 100
+    || task.doi !== null && !boundedString(task.doi, 255) || task.error !== null && !boundedString(task.error, 300)
+    || task.trust_status !== "private_markdown_outside_run_not_scientific_evidence") return false;
+  const completed = state === "done";
+  if (task.markdown_ready !== completed || (completed && task.audit_state !== "done") || (!completed && (task.doi !== null || doiStatus !== "pending"))) return false;
+  return task.source_map_review_status !== "recorded" || Boolean(task.markdown_ready && (task.source_map_segment_count as number) > 0);
+}
+
+export function isPdfTaskRegistry(value: unknown, runId?: string): value is PdfTaskRegistry {
+  if (!exactObjectKeys(value, PDF_REGISTRY_KEYS)) return false;
+  const registry = value as Record<string, unknown>;
+  if (!boundedString(registry.run_id, 120) || runId !== undefined && registry.run_id !== runId || registry.trust_status !== "private_pdf_task_registry_metadata_only" || !Array.isArray(registry.tasks) || registry.tasks.length > 12) return false;
+  const documentIds = new Set<string>();
+  return registry.tasks.every((task) => isPdfTaskStatus(task) && !documentIds.has(task.document_id) && Boolean(documentIds.add(task.document_id)));
+}
+export async function getPdfTasks(runId: string): Promise<PdfTaskRegistry> { const registry = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/tasks`); if (!isPdfTaskRegistry(registry, runId)) throw new LocalApiRequestError("transport"); return registry; }
+export async function getPdfStatus(runId: string, documentId: string): Promise<PdfTaskStatus> { const task = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/status`); if (!isPdfTaskStatus(task)) throw new LocalApiRequestError("transport"); return task; }
 export function privateMarkdownUrl(runId: string, documentId: string): string { return `./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/markdown`; }
 export interface PrivateSourceMapSegment { locator: string; kind: "paragraph" | "table" | "formula" | "figure_caption"; quote: string; }
 export interface RecordedSourceMapSegment { segment_id: string; locator: string; kind: PrivateSourceMapSegment["kind"]; }

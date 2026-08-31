@@ -5,7 +5,7 @@ import { demoBundle, type ImportedBundle } from "./model";
 import type { PdfTaskStatus } from "./localApi";
 
 const task = (overrides: Partial<PdfTaskStatus> = {}): PdfTaskStatus => ({
-  document_id: "pdf-1", candidate_document_id: "doc-1", audit_document_id: "doc-1", audit_state: "pending", file_name: "paper.pdf", state: "submitted", doi: null, doi_status: "pending", markdown_ready: false, source_map_review_status: "absent", source_map_segment_count: 0, trust_status: "private_markdown_outside_run_not_scientific_evidence", ...overrides,
+  document_id: "pdf-1", candidate_document_id: "doc-1", audit_document_id: "doc-1", audit_state: "pending", file_name: "paper.pdf", state: "pending", doi: null, doi_status: "pending", markdown_ready: false, source_map_review_status: "absent", source_map_segment_count: 0, trust_status: "private_markdown_outside_run_not_scientific_evidence", ...overrides,
 });
 const at = (missionState: string): ImportedBundle => ({ ...demoBundle, status: { missionState, retryCount: 0, retryBudget: 0, returnReason: null } });
 

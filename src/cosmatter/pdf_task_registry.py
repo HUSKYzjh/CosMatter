@@ -15,6 +15,10 @@ REGISTRY_FILENAME = "pdf_intake_tasks.json"
 LEGACY_FILENAME = "pdf_intake.json"
 SCHEMA_VERSION = "1.0"
 MAX_TASKS = 12
+_TASK_STATES = {"waiting-file", "uploading", "pending", "converting", "running", "done", "failed"}
+_DOI_STATUSES = {"pending", "resolved", "needs_human_doi", "human_confirmed"}
+_REQUIRED_TASK_FIELDS = {"schema_version", "mission_id", "document_id", "file_name", "pdf_sha256", "byte_count", "consent", "batch_id", "state", "markdown_sha256", "doi", "doi_status"}
+_OPTIONAL_TASK_FIELDS = {"candidate_document_id", "error"}
 
 
 class PdfTaskRegistryError(ValueError):
@@ -126,10 +130,9 @@ def _validate_registry(payload: object, mission_id: str) -> None:
 
 
 def _validate_task(task: object, mission_id: str) -> None:
-    required = {"schema_version", "mission_id", "document_id", "file_name", "pdf_sha256", "byte_count", "consent", "batch_id", "state", "markdown_sha256", "doi", "doi_status"}
-    if not isinstance(task, dict) or not required.issubset(task) or task.get("schema_version") != SCHEMA_VERSION or task.get("mission_id") != mission_id:
+    if not isinstance(task, dict) or not _REQUIRED_TASK_FIELDS.issubset(task) or set(task) - _REQUIRED_TASK_FIELDS - _OPTIONAL_TASK_FIELDS or task.get("schema_version") != SCHEMA_VERSION or task.get("mission_id") != mission_id:
         raise PdfTaskRegistryError("private PDF task is invalid")
-    if not all(isinstance(task.get(key), str) and task[key].strip() for key in ("document_id", "file_name", "pdf_sha256", "batch_id", "state", "doi_status")):
+    if not all(isinstance(task.get(key), str) and task[key].strip() for key in ("document_id", "file_name", "pdf_sha256", "batch_id")) or task.get("state") not in _TASK_STATES or task.get("doi_status") not in _DOI_STATUSES:
         raise PdfTaskRegistryError("private PDF task identity is invalid")
     if not isinstance(task.get("byte_count"), int) or task["byte_count"] <= 0 or task.get("consent") is not True:
         raise PdfTaskRegistryError("private PDF task metadata is invalid")
@@ -140,3 +143,5 @@ def _validate_task(task: object, mission_id: str) -> None:
         raise PdfTaskRegistryError("private PDF Markdown hash is invalid")
     if task.get("doi") is not None and not isinstance(task.get("doi"), str):
         raise PdfTaskRegistryError("private PDF DOI is invalid")
+    if task.get("error") is not None and (not isinstance(task.get("error"), str) or len(task["error"]) > 300):
+        raise PdfTaskRegistryError("private PDF task error is invalid")

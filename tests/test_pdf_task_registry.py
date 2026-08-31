@@ -62,6 +62,20 @@ class PdfTaskRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(PdfTaskRegistryError, "document_id is required"):
             task_for_pdf_document(self.run_dir, "mission-1")
 
+    def test_rejects_unknown_statuses_and_unrecognised_task_fields(self) -> None:
+        invalid_state = task("pdf_invalid_state")
+        invalid_state["state"] = "still_processing_forever"
+        with self.assertRaisesRegex(PdfTaskRegistryError, "identity"):
+            write_pdf_task(self.run_dir, "mission-1", invalid_state)
+        invalid_doi_status = task("pdf_invalid_doi")
+        invalid_doi_status["doi_status"] = "auto_accepted"
+        with self.assertRaisesRegex(PdfTaskRegistryError, "identity"):
+            write_pdf_task(self.run_dir, "mission-1", invalid_doi_status)
+        expanded = task("pdf_expanded")
+        expanded["provider_command"] = "untrusted"
+        with self.assertRaisesRegex(PdfTaskRegistryError, "invalid"):
+            write_pdf_task(self.run_dir, "mission-1", expanded)
+
 
 if __name__ == "__main__":
     unittest.main()

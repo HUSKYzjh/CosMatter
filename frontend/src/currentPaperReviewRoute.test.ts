@@ -20,7 +20,7 @@ const screening: CandidateScreening = {
 function pdfTask(candidateDocumentId: string): PdfTaskStatus {
   return {
     document_id: "pdf-1", candidate_document_id: candidateDocumentId, audit_document_id: "audit-1",
-    audit_state: "done", file_name: "paper.pdf", state: "completed", doi: null, doi_status: "pending",
+    audit_state: "done", file_name: "paper.pdf", state: "done", doi: null, doi_status: "needs_human_doi",
     markdown_ready: true, source_map_review_status: "absent", source_map_segment_count: 0,
     trust_status: "private_pdf_not_scientific_evidence",
   };

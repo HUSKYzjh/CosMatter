@@ -20,8 +20,8 @@ describe("paperWorkflowState", () => {
     expect(paperWorkflowState(paper, [task()], decision("include_for_fulltext"), 0)).toBe("parsing");
   });
   it("orders source and accepted evidence states above earlier workflow states", () => {
-    expect(paperWorkflowState(paper, [task({ markdown_ready: true, audit_state: "done" })], decision("include_for_fulltext"), 0)).toBe("source_map");
-    expect(paperWorkflowState(paper, [task({ markdown_ready: true, audit_state: "done", source_map_review_status: "recorded", source_map_segment_count: 1 })], decision("include_for_fulltext"), 0)).toBe("evidence_review");
+    expect(paperWorkflowState(paper, [task({ state: "done", markdown_ready: true, audit_state: "done" })], decision("include_for_fulltext"), 0)).toBe("source_map");
+    expect(paperWorkflowState(paper, [task({ state: "done", markdown_ready: true, audit_state: "done", source_map_review_status: "recorded", source_map_segment_count: 1 })], decision("include_for_fulltext"), 0)).toBe("evidence_review");
     expect(paperWorkflowState(paper, [task({ state: "failed" })], decision("include_for_fulltext"), 0)).toBe("failed");
     expect(paperWorkflowState(paper, [task({ state: "failed" })], decision("include_for_fulltext"), 1)).toBe("accepted_evidence");
     expect(paperWorkflowState(paper, [task({ state: "failed" })], decision("include_for_fulltext"), 1, false)).toBe("provenance_audit");
