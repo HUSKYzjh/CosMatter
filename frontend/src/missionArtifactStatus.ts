@@ -1,6 +1,7 @@
 import type { ImportedBundle, Mission } from "./model";
 import { auditableAcceptedEvidence } from "./evidenceLinking";
 import { evidenceProvenanceAuditComplete } from "./evidenceProvenanceAudit";
+import { hasAuditableGapEvidenceBasis } from "./gapEvidenceReferences";
 
 export type ArtifactKey = "brief" | "conditions" | "evidence" | "counterevidence";
 export type ArtifactState = "ready" | "pending" | "recheck";
@@ -25,6 +26,7 @@ export function deriveMissionArtifactStatus(bundle: ImportedBundle, locked: bool
   const unknownCount = bundle.conditionMatrix.reduce((sum, row) => sum + row.unknowns.length, 0);
   const provenance = bundle.auditSummary.evidenceProvenance;
   const auditableEvidence = auditableAcceptedEvidence(bundle);
+  const auditableGapCandidateCount = bundle.researchGapCandidates.filter((candidate) => hasAuditableGapEvidenceBasis(candidate, bundle)).length;
   const hasLocatorAudit = evidenceProvenanceAuditComplete(provenance, bundle.evidenceCards.length);
   const recheck = (state: ArtifactState): ArtifactState => locked ? "recheck" : state;
   const next = <T extends MissionArtifactStatus["next"]>(value: T): T => locked ? "reimport" as T : value;
@@ -46,9 +48,9 @@ export function deriveMissionArtifactStatus(bundle: ImportedBundle, locked: bool
       detail: hasLocatorAudit ? "Imported audit records include exact source-map matches." : "No verified source-map match is available for the current artifact.", next: next("verify-source"),
     },
     {
-      key: "counterevidence", state: recheck(bundle.researchGapCandidates.length || contradictionCount || unknownCount ? "ready" : "pending"),
-      metrics: [{ key: "gapCandidates", value: bundle.researchGapCandidates.length }, { key: "contradictions", value: contradictionCount }, { key: "unknowns", value: unknownCount }],
-      detail: bundle.researchGapCandidates.length || contradictionCount || unknownCount ? "Imported candidates and condition boundaries remain pending human review." : "No counterevidence boundary has been recorded for this task.", next: next("review-counterevidence"),
+      key: "counterevidence", state: recheck(auditableGapCandidateCount || contradictionCount || unknownCount ? "ready" : "pending"),
+      metrics: [{ key: "gapCandidates", value: auditableGapCandidateCount }, { key: "contradictions", value: contradictionCount }, { key: "unknowns", value: unknownCount }],
+      detail: auditableGapCandidateCount || contradictionCount || unknownCount ? "Imported candidates and condition boundaries remain pending human review." : "No counterevidence boundary has been recorded for this task.", next: next("review-counterevidence"),
     },
   ];
 }

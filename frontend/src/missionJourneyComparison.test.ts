@@ -9,7 +9,7 @@ const card = (id: string, stance: string): EvidenceCard => ({
 });
 const graphFor = (cards: EvidenceCard[]) => ({ ...demoBundle.literatureGraph, nodes: cards.map((item) => ({ nodeId: `paper:${item.provenance.documentId}`, kind: "evidence_paper", label: item.provenance.documentId, trustStatus: "reviewed" })), edges: cards.map((item) => ({ sourceId: `paper:${item.provenance.documentId}`, targetId: `evidence:${item.evidenceId}`, edgeType: "source_provenance", relationSource: "reviewed source map", trustStatus: "accepted" })) });
 const candidate: ResearchGapCandidate = {
-  gapId: "gap-1", problemDescription: "Candidate", evidenceIds: ["ev-1"], conflictOrMissingEvidence: [], noveltyStatus: "unverified", actionability: "review", falsifiableHypothesis: "test", suggestedValidation: [], evidenceCompleteness: .5,
+  gapId: "gap-1", problemDescription: "Candidate", evidenceIds: ["ev-1", "ev-2"], conflictOrMissingEvidence: [], noveltyStatus: "unverified", actionability: "review", falsifiableHypothesis: "test", suggestedValidation: [], evidenceCompleteness: .5,
   reviewStatus: "candidate_requires_human_review",
   counterevidenceBoundary: { status: "all_approved_counterevidence_queries_recorded", approvedQueryCount: 1, executedQueryCount: 1 },
 };
@@ -58,6 +58,17 @@ describe("missionJourney counterevidence completion", () => {
       conditionMatrix: [{ conditionCluster: "cluster", supportingEvidenceIds: ["ev-1"], contradictingEvidenceIds: ["ev-2"], differingFields: ["substrate"], unknowns: [] }],
       researchGapCandidates: [candidate],
       auditSummary: { ...demoBundle.auditSummary, evidenceProvenance: { acceptedEvidenceCount: 2, exactSourceMapMatchCount: 2, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 }, counterevidence: { state: "ready" as const, plannedQueryCount: 2, executedQueryCount: 2 } },
+    };
+    expect(missionJourney(bundle, bundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: true }).find((stage) => stage.id === "extend")?.state).toBe("ready");
+  });
+
+  it("does not complete extension from a candidate whose evidence basis is stale", () => {
+    const evidence = [card("ev-1", "support"), card("ev-2", "contradict")];
+    const bundle = {
+      ...demoBundle, evidenceCards: evidence, literatureGraph: graphFor(evidence), sourceMapSummary: { documentCount: 2, segmentCount: 2, documentIds: ["doc-ev-1", "doc-ev-2"] },
+      conditionMatrix: [{ conditionCluster: "cluster", supportingEvidenceIds: ["ev-1"], contradictingEvidenceIds: ["ev-2"], differingFields: ["substrate"], unknowns: [] }],
+      researchGapCandidates: [{ ...candidate, evidenceIds: ["ev-1", "missing"] }],
+      auditSummary: { ...demoBundle.auditSummary, evidenceProvenance: { acceptedEvidenceCount: 2, exactSourceMapMatchCount: 2, manualLocatorOnlyCount: 0, exactSourceMapMatchRate: 1 }, counterevidence: { state: "ready" as const, plannedQueryCount: 1, executedQueryCount: 1 } },
     };
     expect(missionJourney(bundle, bundle.mission.question, "graph", false, false, { paperSelected: true, evidenceReady: true }).find((stage) => stage.id === "extend")?.state).toBe("ready");
   });

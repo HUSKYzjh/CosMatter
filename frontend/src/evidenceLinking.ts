@@ -41,6 +41,7 @@ export function evidenceForPaper(bundle: ImportedBundle, paper: LiteratureGraphN
     const paperId = `paper:${documentId}`;
     const evidenceId = `evidence:${evidence.evidenceId}`;
     return evidence.reviewStatus === "accepted"
+      && !evidence.isSynthetic
       && evidence.provenance.documentId === documentId
       && paper.nodeId === paperId
       && bundle.literatureGraph.edges.some((edge) => (
@@ -69,5 +70,5 @@ export function auditableAcceptedEvidence(bundle: ImportedBundle): EvidenceCard[
   const reviewedSourceMapDocuments = new Set(bundle.sourceMapSummary.documentIds);
   const sourceMapInventoryIsUsable = bundle.sourceMapSummary.segmentCount > 0
     && bundle.sourceMapSummary.documentCount === reviewedSourceMapDocuments.size;
-  return bundle.evidenceCards.filter((card) => card.reviewStatus === "accepted" && Boolean(card.provenance.documentId.trim()) && Boolean(card.provenance.locator.trim()) && sourceMapInventoryIsUsable && reviewedSourceMapDocuments.has(card.provenance.documentId) && paperIds.has(`paper:${card.provenance.documentId}`) && provenanceEdges.has(`paper:${card.provenance.documentId}\u241fevidence:${card.evidenceId}`));
+  return bundle.evidenceCards.filter((card) => card.reviewStatus === "accepted" && !card.isSynthetic && Boolean(card.provenance.documentId.trim()) && Boolean(card.provenance.locator.trim()) && sourceMapInventoryIsUsable && reviewedSourceMapDocuments.has(card.provenance.documentId) && paperIds.has(`paper:${card.provenance.documentId}`) && provenanceEdges.has(`paper:${card.provenance.documentId}\u241fevidence:${card.evidenceId}`));
 }

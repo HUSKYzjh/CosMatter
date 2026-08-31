@@ -1,4 +1,5 @@
-import type { EvidenceCard, ResearchGapCandidate } from "./model";
+import type { EvidenceCard, ImportedBundle, ResearchGapCandidate } from "./model";
+import { auditableAcceptedEvidence } from "./evidenceLinking";
 
 export interface GapEvidenceReferences {
   linked: EvidenceCard[];
@@ -16,4 +17,16 @@ export function gapEvidenceReferences(candidate: ResearchGapCandidate, evidenceC
     else missingIds.push(id);
   });
   return { linked, missingIds };
+}
+
+/**
+ * A Gap candidate remains displayable when its old references no longer
+ * resolve, but it cannot advance the research route until every basis card is
+ * unique, current, non-synthetic, provenance-linked evidence.
+ */
+export function hasAuditableGapEvidenceBasis(candidate: ResearchGapCandidate, bundle: ImportedBundle): boolean {
+  const evidenceIds = candidate.evidenceIds;
+  if (evidenceIds.length < 2 || new Set(evidenceIds).size !== evidenceIds.length) return false;
+  const auditableIds = new Set(auditableAcceptedEvidence(bundle).map((card) => card.evidenceId));
+  return evidenceIds.every((evidenceId) => auditableIds.has(evidenceId));
 }

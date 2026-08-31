@@ -45,4 +45,16 @@ describe("evidenceForPaper", () => {
     };
     expect(auditableAcceptedEvidence(bundle)).toEqual([]);
   });
+
+  it("never promotes a synthetic fixture card through a reviewed-looking source projection", () => {
+    const synthetic = { ...evidence, isSynthetic: true };
+    const bundle = {
+      ...demoBundle,
+      evidenceCards: [synthetic],
+      sourceMapSummary: { documentCount: 1, segmentCount: 1, documentIds: ["doc-1"] },
+      literatureGraph: { ...demoBundle.literatureGraph, nodes: [paper], edges: [{ sourceId: "paper:doc-1", targetId: "evidence:ev-1", edgeType: "source_provenance", relationSource: "fixture", trustStatus: "accepted" }] },
+    };
+    expect(evidenceForPaper(bundle, paper)).toEqual([]);
+    expect(auditableAcceptedEvidence(bundle)).toEqual([]);
+  });
 });
