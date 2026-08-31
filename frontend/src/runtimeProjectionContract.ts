@@ -17,6 +17,7 @@ const STAGE_SPECS = [
 ] as const;
 const STATUSES = new Set(["completed", "ready", "waiting_human_review", "blocked"]);
 const dispatchOperationSet = new Set<string>(DISPATCH_OPERATIONS);
+const providerOperationSet = new Set(["sciverse:agentic_search", "sciverse:content", "mineru:source_parse_submit", "mineru:source_parse_poll", "mineru:source_parse_output_fetch"]);
 const exactKeys = (value: unknown, keys: readonly string[]) => Boolean(value && typeof value === "object" && !Array.isArray(value) && (() => { const actual = Object.keys(value as Record<string, unknown>); return actual.length === keys.length && actual.every((key) => keys.includes(key)); })());
 const sameStrings = (actual: unknown, expected: readonly string[]) => Array.isArray(actual) && actual.length === expected.length && actual.every((value, index) => typeof value === "string" && value === expected[index]);
 const boundedInteger = (value: unknown, maximum = 1_000_000) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= maximum;
@@ -47,7 +48,7 @@ function trustedTelemetry(runId: string, telemetry: OperationalTelemetry): boole
   if (telemetry.provider_operations.some((raw) => {
     if (!exactKeys(raw, ["provider", "operation", "request_count", "successful_response_count", "client_error_count", "server_error_count", "other_status_count"])) return true;
     const item = raw as unknown as Record<string, unknown>; const key = `${item.provider}:${item.operation}`;
-    if (providers.has(key) || !["sciverse", "mineru"].includes(item.provider as string) || typeof item.operation !== "string" || !item.operation) return true;
+    if (providers.has(key) || !providerOperationSet.has(key)) return true;
     providers.add(key); const counts = [item.request_count, item.successful_response_count, item.client_error_count, item.server_error_count, item.other_status_count];
     return counts.some((value) => !boundedInteger(value, 10_000_000)) || counts[0] !== counts.slice(1).reduce<number>((total, value) => total + (value as number), 0);
   })) return false;

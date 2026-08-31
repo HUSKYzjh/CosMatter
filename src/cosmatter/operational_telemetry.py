@@ -27,6 +27,10 @@ _COST_LATENCY_STATUSES = {"not_recorded", "recorded", "invalid"}
 # Every ledger operation must remain observable in the count-only projection;
 # reuse the dispatch vocabulary rather than maintaining a drift-prone copy.
 _DISPATCH_OPERATIONS = EXTERNAL_DISPATCH_OPERATIONS
+_PROVIDER_OPERATIONS = {
+    "sciverse": {"agentic_search", "content"},
+    "mineru": {"source_parse_submit", "source_parse_poll", "source_parse_output_fetch"},
+}
 _TELEMETRY_FIELDS = {"schema_version", "mission_id", "trust_status", "provider_operations", "dispatch_operations", "cost_latency_status", "cost_latency"}
 
 
@@ -132,7 +136,10 @@ def validate_operational_telemetry(payload: object, *, expected_mission_id: str 
     seen_provider_operations: set[tuple[str, str]] = set()
     for item in provider_operations:
         fields = {"provider", "operation", "request_count", "successful_response_count", "client_error_count", "server_error_count", "other_status_count"}
-        if not isinstance(item, dict) or set(item) != fields or item.get("provider") not in {"sciverse", "mineru"} or not isinstance(item.get("operation"), str):
+        if not isinstance(item, dict) or set(item) != fields:
+            raise OperationalTelemetryError("operational telemetry provider operation is invalid")
+        provider, operation = item.get("provider"), item.get("operation")
+        if provider not in _PROVIDER_OPERATIONS or operation not in _PROVIDER_OPERATIONS[provider]:
             raise OperationalTelemetryError("operational telemetry provider operation is invalid")
         key = (item["provider"], item["operation"])
         if key in seen_provider_operations:

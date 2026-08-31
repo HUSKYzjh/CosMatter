@@ -26,7 +26,7 @@ function dag(): WorkflowDag {
   return { schema_version: "cosmatter.workflow-dag/v1", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback_declared_dag_readiness_projection_not_execution_authorization", dag_id: "cosmatter_review_gated_linear_workflow", max_concurrency: 1, scheduler_status: "declarative_only_no_execution_authorization", runtime_safety: "verified", eligible_stages: ["retrieval"], blocked_stage_count: 6, human_review_required: false, stages: dagRows.map(([depends_on, allowed_descriptors, data_classification, execution_class], index) => ({ stage: names[index], depends_on: [...depends_on] as WorkflowDag["stages"][number]["depends_on"], status: index < 2 ? "completed" : index === 2 ? "ready" : "blocked", allowed_descriptors: [...allowed_descriptors], data_classification, execution_class })) as WorkflowDag["stages"] };
 }
 function telemetry(): OperationalTelemetry {
-  return { schema_version: "cosmatter.operational-telemetry/v1", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence", provider_operations: [{ provider: "sciverse", operation: "search", request_count: 2, successful_response_count: 1, client_error_count: 1, server_error_count: 0, other_status_count: 0 }], dispatch_operations: [{ operation: "metadata_query", dispatch_count: 1, completed_count: 1, incomplete_count: 0, unknown_outcome_count: 0 }], cost_latency_status: "not_recorded", cost_latency: [] };
+  return { schema_version: "cosmatter.operational-telemetry/v1", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence", provider_operations: [{ provider: "sciverse", operation: "agentic_search", request_count: 2, successful_response_count: 1, client_error_count: 1, server_error_count: 0, other_status_count: 0 }], dispatch_operations: [{ operation: "metadata_query", dispatch_count: 1, completed_count: 1, incomplete_count: 0, unknown_outcome_count: 0 }], cost_latency_status: "not_recorded", cost_latency: [] };
 }
 
 describe("trusted runtime projections", () => {
@@ -41,6 +41,8 @@ describe("trusted runtime projections", () => {
     expect(trustedRuntimeProjections("run_1", contract(), badDag, telemetry())).toBe(false);
     const badTelemetry = telemetry(); badTelemetry.provider_operations[0].request_count = 1;
     expect(trustedRuntimeProjections("run_1", contract(), dag(), badTelemetry)).toBe(false);
+    const unknownProviderOperation = telemetry(); unknownProviderOperation.provider_operations[0].operation = "unreviewed_operation";
+    expect(trustedRuntimeProjections("run_1", contract(), dag(), unknownProviderOperation)).toBe(false);
   });
 
   it("fails closed when individually valid projections disagree about runtime state", () => {

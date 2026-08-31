@@ -69,6 +69,13 @@ class OperationalTelemetryTests(unittest.TestCase):
         with self.assertRaises(OperationalTelemetryError):
             validate_operational_telemetry(telemetry, expected_mission_id=self.mission.mission_id)
 
+    def test_schema_rejects_unknown_provider_operation_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            telemetry = operational_telemetry(Path(directory), self.mission)
+        telemetry["provider_operations"] = [{"provider": "sciverse", "operation": "unreviewed_operation", "request_count": 0, "successful_response_count": 0, "client_error_count": 0, "server_error_count": 0, "other_status_count": 0}]
+        with self.assertRaises(OperationalTelemetryError):
+            validate_operational_telemetry(telemetry, expected_mission_id=self.mission.mission_id)
+
 
 if __name__ == "__main__":
     unittest.main()
