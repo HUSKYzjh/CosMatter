@@ -1327,6 +1327,65 @@ def command_create_bibliographic_source_template(args: argparse.Namespace) -> in
     return 0
 
 
+def command_prepare_real_evaluation(args: argparse.Namespace) -> int:
+    """Create the blank, path-free review pack for one frozen corpus.
+
+    This command intentionally creates preparation artifacts only. It cannot
+    create a human judgment or evaluation metric, and it never opens local
+    paper files, annotations, provider records, or environment secrets.
+    """
+    if not 1 <= args.expected_count <= 250:
+        _json_print({"error": "expected document count must be between 1 and 250", "run_id": args.run_id})
+        return 2
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        manifest = load_corpus_manifest(run_dir / "corpus_manifest.json", mission.mission_id)
+        if manifest is None:
+            raise CorpusPreparationError("real evaluation preparation requires a recorded corpus manifest")
+        readiness = frozen_corpus_readiness(
+            run_dir=run_dir, mission_id=mission.mission_id, expected_document_count=args.expected_count
+        )
+        readiness_path = write_frozen_corpus_readiness(run_dir, readiness)
+        gold_standard = gold_standard_template_from_manifest(manifest)
+        gold_standard_path = write_gold_standard_template(run_dir, gold_standard)
+        bibliographic_source = bibliographic_source_template_from_manifest(manifest)
+        bibliographic_source_path = write_bibliographic_source_template(run_dir, bibliographic_source)
+        run_record = evaluation_run_record_template(manifest=manifest, mission_id=mission.mission_id)
+        run_record_path = write_evaluation_run_record_template(run_dir, run_record)
+        candidate_path = None
+        if args.seed_candidates:
+            candidates = candidates_from_authorized_corpus_manifest(manifest, mission.question)
+            candidate_path = write_candidate_artifact(run_dir, mission.question, candidates)
+    except (UiExportError, CorpusReadinessError, CorpusPreparationError, BibliographicSourceCoverageError, EvaluationRunRecordError, RetrievalArtifactError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="real_corpus_evaluation_preparation_created",
+        actor="evaluation_reviewer",
+        state=MissionState.HUMAN_REVIEW,
+        payload={
+            "corpus_id": manifest["corpus_id"],
+            "frozen_document_count": len(manifest["documents"]),
+            "expected_count_matched": readiness["expected_count_matched"],
+            "candidate_seeding_requested": bool(args.seed_candidates),
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "corpus_id": manifest["corpus_id"],
+        "frozen_document_count": len(manifest["documents"]),
+        "evaluation_gate": readiness["evaluation_gate"],
+        "candidate_seeding_requested": bool(args.seed_candidates),
+        "frozen_corpus_readiness_path": str(readiness_path),
+        "gold_standard_template_path": str(gold_standard_path),
+        "bibliographic_source_template_path": str(bibliographic_source_path),
+        "evaluation_run_record_template_path": str(run_record_path),
+        "candidates_path": str(candidate_path) if candidate_path else None,
+    })
+    return 0
+
+
 def command_audit_bibliographic_source_coverage(args: argparse.Namespace) -> int:
     """Write a count-only audit for a private, human-reviewed source registry."""
     run_dir = _run_dir(args.run_id)
@@ -3091,6 +3150,11 @@ def build_parser() -> argparse.ArgumentParser:
     gold_template = commands.add_parser("create-gold-standard-template", help="create blank human annotation slots from an authorized corpus manifest")
     gold_template.add_argument("--run-id", required=True)
     gold_template.set_defaults(handler=command_create_gold_standard_template)
+    evaluation_prep = commands.add_parser("prepare-real-evaluation", help="create count-only frozen-corpus audit and blank human-review templates from an existing manifest")
+    evaluation_prep.add_argument("--run-id", required=True)
+    evaluation_prep.add_argument("--expected-count", type=int, default=90)
+    evaluation_prep.add_argument("--seed-candidates", action="store_true", help="also seed manifest papers as unranked authorized local candidates")
+    evaluation_prep.set_defaults(handler=command_prepare_real_evaluation)
     evaluation_run_template = commands.add_parser("create-evaluation-run-record-template", help="bind a blank human real-corpus evaluation disclosure record to the frozen manifest")
     evaluation_run_template.add_argument("--run-id", required=True)
     evaluation_run_template.set_defaults(handler=command_create_evaluation_run_record_template)

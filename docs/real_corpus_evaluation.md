@@ -2,7 +2,15 @@
 
 This workflow prepares the real 90-paper BiFeO3 evaluation cohort without reading a PDF directory, collecting local paths, or redistributing institutional full text. The reviewer first creates a bibliography-only JSON selection with one stable document_id per authorized paper.
 
-Run record-corpus-manifest with a run ID and the reviewed selection JSON. Then run seed-authorized-corpus-candidates and create-gold-standard-template with the same run ID. Candidate seeding marks the papers as authorized local candidates for later source-map work; it has no score and is explicitly not a ranked retrieval result.
+Run `record-corpus-manifest` with a run ID and the reviewed selection JSON. Then use the single local preparation command below to write the count-only frozen-corpus audit plus blank gold-standard, bibliographic-source, and evaluation-run-record templates. Add `--seed-candidates` only when the reviewer explicitly wants the manifest papers copied into the unranked authorized-local candidate list for later source-map work.
+
+```powershell
+$env:PYTHONPATH = "src"
+.\.venv\Scripts\python.exe -m cosmatter prepare-real-evaluation `
+  --run-id YOUR_RUN --expected-count 90 --seed-candidates
+```
+
+This preparation command cannot create a human judgment or any metric. It does not open PDFs, local paths, annotations, provider data, or `.env`; its outputs are path-free templates and count-only audit data. Omitting `--seed-candidates` leaves any existing retrieval-candidate artifact untouched.
 
 For a reproducible local retrieval baseline, create a separate private local_parsed_source_index JSON from the reviewed Markdown outputs. Each document_id and title must match the corpus manifest; paths exist only in this input file. Run local-parsed-corpus-search with the run ID, index path, query, and top-k. It reads Markdown locally, persists only ranked candidate metadata, and never writes paths or text into runs.
 
