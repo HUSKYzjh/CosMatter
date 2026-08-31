@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,17 @@ class ConditionNormalizationError(ValueError):
     pass
 
 
+def _is_reviewable_raw_condition(value: Any) -> bool:
+    """Keep a naming ledger from legitimising missing or non-finite values."""
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, str):
+        return bool(value.strip()) and value.strip().casefold() != "unknown"
+    if isinstance(value, (int, float)):
+        return math.isfinite(float(value))
+    return False
+
+
 def condition_normalization_from_review(mission: MissionBrief, cards: tuple[EvidenceCard, ...], decisions: tuple[VerificationDecision, ...], selection: object) -> dict[str, Any]:
     """Preserve raw values while recording reviewer-approved canonical names/units."""
     accepted = {decision.evidence_id for decision in decisions if decision.mission_id == mission.mission_id and decision.status is ReviewStatus.ACCEPTED}
@@ -29,7 +41,7 @@ def condition_normalization_from_review(mission: MissionBrief, cards: tuple[Evid
         if not isinstance(item, dict) or set(item) != {"evidence_id", "raw_field", "canonical_field", "unit"}: raise ConditionNormalizationError("normalization mapping fields are invalid")
         evidence_id, raw_field, canonical, unit = (item[key] for key in ("evidence_id", "raw_field", "canonical_field", "unit"))
         card = by_id.get(evidence_id)
-        if not all(isinstance(value, str) and value.strip() for value in (evidence_id, raw_field, canonical, unit)) or card is None or canonical not in _CANONICAL or raw_field not in card.conditions or isinstance(card.conditions[raw_field], (dict, list)) or (evidence_id, raw_field) in seen or len(unit) > 40:
+        if not all(isinstance(value, str) and value.strip() for value in (evidence_id, raw_field, canonical, unit)) or card is None or canonical not in _CANONICAL or raw_field not in card.conditions or not _is_reviewable_raw_condition(card.conditions[raw_field]) or (evidence_id, raw_field) in seen or len(unit) > 40:
             raise ConditionNormalizationError("normalization mapping values are invalid")
         seen.add((evidence_id, raw_field)); mappings.append({"evidence_id": evidence_id, "raw_field": raw_field, "canonical_field": canonical, "unit": unit})
     return {"schema_version": SCHEMA_VERSION, "mission_id": mission.mission_id, "trust_status": "human_reviewed_condition_normalization_no_conversion", "mappings": mappings}
