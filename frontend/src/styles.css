@@ -925,3 +925,57 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .mission-api > summary { font-size: .7rem; }
   .mission-api .examples button { min-height: 2.45rem; font-size: .62rem; }
 }
+
+/* A missing subgraph is a declared standby state, not a blank gap in the bridge. */
+.graph-empty {
+  position: relative;
+  isolation: isolate;
+  align-content: start;
+  gap: .46rem;
+  min-height: 23rem;
+  max-width: 58rem;
+  margin: .9rem 0 1rem;
+  padding: 1.05rem 1rem 1.15rem 1.28rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--signal-blue) 34%, var(--line));
+  border-inline-start: 2px solid var(--signal-teal);
+  background:
+    radial-gradient(ellipse at 86% 64%, transparent 0 4.4rem, color-mix(in srgb, var(--signal-blue) 17%, transparent) 4.48rem 4.56rem, transparent 4.64rem 9.5rem, color-mix(in srgb, var(--signal-teal) 13%, transparent) 9.58rem 9.66rem, transparent 9.74rem),
+    linear-gradient(112deg, color-mix(in srgb, var(--signal-blue) 6%, transparent), transparent 62%);
+}
+
+.graph-empty::before { position: absolute; z-index: -1; top: .72rem; bottom: .9rem; left: 0; width: 2px; background: var(--signal-teal); box-shadow: 0 0 .7rem var(--signal-teal); content: ""; }
+.graph-empty::after { position: absolute; z-index: -1; right: 1.05rem; bottom: 1rem; width: 4.6rem; height: .92rem; border: 1px solid color-mix(in srgb, var(--signal-blue) 52%, transparent); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--signal-blue) 18%, transparent)); clip-path: polygon(0 50%, 40% 5%, 100% 31%, 82% 50%, 100% 69%, 40% 95%); content: ""; opacity: .86; }
+.graph-empty small { display: flex; align-items: center; gap: .38rem; color: var(--signal-teal); font-size: .58rem; }
+.graph-empty small::before { width: .34rem; height: .34rem; border: 1px solid var(--signal-teal); background: color-mix(in srgb, var(--signal-teal) 16%, transparent); box-shadow: 0 0 .42rem color-mix(in srgb, var(--signal-teal) 42%, transparent); content: ""; transform: rotate(45deg); }
+.graph-empty h2 { max-width: 38rem; font-family: Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; font-size: clamp(1.38rem, 2.6vw, 2rem); letter-spacing: -.035em; }
+.graph-empty p { max-width: 42rem; font-size: .78rem; line-height: 1.6; }
+.graph-empty .primary-action { margin-top: .6rem; }
+
+.graph-canvas-loading, .graph-canvas-fallback {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  align-content: center;
+  gap: .42rem;
+  min-height: inherit;
+  padding: 1.15rem 1.2rem 1.15rem 1.42rem;
+  border-inline-start: 2px solid var(--signal-blue);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--signal-blue) 7%, transparent), transparent 62%);
+}
+
+.graph-canvas-loading::before, .graph-canvas-fallback::before { position: absolute; top: 50%; left: .45rem; width: .45rem; height: .45rem; border: 1px solid var(--signal-blue); background: color-mix(in srgb, var(--signal-blue) 15%, transparent); box-shadow: 0 0 .55rem var(--signal-blue); content: ""; transform: translateY(-50%) rotate(45deg); }
+.graph-canvas-loading small, .graph-canvas-fallback small { color: var(--signal-blue); font: .59rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .1em; }
+.graph-canvas-loading p, .graph-canvas-fallback p { max-width: 40rem; margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.55; }
+.graph-canvas-fallback { border-inline-start-color: var(--signal-amber); }
+.graph-canvas-fallback::before { border-color: var(--signal-amber); background: color-mix(in srgb, var(--signal-amber) 15%, transparent); box-shadow: 0 0 .55rem var(--signal-amber); }
+.graph-canvas-fallback small { color: var(--signal-amber); }
+.graph-canvas-fallback strong { color: var(--ink); font-family: Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
+.graph-canvas-fallback button { justify-self: start; border: 0; border-bottom: 1px solid var(--signal-amber); color: var(--signal-amber); background: transparent; padding: .3rem 0; font: .62rem ui-monospace, "Cascadia Mono", monospace; }
+
+@media (max-width: 560px) {
+  .graph-empty { min-height: 19rem; padding: .82rem .72rem .92rem .92rem; }
+  .graph-empty h2 { font-size: 1.4rem; }
+  .graph-empty p { font-size: .72rem; }
+  .graph-canvas-loading, .graph-canvas-fallback { padding: .95rem 1rem .95rem 1.2rem; }
+}

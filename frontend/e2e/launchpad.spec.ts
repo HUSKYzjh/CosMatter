@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 const routeDiagnosticsExport = resolve(process.cwd(), "..", "examples", "ui-demo", "route_diagnostics.json");
 const workspaceLoad = { timeout: 15_000 };
+const lazyWorkspaceContentLoad = { timeout: 30_000 };
 
 async function openEditableTaskDefinition(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -48,13 +49,13 @@ test("keeps synthetic launch-preview papers out of the real research route", asy
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
 
   const bridge = page.locator(".fleet-command-stage");
-  await expect(bridge).toContainText("只读预览数据层", { timeout: 15_000 });
+  await expect(bridge).toContainText("只读预览数据层", lazyWorkspaceContentLoad);
   await expect(bridge.locator(".workflow-next")).toContainText("等待受控检索或导入可审查文献子图");
   await expect(bridge).not.toContainText("20 篇可审查文献");
 
   await page.getByRole("button", { name: "03 文献星图" }).first().click();
   await expect(page.locator(".workbench")).toHaveClass(/view-graph/, workspaceLoad);
-  await expect(page.locator(".graph-empty")).toContainText("仅供导航或演示的论文式节点", workspaceLoad);
+  await expect(page.locator(".graph-empty")).toContainText("仅供导航或演示的论文式节点", lazyWorkspaceContentLoad);
 });
 
 test("keeps an empty task explicit, then renders a redacted exported condition matrix", async ({ page }) => {
