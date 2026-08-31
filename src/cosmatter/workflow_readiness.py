@@ -243,21 +243,25 @@ def _parse_progress(run_dir: Path, mission_id: str) -> dict[str, Any]:
 _EVALUATION_ARTIFACTS = {
     "evidence_quality": (
         "human_evidence_quality_evaluation.json",
+        "1.0",
         "metrics_from_human_reviewed_evidence_locator_condition_and_contradiction_audit",
         {"schema_version", "mission_id", "trust_status", "evidence_count", "predicted_contradiction_count", "citation_precision", "condition_completeness", "contradiction_precision"},
     ),
     "retrieval": (
         "human_retrieval_evaluation.json",
+        "1.1",
         "metrics_from_human_reviewed_gold_standard",
-        {"schema_version", "mission_id", "corpus_id", "trust_status", "search_index", "k", "retrieved_count", "gold_relevant_count", "gold_partially_relevant_count", "precision_at_k", "recall_at_k", "ndcg_at_k"},
+        {"schema_version", "mission_id", "corpus_id", "trust_status", "identity_resolution_policy", "search_index", "k", "raw_retrieved_count", "retrieved_count", "doi_resolved_candidate_count", "duplicate_alias_count", "gold_relevant_count", "gold_partially_relevant_count", "precision_at_k", "recall_at_k", "ndcg_at_k"},
     ),
     "material_facts": (
         "human_material_fact_evaluation.json",
+        "1.0",
         "metrics_for_review_gated_material_fact_pipeline_not_raw_llm_accuracy",
         {"schema_version", "mission_id", "corpus_id", "trust_status", "gold_fact_count", "reviewed_fact_count", "exact_match_count", "precision", "recall", "f1", "unit_match_denominator", "unit_match_accuracy"},
     ),
     "research_gaps": (
         "human_gap_evaluation.json",
+        "1.1",
         "metrics_from_human_expert_review_of_evidence_bound_gap_candidates",
         {"schema_version", "mission_id", "trust_status", "candidate_count", "expert_approval_rate", "mean_novelty_rating", "mean_actionability_rating", "evidence_completeness_rate", "counterevidence_review_rate", "bounded_no_direct_match_rate", "related_prior_work_found_rate", "inconclusive_novelty_search_rate"},
     ),
@@ -370,7 +374,7 @@ def _evaluation_progress(
     }
     valid: dict[str, bool] = {}
     invalid = 0
-    for name, (filename, trust_status, fields) in _EVALUATION_ARTIFACTS.items():
+    for name, (filename, schema_version, trust_status, fields) in _EVALUATION_ARTIFACTS.items():
         path = run_dir / filename
         if not path.exists():
             valid[name] = False
@@ -381,7 +385,13 @@ def _evaluation_progress(
             valid[name] = False
             invalid += 1
             continue
-        is_valid = isinstance(payload, dict) and set(payload) == fields and payload.get("mission_id") == mission_id and payload.get("trust_status") == trust_status
+        is_valid = (
+            isinstance(payload, dict)
+            and set(payload) == fields
+            and payload.get("schema_version") == schema_version
+            and payload.get("mission_id") == mission_id
+            and payload.get("trust_status") == trust_status
+        )
         valid[name] = is_valid
         invalid += int(not is_valid)
     required_count = sum(required.values())

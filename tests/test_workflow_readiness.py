@@ -16,7 +16,7 @@ from cosmatter.verification import VerificationDecision
 from cosmatter.provider_receipts import append_provider_receipt, mineru_task_receipt
 from cosmatter.cli import main
 from cosmatter.models import FlightPlan, MissionBrief
-from cosmatter.workflow_readiness import workflow_readiness, write_workflow_readiness
+from cosmatter.workflow_readiness import _evaluation_progress, workflow_readiness, write_workflow_readiness
 
 
 class WorkflowReadinessTests(unittest.TestCase):
@@ -181,6 +181,36 @@ class WorkflowReadinessTests(unittest.TestCase):
         self.assertEqual(complete["status"], "completed")
         self.assertEqual(invalid["status"], "blocked")
         self.assertEqual(invalid["counts"]["invalid_metric_artifact_count"], 1)
+
+    def test_accepts_current_retrieval_evaluation_schema_and_rejects_legacy_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            current = {
+                "schema_version": "1.1", "mission_id": self.mission.mission_id, "corpus_id": "private-corpus",
+                "trust_status": "metrics_from_human_reviewed_gold_standard",
+                "identity_resolution_policy": "exact_document_id_or_normalized_doi_to_frozen_manifest",
+                "search_index": 0, "k": 10, "raw_retrieved_count": 10, "retrieved_count": 9,
+                "doi_resolved_candidate_count": 2, "duplicate_alias_count": 1,
+                "gold_relevant_count": 3, "gold_partially_relevant_count": 1,
+                "precision_at_k": 0.3, "recall_at_k": 1.0, "ndcg_at_k": 0.8,
+            }
+            path = run / "human_retrieval_evaluation.json"
+            path.write_text(json.dumps(current), encoding="utf-8")
+            completed = _evaluation_progress(
+                run, self.mission.mission_id, accepted_evidence_count=0, retrieval_completed=True,
+                fact_count=0, gap_count=0, corpus_manifest_present=True,
+            )
+            legacy = {key: value for key, value in current.items() if key not in {"identity_resolution_policy", "raw_retrieved_count", "doi_resolved_candidate_count", "duplicate_alias_count"}}
+            legacy["schema_version"] = "1.0"
+            path.write_text(json.dumps(legacy), encoding="utf-8")
+            blocked = _evaluation_progress(
+                run, self.mission.mission_id, accepted_evidence_count=0, retrieval_completed=True,
+                fact_count=0, gap_count=0, corpus_manifest_present=True,
+            )
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(completed["counts"]["completed_metric_family_count"], 1)
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertEqual(blocked["counts"]["invalid_metric_artifact_count"], 1)
 
 
     def test_cli_handles_empty_run_without_provider_calls(self) -> None:
