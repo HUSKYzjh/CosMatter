@@ -110,6 +110,34 @@ function EvaluationAuditPanel(props: { bundle: ImportedBundle }) {
   const evaluation = () => props.bundle.auditSummary.evaluation;
   const readiness = () => props.bundle.auditSummary.submissionReadiness;
   const percentage = (value: number) => `${Math.round(value * 100)}%`;
+  const frozenCorpusStatus = () => {
+    const frozen = readiness().frozenCorpus;
+    if (!frozen) return tr("未冻结", "Not frozen");
+    if (!frozen.expectedCountMatched || !frozen.documentIdUniquenessValid || !frozen.authorizedAccessBoundaryValid) {
+      return tr("冻结清单需人工复核", "Frozen manifest needs human review");
+    }
+    return frozen.evaluationGate === "ready_for_private_human_annotation"
+      ? tr("可开始私有人工标注", "Ready for private human annotation")
+      : tr("冻结已记录，评测门禁待复核", "Frozen record present; evaluation gate needs review");
+  };
+  const annotationStatus = () => {
+    const annotation = readiness().humanAnnotation;
+    if (!annotation) return tr("未提供", "Not provided");
+    if (annotation.relevanceCounts.unreviewed > 0) return tr(`仍有 ${annotation.relevanceCounts.unreviewed} 篇待人工标注`, `${annotation.relevanceCounts.unreviewed} paper(s) await human annotation`);
+    return annotation.relevanceEvaluationGate === "ready_for_human_retrieval_evaluation"
+      ? tr("相关性标注已齐备", "Relevance annotation complete")
+      : tr("标注已记录，评测门禁待复核", "Annotation recorded; evaluation gate needs review");
+  };
+  const bibliographicStatus = () => {
+    const bibliography = readiness().bibliographicSource;
+    if (!bibliography) return tr("未提供", "Not provided");
+    if (bibliography.documentsWithReviewedBibliographicSource < bibliography.frozenDocumentCount) {
+      return tr(`仍缺 ${bibliography.frozenDocumentCount - bibliography.documentsWithReviewedBibliographicSource} 篇来源核对`, `${bibliography.frozenDocumentCount - bibliography.documentsWithReviewedBibliographicSource} source review(s) missing`);
+    }
+    return bibliography.bibliographicSourceCoverageGate === "ready_for_source_traceable_evaluation"
+      ? tr("书目来源覆盖已齐备", "Bibliographic-source coverage complete")
+      : tr("来源登记已记录，门禁待复核", "Source registry recorded; gate needs review");
+  };
   return <details class="audit-details evaluation-audit" aria-label={tr("审计与评测", "Audit and evaluation")}>
     <summary>{tr("审计与评测", "Audit and evaluation")}</summary>
     <p>{tr("仅显示导出工件中带有对应人工审核声明的聚合指标；缺失指标表示未生成，不代表零分、失败或科学结论。", "Only aggregate metrics with their corresponding human-review declaration are shown from exported artifacts. A missing metric means not generated, not zero, failure, or a scientific conclusion.")}</p>
@@ -119,11 +147,12 @@ function EvaluationAuditPanel(props: { bundle: ImportedBundle }) {
       <article><small>{tr("材料事实 / 审核闭环", "MATERIAL FACTS / REVIEW-GATED")}</small><Show when={evaluation().materialFacts} fallback={<p>{tr("未生成", "Not generated")}</p>}>{(result) => <dl><div><dt>Precision</dt><dd>{percentage(result().precision)}</dd></div><div><dt>Recall</dt><dd>{percentage(result().recall)}</dd></div><div><dt>F1</dt><dd>{percentage(result().f1)}</dd></div><div><dt>{tr("单位匹配", "Unit match")}</dt><dd>{percentage(result().unitMatchAccuracy)} · {result().reviewedFactCount}/{result().goldFactCount}</dd></div></dl>}</Show></article>
       <article><small>{tr("Gap / 专家复核", "GAPS / EXPERT REVIEW")}</small><Show when={evaluation().researchGaps} fallback={<p>{tr("未生成", "Not generated")}</p>}>{(result) => <dl><div><dt>{tr("认可率", "Approval")}</dt><dd>{percentage(result().expertApprovalRate)}</dd></div><div><dt>{tr("新颖性", "Novelty")}</dt><dd>{result().meanNoveltyRating.toFixed(1)} / 5</dd></div><div><dt>{tr("可操作性", "Actionability")}</dt><dd>{result().meanActionabilityRating.toFixed(1)} / 5</dd></div><div><dt>{tr("证据完整度", "Evidence completeness")}</dt><dd>{percentage(result().evidenceCompletenessRate)} · {result().candidateCount}</dd></div></dl>}</Show></article>
     </section>
-    <dl class="evaluation-readiness">
-      <div><dt>{tr("冻结语料", "Frozen corpus")}</dt><dd>{readiness().frozenCorpus ? `${readiness().frozenCorpus!.frozenDocumentCount}/${readiness().frozenCorpus!.expectedDocumentCount}` : tr("未冻结", "Not frozen")}</dd></div>
-      <div><dt>{tr("人工相关性标注", "Human relevance review")}</dt><dd>{readiness().humanAnnotation ? `${tr("未复核", "Unreviewed")} ${readiness().humanAnnotation!.relevanceCounts.unreviewed}` : tr("未提供", "Not provided")}</dd></div>
-      <div><dt>{tr("书目来源覆盖", "Bibliographic-source coverage")}</dt><dd>{readiness().bibliographicSource ? `${readiness().bibliographicSource!.documentsWithReviewedBibliographicSource}/${readiness().bibliographicSource!.frozenDocumentCount}` : tr("未提供", "Not provided")}</dd></div>
+    <dl class="evaluation-readiness" aria-label={tr("评测前置门禁", "Evaluation prerequisite gates")}>
+      <div><dt>{tr("冻结语料", "Frozen corpus")}</dt><dd>{readiness().frozenCorpus ? `${readiness().frozenCorpus!.frozenDocumentCount}/${readiness().frozenCorpus!.expectedDocumentCount}` : tr("未冻结", "Not frozen")}</dd><p>{frozenCorpusStatus()}</p></div>
+      <div><dt>{tr("人工相关性标注", "Human relevance review")}</dt><dd>{readiness().humanAnnotation ? `${tr("未复核", "Unreviewed")} ${readiness().humanAnnotation!.relevanceCounts.unreviewed}` : tr("未提供", "Not provided")}</dd><p>{annotationStatus()}</p></div>
+      <div><dt>{tr("书目来源覆盖", "Bibliographic-source coverage")}</dt><dd>{readiness().bibliographicSource ? `${readiness().bibliographicSource!.documentsWithReviewedBibliographicSource}/${readiness().bibliographicSource!.frozenDocumentCount}` : tr("未提供", "Not provided")}</dd><p>{bibliographicStatus()}</p></div>
     </dl>
+    <p class="evaluation-readiness-boundary">{tr("这些状态只说明评测前置工件的已声明聚合覆盖；它们不代表任何指标已经生成，更不代表科学结论。", "These statuses describe only declared aggregate coverage of evaluation prerequisites. They do not mean any metric has been generated or any scientific conclusion has been reached.")}</p>
   </details>;
 }
 
