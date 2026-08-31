@@ -828,3 +828,26 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* A phone keeps the route visible as a compact flight strip, not a full-height sidebar. */
 .fleet-map-command small, .graph-route-status small { font-size: .64rem; }.fleet-command-call strong { font-family: Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; font-size: 1.04rem; }.fleet-command-call span, .fleet-command-boundary p { font-size: .72rem; line-height: 1.52; }.fleet-command-telemetry small { font-size: .57rem; }.fleet-command-telemetry strong { font-size: 1.08rem; }.graph-route-status strong { font-size: .8rem; }.graph-route-status span { font-size: .68rem; line-height: 1.45; }
 @media (max-width: 560px) { .journey-track { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .18rem; padding: .36rem .22rem; }.journey-track li { padding: 0; }.journey-track li::before, .journey-track li:not(:last-child)::after { display: none; }.journey-track li:last-child { grid-column: 1 / -1; }.journey-track button { grid-template-columns: 1.28rem minmax(0, 1fr); min-height: 2.62rem; padding: .32rem .34rem; }.journey-track button small { display: none; }.journey-track button span { align-self: center; font-size: .61rem; }.journey-track button strong { align-self: center; font-size: .74rem; }.fleet-map-command { margin-top: .72rem; }.fleet-map-command > div { padding-block: .45rem .58rem; }.fleet-command-call strong { font-size: 1rem; }.fleet-command-call span, .fleet-command-boundary p { font-size: .69rem; }.fleet-command-telemetry small { font-size: .53rem; }.fleet-command-telemetry strong { font-size: 1rem; } }
+
+/* On a phone the launch route is a flight strip, leaving the actual mission input in the first viewport. */
+@media (max-width: 560px) {
+  .launch-stage-column { margin-top: .15rem; padding: .44rem .35rem .35rem .56rem; }
+  .launch-stage-column header { grid-template-columns: 1fr auto; gap: .08rem .5rem; padding: .04rem .34rem .38rem .54rem; }
+  .launch-stage-column header p { grid-column: 1 / -1; font-size: .56rem; }
+  .launch-stage-column header strong { font-size: .86rem; }
+  .launch-stage-column header span { align-self: end; max-width: 12rem; font-size: .58rem; text-align: right; }
+  .launch-stage-column ol { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .18rem; margin-top: .32rem; }
+  .launch-stage-column li, .launch-stage-column li:nth-child(odd) { padding: 0; }
+  .launch-stage-column li::before, .launch-stage-column li:not(:last-child)::after { display: none; }
+  .launch-stage-column li button { grid-template-columns: 1rem minmax(0, 1fr); align-items: center; min-height: 3.18rem; gap: .2rem; padding: .34rem .28rem .34rem .38rem; border: 1px solid color-mix(in srgb, var(--signal-blue) 27%, var(--line)); border-inline-start: 2px solid var(--signal-blue); }
+  .launch-stage-column li.active button { border-color: color-mix(in srgb, var(--signal-teal) 58%, var(--line)); border-inline-start-color: var(--signal-teal); }
+  .launch-stage-index { align-self: start; font-size: .55rem; }
+  .launch-stage-copy { align-self: center; }
+  .launch-stage-copy strong { font-size: .68rem; line-height: 1.23; }
+  .launch-stage-copy small, .launch-stage-copy em, .launch-stage-column li b, .launch-stage-column footer { display: none; }
+}
+
+@media (max-width: 400px) {
+  .launch-stage-column ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .launch-stage-column li:last-child { grid-column: 1 / -1; }
+}
