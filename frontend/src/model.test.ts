@@ -110,6 +110,15 @@ describe("readBundle", () => {
     });
     expect(bundle.sourceMapSummary).toEqual({ documentCount: 0, segmentCount: 0, documentIds: [] });
   });
+
+  it("rejects duplicate or malformed accepted EvidenceCards instead of guessing a safe copy", () => {
+    const valid = { evidence_id: "e1", claim: "Bounded claim", stance: "support", conditions: { strain: 1 }, quote: "Bounded quote", review_status: "accepted", provenance: { document_id: "doc-1", locator: "p. 1", source: "local", access_policy: "authorized" } };
+    const bundle = readBundle({
+      mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
+      evidence_cards: [valid, { ...valid }, { ...valid, evidence_id: "metadata-only", provenance: { ...valid.provenance, access_policy: "metadata_only" } }, { ...valid, evidence_id: "long-quote", quote: "x".repeat(501) }],
+    });
+    expect(bundle.evidenceCards).toEqual([]);
+  });
 });
 
 

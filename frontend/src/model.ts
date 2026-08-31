@@ -160,6 +160,11 @@ function text(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty string.`);
   return value.trim();
 }
+function boundedText(value: unknown, maximum: number): string | null {
+  if (typeof value !== "string") return null;
+  const candidate = value.trim();
+  return candidate && candidate.length <= maximum ? candidate : null;
+}
 function generatedAt(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const candidate = value.trim();
@@ -478,13 +483,29 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
   const evidenceMaturityRegistryStatus = acceptedMaturityRegistry ? "accepted" : maturityRegistryDeliveryStatus !== "not_supplied" || root.evidence_maturity_registry !== undefined && root.evidence_maturity_registry !== null ? "rejected" : "not_supplied";
   const rawFleet = root.fleet_assignment && typeof root.fleet_assignment === "object" && !Array.isArray(root.fleet_assignment) ? root.fleet_assignment as JsonObject : null;
   const rawStatus = root.status && typeof root.status === "object" && !Array.isArray(root.status) ? root.status as JsonObject : null;
-  const evidenceCards = Array.isArray(root.evidence_cards) ? root.evidence_cards.flatMap((entry) => {
+  const parsedEvidenceCards = Array.isArray(root.evidence_cards) ? root.evidence_cards.flatMap((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
     const item = entry as JsonObject;
     const provenance = item.provenance && typeof item.provenance === "object" && !Array.isArray(item.provenance) ? item.provenance as JsonObject : null;
-    if (item.review_status !== "accepted" || !provenance || typeof item.evidence_id !== "string" || typeof item.claim !== "string" || typeof item.quote !== "string") return [];
-    return [{ evidenceId: item.evidence_id, claim: item.claim, stance: typeof item.stance === "string" ? item.stance : "context", conditions: record(item.conditions), quote: item.quote, reviewStatus: "accepted" as const, provenance: { documentId: typeof provenance.document_id === "string" ? provenance.document_id : "unknown", locator: typeof provenance.locator === "string" ? provenance.locator : "unknown", source: typeof provenance.source === "string" ? provenance.source : "unknown", accessPolicy: typeof provenance.access_policy === "string" ? provenance.access_policy : "unknown" }, isSynthetic: item.is_synthetic === true }];
+    const evidenceId = boundedText(item.evidence_id, 200);
+    const claim = boundedText(item.claim, 1200);
+    const quote = boundedText(item.quote, 500);
+    const stance = boundedText(item.stance, 40);
+    const documentId = boundedText(provenance?.document_id, 300);
+    const locator = boundedText(provenance?.locator, 300);
+    const sourceName = boundedText(provenance?.source, 120);
+    const accessPolicy = provenance?.access_policy;
+    const validStances = new Set(["support", "contradict", "context", "unknown"]);
+    const validAccessPolicies = new Set(["oa", "authorized", "local_only"]);
+    if (item.review_status !== "accepted" || !provenance || !evidenceId || !claim || !quote || !stance || !validStances.has(stance) || !documentId || !locator || !sourceName || typeof accessPolicy !== "string" || !validAccessPolicies.has(accessPolicy) || item.conditions === null || typeof item.conditions !== "object" || Array.isArray(item.conditions) || (item.is_synthetic !== undefined && typeof item.is_synthetic !== "boolean")) return [];
+    return [{ evidenceId, claim, stance, conditions: record(item.conditions), quote, reviewStatus: "accepted" as const, provenance: { documentId, locator, source: sourceName, accessPolicy }, isSynthetic: item.is_synthetic === true }];
   }) : [];
+  // A duplicate identifier makes graph edges and later reviewer decisions
+  // ambiguous.  Discard every occurrence rather than selecting an arbitrary
+  // first or last imported card.
+  const evidenceIdCounts = new Map<string, number>();
+  parsedEvidenceCards.forEach((card) => evidenceIdCounts.set(card.evidenceId, (evidenceIdCounts.get(card.evidenceId) ?? 0) + 1));
+  const evidenceCards = parsedEvidenceCards.filter((card) => evidenceIdCounts.get(card.evidenceId) === 1);
   const cardForEvidenceId = (evidenceId: string) => {
     const matches = evidenceCards.filter((card) => card.evidenceId === evidenceId);
     return matches.length === 1 ? matches[0] : null;
