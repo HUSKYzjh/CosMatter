@@ -174,6 +174,12 @@ function record(value: unknown): Record<string, string | number | boolean | null
   return Object.fromEntries(Object.entries(value as JsonObject).filter(([, item]) => item === null || ["string", "number", "boolean"].includes(typeof item))) as Record<string, string | number | boolean | null>;
 }
 
+/** Mirrors the no-conversion ledger boundary without disclosing raw values. */
+function isReviewableConditionValue(value: unknown): boolean {
+  if (typeof value === "number") return Number.isFinite(value);
+  return typeof value === "string" && Boolean(value.trim()) && value.trim().toLowerCase() !== "unknown";
+}
+
 function gapCounterevidenceBoundary(value: unknown): GapCounterevidenceBoundary | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as JsonObject;
@@ -479,6 +485,20 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     if (item.review_status !== "accepted" || !provenance || typeof item.evidence_id !== "string" || typeof item.claim !== "string" || typeof item.quote !== "string") return [];
     return [{ evidenceId: item.evidence_id, claim: item.claim, stance: typeof item.stance === "string" ? item.stance : "context", conditions: record(item.conditions), quote: item.quote, reviewStatus: "accepted" as const, provenance: { documentId: typeof provenance.document_id === "string" ? provenance.document_id : "unknown", locator: typeof provenance.locator === "string" ? provenance.locator : "unknown", source: typeof provenance.source === "string" ? provenance.source : "unknown", accessPolicy: typeof provenance.access_policy === "string" ? provenance.access_policy : "unknown" }, isSynthetic: item.is_synthetic === true }];
   }) : [];
+  const cardForEvidenceId = (evidenceId: string) => {
+    const matches = evidenceCards.filter((card) => card.evidenceId === evidenceId);
+    return matches.length === 1 ? matches[0] : null;
+  };
+  const parsedRelationReconciliation = relationReconciliation(root.relation_reconciliation);
+  const linkedRelationReconciliation = parsedRelationReconciliation && (() => {
+    const sourceCard = cardForEvidenceId(parsedRelationReconciliation.sourceEvidenceId);
+    return sourceCard && !sourceCard.isSynthetic && sourceCard.provenance.documentId === parsedRelationReconciliation.sourceDocumentId ? parsedRelationReconciliation : null;
+  })();
+  const parsedConditionNormalization = conditionNormalization(root.condition_normalization);
+  const linkedConditionNormalization = parsedConditionNormalization && parsedConditionNormalization.mappings.every((mapping) => {
+    const card = cardForEvidenceId(mapping.evidenceId);
+    return Boolean(card && !card.isSynthetic && Object.prototype.hasOwnProperty.call(card.conditions, mapping.rawField) && isReviewableConditionValue(card.conditions[mapping.rawField]));
+  }) ? parsedConditionNormalization : null;
   const conditionMatrix = Array.isArray(root.condition_matrix) ? root.condition_matrix.flatMap((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
     const row = entry as JsonObject;
@@ -524,7 +544,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     evidenceMaturityRegistryStatus,
     auditSummary: auditSummary(root.audit_summary),
     timeline: Array.isArray(root.timeline) ? root.timeline.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).station_type === "string" && typeof (entry as JsonObject).action === "string" ? [{ stationType: (entry as JsonObject).station_type as string, action: (entry as JsonObject).action as string, state: typeof (entry as JsonObject).state === "string" ? (entry as JsonObject).state as string : "unknown", occurredAt: typeof (entry as JsonObject).occurred_at === "string" ? (entry as JsonObject).occurred_at as string : "" }] : []) : [],
-    literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), relationReconciliation: relationReconciliation(root.relation_reconciliation), conditionNormalization: conditionNormalization(root.condition_normalization), literatureGraph: literatureGraph(root.literature_graph),
+    literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), relationReconciliation: linkedRelationReconciliation, conditionNormalization: linkedConditionNormalization, literatureGraph: literatureGraph(root.literature_graph),
     report: root.mission_report && typeof root.mission_report === "object" && !Array.isArray(root.mission_report) && typeof (root.mission_report as JsonObject).summary === "string" ? { summary: (root.mission_report as JsonObject).summary as string, limitations: textList((root.mission_report as JsonObject).limitations), nextSteps: textList((root.mission_report as JsonObject).next_steps) } : null,
   };
 }
