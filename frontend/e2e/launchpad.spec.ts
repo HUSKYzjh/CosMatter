@@ -71,6 +71,22 @@ test("keeps the bridge artifact flow readable beside its research rail", async (
   expect(await flow.locator(":scope > i").evaluateAll((arrows) => arrows.every((arrow) => getComputedStyle(arrow).display === "none"))).toBe(true);
 });
 
+test("keeps the evidence proof chain readable beside its research rail", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 900 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "预览：受控编排" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await page.getByRole("button", { name: "04 证据核对" }).first().click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-reader/, workspaceLoad);
+
+  const proofTrack = page.locator(".reader-proof-track");
+  await expect(proofTrack).toBeVisible(lazyWorkspaceContentLoad);
+  await expect(proofTrack.locator(".reader-proof-station")).toHaveCount(5);
+  expect(await proofTrack.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(3);
+  expect(await proofTrack.evaluate((element) => getComputedStyle(element, "::before").display)).toBe("none");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
 test("keeps an empty task explicit, then renders a redacted exported condition matrix", async ({ page }) => {
   const importInput = await openEditableTaskDefinition(page);
 
