@@ -1069,3 +1069,35 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .verification-steps li strong { font-size: .82rem; }
   .verification-steps li small { font-size: .66rem; }
 }
+
+/* Candidate handoff: generated routes are a visible, sequential decision—not a decorative orbit. */
+.candidate-handoff { display: flex; align-items: center; justify-content: space-between; gap: .8rem 1rem; margin-top: .35rem; padding: .68rem .78rem .72rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 42%, var(--line)); border-inline-start: 3px solid var(--signal-teal); background: linear-gradient(100deg, color-mix(in srgb, var(--signal-teal) 9%, transparent), transparent 72%); }
+.candidate-handoff > div { display: grid; gap: .2rem; }
+.candidate-handoff p { margin: 0; color: var(--signal-teal); font: 700 .72rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .07em; }
+.candidate-handoff strong { color: var(--ink); font-size: .98rem; line-height: 1.38; }
+.candidate-handoff span { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .78rem; line-height: 1.5; }
+.candidate-handoff > b { flex: 0 0 auto; padding: .3rem .42rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 58%, var(--line)); color: var(--signal-teal); font: 700 .66rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .08em; }
+.candidate-orbits.ready { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: .55rem; min-height: 0; margin-top: .35rem; padding: .32rem 0; overflow: visible; background: transparent; }
+.candidate-orbits.ready::before, .candidate-orbits.ready::after { display: none; }
+.candidate-planet, .candidate-planet.planet-survey, .candidate-planet.planet-contrast, .candidate-planet.planet-mechanism { position: relative; top: auto; right: auto; bottom: auto; left: auto; width: auto; min-height: 8.1rem; padding: .65rem .75rem .7rem 1rem; border: 1px solid color-mix(in srgb, var(--candidate-signal) 52%, var(--line)); border-inline-start: 3px solid var(--candidate-signal); background: linear-gradient(125deg, color-mix(in srgb, var(--candidate-signal) 9%, transparent), color-mix(in srgb, var(--surface) 86%, transparent)); }
+.candidate-planet::before, .candidate-planet::after { display: none; }
+.candidate-planet strong { display: -webkit-box; min-height: 4.15em; font-size: .94rem; line-height: 1.47; }
+.candidate-planet small { font-size: .68rem; }
+.candidate-planet span { margin-top: auto; font-size: .74rem; }
+.candidate-planet em { margin-top: .12rem; color: color-mix(in srgb, var(--candidate-signal) 84%, var(--ink)); font-size: .76rem; font-style: normal; font-weight: 750; line-height: 1.42; }
+.candidate-planet.selected { border-color: var(--candidate-signal); border-inline-start-color: var(--candidate-signal); box-shadow: .18rem .28rem .9rem color-mix(in srgb, var(--candidate-signal) 22%, transparent), inset .2rem 0 0 var(--candidate-signal); }
+
+@media (max-width: 880px) {
+  .candidate-orbits.ready { grid-template-columns: 1fr; gap: .38rem; }
+  .candidate-planet, .candidate-planet.planet-survey, .candidate-planet.planet-contrast, .candidate-planet.planet-mechanism { min-height: 5.2rem; }
+  .candidate-planet strong { min-height: 0; }
+}
+
+@media (max-width: 560px) {
+  .candidate-handoff { align-items: start; flex-direction: column; gap: .45rem; padding: .62rem .65rem; }
+  .candidate-handoff > b { align-self: start; }
+  .candidate-handoff strong { font-size: .9rem; }
+  .candidate-handoff span { font-size: .74rem; }
+  .candidate-planet, .candidate-planet.planet-survey, .candidate-planet.planet-contrast, .candidate-planet.planet-mechanism { min-height: 4.8rem; padding: .55rem .62rem .6rem .8rem; }
+  .candidate-planet strong { font-size: .88rem; }
+}

@@ -58,6 +58,27 @@ test("keeps operational labels and evidence copy at a readable scale", async ({ 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test("turns a typed question into an explicit selectable and confirmable mission path", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByLabel("候选航向研究问题").fill("围绕该研究议题，现有文献的研究对象、报告结论与证据边界分别是什么？");
+
+  const handoff = page.locator(".candidate-handoff");
+  await expect(handoff).toContainText("候选已生成；请选择一条航向", { timeout: 4_000 });
+  const firstRoute = page.getByRole("button", { name: /全景梳理 点击选择此航向/ });
+  await expect(firstRoute).toHaveAttribute("aria-pressed", "false");
+
+  await firstRoute.click();
+  await expect(handoff).toContainText("已选择候选航向；请在下方核对并编辑任务边界");
+  await expect(page.getByRole("region", { name: "下一步 / 任务简报与可编辑边界" })).toBeVisible();
+  const confirm = page.getByRole("button", { name: "确认任务并进入编排" });
+  await expect(confirm).toBeDisabled();
+
+  await page.getByLabel("研究对象").fill("BiFeO₃ 外延薄膜");
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+});
+
 test("activates a BFO task template through the keyboard with an explicit pressed state", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const bfo = page.getByRole("button", { name: /BFO-01/ });
