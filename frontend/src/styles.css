@@ -893,6 +893,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .automatic-authorization-receipt { position: relative; display: grid; gap: .26rem; max-width: 62rem; margin: 0 0 1rem; padding: .68rem .8rem .72rem 1rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 44%, var(--line)); border-inline-start: 3px solid var(--signal-teal); background: linear-gradient(100deg, color-mix(in srgb, var(--signal-teal) 10%, transparent), transparent 74%); box-shadow: .18rem .22rem .7rem color-mix(in srgb, var(--ink) 4%, transparent); }.automatic-authorization-receipt::before { position: absolute; top: .82rem; left: .42rem; width: .25rem; height: .25rem; border: 1px solid var(--signal-teal); background: var(--paper); content: ""; transform: rotate(45deg); }.automatic-authorization-receipt small { color: var(--signal-teal); font: 700 .6rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .09em; }.automatic-authorization-receipt strong { color: var(--ink); font: 730 .9rem/1.35 Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }.automatic-authorization-receipt p { max-width: 56rem; margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.52; }.automatic-authorization-receipt > div { display: flex; flex-wrap: wrap; gap: .28rem; padding-top: .08rem; }.automatic-authorization-receipt code { padding: .18rem .32rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 46%, var(--line)); color: var(--signal-teal); background: color-mix(in srgb, var(--surface) 68%, transparent); font: .63rem ui-monospace, "Cascadia Mono", monospace; overflow-wrap: anywhere; }
 @media (max-width: 560px) { .automatic-authorization-receipt { padding: .62rem .62rem .66rem .88rem; }.automatic-authorization-receipt small { font-size: .56rem; }.automatic-authorization-receipt strong { font-size: .82rem; }.automatic-authorization-receipt p { font-size: .68rem; }.automatic-authorization-receipt code { font-size: .59rem; } }
 
+/* The fixed research rail leaves less usable width than the viewport suggests. */
+@media (min-width: 561px) and (max-width: 1120px) {
+  .workflow-artifact-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workflow-artifact-flow > i { display: none; }
+}
+
 /* Manual controls remain a clearly bounded maintenance bay, never a browser-default escape hatch. */
 .mission-api {
   position: relative;

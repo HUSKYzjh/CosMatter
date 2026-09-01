@@ -58,6 +58,19 @@ test("keeps synthetic launch-preview papers out of the real research route", asy
   await expect(page.locator(".graph-empty")).toContainText("仅供导航或演示的论文式节点", lazyWorkspaceContentLoad);
 });
 
+test("keeps the bridge artifact flow readable beside its research rail", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 900 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "预览：受控编排" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+
+  const flow = page.locator(".workflow-artifact-flow");
+  await expect(flow).toBeVisible(lazyWorkspaceContentLoad);
+  await expect(flow.locator("article")).toHaveCount(4);
+  expect(await flow.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(2);
+  expect(await flow.locator(":scope > i").evaluateAll((arrows) => arrows.every((arrow) => getComputedStyle(arrow).display === "none"))).toBe(true);
+});
+
 test("keeps an empty task explicit, then renders a redacted exported condition matrix", async ({ page }) => {
   const importInput = await openEditableTaskDefinition(page);
 
