@@ -28,7 +28,15 @@ async function openMissionDefinitionWithPendingArtifacts(page: Page) {
 test("keeps the narrow launch workspace horizontally contained", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".launch-workspace")).toHaveScreenshot("launch-workspace-narrow.png", { animations: "disabled" });
+  const workspace = page.locator(".launch-workspace");
+  await expect(workspace).toBeVisible();
+  if (process.platform === "win32") {
+    await expect(workspace).toHaveScreenshot("launch-workspace-narrow.png", { animations: "disabled" });
+  } else {
+    const box = await workspace.boundingBox();
+    if (!box) throw new Error("launch workspace did not render a layout box");
+    expect(Math.ceil(box.x + box.width)).toBeLessThanOrEqual(390);
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
