@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
 const edgeExecutable = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
+const browserExecutable = process.env.COSMATTER_BROWSER_EXECUTABLE ?? (process.platform === "win32" ? edgeExecutable : undefined);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -13,7 +14,9 @@ export default defineConfig({
     browserName: "chromium",
     headless: true,
     viewport: { width: 390, height: 844 },
-    launchOptions: { executablePath: process.env.COSMATTER_BROWSER_EXECUTABLE ?? edgeExecutable },
+    // Desktop runs keep using the installed Edge, while CI uses Playwright's
+    // managed Chromium installed by the workflow below.
+    launchOptions: browserExecutable ? { executablePath: browserExecutable } : undefined,
   },
   webServer: {
     command: "npm.cmd run dev -- --host 127.0.0.1 --port 5179 --strictPort",
