@@ -44,9 +44,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _validate(compatibility: dict[str, Any], manifest: dict[str, Any]) -> None:
-    if set(compatibility) != {"schema_version", "dsh", "node", "npm", "bundles", "required_package_files", "invariants"} or compatibility.get("schema_version") != "1.0":
+    if set(compatibility) != {"schema_version", "dsh", "node", "npm", "pnpm", "bundles", "required_package_files", "invariants"} or compatibility.get("schema_version") != "1.0":
         raise ReleaseGateError("dsh compatibility matrix fields are invalid")
-    if not all(isinstance(compatibility.get(key), str) and compatibility[key].strip() for key in ("dsh", "node", "npm")):
+    if not all(isinstance(compatibility.get(key), str) and compatibility[key].strip() for key in ("dsh", "node", "npm", "pnpm")):
         raise ReleaseGateError("dsh compatibility version pin is invalid")
     if not isinstance(manifest.get("packages"), list) or not isinstance(manifest.get("invariants"), list):
         raise ReleaseGateError("DSH group manifest is invalid")
@@ -77,8 +77,9 @@ def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, t
     dsh = shutil.which("dsh")
     npm = shutil.which("npm")
     node = shutil.which("node")
-    if not dsh or not npm or not node:
-        raise ReleaseGateError("dsh, node, and npm must be available on PATH for profile smoke")
+    pnpm = shutil.which("pnpm")
+    if not dsh or not npm or not node or not pnpm:
+        raise ReleaseGateError("dsh, node, npm, and pnpm must be available on PATH for profile smoke")
     actual = _command_text([dsh, "--version"])
     if actual != compatibility["dsh"]:
         raise ReleaseGateError(f"DSH version mismatch: expected {compatibility['dsh']}, got {actual}")
@@ -88,6 +89,9 @@ def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, t
     actual_npm = _command_text([npm, "--version"])
     if actual_npm != compatibility["npm"]:
         raise ReleaseGateError(f"npm version mismatch: expected {compatibility['npm']}, got {actual_npm}")
+    actual_pnpm = _command_text([pnpm, "--version"])
+    if actual_pnpm != compatibility["pnpm"]:
+        raise ReleaseGateError(f"pnpm version mismatch: expected {compatibility['pnpm']}, got {actual_pnpm}")
     with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-release-") as directory:
         temporary = Path(directory)
         tarballs: list[str] = []

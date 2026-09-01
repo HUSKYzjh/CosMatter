@@ -23,7 +23,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes texlive-xetex texlive-lang-chinese
       - name: Install DeepSeek Harness
-        run: npm install --global @deepseek-ai/dsh@0.1.0-rc.7
+        run: npm install --global @deepseek-ai/dsh@0.1.0-rc.7 pnpm@11.22.0
       - name: Install package
         run: python -m pip install --upgrade pip setuptools && python -m pip install -e .
       - name: Smoke DSH profile composition
