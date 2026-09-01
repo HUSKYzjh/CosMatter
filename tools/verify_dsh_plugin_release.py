@@ -76,11 +76,18 @@ def _validate(compatibility: dict[str, Any], manifest: dict[str, Any]) -> None:
 def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, timeout_seconds: int) -> None:
     dsh = shutil.which("dsh")
     npm = shutil.which("npm")
-    if not dsh or not npm:
-        raise ReleaseGateError("dsh and npm must be available on PATH for profile smoke")
+    node = shutil.which("node")
+    if not dsh or not npm or not node:
+        raise ReleaseGateError("dsh, node, and npm must be available on PATH for profile smoke")
     actual = _command_text([dsh, "--version"])
     if actual != compatibility["dsh"]:
         raise ReleaseGateError(f"DSH version mismatch: expected {compatibility['dsh']}, got {actual}")
+    actual_node = _command_text([node, "--version"]).lstrip("v")
+    if actual_node != compatibility["node"]:
+        raise ReleaseGateError(f"Node version mismatch: expected {compatibility['node']}, got {actual_node}")
+    actual_npm = _command_text([npm, "--version"])
+    if actual_npm != compatibility["npm"]:
+        raise ReleaseGateError(f"npm version mismatch: expected {compatibility['npm']}, got {actual_npm}")
     with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-release-") as directory:
         temporary = Path(directory)
         tarballs: list[str] = []

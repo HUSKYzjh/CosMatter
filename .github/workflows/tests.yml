@@ -17,7 +17,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24.19.0"
       - name: Install document toolchain
         run: |
           sudo apt-get update
@@ -26,5 +26,7 @@ jobs:
         run: npm install --global @deepseek-ai/dsh@0.1.0-rc.7
       - name: Install package
         run: python -m pip install --upgrade pip setuptools && python -m pip install -e .
+      - name: Smoke DSH profile composition
+        run: python tools/verify_dsh_plugin_release.py --profile-smoke --timeout-seconds 180
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
