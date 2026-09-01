@@ -1015,3 +1015,57 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .launch-modes button span { grid-column: 2; align-self: center; font-size: .7rem; line-height: 1.25; }
   .launch-modes button small { display: none; }
 }
+
+/* Readable information hierarchy: operational choices must not depend on microtext. */
+.launch-kicker, .rail-kicker, .stage-kicker { font-size: .76rem; letter-spacing: .12em; }
+.launch-modes button { min-height: 4.6rem; }
+.launch-modes button b { font-size: .72rem; }
+.launch-modes button i { font-size: .98rem; }
+.launch-modes button span { font-size: .92rem; line-height: 1.28; }
+.launch-modes button small { color: color-mix(in srgb, var(--muted) 74%, var(--ink)); font-size: .74rem; line-height: 1.46; }
+.signal-receiver ol, .signal-receiver > small, .mode-panel > p, .file-name, .consent { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .82rem; line-height: 1.6; }
+.signal-receiver > label { font-size: .9rem; }
+.candidate-planet small, .candidate-planet span { font-size: .76rem; }
+.candidate-planet strong { font-size: 1.06rem; line-height: 1.42; }
+.launch-stage-column header p { font-size: .7rem; }
+.launch-stage-column header strong { font-size: 1.12rem; line-height: 1.2; }
+.launch-stage-column header span, .launch-stage-column footer { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .74rem; line-height: 1.5; }
+.launch-stage-column li button { min-height: 4.65rem; }
+.launch-stage-index { font-size: .7rem; }
+.launch-stage-copy { gap: .2rem; }
+.launch-stage-copy strong { font-size: .88rem; line-height: 1.3; }
+.launch-stage-copy small, .launch-stage-copy em { color: color-mix(in srgb, var(--muted) 78%, var(--ink)); font-size: .74rem; line-height: 1.48; }
+.launch-stage-column li b { font-size: 1.04rem; }
+.journey-track button span { font-size: .72rem; }
+.journey-track button strong { font-size: .9rem; }
+.journey-track button small { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .72rem; line-height: 1.42; }
+.rail-status small, .rail-runtime small, .rail-execution small { font-size: .7rem; }
+.rail-status p, .rail-runtime p, .rail-execution p { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .8rem; line-height: 1.55; }
+.mission-preview small, .workflow-artifact-flow article > small, .workflow-next small { font-size: .74rem; }
+.mission-preview h2, .workflow-artifact-flow h2 { font-size: 1.24rem; line-height: 1.25; }
+.mission-preview p, .workflow-artifact-flow p, .evidence-session span { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .9rem; line-height: 1.62; }
+.verification-steps li span { font-size: .72rem; }
+.verification-steps li strong { font-size: .96rem; }
+.verification-steps li small { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .76rem; line-height: 1.5; }
+.reader-proof-chain > header small { font-size: .68rem; }
+.reader-proof-chain > header span { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .72rem; line-height: 1.5; }
+.reader-proof-station > span { font-size: .58rem; }
+.reader-proof-station { min-height: 6.7rem; }
+.reader-proof-station > small { font-size: .68rem; }
+.reader-proof-station strong { font-size: .86rem; line-height: 1.4; }
+.reader-proof-station em { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .74rem; line-height: 1.5; }
+.launch-notice small { font-size: .64rem; }
+.launch-notice p { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .78rem; line-height: 1.55; }
+.mission-api > summary { font-size: .82rem; }
+.mission-api > p, .mission-api .examples button { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .74rem; line-height: 1.48; }
+
+@media (max-width: 560px) {
+  .launch-modes button { min-height: 3.65rem; }
+  .launch-modes button span { font-size: .78rem; }
+  .launch-stage-column li button { min-height: 3.45rem; }
+  .launch-stage-index { font-size: .62rem; }
+  .launch-stage-copy strong { font-size: .76rem; }
+  .journey-track button strong { font-size: .78rem; }
+  .verification-steps li strong { font-size: .82rem; }
+  .verification-steps li small { font-size: .66rem; }
+}

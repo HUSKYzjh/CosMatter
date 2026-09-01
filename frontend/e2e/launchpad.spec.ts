@@ -40,6 +40,24 @@ test("keeps the narrow launch workspace horizontally contained", async ({ page }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test("keeps operational labels and evidence copy at a readable scale", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 900 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+
+  const fontPixels = (selector: string) => page.locator(selector).first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  expect(await fontPixels(".launch-modes button span")).toBeGreaterThanOrEqual(15);
+  expect(await fontPixels(".launch-modes button small")).toBeGreaterThanOrEqual(12);
+  expect(await fontPixels(".launch-stage-copy strong")).toBeGreaterThanOrEqual(14);
+  expect(await fontPixels(".launch-stage-copy small")).toBeGreaterThanOrEqual(12);
+
+  await page.getByRole("button", { name: "预览：受控编排" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  expect(await fontPixels(".workflow-artifact-flow h2")).toBeGreaterThanOrEqual(20);
+  expect(await fontPixels(".workflow-artifact-flow p")).toBeGreaterThanOrEqual(15);
+  expect(await fontPixels(".journey-track button small")).toBeGreaterThanOrEqual(12);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
 test("activates a BFO task template through the keyboard with an explicit pressed state", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const bfo = page.getByRole("button", { name: /BFO-01/ });
