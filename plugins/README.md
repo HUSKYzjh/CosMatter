@@ -17,6 +17,24 @@ CosMatter 的 Python 领域层仍是任务工件、证据门禁和审计记录�
 为避免影响默认 profile，先使用单独 profile。DSH 将 `plugin` 参数转交给 pnpm，
 因此可在一条命令中直接安装全部七个 bundle：
 
+在安装前先确认本机的受支持组合；`pnpm` 缺失时，`dsh plugin add` 会在初始化
+profile 后停止，而不是降级到 npm。当前兼容矩阵固定为 DSH `0.1.0-rc.7`、Node
+`24.19.0`、npm `11.17.0`、pnpm `11.22.0`：
+
+```powershell
+dsh --version
+node --version
+npm --version
+pnpm --version
+```
+
+如需一次性检查版本、发布物和干净 profile（不读取 `.env`，不调用任何 provider），在
+仓库根目录运行：
+
+```powershell
+.\.venv\Scripts\python.exe tools\verify_dsh_plugin_release.py --profile-smoke
+```
+
 ```powershell
 dsh plugin --profile cosmatter-graph-test add D:\CosMatter\development\CosMatter\plugins\dsh-cosmatter-mission-plugin D:\CosMatter\development\CosMatter\plugins\dsh-cosmatter-observability-plugin D:\CosMatter\development\CosMatter\plugins\dsh-cosmatter-policy-plugin D:\CosMatter\development\CosMatter\plugins\dsh-cosmatter-research-plugin D:\CosMatter\development\CosMatter\plugins\dsh-cosmatter-review-plugin D:\CosMatter\development\CosMatter\plugins\dsh-cosmatter-document-plugin D:\CosMatter\development\CosMatter\plugins\dsh-cosmatter-graph-plugin
 dsh --profile cosmatter-graph-test --dump-config
