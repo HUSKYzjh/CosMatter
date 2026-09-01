@@ -94,7 +94,10 @@ def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, t
         for entry in manifest["packages"]:
             package_dir = ROOT / "plugins" / str(entry["path"])
             completed = _run(
-                [npm, "pack", "--pack-destination", str(temporary), "--json"], cwd=package_dir,
+                # Bundles publish their checked-in `lib` output.  A release
+                # smoke must exercise that exact artifact; running `prepare`
+                # would instead require each plugin's devDependencies in CI.
+                [npm, "pack", "--ignore-scripts", "--pack-destination", str(temporary), "--json"], cwd=package_dir,
                 timeout=timeout_seconds,
             )
             if completed.returncode:
