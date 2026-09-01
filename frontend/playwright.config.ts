@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 const edgeExecutable = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const browserExecutable = process.env.COSMATTER_BROWSER_EXECUTABLE ?? (process.platform === "win32" ? edgeExecutable : undefined);
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -19,7 +20,7 @@ export default defineConfig({
     launchOptions: browserExecutable ? { executablePath: browserExecutable } : undefined,
   },
   webServer: {
-    command: "npm.cmd run dev -- --host 127.0.0.1 --port 5179 --strictPort",
+    command: `${npmCommand} run dev -- --host 127.0.0.1 --port 5179 --strictPort`,
     url: "http://127.0.0.1:5179",
     reuseExistingServer: false,
     timeout: 30_000,
