@@ -41,7 +41,11 @@ export interface SimulationCampaignProjection {
   evidenceCount: number;
   inputCount: number;
   executionPermitted: false;
-  executionState: "not_started";
+  executionState: "blocked_plan_only";
+  chain: { evidence: "bound"; hypothesis: "approved"; protocol: "approved"; execution: "blocked" };
+  missingFields: string[];
+  budget: { maxJobs: 0; maxGpuJobs: 0; maxDftJobs: 0; };
+  continuationReason: string;
 }
 
 export interface TimelineEntry { stationType: string; action: string; state: string; occurredAt: string; }
@@ -480,10 +484,11 @@ function literatureGraph(value: unknown): LiteratureGraph {
 function simulationCampaign(value: unknown): SimulationCampaignProjection | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as JsonObject;
-  const expected = ["delivery_status", "simulation_kind", "evidence_count", "input_count", "execution_permitted", "execution_state"];
+  const expected = ["delivery_status", "simulation_kind", "evidence_count", "input_count", "execution_permitted", "execution_state", "chain", "missing_fields", "budget", "continuation_reason"];
   if (Object.keys(raw).length !== expected.length || !expected.every((key) => Object.prototype.hasOwnProperty.call(raw, key))) return null;
-  if (raw.delivery_status !== "approved_plan_only" || (raw.simulation_kind !== "dft" && raw.simulation_kind !== "md" && raw.simulation_kind !== "potential_benchmark") || !Number.isInteger(raw.evidence_count) || (raw.evidence_count as number) < 1 || !Number.isInteger(raw.input_count) || (raw.input_count as number) < 1 || raw.execution_permitted !== false || raw.execution_state !== "not_started") return null;
-  return { deliveryStatus: "approved_plan_only", simulationKind: raw.simulation_kind, evidenceCount: raw.evidence_count as number, inputCount: raw.input_count as number, executionPermitted: false, executionState: "not_started" };
+  const chain = raw.chain; const budget = raw.budget;
+  if (raw.delivery_status !== "approved_plan_only" || (raw.simulation_kind !== "dft" && raw.simulation_kind !== "md" && raw.simulation_kind !== "potential_benchmark") || !Number.isInteger(raw.evidence_count) || (raw.evidence_count as number) < 1 || !Number.isInteger(raw.input_count) || (raw.input_count as number) < 1 || raw.execution_permitted !== false || raw.execution_state !== "blocked_plan_only" || chain === null || typeof chain !== "object" || Array.isArray(chain) || (chain as JsonObject).evidence !== "bound" || (chain as JsonObject).hypothesis !== "approved" || (chain as JsonObject).protocol !== "approved" || (chain as JsonObject).execution !== "blocked" || !Array.isArray(raw.missing_fields) || !raw.missing_fields.every((item) => typeof item === "string") || budget === null || typeof budget !== "object" || Array.isArray(budget) || (budget as JsonObject).max_jobs !== 0 || (budget as JsonObject).max_gpu_jobs !== 0 || (budget as JsonObject).max_dft_jobs !== 0 || typeof raw.continuation_reason !== "string" || !raw.continuation_reason.trim()) return null;
+  return { deliveryStatus: "approved_plan_only", simulationKind: raw.simulation_kind, evidenceCount: raw.evidence_count as number, inputCount: raw.input_count as number, executionPermitted: false, executionState: "blocked_plan_only", chain: { evidence: "bound", hypothesis: "approved", protocol: "approved", execution: "blocked" }, missingFields: raw.missing_fields.slice(0, 12), budget: { maxJobs: 0, maxGpuJobs: 0, maxDftJobs: 0 }, continuationReason: raw.continuation_reason.slice(0, 500) };
 }
 export function readBundle(value: unknown, source: ImportedBundle["source"] = "local-file"): ImportedBundle {
   const root = object(value, "UI JSON");

@@ -74,7 +74,7 @@ class UiExportTests(unittest.TestCase):
             )
             campaign = build_approved_simulation_campaign(
                 mission=mission, accepted_evidence_ids={"evidence_accepted"}, payload={
-                    "schema_version": SIMULATION_CAMPAIGN_SCHEMA_VERSION, "trust_status": SIMULATION_CAMPAIGN_TRUST_STATUS,
+                    "schema_version": "1.0", "trust_status": SIMULATION_CAMPAIGN_TRUST_STATUS,
                     "campaign_id": "campaign_ui_001", "mission_id": mission.mission_id, "simulation_kind": "dft",
                     "evidence_ids": ["evidence_accepted"],
                     "hypothesis": {"statement": "bounded hypothesis", "variables": "strain", "control": "composition", "observable": "aggregate value", "falsifier": "no difference"},
@@ -90,7 +90,7 @@ class UiExportTests(unittest.TestCase):
             bundle = json.loads((run_dir / "ui.json").read_text(encoding="utf-8"))
 
         self.assertEqual(bundle["simulation_campaign_delivery_status"], "approved")
-        self.assertEqual(bundle["simulation_campaign"], {"delivery_status": "approved_plan_only", "simulation_kind": "dft", "evidence_count": 1, "input_count": 1, "execution_permitted": False, "execution_state": "not_started"})
+        self.assertEqual(bundle["simulation_campaign"], {"delivery_status": "approved_plan_only", "simulation_kind": "dft", "evidence_count": 1, "input_count": 1, "execution_permitted": False, "execution_state": "blocked_plan_only", "chain": {"evidence": "bound", "hypothesis": "approved", "protocol": "approved", "execution": "blocked"}, "missing_fields": [], "budget": {"max_jobs": 0, "max_gpu_jobs": 0, "max_dft_jobs": 0}, "continuation_reason": "execution profile is intentionally disabled; no scheduler, engine, child process, or network request is available"})
         serialised = json.dumps(bundle)
         self.assertNotIn("evidence_accepted", serialised)
         self.assertNotIn("private reviewer", serialised)

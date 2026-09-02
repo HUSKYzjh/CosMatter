@@ -79,6 +79,7 @@ _TIMELINE_ACTIONS = {
     "material_facts_fused": ("cross_check_review", "已审查材料事实完成跨文献对比"),
     "mission_report_built": ("report_delivery", "审核后报告已生成"),
     "simulation_campaign_approved_plan_only": ("research_planning", "计算活动计划已人工批准；执行仍被禁用"),
+    "simulation_campaign_execution_denied": ("research_planning", "计算活动执行请求已按计划边界拒绝"),
 }
 
 

@@ -8,8 +8,12 @@ from cosmatter.simulation_campaign import (
     SIMULATION_CAMPAIGN_TRUST_STATUS,
     SimulationCampaignError,
     build_approved_simulation_campaign,
+    deny_simulation_execution,
+    migrate_simulation_campaign,
+    simulation_campaign_template,
     simulation_campaign_ui_projection,
 )
+from cosmatter.simulation_contracts import SimulationContractError, validate_external_run_receipt
 
 
 class SimulationCampaignTests(unittest.TestCase):
@@ -22,7 +26,7 @@ class SimulationCampaignTests(unittest.TestCase):
             scope="epitaxial thin films",
         )
         self.payload = {
-            "schema_version": SIMULATION_CAMPAIGN_SCHEMA_VERSION,
+            "schema_version": "1.0",
             "trust_status": SIMULATION_CAMPAIGN_TRUST_STATUS,
             "campaign_id": "campaign_bfo_dft_001",
             "mission_id": self.mission.mission_id,
@@ -71,7 +75,10 @@ class SimulationCampaignTests(unittest.TestCase):
         projection = simulation_campaign_ui_projection(campaign, self.mission.mission_id)
         self.assertEqual(projection, {
             "delivery_status": "approved_plan_only", "simulation_kind": "dft", "evidence_count": 1,
-            "input_count": 1, "execution_permitted": False, "execution_state": "not_started",
+            "input_count": 1, "execution_permitted": False, "execution_state": "blocked_plan_only",
+            "chain": {"evidence": "bound", "hypothesis": "approved", "protocol": "approved", "execution": "blocked"},
+            "missing_fields": [], "budget": {"max_jobs": 0, "max_gpu_jobs": 0, "max_dft_jobs": 0},
+            "continuation_reason": "execution profile is intentionally disabled; no scheduler, engine, child process, or network request is available",
         })
         self.assertNotIn("evidence_ids", projection)
         self.assertNotIn("reviewer", projection)
@@ -101,6 +108,63 @@ class SimulationCampaignTests(unittest.TestCase):
         unsafe["protocol"]["engine"] = "C:\\Users\\Agent\\private-engine"
         with self.assertRaises(SimulationCampaignError):
             build_approved_simulation_campaign(mission=self.mission, accepted_evidence_ids={"evidence_accepted"}, payload=unsafe)
+
+    def test_migrates_legacy_plan_to_hash_bound_contracts_and_detects_tampering(self) -> None:
+        campaign = build_approved_simulation_campaign(
+            mission=self.mission, accepted_evidence_ids={"evidence_accepted"}, payload=self.payload
+        )
+        self.assertEqual(campaign["schema_version"], SIMULATION_CAMPAIGN_SCHEMA_VERSION)
+        self.assertEqual(set(campaign["contract_schema_versions"]), {
+            "simulation_hypothesis", "simulation_protocol", "input_manifest", "execution_profile",
+            "external_run_receipt", "reviewed_simulation_evidence",
+        })
+        self.assertEqual(campaign["protocol"]["hypothesis_sha256"], campaign["contract_hashes"]["hypothesis_sha256"])
+        tampered = copy.deepcopy(campaign)
+        tampered["input_manifest"]["inputs"][0]["sha256"] = "d" * 64
+        with self.assertRaises(SimulationCampaignError):
+            simulation_campaign_ui_projection(tampered, self.mission.mission_id)
+        self.assertEqual(migrate_simulation_campaign(self.payload)["schema_version"], SIMULATION_CAMPAIGN_SCHEMA_VERSION)
+
+    def test_plan_only_execution_endpoint_is_a_refusal_and_receipts_require_bound_inputs(self) -> None:
+        campaign = build_approved_simulation_campaign(
+            mission=self.mission, accepted_evidence_ids={"evidence_accepted"}, payload=self.payload
+        )
+        denial = deny_simulation_execution(campaign, self.mission.mission_id)
+        self.assertEqual(denial["execution_status"], "denied_plan_only")
+        self.assertFalse(denial["execution_permitted"])
+        receipt = {
+            "schema_version": "1.0", "artifact_id": "receipt_001", "campaign_id": campaign["campaign_id"],
+            "input_manifest_sha256": "0" * 64, "external_run_id": "external_001", "status": "succeeded",
+            "output_summary_sha256": "a" * 64, "exit_class": "completed",
+            "resource_summary": {"cpu_seconds": 1, "gpu_seconds": 0, "job_count": 1}, "convergence_status": "converged",
+        }
+        with self.assertRaises(SimulationContractError):
+            validate_external_run_receipt(receipt, campaign_id=campaign["campaign_id"], input_manifest_sha256=campaign["contract_hashes"]["input_manifest_sha256"])
+
+    def test_rejects_command_templates_and_budget_escalation_after_migration(self) -> None:
+        command = copy.deepcopy(self.payload)
+        command["protocol"]["engine"] = "sbatch --partition=private queue"
+        with self.assertRaises(SimulationCampaignError):
+            build_approved_simulation_campaign(mission=self.mission, accepted_evidence_ids={"evidence_accepted"}, payload=command)
+        escalation = migrate_simulation_campaign(self.payload)
+        escalation["execution_profile"]["max_dft_jobs"] = 1
+        with self.assertRaises(SimulationCampaignError):
+            simulation_campaign_ui_projection(escalation, self.mission.mission_id)
+
+    def test_editable_template_rebinds_technical_hashes_without_repairing_policy_fields(self) -> None:
+        template = simulation_campaign_template(self.mission)
+        self.assertEqual(template["schema_version"], SIMULATION_CAMPAIGN_SCHEMA_VERSION)
+        template.update({
+            "trust_status": SIMULATION_CAMPAIGN_TRUST_STATUS, "campaign_id": "campaign_template_001",
+            "evidence_ids": ["evidence_accepted"],
+            "approval": {"status": "approved_plan_only", "reviewer": "human reviewer", "approved_on": "2026-09-02", "rationale": "bounded evidence"},
+        })
+        template["hypothesis"].update({"statement": "bounded hypothesis", "variables": "strain", "control": "composition", "observable": "aggregate value", "falsifier": "no difference"})
+        template["protocol"].update({"engine": "external DFT engine", "recipe_id": "recipe_001", "method_boundary": "reviewed method", "convergence_or_sampling_boundary": "reviewed convergence"})
+        template["input_manifest"].update({"input_count": 1, "inputs": [{"input_id": "input_001", "sha256": "e" * 64, "source_kind": "reviewed manifest", "license_status": "reviewed license clearance"}]})
+        campaign = build_approved_simulation_campaign(mission=self.mission, accepted_evidence_ids={"evidence_accepted"}, payload=template)
+        self.assertEqual(campaign["protocol"]["campaign_id"], "campaign_template_001")
+        self.assertEqual(campaign["hypothesis"]["evidence_ids"], ["evidence_accepted"])
 
 
 if __name__ == "__main__":

@@ -12,13 +12,24 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 from .models import MissionBrief
+from .simulation_contracts import (
+    SimulationContractError,
+    canonical_sha256,
+    contract_schema_versions,
+    disabled_execution_profile,
+    validate_execution_profile,
+    validate_input_manifest,
+    validate_simulation_hypothesis,
+    validate_simulation_protocol,
+)
 
 
-SIMULATION_CAMPAIGN_SCHEMA_VERSION = "1.0"
+SIMULATION_CAMPAIGN_SCHEMA_VERSION = "1.1"
 SIMULATION_CAMPAIGN_TRUST_STATUS = "human_approved_simulation_campaign_plan_only"
 SIMULATION_CAMPAIGN_STATE = "approved_plan_only"
 SIMULATION_CAMPAIGN_BOUNDARY = (
@@ -27,6 +38,11 @@ SIMULATION_CAMPAIGN_BOUNDARY = (
 )
 
 _CAMPAIGN_FIELDS = {
+    "schema_version", "trust_status", "campaign_id", "mission_id", "simulation_kind",
+    "evidence_ids", "hypothesis", "protocol", "input_manifest", "execution_profile",
+    "contract_schema_versions", "contract_hashes", "approval", "execution_permitted", "execution_boundary",
+}
+_LEGACY_CAMPAIGN_FIELDS = {
     "schema_version", "trust_status", "campaign_id", "mission_id", "simulation_kind",
     "evidence_ids", "hypothesis", "protocol", "input_manifest", "execution_profile",
     "approval", "execution_permitted", "execution_boundary",
@@ -48,7 +64,7 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FORBIDDEN_TEXT = (
     "api_key", "apikey", "authorization", "bearer ", "password=", "token=",
-    "c:\\users\\", "/home/", "\\\\",
+    "c:\\users\\", "/home/", "\\\\", "sbatch", "qsub", "cmd.exe", "powershell", "bash -", "ssh ",
 )
 
 
@@ -58,13 +74,13 @@ class SimulationCampaignError(ValueError):
 
 def simulation_campaign_template(mission: MissionBrief) -> dict[str, Any]:
     """Return a non-approvable human-editable campaign template."""
-    return {
-        "schema_version": SIMULATION_CAMPAIGN_SCHEMA_VERSION,
+    legacy = {
+        "schema_version": "1.0",
         "trust_status": "human_authored_simulation_campaign_template_not_execution",
-        "campaign_id": "【待人工填写：稳定活动标识】",
+        "campaign_id": "campaign_pending_human_review",
         "mission_id": mission.mission_id,
         "simulation_kind": "dft",
-        "evidence_ids": ["【待人工填写：已接受 EvidenceCard ID】"],
+        "evidence_ids": ["evidence_pending_human_review"],
         "hypothesis": {
             "statement": "【待人工填写：可证伪假设】",
             "variables": "【待人工填写：变量与范围】",
@@ -88,34 +104,112 @@ def simulation_campaign_template(mission: MissionBrief) -> dict[str, Any]:
         "execution_permitted": False,
         "execution_boundary": SIMULATION_CAMPAIGN_BOUNDARY,
     }
+    return migrate_simulation_campaign(legacy)
+
+
+def migrate_simulation_campaign(payload: object) -> dict[str, Any]:
+    """Upgrade the original 1.0 aggregate record to explicit 1.1 contracts.
+
+    Migration is deterministic and only succeeds for the former fixed
+    plan-only profile. It never invents an execution capability or a result.
+    """
+    if not isinstance(payload, dict):
+        raise SimulationCampaignError("simulation campaign must be an object")
+    if payload.get("schema_version") == SIMULATION_CAMPAIGN_SCHEMA_VERSION:
+        return deepcopy(payload)
+    if payload.get("schema_version") != "1.0" or set(payload) != _LEGACY_CAMPAIGN_FIELDS:
+        raise SimulationCampaignError("simulation campaign schema version is unsupported")
+    legacy = deepcopy(payload)
+    if legacy.get("execution_profile") != _disabled_execution_profile():
+        raise SimulationCampaignError("legacy simulation campaign does not retain the fixed disabled profile")
+    campaign_id = legacy.get("campaign_id")
+    if not isinstance(campaign_id, str) or not _SAFE_ID.fullmatch(campaign_id):
+        raise SimulationCampaignError("legacy campaign_id must be a safe identifier")
+    evidence_ids = legacy.get("evidence_ids")
+    if not isinstance(evidence_ids, list) or not all(isinstance(item, str) and _SAFE_ID.fullmatch(item) for item in evidence_ids):
+        raise SimulationCampaignError("legacy evidence IDs are invalid")
+    hypothesis = {
+        "schema_version": "1.0", "artifact_id": f"{campaign_id}:hypothesis", "campaign_id": campaign_id,
+        "evidence_ids": evidence_ids, **legacy["hypothesis"],
+    }
+    hypothesis_sha256 = canonical_sha256(hypothesis)
+    protocol = {
+        "schema_version": "1.0", "artifact_id": f"{campaign_id}:protocol", "campaign_id": campaign_id,
+        "hypothesis_sha256": hypothesis_sha256, **legacy["protocol"],
+    }
+    protocol_sha256 = canonical_sha256(protocol)
+    input_manifest = {
+        "schema_version": "1.0", "artifact_id": f"{campaign_id}:input-manifest", "campaign_id": campaign_id,
+        "protocol_sha256": protocol_sha256, **legacy["input_manifest"],
+    }
+    input_manifest_sha256 = canonical_sha256(input_manifest)
+    execution_profile = disabled_execution_profile(campaign_id=campaign_id, input_manifest_sha256=input_manifest_sha256)
+    return {
+        **{key: value for key, value in legacy.items() if key not in {"hypothesis", "protocol", "input_manifest", "execution_profile", "schema_version"}},
+        "schema_version": SIMULATION_CAMPAIGN_SCHEMA_VERSION,
+        "hypothesis": hypothesis,
+        "protocol": protocol,
+        "input_manifest": input_manifest,
+        "execution_profile": execution_profile,
+        "contract_schema_versions": contract_schema_versions(),
+        "contract_hashes": {
+            "hypothesis_sha256": hypothesis_sha256,
+            "protocol_sha256": protocol_sha256,
+            "input_manifest_sha256": input_manifest_sha256,
+            "execution_profile_sha256": canonical_sha256(execution_profile),
+        },
+    }
 
 
 def build_approved_simulation_campaign(
     *, mission: MissionBrief, accepted_evidence_ids: set[str], payload: object
 ) -> dict[str, Any]:
     """Validate a human-approved campaign while enforcing default-deny execution."""
-    if not isinstance(payload, dict) or set(payload) != _CAMPAIGN_FIELDS:
+    normalized = _rebind_contracts_for_submission(migrate_simulation_campaign(payload))
+    if set(normalized) != _CAMPAIGN_FIELDS:
         raise SimulationCampaignError("simulation campaign has unsupported or missing fields")
-    if payload.get("schema_version") != SIMULATION_CAMPAIGN_SCHEMA_VERSION:
+    if normalized.get("schema_version") != SIMULATION_CAMPAIGN_SCHEMA_VERSION:
         raise SimulationCampaignError("simulation campaign schema version is invalid")
-    if payload.get("trust_status") != SIMULATION_CAMPAIGN_TRUST_STATUS:
+    if normalized.get("trust_status") != SIMULATION_CAMPAIGN_TRUST_STATUS:
         raise SimulationCampaignError("simulation campaign trust status is invalid")
-    _safe_id(payload.get("campaign_id"), "campaign_id")
-    if payload.get("mission_id") != mission.mission_id:
-        raise SimulationCampaignError("simulation campaign does not match the mission")
-    if payload.get("simulation_kind") not in _SIMULATION_KINDS:
-        raise SimulationCampaignError("simulation kind must be dft, md, or potential_benchmark")
-    _validate_evidence_ids(payload.get("evidence_ids"), accepted_evidence_ids)
-    _validate_text_object(payload.get("hypothesis"), _HYPOTHESIS_FIELDS, "hypothesis")
-    _validate_text_object(payload.get("protocol"), _PROTOCOL_FIELDS, "protocol")
-    _validate_input_manifest(payload.get("input_manifest"))
-    _validate_disabled_execution_profile(payload.get("execution_profile"))
-    _validate_approval(payload.get("approval"))
-    if payload.get("execution_permitted") is not False:
-        raise SimulationCampaignError("execution_permitted must remain false")
-    if payload.get("execution_boundary") != SIMULATION_CAMPAIGN_BOUNDARY:
-        raise SimulationCampaignError("simulation campaign execution boundary is invalid")
-    return payload
+    _validate_normalized_campaign(normalized, mission_id=mission.mission_id, accepted_evidence_ids=accepted_evidence_ids)
+    return normalized
+
+
+def _rebind_contracts_for_submission(payload: dict[str, Any]) -> dict[str, Any]:
+    """Refresh only deterministic technical bindings before human approval.
+
+    The editable template intentionally cannot ask a reviewer to hand-compute
+    four cascading SHA-256 values.  This helper never fills scientific fields
+    and never repairs execution settings: altered profile values remain in the
+    payload and are rejected by ``validate_execution_profile``.
+    """
+    if set(payload) != _CAMPAIGN_FIELDS:
+        return payload
+    candidate = deepcopy(payload)
+    campaign_id = candidate.get("campaign_id")
+    evidence_ids = candidate.get("evidence_ids")
+    if not isinstance(campaign_id, str) or not _SAFE_ID.fullmatch(campaign_id) or not isinstance(evidence_ids, list):
+        return candidate
+    hypothesis = candidate.get("hypothesis")
+    protocol = candidate.get("protocol")
+    manifest = candidate.get("input_manifest")
+    profile = candidate.get("execution_profile")
+    if not all(isinstance(item, dict) for item in (hypothesis, protocol, manifest, profile)):
+        return candidate
+    hypothesis.update({"schema_version": "1.0", "artifact_id": f"{campaign_id}:hypothesis", "campaign_id": campaign_id, "evidence_ids": evidence_ids})
+    hypothesis_sha256 = canonical_sha256(hypothesis)
+    protocol.update({"schema_version": "1.0", "artifact_id": f"{campaign_id}:protocol", "campaign_id": campaign_id, "hypothesis_sha256": hypothesis_sha256})
+    protocol_sha256 = canonical_sha256(protocol)
+    manifest.update({"schema_version": "1.0", "artifact_id": f"{campaign_id}:input-manifest", "campaign_id": campaign_id, "protocol_sha256": protocol_sha256})
+    input_manifest_sha256 = canonical_sha256(manifest)
+    profile.update({"schema_version": "1.0", "artifact_id": f"{campaign_id}:execution-profile", "campaign_id": campaign_id, "input_manifest_sha256": input_manifest_sha256})
+    candidate["contract_schema_versions"] = contract_schema_versions()
+    candidate["contract_hashes"] = {
+        "hypothesis_sha256": hypothesis_sha256, "protocol_sha256": protocol_sha256,
+        "input_manifest_sha256": input_manifest_sha256, "execution_profile_sha256": canonical_sha256(profile),
+    }
+    return candidate
 
 
 def write_approved_simulation_campaign(run_dir: Path, payload: dict[str, Any]) -> Path:
@@ -127,37 +221,43 @@ def write_approved_simulation_campaign(run_dir: Path, payload: dict[str, Any]) -
     return path
 
 
+def deny_simulation_execution(payload: object, mission_id: str) -> dict[str, Any]:
+    """Return the only P0 execution response: an auditable refusal.
+
+    This function deliberately contains no adapter dispatch, subprocess, HTTP,
+    scheduler, provider, or retry code.  Its existence keeps future callers
+    from treating a missing endpoint as permission to bypass the campaign
+    boundary.
+    """
+    projection = simulation_campaign_ui_projection(payload, mission_id)
+    return {
+        "execution_status": "denied_plan_only",
+        "execution_permitted": False,
+        "reason": projection["continuation_reason"],
+        "budget": projection["budget"],
+    }
+
+
 def simulation_campaign_ui_projection(payload: object, mission_id: str) -> dict[str, Any]:
     """Return a minimal browser-safe status, never identifiers or protocols."""
-    if not isinstance(payload, dict):
-        raise SimulationCampaignError("simulation campaign must be an object")
-    if payload.get("mission_id") != mission_id:
-        raise SimulationCampaignError("simulation campaign does not match the mission")
-    if payload.get("trust_status") != SIMULATION_CAMPAIGN_TRUST_STATUS:
-        raise SimulationCampaignError("simulation campaign is not an approved plan-only record")
-    # Reuse full validation but only trust evidence identity membership here; the
-    # exporter does not reveal the identities and approval was checked by CLI.
-    evidence_ids = payload.get("evidence_ids")
-    if not isinstance(evidence_ids, list) or not all(isinstance(item, str) for item in evidence_ids):
-        raise SimulationCampaignError("simulation campaign evidence list is invalid")
-    _validate_disabled_execution_profile(payload.get("execution_profile"))
-    if payload.get("execution_permitted") is not False:
-        raise SimulationCampaignError("simulation campaign cannot enable execution")
-    manifest = payload.get("input_manifest")
-    if not isinstance(manifest, dict):
-        raise SimulationCampaignError("simulation campaign input manifest is invalid")
-    input_count = manifest.get("input_count")
-    if not isinstance(input_count, int) or isinstance(input_count, bool) or input_count < 0:
-        raise SimulationCampaignError("simulation campaign input count is invalid")
-    if payload.get("simulation_kind") not in _SIMULATION_KINDS:
-        raise SimulationCampaignError("simulation campaign kind is invalid")
+    normalized = migrate_simulation_campaign(payload)
+    evidence_ids = normalized.get("evidence_ids")
+    if not isinstance(evidence_ids, list):
+        raise SimulationCampaignError("simulation campaign evidence IDs are invalid")
+    _validate_normalized_campaign(normalized, mission_id=mission_id, accepted_evidence_ids=set(evidence_ids))
+    manifest = normalized["input_manifest"]
+    input_count = manifest["input_count"]
     return {
         "delivery_status": SIMULATION_CAMPAIGN_STATE,
-        "simulation_kind": payload["simulation_kind"],
+        "simulation_kind": normalized["simulation_kind"],
         "evidence_count": len(evidence_ids),
         "input_count": input_count,
         "execution_permitted": False,
-        "execution_state": "not_started",
+        "execution_state": "blocked_plan_only",
+        "chain": {"evidence": "bound", "hypothesis": "approved", "protocol": "approved", "execution": "blocked"},
+        "missing_fields": [],
+        "budget": {"max_jobs": 0, "max_gpu_jobs": 0, "max_dft_jobs": 0},
+        "continuation_reason": "execution profile is intentionally disabled; no scheduler, engine, child process, or network request is available",
     }
 
 
@@ -167,6 +267,40 @@ def _disabled_execution_profile() -> dict[str, Any]:
         "max_jobs": 0, "max_gpu_jobs": 0, "max_dft_jobs": 0,
         "scheduler_submission_enabled": False, "polling_enabled": False,
     }
+
+
+def _validate_normalized_campaign(payload: dict[str, Any], *, mission_id: str, accepted_evidence_ids: set[str]) -> None:
+    if payload.get("mission_id") != mission_id:
+        raise SimulationCampaignError("simulation campaign does not match the mission")
+    if payload.get("trust_status") != SIMULATION_CAMPAIGN_TRUST_STATUS:
+        raise SimulationCampaignError("simulation campaign is not an approved plan-only record")
+    _safe_id(payload.get("campaign_id"), "campaign_id")
+    if payload.get("simulation_kind") not in _SIMULATION_KINDS:
+        raise SimulationCampaignError("simulation kind must be dft, md, or potential_benchmark")
+    evidence_ids = payload.get("evidence_ids")
+    _validate_evidence_ids(evidence_ids, accepted_evidence_ids)
+    assert isinstance(evidence_ids, list)
+    try:
+        hypothesis = validate_simulation_hypothesis(payload.get("hypothesis"), campaign_id=payload["campaign_id"], evidence_ids=set(evidence_ids))
+        hypothesis_sha256 = canonical_sha256(hypothesis)
+        protocol = validate_simulation_protocol(payload.get("protocol"), campaign_id=payload["campaign_id"], hypothesis_sha256=hypothesis_sha256)
+        protocol_sha256 = canonical_sha256(protocol)
+        manifest = validate_input_manifest(payload.get("input_manifest"), campaign_id=payload["campaign_id"], protocol_sha256=protocol_sha256)
+        input_manifest_sha256 = canonical_sha256(manifest)
+        profile = validate_execution_profile(payload.get("execution_profile"), campaign_id=payload["campaign_id"], input_manifest_sha256=input_manifest_sha256)
+    except SimulationContractError as error:
+        raise SimulationCampaignError(str(error)) from error
+    hashes = {
+        "hypothesis_sha256": hypothesis_sha256, "protocol_sha256": protocol_sha256,
+        "input_manifest_sha256": input_manifest_sha256, "execution_profile_sha256": canonical_sha256(profile),
+    }
+    if payload.get("contract_schema_versions") != contract_schema_versions() or payload.get("contract_hashes") != hashes:
+        raise SimulationCampaignError("simulation campaign contract schema versions or hash bindings are invalid")
+    _validate_approval(payload.get("approval"))
+    if payload.get("execution_permitted") is not False:
+        raise SimulationCampaignError("execution_permitted must remain false")
+    if payload.get("execution_boundary") != SIMULATION_CAMPAIGN_BOUNDARY:
+        raise SimulationCampaignError("simulation campaign execution boundary is invalid")
 
 
 def _validate_evidence_ids(value: object, accepted: set[str]) -> None:

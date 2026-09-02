@@ -87,6 +87,7 @@ from .potential_protocol import PotentialProtocolError, execution_protocol_templ
 from .simulation_campaign import (
     SimulationCampaignError,
     build_approved_simulation_campaign,
+    deny_simulation_execution,
     simulation_campaign_template,
     write_approved_simulation_campaign,
 )
@@ -1693,6 +1694,27 @@ def command_approve_simulation_campaign(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_execute_simulation_campaign(args: argparse.Namespace) -> int:
+    """Refuse execution explicitly; P0 has no engine, scheduler, or network adapter."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        denial = deny_simulation_execution(
+            _load_object(run_dir / "simulation_campaign.json", "simulation campaign"), mission.mission_id
+        )
+    except (UiExportError, SimulationCampaignError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="simulation_campaign_execution_denied",
+        actor="simulation_campaign_policy",
+        state=MissionState.PLAN,
+        payload={"execution_permitted": False, "reason": "plan_only", "max_jobs": 0},
+    )
+    _json_print({"run_id": args.run_id, **denial})
+    return 3
+
+
 def command_check_submission_readiness(args: argparse.Namespace) -> int:
     """Check source, disclosure, and optional LaTeX submission package presence."""
     try:
@@ -3082,6 +3104,9 @@ def build_parser() -> argparse.ArgumentParser:
     simulation_campaign.add_argument("--run-id", required=True)
     simulation_campaign.add_argument("--input", required=True, help="completed campaign JSON with accepted evidence IDs; no paths, credentials, structures, trajectories, commands, or results")
     simulation_campaign.set_defaults(handler=command_approve_simulation_campaign)
+    simulation_execute = commands.add_parser("execute-simulation-campaign", help="return the P0 plan-only refusal; no scheduler, engine, subprocess, or network call exists")
+    simulation_execute.add_argument("--run-id", required=True)
+    simulation_execute.set_defaults(handler=command_execute_simulation_campaign)
     potential_evaluate = commands.add_parser("evaluate-potential-benchmark", help="compare complete imported external potential result summaries")
     potential_evaluate.add_argument("--run-id", required=True)
     potential_evaluate.add_argument("--input", required=True, help="JSON array of external result summaries; no raw trajectories or structures")
