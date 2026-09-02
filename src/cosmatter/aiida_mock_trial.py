@@ -110,6 +110,14 @@ def write_mock_process(run_dir: Path, state: dict[str, Any]) -> Path:
     return path
 
 
+def write_mock_trial(run_dir: Path, trial: dict[str, Any]) -> Path:
+    path = run_dir / "aiida_mock_trial.json"
+    if path.exists():
+        raise AiidaMockTrialError("AiiDA mock authorization already exists; create a new run for another trial")
+    path.write_text(json.dumps(trial, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
 def _validated_trial(value: object) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != _AUTH_FIELDS:
         raise AiidaMockTrialError("AiiDA mock authorization is invalid")

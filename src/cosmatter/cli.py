@@ -98,6 +98,7 @@ from .simulation_result_import import (
     write_external_run_receipt,
     write_reviewed_simulation_evidence,
 )
+from .aiida_mock_trial import AiidaMockTrialError, advance_mock_process, approve_aiida_mock_trial, new_mock_process, write_mock_process, write_mock_trial
 from .ising_benchmark import IsingBenchmarkError, build_ising_benchmark_plan, propose_ising_followups, run_ising_benchmark, write_ising_followups, write_ising_plan, write_ising_result
 from .ising_summary import IsingSummaryError, ising_benchmark_summary, write_ising_benchmark_summary
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
@@ -1765,6 +1766,40 @@ def command_review_simulation_run_receipt(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_approve_aiida_mock_trial(args: argparse.Namespace) -> int:
+    """Record the explicit public-fixture mock authorization; no AiiDA is contacted."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        trial = approve_aiida_mock_trial(
+            campaign=_load_object(run_dir / "simulation_campaign.json", "simulation campaign"), mission_id=mission.mission_id,
+            payload=json.loads(Path(args.input).read_text(encoding="utf-8")),
+        )
+        path = write_mock_trial(run_dir, trial)
+    except (OSError, json.JSONDecodeError, UiExportError, SimulationCampaignError, AiidaMockTrialError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(event_type="aiida_mock_trial_approved", actor="human_aiida_mock_reviewer", state=MissionState.PLAN, payload={"adapter_kind": "aiida_mock", "max_jobs": 1, "real_execution": False})
+    _json_print({"run_id": args.run_id, "trial_path": str(path), "delivery_status": "approved_mock_only", "real_execution": False})
+    return 0
+
+
+def command_advance_aiida_mock_trial(args: argparse.Namespace) -> int:
+    """Advance a local mock checkpoint only; this is not an AiiDA command."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        trial = _load_object(run_dir / "aiida_mock_trial.json", "AiiDA mock trial")
+        state_path = run_dir / "aiida_mock_process.json"
+        state = new_mock_process(trial) if args.action == "create" else advance_mock_process(trial=trial, state=_load_object(state_path, "AiiDA mock process"), action=args.action)
+        path = write_mock_process(run_dir, state)
+    except (UiExportError, AiidaMockTrialError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(event_type="aiida_mock_process_transition", actor="aiida_mock_state_machine", state=MissionState.PLAN, payload={"action": args.action, "mock_status": state["status"], "real_execution": False})
+    _json_print({"run_id": args.run_id, "process_path": str(path), "mock_status": state["status"], "real_execution": False})
+    return 0
+
+
 def command_check_submission_readiness(args: argparse.Namespace) -> int:
     """Check source, disclosure, and optional LaTeX submission package presence."""
     try:
@@ -3165,6 +3200,14 @@ def build_parser() -> argparse.ArgumentParser:
     simulation_review.add_argument("--run-id", required=True)
     simulation_review.add_argument("--input", required=True, help="human-reviewed simulation evidence JSON with evidencecard_gate set to not_submitted")
     simulation_review.set_defaults(handler=command_review_simulation_run_receipt)
+    aiida_mock_approve = commands.add_parser("approve-aiida-mock-trial", help="approve the fixed public-fixture AiiDA mock only; no real AiiDA or execution is used")
+    aiida_mock_approve.add_argument("--run-id", required=True)
+    aiida_mock_approve.add_argument("--input", required=True, help="human-approved aiida_mock JSON for one public fixture and one mock job")
+    aiida_mock_approve.set_defaults(handler=command_approve_aiida_mock_trial)
+    aiida_mock_step = commands.add_parser("advance-aiida-mock-trial", help="advance a local mock checkpoint; never starts a process, queue, network request, or AiiDA daemon")
+    aiida_mock_step.add_argument("--run-id", required=True)
+    aiida_mock_step.add_argument("--action", required=True, choices=("create", "submit", "poll", "cancel", "retry", "resume"))
+    aiida_mock_step.set_defaults(handler=command_advance_aiida_mock_trial)
     potential_evaluate = commands.add_parser("evaluate-potential-benchmark", help="compare complete imported external potential result summaries")
     potential_evaluate.add_argument("--run-id", required=True)
     potential_evaluate.add_argument("--input", required=True, help="JSON array of external result summaries; no raw trajectories or structures")
