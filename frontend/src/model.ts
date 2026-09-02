@@ -35,6 +35,14 @@ export interface EvidenceMaturityRegistry {
   trustStatus: string;
   claims: EvidenceMaturityClaim[];
 }
+export interface SimulationCampaignProjection {
+  deliveryStatus: "approved_plan_only";
+  simulationKind: "dft" | "md" | "potential_benchmark";
+  evidenceCount: number;
+  inputCount: number;
+  executionPermitted: false;
+  executionState: "not_started";
+}
 
 export interface TimelineEntry { stationType: string; action: string; state: string; occurredAt: string; }
 export interface ConditionMatrixRow { conditionCluster: string; supportingEvidenceIds: string[]; contradictingEvidenceIds: string[]; differingFields: string[]; unknowns: string[]; }
@@ -141,6 +149,8 @@ export interface ImportedBundle {
   materialFactSummary: { documentCount: number; factCount: number };
   evidenceMaturityRegistry: EvidenceMaturityRegistry | null;
   evidenceMaturityRegistryStatus: "not_supplied" | "rejected" | "accepted";
+  simulationCampaign: SimulationCampaignProjection | null;
+  simulationCampaignStatus: "not_supplied" | "rejected" | "approved";
   auditSummary: AuditSummary;
   timeline: TimelineEntry[];
   literatureRelations: RelationBundle | null;
@@ -467,6 +477,14 @@ function literatureGraph(value: unknown): LiteratureGraph {
   }).slice(0, 144);
   return { trustStatus: typeof raw.trust_status === "string" ? raw.trust_status.slice(0, 160) : "unclassified", nodes, edges };
 }
+function simulationCampaign(value: unknown): SimulationCampaignProjection | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject;
+  const expected = ["delivery_status", "simulation_kind", "evidence_count", "input_count", "execution_permitted", "execution_state"];
+  if (Object.keys(raw).length !== expected.length || !expected.every((key) => Object.prototype.hasOwnProperty.call(raw, key))) return null;
+  if (raw.delivery_status !== "approved_plan_only" || (raw.simulation_kind !== "dft" && raw.simulation_kind !== "md" && raw.simulation_kind !== "potential_benchmark") || !Number.isInteger(raw.evidence_count) || (raw.evidence_count as number) < 1 || !Number.isInteger(raw.input_count) || (raw.input_count as number) < 1 || raw.execution_permitted !== false || raw.execution_state !== "not_started") return null;
+  return { deliveryStatus: "approved_plan_only", simulationKind: raw.simulation_kind, evidenceCount: raw.evidence_count as number, inputCount: raw.input_count as number, executionPermitted: false, executionState: "not_started" };
+}
 export function readBundle(value: unknown, source: ImportedBundle["source"] = "local-file"): ImportedBundle {
   const root = object(value, "UI JSON");
   const parsedEvidenceMaturityRegistry = evidenceMaturityRegistry(root.evidence_maturity_registry);
@@ -482,6 +500,8 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
   const maturityRegistryMatchesMission = parsedEvidenceMaturityRegistry?.questionId === mission.missionId;
   const acceptedMaturityRegistry = parsedEvidenceMaturityRegistry && maturityRegistryDeliveryStatus === "accepted" && maturityRegistryMatchesMission ? parsedEvidenceMaturityRegistry : null;
   const evidenceMaturityRegistryStatus = acceptedMaturityRegistry ? "accepted" : maturityRegistryDeliveryStatus !== "not_supplied" || root.evidence_maturity_registry !== undefined && root.evidence_maturity_registry !== null ? "rejected" : "not_supplied";
+  const parsedSimulationCampaign = simulationCampaign(root.simulation_campaign);
+  const simulationCampaignStatus = parsedSimulationCampaign && root.simulation_campaign_delivery_status === "approved" ? "approved" : root.simulation_campaign_delivery_status === "not_supplied" && root.simulation_campaign === undefined ? "not_supplied" : "rejected";
   const rawFleet = root.fleet_assignment && typeof root.fleet_assignment === "object" && !Array.isArray(root.fleet_assignment) ? root.fleet_assignment as JsonObject : null;
   const rawStatus = root.status && typeof root.status === "object" && !Array.isArray(root.status) ? root.status as JsonObject : null;
   const declaredAcceptedEvidenceCount = Array.isArray(root.evidence_cards) ? root.evidence_cards.filter((entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry) && (entry as JsonObject).review_status === "accepted").length : 0;
@@ -566,6 +586,8 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     materialFactSummary: (() => { const summary = reviewedSummary(root.reviewed_material_fact_summary, "fact_count"); return { documentCount: summary.documentCount, factCount: summary.recordCount }; })(),
     evidenceMaturityRegistry: acceptedMaturityRegistry,
     evidenceMaturityRegistryStatus,
+    simulationCampaign: simulationCampaignStatus === "approved" ? parsedSimulationCampaign : null,
+    simulationCampaignStatus,
     auditSummary: auditSummary(root.audit_summary),
     timeline: Array.isArray(root.timeline) ? root.timeline.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).station_type === "string" && typeof (entry as JsonObject).action === "string" ? [{ stationType: (entry as JsonObject).station_type as string, action: (entry as JsonObject).action as string, state: typeof (entry as JsonObject).state === "string" ? (entry as JsonObject).state as string : "unknown", occurredAt: typeof (entry as JsonObject).occurred_at === "string" ? (entry as JsonObject).occurred_at as string : "" }] : []) : [],
     literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), relationReconciliation: linkedRelationReconciliation, conditionNormalization: linkedConditionNormalization, literatureGraph: literatureGraph(root.literature_graph),

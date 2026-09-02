@@ -44,6 +44,7 @@ from .verification import VerificationDecision
 from .citation_expansion import CitationExpansionError, validate_citation_expansion
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
 from .planning import PlanApprovalError, load_approved_flight_plan
+from .simulation_campaign import SimulationCampaignError, simulation_campaign_ui_projection
 
 
 UI_SCHEMA_VERSION = "1.0"
@@ -77,6 +78,7 @@ _TIMELINE_ACTIONS = {
     "condition_diagnostics_completed": ("cross_check_review", "条件差分已完成"),
     "material_facts_fused": ("cross_check_review", "已审查材料事实完成跨文献对比"),
     "mission_report_built": ("report_delivery", "审核后报告已生成"),
+    "simulation_campaign_approved_plan_only": ("research_planning", "计算活动计划已人工批准；执行仍被禁用"),
 }
 
 
@@ -1060,6 +1062,8 @@ def build_ui_bundle(
     audit_summary: dict[str, Any] | None = None,
     evidence_maturity_registry: dict[str, Any] | None = None,
     evidence_maturity_registry_delivery_status: str = "not_supplied",
+    simulation_campaign: dict[str, Any] | None = None,
+    simulation_campaign_delivery_status: str = "not_supplied",
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -1096,6 +1100,10 @@ def build_ui_bundle(
         raise UiExportError("evidence maturity registry delivery status is invalid")
     if evidence_maturity_registry is not None and evidence_maturity_registry_delivery_status != "accepted":
         raise UiExportError("evidence maturity registry requires an accepted delivery status")
+    if simulation_campaign_delivery_status not in {"not_supplied", "approved", "rejected"}:
+        raise UiExportError("simulation campaign delivery status is invalid")
+    if simulation_campaign is not None and simulation_campaign_delivery_status != "approved":
+        raise UiExportError("simulation campaign requires an approved delivery status")
     stations = [
         {
             "station_type": station.value,
@@ -1149,6 +1157,8 @@ def build_ui_bundle(
         "reviewed_material_fact_summary": _reviewed_material_fact_summary(material_fact_artifacts),
         "evidence_maturity_registry": evidence_maturity_registry,
         "evidence_maturity_registry_delivery_status": evidence_maturity_registry_delivery_status,
+        "simulation_campaign": simulation_campaign,
+        "simulation_campaign_delivery_status": simulation_campaign_delivery_status,
         "literature_relations": literature_relations,
         "crossref_relations": crossref_relations,
         "relation_reconciliation": _relation_reconciliation_projection(relation_reconciliation),
@@ -1205,6 +1215,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     citation_expansion = _citation_expansion_projection(run_dir / "citation_expansion.json", mission.mission_id)
     retrieval_candidates = _retrieval_candidate_projection(run_dir / "retrieval_candidates.json")
     maturity_registry, maturity_delivery_status = _evidence_maturity_registry_projection(run_dir, runs_dir, mission.mission_id)
+    simulation_campaign, simulation_campaign_delivery_status = _simulation_campaign_projection(run_dir, mission.mission_id)
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         source_maps = iter_source_maps(run_dir, mission.mission_id)
@@ -1259,6 +1270,8 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         audit_summary=audit_summary,
         evidence_maturity_registry=maturity_registry,
         evidence_maturity_registry_delivery_status=maturity_delivery_status,
+        simulation_campaign=simulation_campaign,
+        simulation_campaign_delivery_status=simulation_campaign_delivery_status,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1270,6 +1283,17 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         payload={"schema_version": UI_SCHEMA_VERSION, "evidence_card_count": len(bundle["evidence_cards"])},
     )
     return destination
+
+
+def _simulation_campaign_projection(run_dir: Path, mission_id: str) -> tuple[dict[str, Any] | None, str]:
+    """Safely expose only an approved, non-executing campaign summary."""
+    path = run_dir / "simulation_campaign.json"
+    if not path.exists():
+        return None, "not_supplied"
+    try:
+        return simulation_campaign_ui_projection(_load_object(path, "simulation campaign"), mission_id), "approved"
+    except (SimulationCampaignError, UiExportError):
+        return None, "rejected"
 
 
 def _evidence_maturity_registry_projection(run_dir: Path, runs_dir: Path, mission_id: str) -> tuple[dict[str, Any] | None, str]:

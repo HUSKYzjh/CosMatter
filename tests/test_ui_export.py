@@ -10,6 +10,12 @@ from cosmatter.audit import FlightRecorder
 from cosmatter.cli import main
 from cosmatter.dispatch import MissionDispatcher
 from cosmatter.models import MissionBrief, MissionState
+from cosmatter.simulation_campaign import (
+    SIMULATION_CAMPAIGN_BOUNDARY,
+    SIMULATION_CAMPAIGN_SCHEMA_VERSION,
+    SIMULATION_CAMPAIGN_TRUST_STATUS,
+    build_approved_simulation_campaign,
+)
 from cosmatter.source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, source_map_from_review, write_source_map_for_document
 from cosmatter.ui_export import UiExportError, export_run_to_ui
 
@@ -56,6 +62,39 @@ class UiExportTests(unittest.TestCase):
         self.assertNotIn("must never appear", serialised)
         self.assertNotIn("api_key", serialised)
         self.assertNotIn("authorization", serialised)
+
+    def test_export_projects_only_safe_plan_only_campaign_status(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            self._write_run(runs_dir, "simulation_campaign_export")
+            run_dir = runs_dir / "simulation_campaign_export"
+            mission = MissionBrief(
+                mission_id="mission_ui_export_001", question="为什么两篇论文对 BiFeO3 应变相变有不同结论？",
+                material="BiFeO3", property_name="phase stability", scope="epitaxial thin films",
+            )
+            campaign = build_approved_simulation_campaign(
+                mission=mission, accepted_evidence_ids={"evidence_accepted"}, payload={
+                    "schema_version": SIMULATION_CAMPAIGN_SCHEMA_VERSION, "trust_status": SIMULATION_CAMPAIGN_TRUST_STATUS,
+                    "campaign_id": "campaign_ui_001", "mission_id": mission.mission_id, "simulation_kind": "dft",
+                    "evidence_ids": ["evidence_accepted"],
+                    "hypothesis": {"statement": "bounded hypothesis", "variables": "strain", "control": "composition", "observable": "aggregate value", "falsifier": "no difference"},
+                    "protocol": {"engine": "external engine", "recipe_id": "recipe_001", "method_boundary": "reviewed method", "convergence_or_sampling_boundary": "reviewed convergence", "result_summary_boundary": "aggregate results only"},
+                    "input_manifest": {"input_count": 1, "inputs": [{"input_id": "input_001", "sha256": "c" * 64, "source_kind": "reviewed manifest", "license_status": "reviewed license clearance"}]},
+                    "execution_profile": {"mode": "disabled", "adapter_kind": "none", "allowed_engines": [], "allowed_recipe_ids": [], "max_jobs": 0, "max_gpu_jobs": 0, "max_dft_jobs": 0, "scheduler_submission_enabled": False, "polling_enabled": False},
+                    "approval": {"status": "approved_plan_only", "reviewer": "private reviewer", "approved_on": "2026-09-02", "rationale": "bounded evidence"},
+                    "execution_permitted": False, "execution_boundary": SIMULATION_CAMPAIGN_BOUNDARY,
+                },
+            )
+            (run_dir / "simulation_campaign.json").write_text(json.dumps(campaign), encoding="utf-8")
+            export_run_to_ui(runs_dir, "simulation_campaign_export")
+            bundle = json.loads((run_dir / "ui.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(bundle["simulation_campaign_delivery_status"], "approved")
+        self.assertEqual(bundle["simulation_campaign"], {"delivery_status": "approved_plan_only", "simulation_kind": "dft", "evidence_count": 1, "input_count": 1, "execution_permitted": False, "execution_state": "not_started"})
+        serialised = json.dumps(bundle)
+        self.assertNotIn("evidence_accepted", serialised)
+        self.assertNotIn("private reviewer", serialised)
+        self.assertNotIn("c" * 64, serialised)
 
     def test_maturity_registry_reaches_ui_only_after_a_bound_link_audit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

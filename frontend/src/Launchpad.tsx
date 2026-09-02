@@ -5,6 +5,7 @@ import { isCurrentCandidateResponse } from "./launchCandidateRequest";
 import { isLaunchMissionReady, launchMissionMissingFields, type LaunchMissionField } from "./launchMissionValidation";
 import { bfoTaskPresets, isBfoTaskPresetId } from "./bfoTaskPresets";
 import { bfoTaskFormation } from "./bfoTaskFormation";
+import { researchObjectFromQuestion } from "./launchQuestionObject";
 
 export type LaunchMode = "question" | "pdf" | "resume";
 export interface LaunchCandidate { id: string; question: string; material: string; property: string; scope: string; kind: "survey" | "contrast" | "mechanism"; }
@@ -36,7 +37,7 @@ const fallbackCandidates = (question: string): LaunchCandidate[] => [
       `围绕该研究议题，现有文献的研究对象、报告结论与证据边界分别是什么？`,
       `What research objects, reported outcomes, and evidence boundaries define the literature landscape for this topic?`,
     ),
-    material: copy("由输入问题识别，待人工确认", "Inferred from the prompt; confirm manually"),
+    material: researchObjectFromQuestion(question) ?? copy("由输入问题识别，待人工确认", "Inferred from the prompt; confirm manually"),
     property: copy("研究背景与证据全景", "Research background and evidence landscape"),
     scope: copy(`以“${question}”作为检索意图，不将原句直接作为研究任务。`, `Use “${question}” as retrieval intent, not as the task wording.`),
     kind: "survey",

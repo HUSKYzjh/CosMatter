@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from cosmatter.audit import AuditPathError, FlightRecorder, safe_run_id
-from cosmatter.models import MissionBrief, MissionState, PaperCandidate
+from cosmatter.models import MissionBrief, MissionState, PaperCandidate, ReviewStatus
 from cosmatter.state_machine import MissionMachine
 
 from .config import AGENT_ROOT, Settings, data_root
@@ -84,6 +84,12 @@ from .reporting import ReportGateError, build_evidence_manifest, build_structure
 from .latex_report import LatexReportError, compile_latex_report, export_latex_report
 from .potential_benchmark import PotentialBenchmarkError, evaluate_potential_results, generate_potential_boundary_plan, propose_potential_followups, write_potential_evaluation, write_potential_followups, write_potential_plan
 from .potential_protocol import PotentialProtocolError, execution_protocol_template, write_potential_execution_protocol
+from .simulation_campaign import (
+    SimulationCampaignError,
+    build_approved_simulation_campaign,
+    simulation_campaign_template,
+    write_approved_simulation_campaign,
+)
 from .ising_benchmark import IsingBenchmarkError, build_ising_benchmark_plan, propose_ising_followups, run_ising_benchmark, write_ising_followups, write_ising_plan, write_ising_result
 from .ising_summary import IsingSummaryError, ising_benchmark_summary, write_ising_benchmark_summary
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
@@ -1627,6 +1633,66 @@ def command_record_potential_execution_protocol(args: argparse.Namespace) -> int
     return 0
 
 
+def command_create_simulation_campaign_template(args: argparse.Namespace) -> int:
+    """Create a non-executable, evidence-bound campaign template for human completion."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        payload = simulation_campaign_template(mission)
+        path = run_dir / "simulation_campaign_template.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except (OSError, UiExportError, SimulationCampaignError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    _json_print({"run_id": args.run_id, "template_path": str(path), "execution_permitted": False})
+    return 0
+
+
+def command_approve_simulation_campaign(args: argparse.Namespace) -> int:
+    """Record a human-approved plan-only campaign; this never dispatches a calculation."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
+        decisions = _verification_decisions_from_payloads(
+            _load_array_if_present(run_dir / "verification_decisions.json", "verification decision artifacts")
+        )
+        card_ids = {card.evidence_id for card in cards}
+        accepted_evidence_ids = {
+            decision.evidence_id
+            for decision in decisions
+            if decision.mission_id == mission.mission_id
+            and decision.status is ReviewStatus.ACCEPTED
+            and decision.evidence_id in card_ids
+        }
+        payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        campaign = build_approved_simulation_campaign(
+            mission=mission, accepted_evidence_ids=accepted_evidence_ids, payload=payload
+        )
+        path = write_approved_simulation_campaign(run_dir, campaign)
+    except (OSError, json.JSONDecodeError, UiExportError, SimulationCampaignError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="simulation_campaign_approved_plan_only",
+        actor="human_simulation_campaign_review",
+        state=MissionState.PLAN,
+        payload={
+            "simulation_kind": campaign["simulation_kind"],
+            "accepted_evidence_count": len(campaign["evidence_ids"]),
+            "input_count": campaign["input_manifest"]["input_count"],
+            "execution_permitted": False,
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "campaign_path": str(path),
+        "delivery_status": campaign["approval"]["status"],
+        "execution_permitted": False,
+    })
+    return 0
+
+
 def command_check_submission_readiness(args: argparse.Namespace) -> int:
     """Check source, disclosure, and optional LaTeX submission package presence."""
     try:
@@ -3009,6 +3075,13 @@ def build_parser() -> argparse.ArgumentParser:
     potential_protocol.add_argument("--run-id", required=True)
     potential_protocol.add_argument("--input", required=True, help="completed protocol JSON without structures, trajectories, credentials, or private paths")
     potential_protocol.set_defaults(handler=command_record_potential_execution_protocol)
+    simulation_campaign_template = commands.add_parser("create-simulation-campaign-template", help="write a human-completed generic DFT/MD/potential campaign template; execution stays disabled")
+    simulation_campaign_template.add_argument("--run-id", required=True)
+    simulation_campaign_template.set_defaults(handler=command_create_simulation_campaign_template)
+    simulation_campaign = commands.add_parser("approve-simulation-campaign", help="validate and record a human-approved plan-only simulation campaign; it never executes calculations")
+    simulation_campaign.add_argument("--run-id", required=True)
+    simulation_campaign.add_argument("--input", required=True, help="completed campaign JSON with accepted evidence IDs; no paths, credentials, structures, trajectories, commands, or results")
+    simulation_campaign.set_defaults(handler=command_approve_simulation_campaign)
     potential_evaluate = commands.add_parser("evaluate-potential-benchmark", help="compare complete imported external potential result summaries")
     potential_evaluate.add_argument("--run-id", required=True)
     potential_evaluate.add_argument("--input", required=True, help="JSON array of external result summaries; no raw trajectories or structures")
