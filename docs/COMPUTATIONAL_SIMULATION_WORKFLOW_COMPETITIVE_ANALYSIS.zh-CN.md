@@ -115,6 +115,7 @@ EvidenceCard / 报告中的限定性结论
 - 已加入纯本地 `aiida_mock` 状态机，固定为一个公开 fixture 和 `mock_relax_static_v1` 配方。它覆盖人工 mock 批准、提交、轮询、取消、一次失败重试和恢复检查点，并生成可回溯的模拟 process UUID。
 - 可从新终端使用 `approve-aiida-mock-trial` 与 `advance-aiida-mock-trial` 演示该状态机；命令输出和 Flight Recorder 都明确标记 `real_execution: false`。
 - mock 不依赖或导入 AiiDA，不调用网络、子进程、队列、远程目录或凭据；每个工件都带 `not_real_execution` 信任标记。它只是为真实适配器上线前验证状态与谱系契约，绝不等价于隔离试点已获准。
+- 真实试点的授权、资源上限、公开结构与回滚前置条件已整理为 [隔离试点授权与验收清单](AIIDA_ISOLATED_PILOT_AUTHORIZATION.zh-CN.md)。
 
 ### P3：atomate2 配方与 DP-GEN 专项循环（后期，按需）
 
