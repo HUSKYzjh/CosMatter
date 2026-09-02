@@ -45,6 +45,7 @@ from .citation_expansion import CitationExpansionError, validate_citation_expans
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
 from .planning import PlanApprovalError, load_approved_flight_plan
 from .simulation_campaign import SimulationCampaignError, simulation_campaign_ui_projection
+from .simulation_result_import import SimulationResultImportError, simulation_evidence_ui_projection
 
 
 UI_SCHEMA_VERSION = "1.0"
@@ -1065,6 +1066,8 @@ def build_ui_bundle(
     evidence_maturity_registry_delivery_status: str = "not_supplied",
     simulation_campaign: dict[str, Any] | None = None,
     simulation_campaign_delivery_status: str = "not_supplied",
+    simulation_evidence: dict[str, Any] | None = None,
+    simulation_evidence_delivery_status: str = "not_supplied",
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -1105,6 +1108,10 @@ def build_ui_bundle(
         raise UiExportError("simulation campaign delivery status is invalid")
     if simulation_campaign is not None and simulation_campaign_delivery_status != "approved":
         raise UiExportError("simulation campaign requires an approved delivery status")
+    if simulation_evidence_delivery_status not in {"not_supplied", "reviewed", "rejected"}:
+        raise UiExportError("simulation evidence delivery status is invalid")
+    if simulation_evidence is not None and simulation_evidence_delivery_status != "reviewed":
+        raise UiExportError("simulation evidence requires a reviewed delivery status")
     stations = [
         {
             "station_type": station.value,
@@ -1160,6 +1167,8 @@ def build_ui_bundle(
         "evidence_maturity_registry_delivery_status": evidence_maturity_registry_delivery_status,
         "simulation_campaign": simulation_campaign,
         "simulation_campaign_delivery_status": simulation_campaign_delivery_status,
+        "simulation_evidence": simulation_evidence,
+        "simulation_evidence_delivery_status": simulation_evidence_delivery_status,
         "literature_relations": literature_relations,
         "crossref_relations": crossref_relations,
         "relation_reconciliation": _relation_reconciliation_projection(relation_reconciliation),
@@ -1217,6 +1226,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     retrieval_candidates = _retrieval_candidate_projection(run_dir / "retrieval_candidates.json")
     maturity_registry, maturity_delivery_status = _evidence_maturity_registry_projection(run_dir, runs_dir, mission.mission_id)
     simulation_campaign, simulation_campaign_delivery_status = _simulation_campaign_projection(run_dir, mission.mission_id)
+    simulation_evidence, simulation_evidence_delivery_status = _simulation_evidence_projection(run_dir, mission.mission_id)
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         source_maps = iter_source_maps(run_dir, mission.mission_id)
@@ -1273,6 +1283,8 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         evidence_maturity_registry_delivery_status=maturity_delivery_status,
         simulation_campaign=simulation_campaign,
         simulation_campaign_delivery_status=simulation_campaign_delivery_status,
+        simulation_evidence=simulation_evidence,
+        simulation_evidence_delivery_status=simulation_evidence_delivery_status,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1294,6 +1306,22 @@ def _simulation_campaign_projection(run_dir: Path, mission_id: str) -> tuple[dic
     try:
         return simulation_campaign_ui_projection(_load_object(path, "simulation campaign"), mission_id), "approved"
     except (SimulationCampaignError, UiExportError):
+        return None, "rejected"
+
+
+def _simulation_evidence_projection(run_dir: Path, mission_id: str) -> tuple[dict[str, Any] | None, str]:
+    receipt_path = run_dir / "simulation_external_run_receipt.json"
+    review_path = run_dir / "reviewed_simulation_evidence.json"
+    if not receipt_path.exists() and not review_path.exists():
+        return None, "not_supplied"
+    if not receipt_path.exists() or not review_path.exists():
+        return None, "rejected"
+    try:
+        return simulation_evidence_ui_projection(
+            campaign=_load_object(run_dir / "simulation_campaign.json", "simulation campaign"), mission_id=mission_id,
+            receipt=_load_object(receipt_path, "external simulation run receipt"), review=_load_object(review_path, "reviewed simulation evidence"),
+        ), "reviewed"
+    except (SimulationCampaignError, SimulationResultImportError, UiExportError):
         return None, "rejected"
 
 

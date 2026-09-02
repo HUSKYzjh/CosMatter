@@ -126,7 +126,16 @@ def validate_execution_profile(value: object, *, campaign_id: str, input_manifes
 
 
 def validate_external_run_receipt(value: object, *, campaign_id: str, input_manifest_sha256: str) -> dict[str, Any]:
-    """Validate a future P1 aggregate receipt; P0 callers must still reject it."""
+    """Validate an imported, aggregate-only external result receipt.
+
+    Version 1.0 is retained solely to validate legacy test fixtures.  Version
+    1.1 is the P1 import boundary: it binds the protocol, declares one bounded
+    result family, and accepts no paths, commands, raw files, or credentials.
+    """
+    if not isinstance(value, dict):
+        raise SimulationContractError("external run receipt must be an object")
+    if value.get("schema_version") == "1.1":
+        return _validate_external_run_receipt_v11(value, campaign_id=campaign_id, input_manifest_sha256=input_manifest_sha256)
     fields = {"schema_version", "artifact_id", "campaign_id", "input_manifest_sha256", "external_run_id", "status", "output_summary_sha256", "exit_class", "resource_summary", "convergence_status"}
     _object_fields(value, fields, "external run receipt")
     assert isinstance(value, dict)
@@ -151,7 +160,21 @@ def validate_external_run_receipt(value: object, *, campaign_id: str, input_mani
 
 
 def validate_reviewed_simulation_evidence(value: object, *, campaign_id: str, receipt_sha256: str) -> dict[str, Any]:
-    """Validate a future P1 review record without promoting it to EvidenceCard."""
+    """Validate a human review record without promoting it to an EvidenceCard."""
+    if not isinstance(value, dict):
+        raise SimulationContractError("reviewed simulation evidence must be an object")
+    if value.get("schema_version") == "1.1":
+        fields = {"schema_version", "artifact_id", "campaign_id", "receipt_sha256", "review_status", "relation_to_hypothesis", "applicability_boundary", "uncertainty", "reviewer", "reviewed_on", "evidencecard_gate"}
+        _object_fields(value, fields, "reviewed simulation evidence")
+        _identifier(value.get("artifact_id"), "reviewed simulation evidence artifact_id")
+        _equal(value.get("campaign_id"), campaign_id, "reviewed simulation evidence campaign_id")
+        _hash(value.get("receipt_sha256"), "reviewed simulation evidence receipt_sha256")
+        _equal(value.get("receipt_sha256"), receipt_sha256, "reviewed simulation evidence receipt hash")
+        if value.get("review_status") != "human_reviewed_pending_evidencecard_gate" or value.get("relation_to_hypothesis") not in {"supports", "contradicts", "uncertain"} or value.get("evidencecard_gate") != "not_submitted":
+            raise SimulationContractError("reviewed simulation evidence remains outside the EvidenceCard gate")
+        for field in ("applicability_boundary", "uncertainty", "reviewer", "reviewed_on"):
+            _text(value.get(field), f"reviewed simulation evidence {field}")
+        return value
     fields = {"schema_version", "artifact_id", "campaign_id", "receipt_sha256", "review_status", "relation_to_hypothesis", "applicability_boundary", "uncertainty", "reviewer", "reviewed_on"}
     _object_fields(value, fields, "reviewed simulation evidence")
     assert isinstance(value, dict)
@@ -164,6 +187,45 @@ def validate_reviewed_simulation_evidence(value: object, *, campaign_id: str, re
         raise SimulationContractError("reviewed simulation evidence remains a human-reviewed non-EvidenceCard record")
     for field in ("applicability_boundary", "uncertainty", "reviewer", "reviewed_on"):
         _text(value.get(field), f"reviewed simulation evidence {field}")
+    return value
+
+
+def _validate_external_run_receipt_v11(value: dict[str, Any], *, campaign_id: str, input_manifest_sha256: str) -> dict[str, Any]:
+    fields = {"schema_version", "artifact_id", "campaign_id", "input_manifest_sha256", "protocol_sha256", "external_run_id", "status", "output_summary_sha256", "exit_class", "resource_summary", "convergence_status", "result_kind", "metrics", "external_execution_assertion"}
+    _object_fields(value, fields, "external run receipt")
+    for key in ("artifact_id", "external_run_id"):
+        _identifier(value.get(key), f"external run receipt {key}")
+    _equal(value.get("campaign_id"), campaign_id, "external run receipt campaign_id")
+    for field, expected in (("input_manifest_sha256", input_manifest_sha256),):
+        _hash(value.get(field), f"external run receipt {field}")
+        _equal(value.get(field), expected, f"external run receipt {field}")
+    _hash(value.get("protocol_sha256"), "external run receipt protocol_sha256")
+    _hash(value.get("output_summary_sha256"), "external run receipt output_summary_sha256")
+    if value.get("status") != "succeeded" or value.get("exit_class") != "completed" or value.get("convergence_status") not in {"converged", "not_applicable"}:
+        raise SimulationContractError("P1 external run receipt must be a completed, converged or not-applicable aggregate result")
+    resource = value.get("resource_summary")
+    if not isinstance(resource, dict) or set(resource) != {"cpu_seconds", "gpu_seconds", "job_count"}:
+        raise SimulationContractError("external run receipt resource summary is invalid")
+    for number in resource.values():
+        if not isinstance(number, (int, float)) or isinstance(number, bool) or not math.isfinite(float(number)) or float(number) < 0:
+            raise SimulationContractError("external run receipt resource values must be finite non-negative numbers")
+    kind = value.get("result_kind")
+    metrics = value.get("metrics")
+    required = {
+        "energy_force_summary": {"sample_count", "energy_mae_ev_per_atom", "force_rmse_ev_per_a"},
+        "relaxation_summary": {"ionic_steps", "initial_energy_ev", "final_energy_ev", "max_force_ev_per_a"},
+        "md_aggregate_summary": {"sample_count", "mean_temperature_k", "temperature_std_k", "mean_total_energy_ev"},
+    }
+    if kind not in required or not isinstance(metrics, dict) or set(metrics) != required[kind]:
+        raise SimulationContractError("external run receipt result kind or aggregate metrics are invalid")
+    for field, number in metrics.items():
+        if not isinstance(number, (int, float)) or isinstance(number, bool) or not math.isfinite(float(number)):
+            raise SimulationContractError(f"external run receipt metric {field} must be finite")
+        if field in {"sample_count", "ionic_steps"} and (int(number) != number or number < 1):
+            raise SimulationContractError(f"external run receipt metric {field} must be a positive integer")
+        if field in {"energy_mae_ev_per_atom", "force_rmse_ev_per_a", "max_force_ev_per_a", "temperature_std_k"} and number < 0:
+            raise SimulationContractError(f"external run receipt metric {field} must be non-negative")
+    _equal(value.get("external_execution_assertion"), "external_result_imported_read_only_not_cosmatter_execution", "external execution assertion")
     return value
 
 

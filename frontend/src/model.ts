@@ -47,6 +47,15 @@ export interface SimulationCampaignProjection {
   budget: { maxJobs: 0; maxGpuJobs: 0; maxDftJobs: 0; };
   continuationReason: string;
 }
+export interface SimulationEvidenceProjection {
+  deliveryStatus: "human_reviewed_pending_evidencecard_gate";
+  resultKind: "energy_force_summary" | "relaxation_summary" | "md_aggregate_summary";
+  convergenceStatus: "converged" | "not_applicable";
+  relationToHypothesis: "supports" | "contradicts" | "uncertain";
+  applicabilityBoundary: string;
+  uncertainty: string;
+  resultInterpretationBoundary: string;
+}
 
 export interface TimelineEntry { stationType: string; action: string; state: string; occurredAt: string; }
 export interface ConditionMatrixRow { conditionCluster: string; supportingEvidenceIds: string[]; contradictingEvidenceIds: string[]; differingFields: string[]; unknowns: string[]; }
@@ -155,6 +164,8 @@ export interface ImportedBundle {
   evidenceMaturityRegistryStatus: "not_supplied" | "rejected" | "accepted";
   simulationCampaign: SimulationCampaignProjection | null;
   simulationCampaignStatus: "not_supplied" | "rejected" | "approved";
+  simulationEvidence: SimulationEvidenceProjection | null;
+  simulationEvidenceStatus: "not_supplied" | "rejected" | "reviewed";
   auditSummary: AuditSummary;
   timeline: TimelineEntry[];
   literatureRelations: RelationBundle | null;
@@ -490,6 +501,14 @@ function simulationCampaign(value: unknown): SimulationCampaignProjection | null
   if (raw.delivery_status !== "approved_plan_only" || (raw.simulation_kind !== "dft" && raw.simulation_kind !== "md" && raw.simulation_kind !== "potential_benchmark") || !Number.isInteger(raw.evidence_count) || (raw.evidence_count as number) < 1 || !Number.isInteger(raw.input_count) || (raw.input_count as number) < 1 || raw.execution_permitted !== false || raw.execution_state !== "blocked_plan_only" || chain === null || typeof chain !== "object" || Array.isArray(chain) || (chain as JsonObject).evidence !== "bound" || (chain as JsonObject).hypothesis !== "approved" || (chain as JsonObject).protocol !== "approved" || (chain as JsonObject).execution !== "blocked" || !Array.isArray(raw.missing_fields) || !raw.missing_fields.every((item) => typeof item === "string") || budget === null || typeof budget !== "object" || Array.isArray(budget) || (budget as JsonObject).max_jobs !== 0 || (budget as JsonObject).max_gpu_jobs !== 0 || (budget as JsonObject).max_dft_jobs !== 0 || typeof raw.continuation_reason !== "string" || !raw.continuation_reason.trim()) return null;
   return { deliveryStatus: "approved_plan_only", simulationKind: raw.simulation_kind, evidenceCount: raw.evidence_count as number, inputCount: raw.input_count as number, executionPermitted: false, executionState: "blocked_plan_only", chain: { evidence: "bound", hypothesis: "approved", protocol: "approved", execution: "blocked" }, missingFields: raw.missing_fields.slice(0, 12), budget: { maxJobs: 0, maxGpuJobs: 0, maxDftJobs: 0 }, continuationReason: raw.continuation_reason.slice(0, 500) };
 }
+function simulationEvidence(value: unknown): SimulationEvidenceProjection | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject;
+  const expected = ["delivery_status", "result_kind", "convergence_status", "relation_to_hypothesis", "applicability_boundary", "uncertainty", "result_interpretation_boundary"];
+  if (Object.keys(raw).length !== expected.length || !expected.every((key) => Object.prototype.hasOwnProperty.call(raw, key))) return null;
+  if (raw.delivery_status !== "human_reviewed_pending_evidencecard_gate" || !["energy_force_summary", "relaxation_summary", "md_aggregate_summary"].includes(raw.result_kind as string) || !["converged", "not_applicable"].includes(raw.convergence_status as string) || !["supports", "contradicts", "uncertain"].includes(raw.relation_to_hypothesis as string) || typeof raw.applicability_boundary !== "string" || typeof raw.uncertainty !== "string" || typeof raw.result_interpretation_boundary !== "string") return null;
+  return { deliveryStatus: "human_reviewed_pending_evidencecard_gate", resultKind: raw.result_kind as SimulationEvidenceProjection["resultKind"], convergenceStatus: raw.convergence_status as SimulationEvidenceProjection["convergenceStatus"], relationToHypothesis: raw.relation_to_hypothesis as SimulationEvidenceProjection["relationToHypothesis"], applicabilityBoundary: raw.applicability_boundary.slice(0, 500), uncertainty: raw.uncertainty.slice(0, 500), resultInterpretationBoundary: raw.result_interpretation_boundary.slice(0, 500) };
+}
 export function readBundle(value: unknown, source: ImportedBundle["source"] = "local-file"): ImportedBundle {
   const root = object(value, "UI JSON");
   const parsedEvidenceMaturityRegistry = evidenceMaturityRegistry(root.evidence_maturity_registry);
@@ -507,6 +526,8 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
   const evidenceMaturityRegistryStatus = acceptedMaturityRegistry ? "accepted" : maturityRegistryDeliveryStatus !== "not_supplied" || root.evidence_maturity_registry !== undefined && root.evidence_maturity_registry !== null ? "rejected" : "not_supplied";
   const parsedSimulationCampaign = simulationCampaign(root.simulation_campaign);
   const simulationCampaignStatus = parsedSimulationCampaign && root.simulation_campaign_delivery_status === "approved" ? "approved" : root.simulation_campaign_delivery_status === "not_supplied" && root.simulation_campaign === undefined ? "not_supplied" : "rejected";
+  const parsedSimulationEvidence = simulationEvidence(root.simulation_evidence);
+  const simulationEvidenceStatus = parsedSimulationEvidence && root.simulation_evidence_delivery_status === "reviewed" ? "reviewed" : root.simulation_evidence_delivery_status === "not_supplied" && root.simulation_evidence === undefined ? "not_supplied" : "rejected";
   const rawFleet = root.fleet_assignment && typeof root.fleet_assignment === "object" && !Array.isArray(root.fleet_assignment) ? root.fleet_assignment as JsonObject : null;
   const rawStatus = root.status && typeof root.status === "object" && !Array.isArray(root.status) ? root.status as JsonObject : null;
   const declaredAcceptedEvidenceCount = Array.isArray(root.evidence_cards) ? root.evidence_cards.filter((entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry) && (entry as JsonObject).review_status === "accepted").length : 0;
@@ -593,6 +614,8 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     evidenceMaturityRegistryStatus,
     simulationCampaign: simulationCampaignStatus === "approved" ? parsedSimulationCampaign : null,
     simulationCampaignStatus,
+    simulationEvidence: simulationEvidenceStatus === "reviewed" ? parsedSimulationEvidence : null,
+    simulationEvidenceStatus,
     auditSummary: auditSummary(root.audit_summary),
     timeline: Array.isArray(root.timeline) ? root.timeline.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).station_type === "string" && typeof (entry as JsonObject).action === "string" ? [{ stationType: (entry as JsonObject).station_type as string, action: (entry as JsonObject).action as string, state: typeof (entry as JsonObject).state === "string" ? (entry as JsonObject).state as string : "unknown", occurredAt: typeof (entry as JsonObject).occurred_at === "string" ? (entry as JsonObject).occurred_at as string : "" }] : []) : [],
     literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), relationReconciliation: linkedRelationReconciliation, conditionNormalization: linkedConditionNormalization, literatureGraph: literatureGraph(root.literature_graph),

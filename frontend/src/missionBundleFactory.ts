@@ -27,6 +27,8 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
     evidenceMaturityRegistryStatus: "not_supplied",
     simulationCampaign: null,
     simulationCampaignStatus: "not_supplied",
+    simulationEvidence: null,
+    simulationEvidenceStatus: "not_supplied",
     auditSummary: {
       counterevidence: { state: "plan_not_approved", plannedQueryCount: 0, executedQueryCount: 0 },
       reportEvidence: null,

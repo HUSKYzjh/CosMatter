@@ -91,6 +91,13 @@ from .simulation_campaign import (
     simulation_campaign_template,
     write_approved_simulation_campaign,
 )
+from .simulation_result_import import (
+    SimulationResultImportError,
+    import_external_run_receipt,
+    review_external_run_receipt,
+    write_external_run_receipt,
+    write_reviewed_simulation_evidence,
+)
 from .ising_benchmark import IsingBenchmarkError, build_ising_benchmark_plan, propose_ising_followups, run_ising_benchmark, write_ising_followups, write_ising_plan, write_ising_result
 from .ising_summary import IsingSummaryError, ising_benchmark_summary, write_ising_benchmark_summary
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
@@ -1715,6 +1722,49 @@ def command_execute_simulation_campaign(args: argparse.Namespace) -> int:
     return 3
 
 
+def command_import_simulation_run_receipt(args: argparse.Namespace) -> int:
+    """Import one aggregate external result without contacting its execution system."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        receipt = import_external_run_receipt(
+            campaign=_load_object(run_dir / "simulation_campaign.json", "simulation campaign"),
+            mission_id=mission.mission_id, payload=json.loads(Path(args.input).read_text(encoding="utf-8")),
+        )
+        path = write_external_run_receipt(run_dir, receipt)
+    except (OSError, json.JSONDecodeError, UiExportError, SimulationCampaignError, SimulationResultImportError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="simulation_external_result_imported_read_only", actor="external_result_importer", state=MissionState.HUMAN_REVIEW,
+        payload={"result_kind": receipt["result_kind"], "convergence_status": receipt["convergence_status"], "execution_permitted": False},
+    )
+    _json_print({"run_id": args.run_id, "receipt_path": str(path), "delivery_status": "imported_pending_human_scientific_review", "execution_permitted": False})
+    return 0
+
+
+def command_review_simulation_run_receipt(args: argparse.Namespace) -> int:
+    """Persist one human review, without auto-promoting it to an EvidenceCard."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        review = review_external_run_receipt(
+            campaign=_load_object(run_dir / "simulation_campaign.json", "simulation campaign"), mission_id=mission.mission_id,
+            receipt=_load_object(run_dir / "simulation_external_run_receipt.json", "external simulation run receipt"),
+            payload=json.loads(Path(args.input).read_text(encoding="utf-8")),
+        )
+        path = write_reviewed_simulation_evidence(run_dir, review)
+    except (OSError, json.JSONDecodeError, UiExportError, SimulationCampaignError, SimulationResultImportError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="simulation_external_result_human_reviewed", actor="human_simulation_result_reviewer", state=MissionState.HUMAN_REVIEW,
+        payload={"relation_to_hypothesis": review["relation_to_hypothesis"], "evidencecard_gate": "not_submitted"},
+    )
+    _json_print({"run_id": args.run_id, "review_path": str(path), "delivery_status": review["review_status"], "evidencecard_gate": "not_submitted"})
+    return 0
+
+
 def command_check_submission_readiness(args: argparse.Namespace) -> int:
     """Check source, disclosure, and optional LaTeX submission package presence."""
     try:
@@ -3107,6 +3157,14 @@ def build_parser() -> argparse.ArgumentParser:
     simulation_execute = commands.add_parser("execute-simulation-campaign", help="return the P0 plan-only refusal; no scheduler, engine, subprocess, or network call exists")
     simulation_execute.add_argument("--run-id", required=True)
     simulation_execute.set_defaults(handler=command_execute_simulation_campaign)
+    simulation_import = commands.add_parser("import-simulation-run-receipt", help="read one completed external aggregate summary; never calls the executor or imports raw artifacts")
+    simulation_import.add_argument("--run-id", required=True)
+    simulation_import.add_argument("--input", required=True, help="external receipt JSON with aggregate metrics only; no paths, logs, structures, trajectories, commands, or credentials")
+    simulation_import.set_defaults(handler=command_import_simulation_run_receipt)
+    simulation_review = commands.add_parser("review-simulation-run-receipt", help="record a human review of an imported simulation summary; it remains outside the EvidenceCard gate")
+    simulation_review.add_argument("--run-id", required=True)
+    simulation_review.add_argument("--input", required=True, help="human-reviewed simulation evidence JSON with evidencecard_gate set to not_submitted")
+    simulation_review.set_defaults(handler=command_review_simulation_run_receipt)
     potential_evaluate = commands.add_parser("evaluate-potential-benchmark", help="compare complete imported external potential result summaries")
     potential_evaluate.add_argument("--run-id", required=True)
     potential_evaluate.add_argument("--input", required=True, help="JSON array of external result summaries; no raw trajectories or structures")
