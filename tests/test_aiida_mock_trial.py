@@ -1,7 +1,7 @@
 import copy
 import unittest
 
-from cosmatter.aiida_mock_trial import AiidaMockTrialError, advance_mock_process, approve_aiida_mock_trial, inject_mock_failure_for_test, new_mock_process
+from cosmatter.aiida_mock_trial import AiidaMockTrialError, advance_mock_process, aiida_mock_trial_template, approve_aiida_mock_trial, inject_mock_failure_for_test, new_mock_process
 from cosmatter.models import MissionBrief
 from cosmatter.simulation_campaign import SIMULATION_CAMPAIGN_BOUNDARY, SIMULATION_CAMPAIGN_TRUST_STATUS, build_approved_simulation_campaign
 from cosmatter.simulation_contracts import canonical_sha256
@@ -42,6 +42,13 @@ class AiidaMockTrialTests(unittest.TestCase):
         over_budget["max_jobs"] = 2
         with self.assertRaises(AiidaMockTrialError):
             approve_aiida_mock_trial(campaign=self.campaign, mission_id=self.mission_id, payload=over_budget)
+
+    def test_template_binds_campaign_without_becoming_an_approval(self) -> None:
+        template = aiida_mock_trial_template(campaign=self.campaign, mission_id=self.mission_id)
+        self.assertEqual(template["campaign_sha256"], canonical_sha256(self.campaign))
+        self.assertEqual(template["approval"]["status"], "pending_human_approval")
+        with self.assertRaises(AiidaMockTrialError):
+            approve_aiida_mock_trial(campaign=self.campaign, mission_id=self.mission_id, payload=template)
 
 
 if __name__ == "__main__":

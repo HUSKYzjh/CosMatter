@@ -98,7 +98,7 @@ from .simulation_result_import import (
     write_external_run_receipt,
     write_reviewed_simulation_evidence,
 )
-from .aiida_mock_trial import AiidaMockTrialError, advance_mock_process, approve_aiida_mock_trial, new_mock_process, write_mock_process, write_mock_trial
+from .aiida_mock_trial import AiidaMockTrialError, advance_mock_process, aiida_mock_trial_template, approve_aiida_mock_trial, new_mock_process, write_mock_process, write_mock_trial, write_mock_trial_template
 from .ising_benchmark import IsingBenchmarkError, build_ising_benchmark_plan, propose_ising_followups, run_ising_benchmark, write_ising_followups, write_ising_plan, write_ising_result
 from .ising_summary import IsingSummaryError, ising_benchmark_summary, write_ising_benchmark_summary
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
@@ -1784,6 +1784,22 @@ def command_approve_aiida_mock_trial(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_create_aiida_mock_trial_template(args: argparse.Namespace) -> int:
+    """Write a local mock-only authorization template bound to an approved campaign."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        template = aiida_mock_trial_template(
+            campaign=_load_object(run_dir / "simulation_campaign.json", "simulation campaign"), mission_id=mission.mission_id
+        )
+        path = write_mock_trial_template(run_dir, template)
+    except (UiExportError, SimulationCampaignError, AiidaMockTrialError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    _json_print({"run_id": args.run_id, "template_path": str(path), "delivery_status": "pending_human_approval", "real_execution": False})
+    return 0
+
+
 def command_advance_aiida_mock_trial(args: argparse.Namespace) -> int:
     """Advance a local mock checkpoint only; this is not an AiiDA command."""
     run_dir = _run_dir(args.run_id)
@@ -3204,6 +3220,9 @@ def build_parser() -> argparse.ArgumentParser:
     aiida_mock_approve.add_argument("--run-id", required=True)
     aiida_mock_approve.add_argument("--input", required=True, help="human-approved aiida_mock JSON for one public fixture and one mock job")
     aiida_mock_approve.set_defaults(handler=command_approve_aiida_mock_trial)
+    aiida_mock_template = commands.add_parser("create-aiida-mock-trial-template", help="write a human-completed local mock authorization template bound to an approved campaign")
+    aiida_mock_template.add_argument("--run-id", required=True)
+    aiida_mock_template.set_defaults(handler=command_create_aiida_mock_trial_template)
     aiida_mock_step = commands.add_parser("advance-aiida-mock-trial", help="advance a local mock checkpoint; never starts a process, queue, network request, or AiiDA daemon")
     aiida_mock_step.add_argument("--run-id", required=True)
     aiida_mock_step.add_argument("--action", required=True, choices=("create", "submit", "poll", "cancel", "retry", "resume"))

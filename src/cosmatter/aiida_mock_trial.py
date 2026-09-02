@@ -28,6 +28,21 @@ _STATE_FIELDS = {"schema_version", "trust_status", "artifact_id", "trial_sha256"
 _FORBIDDEN = ("api_key", "token=", "password=", "c:\\users\\", "/home/", "\\\\", "ssh ", "sbatch", "qsub", "powershell", "cmd.exe")
 
 
+def aiida_mock_trial_template(*, campaign: object, mission_id: str) -> dict[str, Any]:
+    """Create an intentionally non-approvable local mock authorization template."""
+    try:
+        simulation_campaign_ui_projection(campaign, mission_id)
+    except SimulationCampaignError as error:
+        raise AiidaMockTrialError(f"approved plan-only campaign is required: {error}") from error
+    return {
+        "schema_version": "1.0", "trust_status": "human_authored_aiida_mock_trial_template_not_real_execution",
+        "artifact_id": "mock_trial_pending_human_review", "campaign_sha256": canonical_sha256(campaign),
+        "adapter_kind": "aiida_mock", "recipe_id": "mock_relax_static_v1", "public_structure_ref": "public_fixture:replace_with_reviewed_fixture",
+        "max_jobs": 1, "max_retries": 1,
+        "approval": {"status": "pending_human_approval", "reviewer": "【待人工填写】", "approved_on": "", "rationale": "【待人工填写：仅用于本地 AiiDA mock 状态机验证】"},
+    }
+
+
 def approve_aiida_mock_trial(*, campaign: object, mission_id: str, payload: object) -> dict[str, Any]:
     """Validate the one-job public-fixture mock authorization."""
     try:
@@ -115,6 +130,14 @@ def write_mock_trial(run_dir: Path, trial: dict[str, Any]) -> Path:
     if path.exists():
         raise AiidaMockTrialError("AiiDA mock authorization already exists; create a new run for another trial")
     path.write_text(json.dumps(trial, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def write_mock_trial_template(run_dir: Path, payload: dict[str, Any]) -> Path:
+    path = run_dir / "aiida_mock_trial_template.json"
+    if path.exists():
+        raise AiidaMockTrialError("AiiDA mock trial template already exists")
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
 
 
