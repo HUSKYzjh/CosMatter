@@ -27,6 +27,23 @@ quality-check-failing included questions. It writes an immutable
 The review file remains the human-editable source and must not be replaced by a
 test fixture or an automatically asserted review.
 
+The Research Extension page now includes a local **Human question-set review
+desk**. Open it, explicitly select the generated review JSON, and complete the
+decision, five checks, and review note for every question. The attestation
+control remains disabled until all questions are decided, every check is an
+explicit Boolean, every note is nonempty, at least three questions are
+included, and every included question passes all five checks. Any subsequent
+edit clears the attestation. Without a complete review and an explicit
+independent-review attestation, export preserves
+`blank_human_question_set_review_not_frozen`; only a complete attested export
+uses `human_reviewed_question_set_for_evaluation`.
+
+This desk is only a browser-local editor: it makes no API request, does not
+upload or retain the selected file, cannot write into `runs`, and cannot freeze
+a question set. Treat its export as input to the same
+`record-frozen-question-set` command above. The CLI remains the authoritative
+mission/material/schema gate and creates the immutable count/hash-bound pair.
+
 This workflow prepares the real 90-paper BiFeO3 evaluation cohort without reading a PDF directory, collecting local paths, or redistributing institutional full text. The reviewer first creates a bibliography-only JSON selection with one stable document_id per authorized paper. The full Zotero-to-review path, including the private selection-template boundary, is in [the corpus-onboarding guide](corpus_onboarding.zh-CN.md).
 
 Run `record-corpus-manifest` with a run ID and the reviewed selection JSON. Then use the single local preparation command below to write the count-only frozen-corpus audit plus blank gold-standard, bibliographic-source, and evaluation-run-record templates. Add `--seed-candidates` only when the reviewer explicitly wants the manifest papers copied into the unranked authorized-local candidate list for later source-map work.
@@ -145,6 +162,10 @@ reviewed/included/excluded totals and the four evidence-level counts. It never
 receives the question-set ID, question text, reviewer note, or hashes, and the
 ready state explicitly means question-level evaluation may begin—not that any
 metric has been generated.
+
+The local question-set review desk is intentionally separate from this safe
+aggregate projection. It is an opt-in private editing surface, while the
+ordinary imported UI bundle continues to expose aggregate readiness only.
 
 ## Human evidence-quality review
 

@@ -16,6 +16,7 @@ import { counterevidenceReadiness, type CounterevidenceReadiness } from "./count
 import { ReadOnlyPreviewContext } from "./ReadOnlyPreviewContext";
 import { EvidenceMaturityPanel } from "./EvidenceMaturityPanel";
 import { ConditionNormalizationPanel } from "./ConditionNormalizationPanel";
+import { QuestionSetReviewDesk } from "./QuestionSetReviewDesk";
 import { uiLanguage } from "./zh";
 
 type View = "discover" | "workflow" | "graph" | "reader" | "horizon";
@@ -282,6 +283,7 @@ export function ResearchExpansion(props: { bundle: ImportedBundle; session: Rese
       </div>
     </section>
     <EvaluationAuditPanel bundle={props.bundle} />
+    <QuestionSetReviewDesk locale={uiLanguage()} />
     <Show when={gate().ready} fallback={<section class="gap-empty"><h2>{tr("尚不能把候选作为后续研究方向")}</h2><p>{tr("请补齐当前会话的论文选择、已接受 EvidenceCard 和来源定位；本页不会以全局计数替代当前审计链路。")}</p></section>}>
       <section class="expansion-brief"><span>{tr("条件未知项")} <strong>{props.bundle.conditionMatrix.flatMap((row) => row.unknowns).length}</strong></span><span>{tr("已核验边界的 Gap 候选", "Gap candidates with verified boundaries")} <strong>{verifiedCandidateCount()}/{candidates().length}</strong></span><span>{tr("当前证据关联候选")} <strong>{sessionCandidates().length}</strong></span><span>{tr("当前证据")} <strong>{evidence()!.evidenceId}</strong></span></section>
       <section class="comparison-readiness" aria-live="polite">

@@ -1104,3 +1104,61 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .candidate-planet, .candidate-planet.planet-survey, .candidate-planet.planet-contrast, .candidate-planet.planet-mechanism { min-height: 4.8rem; padding: .55rem .62rem .6rem .8rem; }
   .candidate-planet strong { font-size: .88rem; }
 }
+
+/* Human question-set review stays local and visibly incomplete until every gate is explicit. */
+.question-review-desk { max-width: 75rem; margin: 1rem 0; padding: .8rem .9rem 1rem; border: 1px solid color-mix(in srgb, var(--signal-violet) 38%, var(--line)); border-inline-start: 3px solid var(--signal-violet); background: linear-gradient(115deg, color-mix(in srgb, var(--signal-violet) 6%, transparent), transparent 58%); }
+.question-review-desk > summary { color: var(--ink); font: 750 1rem/1.35 Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; cursor: pointer; }
+.question-review-desk > p { max-width: 61rem; margin: .55rem 0 .8rem; color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .82rem; line-height: 1.6; }
+.question-review-import { display: grid; width: min(100%, 34rem); gap: .42rem; padding: .68rem .75rem; border: 1px dashed color-mix(in srgb, var(--signal-teal) 55%, var(--line)); color: var(--signal-teal); font-size: .82rem; font-weight: 750; }
+.question-review-import input { color: var(--muted); font-size: .78rem; }
+.question-review-import input::file-selector-button { margin-right: .65rem; padding: .42rem .62rem; border: 1px solid var(--signal-teal); color: var(--signal-teal); background: var(--surface); font-weight: 750; cursor: pointer; }
+.question-review-error { padding: .6rem .72rem; border-inline-start: 3px solid var(--signal-amber); color: var(--signal-amber) !important; background: color-mix(in srgb, var(--signal-amber) 7%, transparent); }
+.question-review-status { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-top: 1rem; padding: .75rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.question-review-status > div { display: grid; gap: .18rem; min-width: 0; }
+.question-review-status small, .question-review-release small { color: var(--signal-violet); font: .7rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .08em; }
+.question-review-status strong { overflow-wrap: anywhere; font-size: 1.05rem; }
+.question-review-status span { color: var(--muted); font-size: .78rem; }
+.question-review-status dl { display: grid; grid-template-columns: repeat(4, minmax(5.4rem, 1fr)); gap: .45rem; margin: 0; }
+.question-review-status dl div { padding: .38rem .5rem; border-top: 2px solid color-mix(in srgb, var(--signal-violet) 52%, var(--line)); background: color-mix(in srgb, var(--surface) 82%, transparent); }
+.question-review-status dt { color: var(--muted); font-size: .72rem; }
+.question-review-status dd { margin: .12rem 0 0; color: var(--ink); font: 750 .8rem ui-monospace, monospace; }
+.question-review-list { display: grid; gap: .7rem; margin-top: .8rem; }
+.question-review-item { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem 1rem; padding: .8rem .85rem .9rem; border: 1px solid var(--line); border-inline-start: 3px solid var(--signal-amber); background: color-mix(in srgb, var(--surface) 78%, transparent); }
+.question-review-item.complete { border-inline-start-color: var(--signal-teal); }
+.question-review-item.invalid { border-color: color-mix(in srgb, var(--signal-amber) 68%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--signal-amber) 7%, transparent), color-mix(in srgb, var(--surface) 82%, transparent)); }
+.question-review-item > header, .question-review-item > h3, .question-review-item > dl { grid-column: 1 / -1; }
+.question-review-item > header { display: flex; justify-content: space-between; gap: 1rem; color: var(--muted); font: .7rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .05em; }
+.question-review-item h3 { max-width: 61rem; margin: 0; font: 720 1rem/1.5 Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
+.question-review-item dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem .75rem; margin: 0; }
+.question-review-item dt { color: var(--muted); font-size: .7rem; }
+.question-review-item dd { margin: .16rem 0 0; font-size: .78rem; line-height: 1.5; }
+.question-review-item > label, .question-review-item fieldset label { display: grid; gap: .3rem; color: var(--ink); font-size: .78rem; font-weight: 700; }
+.question-review-item select, .question-review-item textarea { min-height: 2.35rem; padding: .46rem .52rem; border: 1px solid color-mix(in srgb, var(--line) 85%, var(--ink)); color: var(--ink); background: var(--surface); font: .8rem/1.45 "Aptos", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
+.question-review-item textarea { min-height: 4.7rem; resize: vertical; }
+.question-review-item fieldset { min-width: 0; margin: 0; padding: .52rem .6rem .65rem; border: 1px dashed var(--line); }
+.question-review-item legend { padding: 0 .25rem; color: var(--muted); font-size: .75rem; }
+.question-review-item fieldset > div { display: grid; gap: .42rem; }
+.question-review-item fieldset label { grid-template-columns: minmax(0, 1fr) 7rem; align-items: center; font-weight: 600; }
+.question-review-release { display: grid; grid-template-columns: minmax(0, 1fr) minmax(19rem, 1.35fr) auto; align-items: end; gap: .8rem 1rem; margin-top: .85rem; padding: .9rem; border-top: 2px solid var(--signal-violet); background: linear-gradient(100deg, color-mix(in srgb, var(--signal-violet) 9%, transparent), transparent 72%); }
+.question-review-release > div { display: grid; gap: .2rem; }
+.question-review-release strong { font-size: .94rem; line-height: 1.42; }
+.question-review-release p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.5; }
+.question-review-release .consent { max-width: none; font-size: .78rem; }
+.question-review-release .primary-action { white-space: nowrap; }
+
+@media (max-width: 880px) {
+  .question-review-status { align-items: start; flex-direction: column; }
+  .question-review-status dl { width: 100%; }
+  .question-review-release { grid-template-columns: 1fr; align-items: start; }
+  .question-review-release .primary-action { justify-self: start; }
+}
+
+@media (max-width: 560px) {
+  .question-review-desk { padding: .68rem .62rem .78rem; }
+  .question-review-status dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .question-review-item { grid-template-columns: 1fr; padding: .68rem .62rem .75rem; }
+  .question-review-item > header, .question-review-item > h3, .question-review-item > dl { grid-column: auto; }
+  .question-review-item dl { grid-template-columns: 1fr; }
+  .question-review-item fieldset label { grid-template-columns: 1fr; }
+  .question-review-item h3 { font-size: .92rem; }
+}

@@ -241,6 +241,73 @@ test("opens a read-only evaluation audit from frozen-corpus readiness without cl
   expect(apiRequests).toEqual([]);
 });
 
+test("reviews a local question set without network activity or implicit approval", async ({ page }) => {
+  const apiRequests: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) apiRequests.push(request.url());
+  });
+  const importInput = await openEditableTaskDefinition(page);
+  await importInput.setInputFiles({
+    name: "question-review-route.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      schema_version: "1.0",
+      mission: { mission_id: "question-review-demo", question: "Review a bounded BiFeO3 question set.", material: "BiFeO3", property_name: "phase transition", scope: "local UI fixture" },
+      audit_summary: {
+        submission_readiness: {
+          question_set: { reviewed_question_count: 8, included_question_count: 7, excluded_question_count: 1, included_evidence_level_counts: { literature_mentioned: 1, data_supported: 4, reproducible: 1, already_reproduced: 1 }, freeze_gate: "ready_for_question_level_evaluation_not_metrics" },
+          frozen_corpus: { expected_document_count: 90, frozen_document_count: 90, expected_count_matched: true, document_id_uniqueness_valid: true, doi_present_count: 88, doi_missing_count: 2, authorized_access_boundary_valid: true, evaluation_gate: "ready_for_private_human_annotation" },
+        },
+      },
+    })),
+  });
+  await page.getByRole("button", { name: "05 研究拓展" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-horizon/, workspaceLoad);
+
+  const desk = page.getByLabel("冻结问题集人工审核台");
+  await desk.locator("summary").click();
+  await desk.locator("input[type=file]").setInputFiles({
+    name: "bfo-question-review.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      schema_version: "cosmatter.question-set-review/v1",
+      question_set_id: "bfo-ui-review-v1",
+      material_family: "BiFeO3",
+      trust_status: "blank_human_question_set_review_not_frozen",
+      review_instructions: { decision: "Review every question.", checks: "Complete every check.", note: "Record a reason." },
+      questions: [1, 2, 3].map((number) => ({
+        question_id: `bfo-${number}`,
+        question: `Which source-located BiFeO3 phase-transition value is reported for bounded condition ${number}?`,
+        material: "BiFeO3",
+        target_property: "phase-transition temperature",
+        scope: `Condition ${number}; compare source-located reports only.`,
+        intended_evidence_level: "data_supported",
+        review_decision: "unreviewed",
+        review_checks: { answerable_by_literature: null, material_explicit: null, target_property_explicit: null, scope_bounded: null, avoids_assumed_answer: null },
+        review_note: "",
+      })),
+    })),
+  });
+
+  await expect(desk).toContainText("0/3");
+  const attestation = desk.locator(".question-review-release input[type=checkbox]");
+  await expect(attestation).toBeDisabled();
+  const items = desk.locator(".question-review-item");
+  await expect(items).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) {
+    const item = items.nth(index);
+    await item.locator("select").first().selectOption("include");
+    for (const check of await item.locator("fieldset select").all()) await check.selectOption("true");
+    await item.locator("textarea").fill("Independently checked for wording, scope, and a source-locatable answer.");
+  }
+  await expect(desk).toContainText("3/3");
+  await expect(attestation).toBeEnabled();
+  await expect(desk.getByRole("button", { name: "导出本地审核草稿" })).toBeVisible();
+  await attestation.check();
+  await expect(desk.getByRole("button", { name: "导出可冻结审核 JSON" })).toBeVisible();
+  expect(apiRequests).toEqual([]);
+});
+
 test("renders cross-source reconciliation revisions in the map without calling a local API", async ({ page }) => {
   const apiRequests: string[] = [];
   page.on("request", (request) => {
