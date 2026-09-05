@@ -34,11 +34,20 @@ class DeepSeekAdapter:
         self.settings = settings
         self._sleep = sleep
 
-    def draft(self, *, system_prompt: str, user_prompt: str) -> DraftCompletion:
+    def draft(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int | None = None,
+        json_object: bool = False,
+    ) -> DraftCompletion:
         if not system_prompt.strip() or not user_prompt.strip():
             raise ValueError("system_prompt and user_prompt must be nonempty")
         if len(system_prompt) > 8_000 or len(user_prompt) > 20_000:
             raise ValueError("draft prompts exceed bounded input length")
+        if max_tokens is not None and (isinstance(max_tokens, bool) or not 1 <= max_tokens <= 8_192):
+            raise ValueError("draft max_tokens must be between 1 and 8192")
         if self.settings.llm_provider != "deepseek" or not self.settings.deepseek_api_key:
             raise DeepSeekConfigurationError("DeepSeek is not configured")
         if not self.settings.llm_model:
@@ -55,6 +64,10 @@ class DeepSeekAdapter:
             payload["thinking"] = {"type": "enabled"}
         if self.settings.llm_reasoning_effort:
             payload["reasoning_effort"] = self.settings.llm_reasoning_effort
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if json_object:
+            payload["response_format"] = {"type": "json_object"}
         return self._post_json("/chat/completions", payload)
 
     def _post_json(self, path: str, payload: dict[str, Any]) -> DraftCompletion:

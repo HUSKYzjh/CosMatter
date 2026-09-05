@@ -50,11 +50,14 @@ def main() -> int:
     mission_id = index.get("mission_id") if isinstance(index, dict) else None
     if index.get("trust_status") != "private_unreviewed_potential_scope_p0_review_index_not_evidence" or not isinstance(mission_id, str) or not mission_id or not isinstance(entries, list):
         raise SystemExit("private review index is invalid")
-    environment = dict(os.environ)
-    if args.env_file is not None:
-        environment["COSMATTER_ENV_FILE"] = str(args.env_file)
     try:
-        adapter = DeepSeekAdapter(Settings.load(environment))
+        if args.env_file is None:
+            settings = Settings.load()
+        else:
+            environment = dict(os.environ)
+            environment["COSMATTER_ENV_FILE"] = str(args.env_file)
+            settings = Settings.load(environment)
+        adapter = DeepSeekAdapter(settings)
     except DeepSeekConfigurationError as error:
         raise SystemExit(f"DeepSeek is not configured: {error}") from error
     args.output_directory.mkdir(parents=True, exist_ok=True)

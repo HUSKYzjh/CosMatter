@@ -43,6 +43,26 @@ class DeepSeekAdapterTests(unittest.TestCase):
         self.assertEqual(payload["reasoning_effort"], "high")
         self.assertEqual(completion.content, "untrusted draft")
 
+    def test_draft_can_bound_json_output(self) -> None:
+        settings = Settings.load(
+            {
+                "LLM_PROVIDER": "deepseek",
+                "LLM_MODEL": "deepseek-v4-flash",
+                "DEEPSEEK_API_KEY": "test-token",
+                "API_MAX_RETRIES": "1",
+            }
+        )
+        with patch("cosmatter.deepseek.urlopen", return_value=FakeResponse()) as mocked:
+            DeepSeekAdapter(settings, sleep=lambda _: None).draft(
+                system_prompt="system", user_prompt="user", max_tokens=2500, json_object=True
+            )
+        payload = json.loads(mocked.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(payload["max_tokens"], 2500)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+
+        with self.assertRaises(ValueError):
+            DeepSeekAdapter(settings).draft(system_prompt="system", user_prompt="user", max_tokens=0)
+
 
 if __name__ == "__main__":
     unittest.main()

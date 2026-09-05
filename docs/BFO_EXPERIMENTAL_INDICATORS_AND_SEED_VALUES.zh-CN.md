@@ -89,6 +89,8 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 - `configs/bfo_p0_source_candidate_matrix.json`：为极化、应变相边界、高温相变和畴壁输运各登记一条主证据路线、一条独立来源路线和一条条件反例路线，共 12 篇原始实验论文候选；同时保存作者组独立性、样品/方法边界和公开全文替代路线状态。
 - `examples/frozen/bfo_p0_literature_observation_candidates.json`：把首批 P0 数值拆成逐观测记录。它们全部保持 `literature_mentioned + unreviewed + source_map_status=none`，只用于后续选文和人工核对。
 - `src/cosmatter/material_indicator_registry.py`：无依赖校验器，拒绝缺字段、越级成熟度、伪造 Source Map 绑定、非法单位和不完整的范围/误差语义。
+- `src/cosmatter/material_indicator_triage.py` 与 `tools/build_private_bfo_indicator_shortlist.py`：在仓库外的 MinerU 候选池中按指标术语、数值/单位、测量条件、方法和限制语句做确定性排序；参考文献表降权，每篇最多 2 段、全批最多 12 段。结果保留原文及双重哈希，只是私有导航候选，不是 Source Map 或证据。
+- `src/cosmatter/material_indicator_draft.py` 与 `tools/draft_private_bfo_indicator_values.py`：可在明确外发授权下把上述受控片段逐批交给 `deepseek-v4-flash`，只接受与文献、片段、指标、允许单位及固定 12 项条件严格绑定的 JSON；输出不含引文，仍是未审核草案。提供方超时、空响应、非完整 JSON 或字段失配均不落盘。
 - `docs/templates/material_observation_registry.sql`：SQLite/PostgreSQL 兼容的关系数据库模板，分别保存指标定义、允许单位、必需条件、观测、12 项条件和 Source Map 审核状态；不保存 PDF、长引文、URL、凭据或本地路径。
 
 这套格式不会替代现有 `material_facts`。候选观测只有在人工核对来源、数据和条件后，才可映射成正式材料事实；数据库中的候选信任状态也通过检查约束禁止升级为 `data_supported`。
@@ -111,7 +113,7 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 1. **已完成**：冻结 P0 指标名、单位语义与 12 个限定字段，覆盖相变、结构、极化和输运，并建立候选观测校验器和关系数据库模板。
 2. **进行中**：四个核心比较问题已经各有两条独立原始实验路线和一条条件反例；继续把同一覆盖扩展到其余 P0 指标。优先使用公开论文、作者稿或校园账号本地核对，不在仓库保存受限全文。
 3. **已完成**：对 Lebeugle 2007、Teague 1970、Zeches 2009、Sando 2016、Arnold 2009 与 Bencan 2020 的六条公开 PDF 路线完成文件签名、私有 MinerU 解析和 Markdown 哈希核验，生成 6 个私有未审核候选池与 6 份空白 Source Map 选择模板。5 个长文池各含 48 个确定性全文分层片段，2 页 Teague 文献含 26 个片段；模板均为全未选状态。公开仓库只登记 `private_mineru_review_pool_ready`，不保存该批次的直接 PDF URL、PDF、Markdown、候选片段、提供方任务 ID 或私有路径。
-4. **下一步**：逐篇核对上述私有候选池中的图表定位、数值语义、误差、方法和限定条件；正式 Source Map 只接受人工选择并说明理由的 1–12 个准确片段。在完成这一步以前，六篇文献仍保持 `metadata_or_abstract_checked_not_source_mapped`，不得写入 `material_facts`。
+4. **已完成技术定位、待数据复核**：确定性指标排序已从六个私有候选池各选出 2 段，共 12 段；四个问题均有命中，片段通过 Markdown 哈希和自身 SHA-256 双重绑定。该结果状态为 `private_unreviewed_local_indicator_shortlist_not_source_map_or_evidence`。逐篇图表定位、数值语义、误差、方法与限定条件仍须核对；正式 Source Map 只接受人工选择并说明理由的 1–12 个准确片段。在完成这一步以前，六篇文献仍保持 `metadata_or_abstract_checked_not_source_mapped`，不得写入 `material_facts`。
 5. 先按“样品形态 → 相/取向 → 测量定义 → 条件”分组，再运行跨文献比较；不生成跨组平均值。
 6. 前端只展示通过相应门禁的数值，并同时显示样品、方法、条件完整度和证据成熟度；候选值保留“待复核”标识。
 
@@ -128,3 +130,13 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 ```
 
 命令要求清单中的每项均已下载，逐文件复算 Markdown SHA-256，拒绝路径逃逸、重复文献 ID、重复正文或部分完成批次；它只生成最多 48 段的私有候选池和全未选模板。
+
+指标定向 shortlist 使用同一私有索引，输出也必须是仓库和 `runs` 之外的新 JSON 文件：
+
+```powershell
+.\.venv\Scripts\python.exe tools\build_private_bfo_indicator_shortlist.py `
+  --review-index <private-review-pool-index.json> `
+  --output <new-private-indicator-shortlist.json>
+```
+
+2026-09-07 的真实运行得到 6 篇、12 段，覆盖极化/回线饱和、应变/四方度/空间群、高温相变与畴壁电导。随后按既有授权对 `deepseek-v4-flash` 做受控结构化草案试跑：不含论文内容的最小健康探针成功，但材料抽取请求先后出现超时、空或非完整 JSON，严格校验均安全关闭且没有生成草案文件。这是提供方响应/结构化输出稳定性待办，不影响本地 shortlist 的哈希完整性，也不能据此升级证据成熟度。

@@ -73,10 +73,13 @@ def main() -> int:
             source_task=source_task,
         )
         system_prompt, user_prompt = potential_scope_triage_prompts(pool)
-        environment = dict(os.environ)
-        if args.env_file is not None:
+        if args.env_file is None:
+            settings = Settings.load()
+        else:
+            environment = dict(os.environ)
             environment["COSMATTER_ENV_FILE"] = str(args.env_file)
-        completion = DeepSeekAdapter(Settings.load(environment)).draft(
+            settings = Settings.load(environment)
+        completion = DeepSeekAdapter(settings).draft(
             system_prompt=system_prompt, user_prompt=user_prompt
         )
         draft = untrusted_triage_from_completion(pool=pool, completion=completion)
