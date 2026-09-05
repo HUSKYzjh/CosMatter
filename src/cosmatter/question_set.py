@@ -216,6 +216,36 @@ def write_frozen_question_set(run_dir: Path, frozen: dict[str, Any], audit: dict
     return frozen_path, audit_path
 
 
+def load_question_set_readiness_summary(run_dir: Path, *, mission_id: str) -> dict[str, Any] | None:
+    """Return a browser-safe aggregate only after validating the frozen pair.
+
+    The question text, reviewer notes, identifiers, and hashes deliberately do
+    not cross this projection boundary. A missing pair means not yet frozen;
+    a partial or inconsistent pair is an error rather than an empty result.
+    """
+    frozen_path = run_dir / "frozen_question_set.json"
+    audit_path = run_dir / "question_set_review_audit.json"
+    if not frozen_path.exists() and not audit_path.exists():
+        return None
+    if not frozen_path.exists() or not audit_path.exists():
+        raise QuestionSetError("frozen question set and review audit must both exist")
+    try:
+        frozen = json.loads(frozen_path.read_text(encoding="utf-8"))
+        audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise QuestionSetError("frozen question-set artifacts are unreadable") from exc
+    _validate_frozen_pair(frozen, audit)
+    if frozen["mission_id"] != mission_id:
+        raise QuestionSetError("frozen question set does not belong to this mission")
+    return {
+        "reviewed_question_count": audit["reviewed_question_count"],
+        "included_question_count": audit["included_question_count"],
+        "excluded_question_count": audit["excluded_question_count"],
+        "included_evidence_level_counts": dict(audit["included_evidence_level_counts"]),
+        "freeze_gate": audit["freeze_gate"],
+    }
+
+
 def _validate_review(payload: object, *, reviewed: bool) -> list[dict[str, Any]]:
     if not isinstance(payload, dict) or set(payload) != _TOP_FIELDS:
         raise QuestionSetError("question-set review has unsupported or missing fields")

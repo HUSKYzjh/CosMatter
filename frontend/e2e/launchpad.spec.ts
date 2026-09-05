@@ -222,6 +222,7 @@ test("opens a read-only evaluation audit from frozen-corpus readiness without cl
       mission: { mission_id: "frozen-evaluation-demo", question: "Inspect evaluation readiness only.", material: "BiFeO3", property_name: "phase stability", scope: "private review cohort" },
       audit_summary: {
         submission_readiness: {
+          question_set: { reviewed_question_count: 8, included_question_count: 7, excluded_question_count: 1, included_evidence_level_counts: { literature_mentioned: 1, data_supported: 4, reproducible: 1, already_reproduced: 1 }, freeze_gate: "ready_for_question_level_evaluation_not_metrics" },
           frozen_corpus: { expected_document_count: 90, frozen_document_count: 90, expected_count_matched: true, document_id_uniqueness_valid: true, doi_present_count: 88, doi_missing_count: 2, authorized_access_boundary_valid: true, evaluation_gate: "ready_for_private_human_annotation" },
         },
       },
@@ -266,6 +267,7 @@ test("renders cross-source reconciliation revisions in the map without calling a
           evidence_quality: { trust_status: "metrics_from_human_reviewed_evidence_locator_condition_and_contradiction_audit", evidence_count: 8, predicted_contradiction_count: 3, citation_precision: 0.875, condition_completeness: 0.75, contradiction_precision: 2 / 3 },
         },
         submission_readiness: {
+          question_set: { reviewed_question_count: 8, included_question_count: 7, excluded_question_count: 1, included_evidence_level_counts: { literature_mentioned: 1, data_supported: 4, reproducible: 1, already_reproduced: 1 }, freeze_gate: "ready_for_question_level_evaluation_not_metrics" },
           frozen_corpus: { expected_document_count: 90, frozen_document_count: 90, expected_count_matched: true, document_id_uniqueness_valid: true, doi_present_count: 88, doi_missing_count: 2, authorized_access_boundary_valid: true, evaluation_gate: "ready_for_private_human_annotation" },
           human_annotation: { frozen_document_count: 90, annotation_file_status: "human_reviewed_gold_standard_for_evaluation", relevance_counts: { unreviewed: 0, relevant: 50, partially_relevant: 20, not_relevant: 20 }, documents_with_evidence_annotations: 30, documents_with_material_fact_annotations: 25, documents_with_comparison_annotations: 18, documents_with_gap_annotations: 5, relevance_evaluation_gate: "ready_for_human_retrieval_evaluation" },
           bibliographic_source: { frozen_document_count: 90, documents_with_reviewed_bibliographic_source: 90, distinct_bibliographic_source_count: 3, bibliographic_source_coverage_gate: "ready_for_source_traceable_evaluation" },
@@ -299,6 +301,10 @@ test("renders cross-source reconciliation revisions in the map without calling a
   await expect(audit).toContainText("88%");
   await expect(audit).toContainText("已复核证据");
   const readiness = page.getByLabel("评测前置门禁");
+  await expect(readiness).toContainText("冻结问题集");
+  await expect(readiness).toContainText("纳入 7/8");
+  await expect(readiness).toContainText("可开始逐题评测；指标仍未生成");
+  await expect(readiness).toContainText("1 / 4 / 1 / 1");
   await expect(readiness).toContainText("90/90");
   await expect(readiness).toContainText("可开始私有人工标注");
   await expect(readiness).toContainText("相关性标注已齐备");

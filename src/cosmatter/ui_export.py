@@ -43,6 +43,7 @@ from .evidence_maturity_registry import EvidenceMaturityRegistryError, audit_evi
 from .verification import VerificationDecision
 from .citation_expansion import CitationExpansionError, validate_citation_expansion
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
+from .question_set import QuestionSetError, load_question_set_readiness_summary
 from .planning import PlanApprovalError, load_approved_flight_plan
 from .simulation_campaign import SimulationCampaignError, simulation_campaign_ui_projection
 from .simulation_result_import import SimulationResultImportError, simulation_evidence_ui_projection
@@ -716,12 +717,21 @@ def _audit_summary_from_run(run_dir: Path, mission_id: str) -> dict[str, Any]:
         "evidence_provenance": _evidence_provenance_audit_summary(run_dir / "evidence_provenance_audit.json", mission_id),
         "external_retrieval": {"sciverse_agentic_search_count": _sciverse_receipt_count(run_dir / "provider_receipts.jsonl")},
         "submission_readiness": {
+            "question_set": _question_set_readiness_summary(run_dir, mission_id),
             "frozen_corpus": _frozen_corpus_readiness_summary(run_dir / "frozen_corpus_readiness.json", mission_id),
             "human_annotation": _human_annotation_coverage_summary(run_dir / "human_annotation_coverage.json", mission_id),
             "bibliographic_source": _bibliographic_source_coverage_summary(run_dir / "bibliographic_source_coverage.json", mission_id),
         },
         "evaluation": _evaluation_summary_from_run(run_dir, mission_id),
     }
+
+
+def _question_set_readiness_summary(run_dir: Path, mission_id: str) -> dict[str, Any] | None:
+    """Project only a validated, identity-free frozen question-set aggregate."""
+    try:
+        return load_question_set_readiness_summary(run_dir, mission_id=mission_id)
+    except QuestionSetError as exc:
+        raise UiExportError("frozen question-set readiness is invalid for this mission") from exc
 
 
 def _evaluation_summary_from_run(run_dir: Path, mission_id: str) -> dict[str, Any]:
@@ -1192,6 +1202,7 @@ def build_ui_bundle(
             "evidence_provenance": None,
             "external_retrieval": {"sciverse_agentic_search_count": 0},
             "submission_readiness": {
+                "question_set": None,
                 "frozen_corpus": None,
                 "human_annotation": None,
                 "bibliographic_source": None,

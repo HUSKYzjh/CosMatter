@@ -9,6 +9,7 @@ from cosmatter.question_set import (
     QuestionSetError,
     bfo_question_set_review_template,
     freeze_reviewed_question_set,
+    load_question_set_readiness_summary,
     write_frozen_question_set,
     write_question_set_review_template,
 )
@@ -51,6 +52,35 @@ class QuestionSetTests(unittest.TestCase):
         self.assertEqual(frozen["question_set_sha256"], audit["frozen_question_set_sha256"])
         self.assertNotIn("review_note", json.dumps(frozen, ensure_ascii=False))
         self.assertNotIn("Checked against", json.dumps(audit, ensure_ascii=False))
+
+    def test_readiness_loader_validates_pair_and_projects_no_identity_or_content(self) -> None:
+        frozen, audit = freeze_reviewed_question_set(
+            mission_id="mission_bfo", mission_material="BiFeO3", review=reviewed_template()
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            write_frozen_question_set(run, frozen, audit)
+            summary = load_question_set_readiness_summary(run, mission_id="mission_bfo")
+        self.assertEqual(summary["reviewed_question_count"], 8)
+        self.assertEqual(summary["included_question_count"], 7)
+        self.assertEqual(sum(summary["included_evidence_level_counts"].values()), 7)
+        serialised = json.dumps(summary, ensure_ascii=False)
+        self.assertNotIn("question_set_id", serialised)
+        self.assertNotIn("BiFeO3 的结构相变温度", serialised)
+        self.assertNotIn("sha256", serialised)
+
+    def test_readiness_loader_rejects_partial_or_wrong_mission_pair(self) -> None:
+        frozen, audit = freeze_reviewed_question_set(
+            mission_id="mission_bfo", mission_material="BiFeO3", review=reviewed_template()
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            (run / "frozen_question_set.json").write_text(json.dumps(frozen), encoding="utf-8")
+            with self.assertRaisesRegex(QuestionSetError, "must both exist"):
+                load_question_set_readiness_summary(run, mission_id="mission_bfo")
+            (run / "question_set_review_audit.json").write_text(json.dumps(audit), encoding="utf-8")
+            with self.assertRaisesRegex(QuestionSetError, "does not belong"):
+                load_question_set_readiness_summary(run, mission_id="mission_other")
 
     def test_included_question_must_pass_every_check_and_material_must_match(self) -> None:
         review = reviewed_template()

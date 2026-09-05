@@ -110,6 +110,13 @@ function EvaluationAuditPanel(props: { bundle: ImportedBundle }) {
   const evaluation = () => props.bundle.auditSummary.evaluation;
   const readiness = () => props.bundle.auditSummary.submissionReadiness;
   const percentage = (value: number) => `${Math.round(value * 100)}%`;
+  const questionSetStatus = () => {
+    const questionSet = readiness().questionSet;
+    if (!questionSet) return tr("尚未导入人工冻结问题集", "No human-frozen question set imported");
+    return questionSet.freezeGate === "ready_for_question_level_evaluation_not_metrics"
+      ? tr("可开始逐题评测；指标仍未生成", "Ready for question-level evaluation; metrics remain ungenerated")
+      : tr("冻结记录已导入，评测门禁待复核", "Frozen record imported; evaluation gate needs review");
+  };
   const frozenCorpusStatus = () => {
     const frozen = readiness().frozenCorpus;
     if (!frozen) return tr("未冻结", "Not frozen");
@@ -139,9 +146,11 @@ function EvaluationAuditPanel(props: { bundle: ImportedBundle }) {
       : tr("来源登记已记录，门禁待复核", "Source registry recorded; gate needs review");
   };
   const nextEvaluationAction = () => {
+    const questionSet = readiness().questionSet;
     const frozen = readiness().frozenCorpus;
     const annotation = readiness().humanAnnotation;
     const bibliography = readiness().bibliographicSource;
+    if (!questionSet) return tr("下一步：先完成人工问题审核并冻结纳入的研究问题；不要把内置候选问题当作评测金标准。", "Next: complete human question review and freeze the included research questions; do not treat built-in candidate questions as an evaluation gold standard.");
     if (!frozen) return tr("下一步：先冻结经人工审核且已授权的语料清单；不要以候选检索结果代替冻结语料。", "Next: freeze a human-reviewed, authorised corpus manifest; do not substitute retrieval candidates for a frozen corpus.");
     if (!frozen.expectedCountMatched || !frozen.documentIdUniquenessValid || !frozen.authorizedAccessBoundaryValid) return tr("下一步：人工复核冻结数量、文献 ID 唯一性与授权访问边界。", "Next: manually review the frozen count, document-ID uniqueness, and authorised-access boundary.");
     if (!annotation) return tr("下一步：在私有位置完成相关性金标准标注，并只导入聚合覆盖审计。", "Next: complete relevance-gold annotation privately, then import only its aggregate coverage audit.");
@@ -161,6 +170,7 @@ function EvaluationAuditPanel(props: { bundle: ImportedBundle }) {
       <article><small>{tr("Gap / 专家复核", "GAPS / EXPERT REVIEW")}</small><Show when={evaluation().researchGaps} fallback={<p>{tr("未生成", "Not generated")}</p>}>{(result) => <dl><div><dt>{tr("认可率", "Approval")}</dt><dd>{percentage(result().expertApprovalRate)}</dd></div><div><dt>{tr("新颖性", "Novelty")}</dt><dd>{result().meanNoveltyRating.toFixed(1)} / 5</dd></div><div><dt>{tr("可操作性", "Actionability")}</dt><dd>{result().meanActionabilityRating.toFixed(1)} / 5</dd></div><div><dt>{tr("证据完整度", "Evidence completeness")}</dt><dd>{percentage(result().evidenceCompletenessRate)} · {result().candidateCount}</dd></div></dl>}</Show></article>
     </section>
     <dl class="evaluation-readiness" aria-label={tr("评测前置门禁", "Evaluation prerequisite gates")}>
+      <div><dt>{tr("冻结问题集", "Frozen question set")}</dt><dd>{readiness().questionSet ? `${tr("纳入", "Included")} ${readiness().questionSet!.includedQuestionCount}/${readiness().questionSet!.reviewedQuestionCount}` : tr("未冻结", "Not frozen")}</dd><p>{questionSetStatus()}</p><Show when={readiness().questionSet}>{(questionSet) => <small>{tr("提及 / 数据 / 可复现 / 已复现", "Mentioned / data / reproducible / reproduced")}: {questionSet().includedEvidenceLevelCounts.literatureMentioned} / {questionSet().includedEvidenceLevelCounts.dataSupported} / {questionSet().includedEvidenceLevelCounts.reproducible} / {questionSet().includedEvidenceLevelCounts.alreadyReproduced}</small>}</Show></div>
       <div><dt>{tr("冻结语料", "Frozen corpus")}</dt><dd>{readiness().frozenCorpus ? `${readiness().frozenCorpus!.frozenDocumentCount}/${readiness().frozenCorpus!.expectedDocumentCount}` : tr("未冻结", "Not frozen")}</dd><p>{frozenCorpusStatus()}</p></div>
       <div><dt>{tr("人工相关性标注", "Human relevance review")}</dt><dd>{readiness().humanAnnotation ? `${tr("未复核", "Unreviewed")} ${readiness().humanAnnotation!.relevanceCounts.unreviewed}` : tr("未提供", "Not provided")}</dd><p>{annotationStatus()}</p></div>
       <div><dt>{tr("书目来源覆盖", "Bibliographic-source coverage")}</dt><dd>{readiness().bibliographicSource ? `${readiness().bibliographicSource!.documentsWithReviewedBibliographicSource}/${readiness().bibliographicSource!.frozenDocumentCount}` : tr("未提供", "Not provided")}</dd><p>{bibliographicStatus()}</p></div>

@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from cosmatter.ui_export import _audit_summary_from_run
+from cosmatter.question_set import REVIEWED_STATUS, bfo_question_set_review_template, freeze_reviewed_question_set, write_frozen_question_set
 from cosmatter.models import MissionBrief
 from cosmatter.planning import approved_flight_plan_from_payload, write_approved_flight_plan
 
@@ -164,9 +165,20 @@ class UiAuditSummaryTests(unittest.TestCase):
                 ("bibliographic_source_coverage.json", sources),
             ):
                 (run / name).write_text(json.dumps(payload), encoding="utf-8")
+            review = bfo_question_set_review_template(question_set_id="private-question-set-do-not-project")
+            review["trust_status"] = REVIEWED_STATUS
+            for item in review["questions"]:
+                item["review_decision"] = "include"
+                item["review_checks"] = {name: True for name in item["review_checks"]}
+                item["review_note"] = "Private human review note that must not reach the UI."
+            question_set, question_audit = freeze_reviewed_question_set(
+                mission_id=mission_id, mission_material="BiFeO3", review=review
+            )
+            write_frozen_question_set(run, question_set, question_audit)
             summary = _audit_summary_from_run(run, mission_id)
 
         readiness = summary["submission_readiness"]
+        self.assertEqual(readiness["question_set"]["included_question_count"], 8)
         self.assertEqual(readiness["frozen_corpus"]["frozen_document_count"], 90)
         self.assertEqual(readiness["human_annotation"]["relevance_counts"]["unreviewed"], 0)
         self.assertEqual(readiness["bibliographic_source"]["distinct_bibliographic_source_count"], 3)
@@ -175,6 +187,9 @@ class UiAuditSummaryTests(unittest.TestCase):
         self.assertNotIn("private aggregate boundary", serialised)
         self.assertNotIn("private annotation boundary", serialised)
         self.assertNotIn("private bibliographic boundary", serialised)
+        self.assertNotIn("private-question-set-do-not-project", serialised)
+        self.assertNotIn("Private human review note", serialised)
+        self.assertNotIn("sha256", json.dumps(readiness["question_set"]))
 
 
 if __name__ == "__main__":

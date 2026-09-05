@@ -57,21 +57,33 @@ describe("readBundle", () => {
     expect(bundle.auditSummary.evaluation).toEqual({ evidenceQuality: null, retrieval: null, materialFacts: null, researchGaps: null });
   });
 
-  it("projects only aggregate corpus, annotation, and bibliography readiness", () => {
+  it("projects only aggregate question-set, corpus, annotation, and bibliography readiness", () => {
     const bundle = readBundle({
       mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
       audit_summary: {
         submission_readiness: {
+          question_set: { question_set_id: "private-question-set", reviewed_question_count: 8, included_question_count: 7, excluded_question_count: 1, included_evidence_level_counts: { literature_mentioned: 1, data_supported: 5, reproducible: 1, already_reproduced: 0 }, freeze_gate: "ready_for_question_level_evaluation_not_metrics", source_review_sha256: "private" },
           frozen_corpus: { corpus_id: "private-corpus", expected_document_count: 90, frozen_document_count: 90, expected_count_matched: true, document_id_uniqueness_valid: true, doi_present_count: 88, doi_missing_count: 2, authorized_access_boundary_valid: true, evaluation_gate: "ready_for_private_human_annotation" },
           human_annotation: { corpus_id: "private-corpus", frozen_document_count: 90, annotation_file_status: "human_reviewed_gold_standard_for_evaluation", relevance_counts: { unreviewed: 0, relevant: 50, partially_relevant: 20, not_relevant: 20 }, documents_with_evidence_annotations: 30, documents_with_material_fact_annotations: 25, documents_with_comparison_annotations: 18, documents_with_gap_annotations: 5, relevance_evaluation_gate: "ready_for_human_retrieval_evaluation" },
           bibliographic_source: { corpus_id: "private-corpus", frozen_document_count: 90, documents_with_reviewed_bibliographic_source: 90, distinct_bibliographic_source_count: 3, bibliographic_source_coverage_gate: "ready_for_source_traceable_evaluation" },
         },
       },
     });
+    expect(bundle.auditSummary.submissionReadiness.questionSet).toMatchObject({ reviewedQuestionCount: 8, includedQuestionCount: 7, excludedQuestionCount: 1, includedEvidenceLevelCounts: { dataSupported: 5 } });
     expect(bundle.auditSummary.submissionReadiness.frozenCorpus).toMatchObject({ frozenDocumentCount: 90, doiMissingCount: 2 });
     expect(bundle.auditSummary.submissionReadiness.humanAnnotation?.relevanceCounts.unreviewed).toBe(0);
     expect(bundle.auditSummary.submissionReadiness.bibliographicSource?.documentsWithReviewedBibliographicSource).toBe(90);
     expect(JSON.stringify(bundle.auditSummary.submissionReadiness)).not.toContain("private-corpus");
+    expect(JSON.stringify(bundle.auditSummary.submissionReadiness)).not.toContain("private-question-set");
+    expect(JSON.stringify(bundle.auditSummary.submissionReadiness)).not.toContain("source_review_sha256");
+  });
+
+  it("withholds inconsistent frozen question-set readiness", () => {
+    const bundle = readBundle({
+      mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
+      audit_summary: { submission_readiness: { question_set: { reviewed_question_count: 8, included_question_count: 7, excluded_question_count: 1, included_evidence_level_counts: { literature_mentioned: 1, data_supported: 1, reproducible: 1, already_reproduced: 1 }, freeze_gate: "metrics_completed" } } },
+    });
+    expect(bundle.auditSummary.submissionReadiness.questionSet).toBeNull();
   });
 
   it("reads only complete human-review-required Research Gap candidates", () => {

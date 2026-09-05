@@ -130,7 +130,15 @@ export interface EvaluationSummary {
   materialFacts: { goldFactCount: number; reviewedFactCount: number; precision: number; recall: number; f1: number; unitMatchAccuracy: number } | null;
   researchGaps: { candidateCount: number; expertApprovalRate: number; meanNoveltyRating: number; meanActionabilityRating: number; evidenceCompletenessRate: number; counterevidenceReviewRate: number; boundedNoDirectMatchRate: number; relatedPriorWorkFoundRate: number; inconclusiveNoveltySearchRate: number } | null;
 }
+export interface QuestionSetReadinessSummary {
+  reviewedQuestionCount: number;
+  includedQuestionCount: number;
+  excludedQuestionCount: number;
+  includedEvidenceLevelCounts: { literatureMentioned: number; dataSupported: number; reproducible: number; alreadyReproduced: number };
+  freezeGate: "ready_for_question_level_evaluation_not_metrics";
+}
 export interface SubmissionReadinessSummary {
+  questionSet: QuestionSetReadinessSummary | null;
   frozenCorpus: { expectedDocumentCount: number; frozenDocumentCount: number; expectedCountMatched: boolean; documentIdUniquenessValid: boolean; doiPresentCount: number; doiMissingCount: number; authorizedAccessBoundaryValid: boolean; evaluationGate: string } | null;
   humanAnnotation: { frozenDocumentCount: number; annotationFileStatus: string; relevanceCounts: { unreviewed: number; relevant: number; partiallyRelevant: number; notRelevant: number }; documentsWithEvidenceAnnotations: number; documentsWithMaterialFactAnnotations: number; documentsWithComparisonAnnotations: number; documentsWithGapAnnotations: number; relevanceEvaluationGate: string } | null;
   bibliographicSource: { frozenDocumentCount: number; documentsWithReviewedBibliographicSource: number; distinctBibliographicSourceCount: number; bibliographicSourceCoverageGate: string } | null;
@@ -250,6 +258,35 @@ function auditRate(value: unknown): number {
 }
 function auditFlag(value: unknown): boolean { return value === true; }
 function auditText(value: unknown): string { return typeof value === "string" ? value.slice(0, 160) : "unavailable"; }
+function questionSetReadiness(value: unknown): QuestionSetReadinessSummary | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject;
+  const levels = raw.included_evidence_level_counts;
+  if (levels === null || typeof levels !== "object" || Array.isArray(levels)) return null;
+  const levelValues = levels as JsonObject;
+  const validCount = (item: unknown): item is number => typeof item === "number" && Number.isSafeInteger(item) && item >= 0;
+  const reviewed = raw.reviewed_question_count;
+  const included = raw.included_question_count;
+  const excluded = raw.excluded_question_count;
+  const mentioned = levelValues.literature_mentioned;
+  const data = levelValues.data_supported;
+  const reproducible = levelValues.reproducible;
+  const reproduced = levelValues.already_reproduced;
+  if (
+    raw.freeze_gate !== "ready_for_question_level_evaluation_not_metrics"
+    || !validCount(reviewed) || !validCount(included) || !validCount(excluded)
+    || !validCount(mentioned) || !validCount(data) || !validCount(reproducible) || !validCount(reproduced)
+    || included < 3 || reviewed !== included + excluded
+    || mentioned + data + reproducible + reproduced !== included
+  ) return null;
+  return {
+    reviewedQuestionCount: reviewed,
+    includedQuestionCount: included,
+    excludedQuestionCount: excluded,
+    includedEvidenceLevelCounts: { literatureMentioned: mentioned, dataSupported: data, reproducible, alreadyReproduced: reproduced },
+    freezeGate: raw.freeze_gate,
+  };
+}
 function evidenceMaturityRegistry(value: unknown): EvidenceMaturityRegistry | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as JsonObject;
@@ -355,6 +392,7 @@ function submissionReadiness(value: unknown): SubmissionReadinessSummary {
   const bibliography = root.bibliographic_source && typeof root.bibliographic_source === "object" && !Array.isArray(root.bibliographic_source) ? root.bibliographic_source as JsonObject : null;
   const relevance = annotation?.relevance_counts && typeof annotation.relevance_counts === "object" && !Array.isArray(annotation.relevance_counts) ? annotation.relevance_counts as JsonObject : null;
   return {
+    questionSet: questionSetReadiness(root.question_set),
     frozenCorpus: frozen ? {
       expectedDocumentCount: auditCount(frozen.expected_document_count), frozenDocumentCount: auditCount(frozen.frozen_document_count),
       expectedCountMatched: auditFlag(frozen.expected_count_matched), documentIdUniquenessValid: auditFlag(frozen.document_id_uniqueness_valid),

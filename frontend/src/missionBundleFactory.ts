@@ -34,7 +34,7 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
       reportEvidence: null,
       evidenceProvenance: null,
       sciverseAgenticSearchCount: 0,
-      submissionReadiness: { frozenCorpus: null, humanAnnotation: null, bibliographicSource: null },
+      submissionReadiness: { questionSet: null, frozenCorpus: null, humanAnnotation: null, bibliographicSource: null },
       evaluation: { evidenceQuality: null, retrieval: null, materialFacts: null, researchGaps: null },
     },
     timeline: [],

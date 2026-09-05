@@ -138,6 +138,14 @@ identity or full-text-derived field. When an evaluation artifact is absent, the
 UI says that no human-reviewed evaluation is available; it does not display a
 zero score or imply a failed measurement.
 
+The same page shows a frozen-question-set prerequisite only when both
+`frozen_question_set.json` and `question_set_review_audit.json` pass their
+mission, hash, count, evidence-level, and gate checks. The browser receives only
+reviewed/included/excluded totals and the four evidence-level counts. It never
+receives the question-set ID, question text, reviewer note, or hashes, and the
+ready state explicitly means question-level evaluation may begin—not that any
+metric has been generated.
+
 ## Human evidence-quality review
 
 After accepted EvidenceCards have been created, run
