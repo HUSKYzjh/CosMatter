@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import re
 import sys
@@ -19,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from cosmatter.config import Settings
@@ -94,16 +96,30 @@ def api_json(settings: Settings, method: str, path: str, payload: dict[str, obje
 
 
 def signed_put(settings: Settings, url: str, content: bytes) -> int:
-    # The documented v4 endpoint says no Content-Type header is required.  Do
-    # not log the opaque signed URL or response body.
-    request = Request(url, data=content, headers={"Content-Length": str(len(content))}, method="PUT")
-    try:
-        with urlopen(request, timeout=settings.http_timeout_seconds) as response:
-            return int(getattr(response, "status", 200))
-    except HTTPError as error:
-        return int(error.code)
-    except (URLError, TimeoutError, OSError):
+    """Upload with the exact signed request shape required by MinerU.
+
+    ``urllib.request.Request`` injects a default Content-Type for byte bodies.
+    That changes the canonical request on MinerU's object-storage endpoint and
+    can turn an otherwise valid signed URL into HTTP 403.  Build the PUT at the
+    HTTP layer so it carries Content-Length but no implicit Content-Type or
+    Accept-Encoding header.  The opaque URL and response body are never logged.
+    """
+    target = urlsplit(url)
+    if target.scheme != "https" or not target.hostname or target.username is not None or target.password is not None or target.fragment:
         return 0
+    path = target.path + (f"?{target.query}" if target.query else "")
+    connection = http.client.HTTPSConnection(target.hostname, target.port or 443, timeout=settings.http_timeout_seconds)
+    try:
+        connection.putrequest("PUT", path, skip_accept_encoding=True)
+        connection.putheader("Content-Length", str(len(content)))
+        connection.endheaders(content)
+        response = connection.getresponse()
+        response.read()
+        return int(response.status)
+    except (http.client.HTTPException, TimeoutError, OSError):
+        return 0
+    finally:
+        connection.close()
 
 
 def write_json(path: Path, value: object) -> None:

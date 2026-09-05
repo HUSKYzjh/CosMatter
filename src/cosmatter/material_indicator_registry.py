@@ -279,7 +279,10 @@ def _validate_source_candidates(value: object) -> None:
                 raise MaterialIndicatorRegistryError("material source candidate public text is invalid")
         if source.get("fulltext_route") not in {"publisher_open_access", "author_manuscript", "public_repository", "institutional_access_required", "abstract_only"}:
             raise MaterialIndicatorRegistryError("material source candidate full-text route is invalid")
-        if source.get("access_status") not in {"publicly_retrievable", "candidate_route_not_probed", "institutional_access_required"}:
+        if source.get("access_status") not in {
+            "publicly_retrievable", "private_mineru_review_pool_ready",
+            "candidate_route_not_probed", "institutional_access_required",
+        }:
             raise MaterialIndicatorRegistryError("material source candidate access status is invalid")
         if source.get("evidence_status") != "metadata_or_abstract_checked_not_source_mapped":
             raise MaterialIndicatorRegistryError("material source candidate cannot claim reviewed evidence")

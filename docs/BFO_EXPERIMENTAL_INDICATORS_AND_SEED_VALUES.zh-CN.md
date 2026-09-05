@@ -110,6 +110,21 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 
 1. **已完成**：冻结 P0 指标名、单位语义与 12 个限定字段，覆盖相变、结构、极化和输运，并建立候选观测校验器和关系数据库模板。
 2. **进行中**：四个核心比较问题已经各有两条独立原始实验路线和一条条件反例；继续把同一覆盖扩展到其余 P0 指标。优先使用公开论文、作者稿或校园账号本地核对，不在仓库保存受限全文。
-3. **下一步**：先对矩阵中标为公开可获得的文献探测 PDF 版本并生成私有 MinerU 候选池；正式 Source Map 仍需人工核对图表定位、误差、方法和条件后，再写入 `material_facts`。
-4. 先按“样品形态 → 相/取向 → 测量定义 → 条件”分组，再运行跨文献比较；不生成跨组平均值。
-5. 前端只展示通过相应门禁的数值，并同时显示样品、方法、条件完整度和证据成熟度；候选值保留“待复核”标识。
+3. **已完成**：对 Lebeugle 2007、Teague 1970、Zeches 2009、Sando 2016、Arnold 2009 与 Bencan 2020 的六条公开 PDF 路线完成文件签名、私有 MinerU 解析和 Markdown 哈希核验，生成 6 个私有未审核候选池与 6 份空白 Source Map 选择模板。5 个长文池各含 48 个确定性全文分层片段，2 页 Teague 文献含 26 个片段；模板均为全未选状态。公开仓库只登记 `private_mineru_review_pool_ready`，不保存该批次的直接 PDF URL、PDF、Markdown、候选片段、提供方任务 ID 或私有路径。
+4. **下一步**：逐篇核对上述私有候选池中的图表定位、数值语义、误差、方法和限定条件；正式 Source Map 只接受人工选择并说明理由的 1–12 个准确片段。在完成这一步以前，六篇文献仍保持 `metadata_or_abstract_checked_not_source_mapped`，不得写入 `material_facts`。
+5. 先按“样品形态 → 相/取向 → 测量定义 → 条件”分组，再运行跨文献比较；不生成跨组平均值。
+6. 前端只展示通过相应门禁的数值，并同时显示样品、方法、条件完整度和证据成熟度；候选值保留“待复核”标识。
+
+本批次还复现并修复了 MinerU v4 的签名上传兼容问题：高级 HTTP 客户端会为字节正文隐式加入 `Content-Type`，从而使对象存储的规范请求与签名不一致并统一返回 403。当前批处理器改用只发送 `Content-Length` 的精确 HTTPS PUT；回归测试固定验证不加入 `Content-Type` 或 `Accept-Encoding`。修复后同一批次 6/6 上传、解析与 Markdown 获取成功。
+
+后续批次可用同一离线入口生成审阅池；三个输入路径都必须位于仓库和 `runs` 目录之外，输出目录必须尚不存在：
+
+```powershell
+.\.venv\Scripts\python.exe tools\prepare_private_mineru_review_pools.py `
+  --manifest <private-markdown-manifest.json> `
+  --markdown-root <private-markdown-directory> `
+  --output <new-private-review-directory> `
+  --mission-id <bounded-mission-id>
+```
+
+命令要求清单中的每项均已下载，逐文件复算 Markdown SHA-256，拒绝路径逃逸、重复文献 ID、重复正文或部分完成批次；它只生成最多 48 段的私有候选池和全未选模板。

@@ -108,6 +108,28 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
             "probe_scope": "polarization_route_only_no_source_text_persisted",
         })
 
+    def test_public_fulltext_batch_is_parsed_but_not_promoted_to_evidence(self) -> None:
+        sources = [
+            source
+            for question in self.source_matrix["questions"]
+            for source in question["source_candidates"]
+        ]
+        ready = [source for source in sources if source["access_status"] == "private_mineru_review_pool_ready"]
+        self.assertEqual(len(ready), 6)
+        self.assertEqual(
+            {source["source_id"] for source in ready},
+            {
+                "arnold2009_prl_027602",
+                "bencan2020_ncomms15595",
+                "lebeugle2007_apl_2753390",
+                "sando2016_ncomms10718",
+                "teague1970_ssc_90262",
+                "zeches2009_science_1177046",
+            },
+        )
+        self.assertNotIn("institutional_access_required", {source["fulltext_route"] for source in ready})
+        self.assertTrue(all(source["evidence_status"] == "metadata_or_abstract_checked_not_source_mapped" for source in ready))
+
     def test_source_matrix_rejects_false_independence_and_evidence_promotion(self) -> None:
         candidate = copy.deepcopy(self.source_matrix)
         sources = candidate["questions"][0]["source_candidates"]

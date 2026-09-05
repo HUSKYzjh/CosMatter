@@ -45,7 +45,7 @@
           "reported_lead": "Spontaneous polarization exceeds 100 uC/cm2 before cycling degradation prevents full saturation.",
           "claim_boundary": "High resistivity enables saturation; cycling degradation and crystallographic direction remain essential comparison fields.",
           "fulltext_route": "author_manuscript",
-          "access_status": "publicly_retrievable",
+          "access_status": "private_mineru_review_pool_ready",
           "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
         },
         {
@@ -61,7 +61,7 @@
           "reported_lead": "Measured 3.5 uC/cm2 along 100, corresponding to 6.1 uC/cm2 along 111, at 77 K.",
           "claim_boundary": "The loops were explicitly unsaturated, so the low value is a measurement-boundary counterexample rather than an intrinsic bulk polarization.",
           "fulltext_route": "public_repository",
-          "access_status": "publicly_retrievable",
+          "access_status": "private_mineru_review_pool_ready",
           "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
         }
       ]
@@ -84,7 +84,7 @@
           "reported_lead": "R-like and T-like phase coexistence occurs near about -4.5 percent compressive strain.",
           "claim_boundary": "The approximate boundary is tied to substrate, thickness, and the monoclinic phase definitions used in the study.",
           "fulltext_route": "public_repository",
-          "access_status": "publicly_retrievable",
+          "access_status": "private_mineru_review_pool_ready",
           "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
         },
         {
@@ -116,7 +116,7 @@
           "reported_lead": "High compression at or beyond about -4 percent yields a T-like monoclinic phase with c/a about 1.26; all measured films remain monoclinic variants.",
           "claim_boundary": "A broad substrate series gives a related but not identical threshold and warns against relabelling T-like monoclinic films as a true tetragonal phase.",
           "fulltext_route": "publisher_open_access",
-          "access_status": "publicly_retrievable",
+          "access_status": "private_mineru_review_pool_ready",
           "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
         }
       ]
@@ -138,8 +138,8 @@
           "method_scope": "Powder neutron diffraction with phase coexistence analysis",
           "reported_lead": "First-order R3c-to-Pbnm ferroelectric transition across about 820 to 830 degC.",
           "claim_boundary": "Heating and cooling path, decomposition, and the high-temperature observation window must be retained.",
-          "fulltext_route": "institutional_access_required",
-          "access_status": "candidate_route_not_probed",
+          "fulltext_route": "author_manuscript",
+          "access_status": "private_mineru_review_pool_ready",
           "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
         },
         {
@@ -226,7 +226,7 @@
           "reported_lead": "Quenching depletes mobile defects and greatly reduces the fraction of conductive walls; slow cooling restores a larger conductive fraction, and not every wall exceeds background.",
           "claim_boundary": "Conductive-wall fraction is thermal-history dependent, so a wall identity alone cannot determine conductivity.",
           "fulltext_route": "publisher_open_access",
-          "access_status": "publicly_retrievable",
+          "access_status": "private_mineru_review_pool_ready",
           "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
         }
       ]

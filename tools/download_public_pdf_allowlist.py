@@ -80,7 +80,7 @@ def download_one(row: dict[str, Any], output: Path) -> dict[str, Any]:
     if _is_pdf_existing(target):
         payload = target.read_bytes()
         return {"document_id": row["document_id"], "filename": row["filename"], "status": "already_present", "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
-    request = Request(row["source_url"], headers={"User-Agent": "CosMatter/0.1 (academic private literature intake; Westlake University)"})
+    request = Request(row["source_url"], headers={"User-Agent": "CosMatter/0.1 (academic private literature intake)"})
     try:
         with urlopen(request, timeout=60) as response:
             content_type = (response.headers.get("Content-Type") or "").casefold()
