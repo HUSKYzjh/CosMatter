@@ -89,12 +89,56 @@ test("keeps fallback routes tied to the entered material property instead of gen
   await expect(routes.nth(0)).toContainText(input);
   await expect(routes.nth(1)).toContainText("相转变温度");
   await expect(routes.nth(2)).toContainText("升降温历史");
+  await expect(page.getByRole("status", { name: "候选生成来源" })).toContainText("本地问题绑定回退");
+  await expect(page.getByRole("status", { name: "候选生成来源" })).toContainText("未连接本机候选生成 API");
   expect((await routes.allTextContents()).join(" ")).not.toContain("围绕该研究议题");
 
   await routes.nth(0).click();
   await expect(page.getByLabel("研究对象")).toHaveValue("BiFeO₃");
   await expect(page.getByLabel("研究目标")).toHaveValue("相转变温度");
   await expect(page.getByRole("button", { name: "确认任务并进入编排" })).toBeEnabled();
+});
+
+test("labels a rejected model result and retries without silently presenting it as DeepSeek output", async ({ page }) => {
+  let candidateRequests = 0;
+  await page.route("**/api/status", async (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ api_mode: "loopback_only", providers: { deepseek: true, sciverse: true, mineru: true, openalex: true, crossref: true, crossref_polite_contact: true } }),
+  }));
+  await page.route("**/api/question-candidates", async (route) => {
+    candidateRequests += 1;
+    if (candidateRequests === 1) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "rejected" }) });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        trust_status: "untrusted_question_suggestions",
+        candidates: [
+          { id: "candidate_1", question: "哪些实验文献直接测定 BiFeO3 相转变温度及其不确定度？", material: "BiFeO3", property: "相转变温度", scope: "实验测量与误差", kind: "survey" },
+          { id: "candidate_2", question: "哪些样品、气氛和升温条件解释 BiFeO3 相转变温度的文献分歧？", material: "BiFeO3", property: "相转变温度", scope: "可比条件", kind: "contrast" },
+          { id: "candidate_3", question: "哪些原位结构观测可区分 BiFeO3 相转变温度附近的竞争相指派？", material: "BiFeO3", property: "相转变温度", scope: "机制判据", kind: "mechanism" },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
+  const consent = page.getByLabel(/我同意将上述研究问题发送/);
+  await expect(consent).toBeVisible();
+  await page.getByLabel("候选航向研究问题").fill("BiFeO3的相转变温度是多少？");
+  await consent.check();
+
+  const origin = page.getByRole("status", { name: "候选生成来源" });
+  await expect(origin).toContainText("本地问题绑定回退", { timeout: 4_000 });
+  await expect(origin).toContainText("模型请求失败或输出未通过相关性校验");
+  await page.getByRole("button", { name: "重新请求模型" }).click();
+  await expect(origin).toContainText("DeepSeek 候选生成 · 已通过问题锚点校验", { timeout: 4_000 });
+  await expect(page.locator(".candidate-planet").first()).toContainText("BiFeO3 相转变温度");
+  expect(candidateRequests).toBe(2);
 });
 
 test("activates a BFO task template through the keyboard with an explicit pressed state", async ({ page }) => {

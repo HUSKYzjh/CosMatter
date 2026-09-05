@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import { uiLanguage } from "./zh";
 import { LAUNCH_STAGES, launchModeStatus, stageForLaunchMode, type LaunchPreviewStage } from "./launchStages";
 import { isCurrentCandidateResponse } from "./launchCandidateRequest";
@@ -13,6 +13,7 @@ export interface LaunchMission { question: string; material: string; property: s
 export interface LaunchPdfCandidateTarget { runId: string; documentId: string; title: string; }
 
 type Theme = "light" | "dark" | "eye";
+type CandidateOrigin = "deepseek" | "local_no_api" | "local_after_failure" | null;
 const copy = (zh: string, en: string) => uiLanguage() === "zh" ? zh : en;
 const launchFleetMasks = ["/ambient-backgrounds/launch-masks/fleet-01-flagship-mask.png", "/ambient-backgrounds/launch-masks/fleet-02-formation-mask.png", "/ambient-backgrounds/launch-masks/fleet-03-flotilla-mask.png", "/ambient-backgrounds/launch-masks/fleet-04-expedition-mask.png", "/ambient-backgrounds/launch-masks/fleet-05-surveyor-mask.png"] as const;
 
@@ -46,6 +47,8 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission) => void;
   const [candidates, setCandidates] = createSignal<LaunchCandidate[]>([]);
   const [candidatePending, setCandidatePending] = createSignal(false);
   const [candidateConsent, setCandidateConsent] = createSignal(false);
+  const [candidateOrigin, setCandidateOrigin] = createSignal<CandidateOrigin>(null);
+  const [candidateAttempt, setCandidateAttempt] = createSignal(0);
   const [selected, setSelected] = createSignal<LaunchCandidate | null>(null);
   const [jumping, setJumping] = createSignal(false);
   const [pdf, setPdf] = createSignal<File | null>(null);
@@ -102,20 +105,35 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission) => void;
 
   createEffect(() => {
     const question = prompt().trim();
+    candidateAttempt();
+    // Provider health is refreshed independently every 30 seconds. Reading
+    // this conditional prop reactively would resend the same authorized
+    // question whenever that health object is replaced, even if availability
+    // did not change. Only question/consent/retry are allowed request triggers.
+    const modelCandidateRequest = untrack(() => props.onCandidates);
     const requestId = ++latestCandidateRequest;
     setSelected(null);
     setAutomaticConsent(false);
-    if (mode() !== "question" || question.length < 12 || (props.onCandidates && !candidateConsent())) { setCandidates([]); setCandidatePending(false); return; }
+    setCandidateOrigin(null);
+    if (mode() !== "question" || question.length < 12 || (modelCandidateRequest && !candidateConsent())) { setCandidates([]); setCandidatePending(false); return; }
     setCandidates([]);
     setCandidatePending(true);
     const timer = window.setTimeout(() => {
-      const request = props.onCandidates ? props.onCandidates(question) : Promise.resolve(fallbackCandidates(question));
+      const request = modelCandidateRequest ? modelCandidateRequest(question) : Promise.resolve(fallbackCandidates(question));
       void request
         .then((result) => {
-          if (isCurrentCandidateResponse(requestId, latestCandidateRequest, question, prompt())) { setCandidates(result); setCandidatePending(false); }
+          if (isCurrentCandidateResponse(requestId, latestCandidateRequest, question, prompt())) {
+            setCandidates(result);
+            setCandidateOrigin(modelCandidateRequest ? "deepseek" : "local_no_api");
+            setCandidatePending(false);
+          }
         })
         .catch(() => {
-          if (isCurrentCandidateResponse(requestId, latestCandidateRequest, question, prompt())) { setCandidates(fallbackCandidates(question)); setCandidatePending(false); }
+          if (isCurrentCandidateResponse(requestId, latestCandidateRequest, question, prompt())) {
+            setCandidates(fallbackCandidates(question));
+            setCandidateOrigin("local_after_failure");
+            setCandidatePending(false);
+          }
         });
     }, 800);
     onCleanup(() => window.clearTimeout(timer));
@@ -180,6 +198,7 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission) => void;
         <section class="signal-receiver"><header><p class="launch-kicker">QUESTION SIGNAL</p><h2>{copy("提出一个可由文献证据回答的问题", "Ask a question answerable with literature evidence")}</h2><ol><li>{copy("输入研究问题", "Enter a research question")}</li><li>{copy("生成未受信候选航向", "Generate untrusted candidate routes")}</li><li>{copy("确认任务边界", "Confirm the task boundary")}</li></ol></header><section class="bfo-task-deck" aria-label={copy("BiFeO₃ 任务模板", "BiFeO₃ task templates")}><header><small>{copy("BFO 任务模板 / 只填入本地简报", "BFO TASK TEMPLATES / LOCAL BRIEF ONLY")}</small><span>{copy("选择后仍可编辑，并须确认；不会检索、上传或创建任务。", "Selection remains editable and requires confirmation; it does not retrieve, upload, or create a task.")}</span></header><div><For each={bfoPresets()}>{(preset, index) => <button type="button" aria-pressed={selected()?.id === preset.id} classList={{ selected: selected()?.id === preset.id }} onClick={() => selectBfoPreset(preset)}><small>BFO-{String(index() + 1).padStart(2, "0")}</small><strong>{preset.question}</strong><span>{preset.material} · {preset.property}</span><em>{preset.scope}</em></button>}</For></div></section><label>{copy("候选航向研究问题", "Candidate-route research question")}<textarea value={prompt()} rows="3" onInput={(event) => { setPrompt(event.currentTarget.value); resizeQuestionInput(event.currentTarget); }} placeholder={copy("例如：为什么不同薄膜研究对 BiFeO₃ 相稳定性有相反结论？", "Example: Why do thin-film studies disagree about BiFeO₃ phase stability?")} /></label><small>{props.onCandidates ? copy("输入至少 12 个字符后，先明确授权候选生成模型；授权后约 0.8 秒生成未受信候选航向。", "After at least 12 characters, explicitly authorize the candidate-generation model; untrusted route suggestions appear about 0.8 seconds later.") : copy("输入至少 12 个字符后，系统将在约 0.8 秒后形成候选航向。", "After at least 12 characters, candidate routes appear in about 0.8 seconds.")}</small>
           <Show when={props.onCandidates}><label class="consent launch-candidate-consent"><input type="checkbox" checked={candidateConsent()} onChange={(event) => setCandidateConsent(event.currentTarget.checked)} />{copy("我同意将上述研究问题发送至已配置的候选生成模型，以形成未受信候选航向；不会检索、上传全文或创建任务。", "I authorize sending the research question above to the configured candidate-generation model for untrusted route suggestions. This does not retrieve, upload full text, or create a task.")}</label></Show>
           <Show when={candidates().length > 0}><section class="candidate-handoff" aria-live="polite"><div><p>{copy("下一步 / 选择一个候选航向", "NEXT / SELECT A CANDIDATE ROUTE")}</p><strong>{selected() ? copy("已选择候选航向；请在下方核对并编辑任务边界。", "Candidate selected; review and edit the task boundary below.") : copy("候选已生成；请选择一条航向以打开可编辑的任务简报。", "Candidate routes are ready; select one to open an editable mission brief.")}</strong><span>{copy("选择不会检索、上传全文或创建任务。", "Selection does not retrieve, upload full text, or create a task.")}</span></div><b>{selected() ? copy("已选择", "SELECTED") : copy("待选择", "SELECT")}</b></section></Show>
+          <Show when={candidateOrigin()}>{(origin) => <section classList={{ "candidate-origin": true, warning: origin() !== "deepseek" }} role="status" aria-label={copy("候选生成来源", "Candidate generation source")}><div><strong>{origin() === "deepseek" ? copy("DeepSeek 候选生成 · 已通过问题锚点校验", "DeepSeek candidate generation · question anchors validated") : copy("本地问题绑定回退", "Question-bound local fallback")}</strong><span>{origin() === "deepseek" ? copy("每条可见问题均保留原问题中的材料与目标性质；候选仍是未受信建议。", "Every visible question retains the material and target property from the original question; candidates remain untrusted suggestions.") : origin() === "local_after_failure" ? copy("模型请求失败或输出未通过相关性校验；失配结果未显示，当前候选由本机规则生成。", "The model request failed or its output did not pass relevance validation. The mismatched result was withheld and these routes were generated locally.") : copy("当前页面未连接本机候选生成 API；这些候选由本机规则生成，不是模型回答。", "This page is not connected to the local candidate-generation API. These routes were generated locally and are not a model response.")}</span></div><Show when={origin() === "local_after_failure" && props.onCandidates}><button type="button" disabled={candidatePending()} onClick={() => setCandidateAttempt((value) => value + 1)}>{copy("重新请求模型", "Retry model")}</button></Show></section>}</Show>
           <div classList={{ "candidate-orbits": true, ready: candidates().length > 0 }}><Show when={candidates().length > 0} fallback={<p class="launch-empty" role="status">{candidatePending() ? copy("正在生成未受信候选航向；不会创建任务或调用检索。", "Generating untrusted candidate routes; no task or retrieval is started.") : props.onCandidates && prompt().trim().length >= 12 && !candidateConsent() ? copy("请先授权候选生成模型，再发送研究问题形成候选航向。", "Authorize the candidate-generation model before sending the research question for route suggestions.") : copy("等待研究信号。", "Waiting for a research signal.")}</p>}><For each={candidates()}>{(candidate, index) => <button type="button" aria-pressed={selected()?.id === candidate.id} disabled={jumping()} classList={{ "candidate-planet": true, selected: selected()?.id === candidate.id, [`planet-${candidate.kind}`]: true }} style={{ "--orbit-delay": `${index() * 110}ms` }} onClick={() => { setSelected({ ...candidate }); setAutomaticConsent(false); }}><small>{selected()?.id === candidate.id ? copy("已选航向", "SELECTED") : `0${index() + 1}`}</small><strong>{candidate.question}</strong><span>{candidate.kind === "survey" ? copy("全景梳理", "Landscape") : candidate.kind === "contrast" ? copy("条件分歧", "Contrast") : copy("机制核验", "Mechanism")}</span><em>{selected()?.id === candidate.id ? copy("继续：核对任务边界", "Next: review boundary") : copy("点击选择此航向", "Select this route")}</em></button>}</For></Show></div>
           <Show when={selected()}>{(candidate) => <section class="launch-brief-editor" aria-labelledby="mission-brief-heading"><div><p id="mission-brief-heading">{copy("下一步 / 任务简报与可编辑边界", "NEXT / MISSION BRIEF AND EDITABLE BOUNDARY")}</p><label>{copy("任务简报研究问题", "Mission-brief research question")}<input value={candidate().question} onInput={(event) => updateCandidate("question", event.currentTarget.value)} /></label><label>{copy("研究对象", "Research objects")}<input value={candidate().material} onInput={(event) => updateCandidate("material", event.currentTarget.value)} /></label><label>{copy("研究目标", "Research target")}<input value={candidate().property} onInput={(event) => updateCandidate("property", event.currentTarget.value)} /></label><label>{copy("比较范围", "Comparison scope")}<input value={candidate().scope} onInput={(event) => updateCandidate("scope", event.currentTarget.value)} /></label></div><div class="launch-confirmation"><Show when={selectedMissing().length}><p class="launch-brief-warning">{copy("仍需人工确认：", "Still requires human confirmation: ")}<For each={selectedMissing()}>{(field, index) => <>{index() ? "、" : ""}{fieldLabel(field)}</>}</For>{copy("。候选航向不会直接成为检索任务。", ". A candidate route cannot directly become a retrieval task.")}</p></Show><Show when={props.automaticExecutionAvailable}><label class="consent launch-auto-consent"><input type="checkbox" checked={automaticConsent()} onChange={(event) => setAutomaticConsent(event.currentTarget.checked)} />{copy("我确认本次任务可向已选书目服务发送问题、对象、目标与范围，用于受控元数据检索；该授权不接受 EvidenceCard，也不上传全文。", "I authorize this task to send its question, objects, target, and scope to selected bibliographic services for controlled metadata retrieval. This does not accept EvidenceCards or upload full text.")}</label></Show><button class="launch-primary" disabled={jumping() || !selectedReady() || (props.automaticExecutionAvailable && !automaticConsent())} type="button" onClick={beginQuestion}>{props.automaticExecutionAvailable ? copy("确认并授权元数据检索", "Confirm and authorize metadata retrieval") : copy("确认任务并进入编排", "Confirm and enter orchestration")}</button></div></section>}</Show>
           <Show when={selectedBfoFormation().length}><section class="bfo-formation-brief" aria-label={copy("BFO 计划编队", "BFO planned formation")}><header><small>{copy("计划编队契约 / 尚未执行", "PLANNED FORMATION CONTRACT / NOT EXECUTING")}</small><span>{copy("每一舰位都写明输入、输出与人工门禁。选择模板或确认任务均不会启动工具。", "Every station names its input, output, and human gate. Selecting or confirming a template does not start a tool.")}</span></header><div role="list"><For each={selectedBfoFormation()}>{(station, index) => <div role="listitem"><span>{String(index() + 1).padStart(2, "0")}</span><strong>{station.fleetLabel}</strong><em>{station.role}</em><small class="formation-intake">{copy("输入", "INPUT")}: {station.intake}</small><small class="formation-artifact">{copy("输出", "OUTPUT")}: {station.artifact}</small><small class="formation-gate">{copy("门禁", "GATE")}: {station.acceptanceGate}</small></div>}</For></div></section></Show>

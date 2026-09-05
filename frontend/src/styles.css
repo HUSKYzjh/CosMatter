@@ -1080,6 +1080,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .candidate-handoff strong { color: var(--ink); font-size: .98rem; line-height: 1.38; }
 .candidate-handoff span { color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .78rem; line-height: 1.5; }
 .candidate-handoff > b { flex: 0 0 auto; padding: .3rem .42rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 58%, var(--line)); color: var(--signal-teal); font: 700 .66rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .08em; }
+.candidate-origin { display: flex; align-items: center; justify-content: space-between; gap: .65rem 1rem; margin: .55rem 0 .1rem; padding: .58rem .7rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 38%, var(--line)); background: color-mix(in srgb, var(--signal-teal) 7%, var(--panel)); }
+.candidate-origin > div { display: grid; gap: .16rem; min-width: 0; }
+.candidate-origin strong { color: var(--signal-teal); font-size: .8rem; line-height: 1.35; }
+.candidate-origin span { color: var(--muted); font-size: .75rem; line-height: 1.45; }
+.candidate-origin.warning { border-color: color-mix(in srgb, var(--amber) 48%, var(--line)); background: color-mix(in srgb, var(--amber) 8%, var(--panel)); }
+.candidate-origin.warning strong { color: color-mix(in srgb, var(--amber) 72%, var(--ink)); }
+.candidate-origin button { flex: 0 0 auto; padding: .36rem .58rem; font-size: .72rem; }
 .candidate-orbits.ready { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: .55rem; min-height: 0; margin-top: .35rem; padding: .32rem 0; overflow: visible; background: transparent; }
 .candidate-orbits.ready::before, .candidate-orbits.ready::after { display: none; }
 .candidate-planet, .candidate-planet.planet-survey, .candidate-planet.planet-contrast, .candidate-planet.planet-mechanism { position: relative; top: auto; right: auto; bottom: auto; left: auto; width: auto; min-height: 8.1rem; padding: .65rem .75rem .7rem 1rem; border: 1px solid color-mix(in srgb, var(--candidate-signal) 52%, var(--line)); border-inline-start: 3px solid var(--candidate-signal); background: linear-gradient(125deg, color-mix(in srgb, var(--candidate-signal) 9%, transparent), color-mix(in srgb, var(--surface) 86%, transparent)); }
@@ -1101,6 +1108,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .candidate-handoff > b { align-self: start; }
   .candidate-handoff strong { font-size: .9rem; }
   .candidate-handoff span { font-size: .74rem; }
+  .candidate-origin { align-items: start; flex-direction: column; }
   .candidate-planet, .candidate-planet.planet-survey, .candidate-planet.planet-contrast, .candidate-planet.planet-mechanism { min-height: 4.8rem; padding: .55rem .62rem .6rem .8rem; }
   .candidate-planet strong { font-size: .88rem; }
 }
