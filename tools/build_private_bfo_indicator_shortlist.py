@@ -9,6 +9,14 @@ from pathlib import Path
 from typing import Any
 
 from cosmatter.material_indicator_triage import MaterialIndicatorTriageError, build_private_indicator_shortlist
+from cosmatter.mineru_local_review import MinerULocalReviewError, all_markdown_candidate_segments
+
+try:
+    from tools.prepare_private_mineru_review_pools import load_verified_markdown_entries
+except ModuleNotFoundError as error:  # direct ``python tools/<script>.py`` execution
+    if error.name != "tools":
+        raise
+    from prepare_private_mineru_review_pools import load_verified_markdown_entries
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -69,14 +77,82 @@ def build(*, matrix_path: Path, review_index_path: Path, output_path: Path) -> d
     return result
 
 
+def build_from_manifest(
+    *, matrix_path: Path, manifest_path: Path, markdown_root: Path, output_path: Path,
+) -> dict[str, Any]:
+    """Rank indicator candidates across every verified Markdown segment."""
+    matrix_resolved = matrix_path.resolve()
+    if matrix_resolved != PROJECT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json":
+        raise MaterialIndicatorTriageError("BFO shortlist requires the versioned repository source matrix")
+    manifest_resolved = _outside_project(manifest_path)
+    markdown_resolved = _outside_project(markdown_root)
+    output_resolved = _outside_project(output_path)
+    if output_resolved.suffix.casefold() != ".json" or output_resolved.exists():
+        raise MaterialIndicatorTriageError("private shortlist output must be a new .json file")
+    try:
+        entries = load_verified_markdown_entries(manifest_resolved, markdown_resolved)
+    except (OSError, ValueError) as error:
+        raise MaterialIndicatorTriageError("private Markdown manifest or content failed hash verification") from error
+    pools: dict[str, object] = {}
+    index_entries: list[dict[str, str]] = []
+    for entry in entries:
+        markdown_path = (markdown_resolved / entry["markdown_relative_path"]).resolve()
+        try:
+            content = markdown_path.read_text(encoding="utf-8")
+            segments = all_markdown_candidate_segments(content)
+        except (OSError, UnicodeDecodeError, MinerULocalReviewError) as error:
+            raise MaterialIndicatorTriageError("verified private Markdown cannot be segmented safely") from error
+        pools[entry["document_id"]] = {
+            "document_id": entry["document_id"],
+            "trust_status": "private_unreviewed_mineru_markdown_candidate_pool_not_source_map",
+            "source_markdown_sha256": entry["markdown_sha256"],
+            "candidate_segments": segments,
+        }
+        index_entries.append(
+            {"document_id": entry["document_id"], "markdown_sha256": entry["markdown_sha256"]}
+        )
+    review_index = {
+        "mission_id": "bfo_p0_full_markdown_indicator_triage",
+        "trust_status": "private_unreviewed_mineru_manifest_review_index_not_evidence",
+        "entries": index_entries,
+    }
+    result = build_private_indicator_shortlist(
+        matrix=_read_json(matrix_resolved, "BFO source matrix"),
+        review_index=review_index,
+        pools_by_document=pools,
+    )
+    result["selection_method"] = "deterministic_full_markdown_indicator_numeric_condition_ranking_v2"
+    try:
+        output_resolved.parent.mkdir(parents=True, exist_ok=True)
+        output_resolved.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError as error:
+        raise MaterialIndicatorTriageError("private shortlist output cannot be written") from error
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matrix", type=Path, default=PROJECT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json")
-    parser.add_argument("--review-index", required=True, type=Path)
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--review-index", type=Path)
+    inputs.add_argument("--manifest", type=Path, help="verified private Markdown manifest for full-text ranking")
+    parser.add_argument("--markdown-root", type=Path, help="private Markdown root; required with --manifest")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     try:
-        result = build(matrix_path=args.matrix, review_index_path=args.review_index, output_path=args.output)
+        if args.manifest is not None:
+            if args.markdown_root is None:
+                raise MaterialIndicatorTriageError("--markdown-root is required with --manifest")
+            result = build_from_manifest(
+                matrix_path=args.matrix,
+                manifest_path=args.manifest,
+                markdown_root=args.markdown_root,
+                output_path=args.output,
+            )
+        else:
+            if args.markdown_root is not None:
+                raise MaterialIndicatorTriageError("--markdown-root is only valid with --manifest")
+            result = build(matrix_path=args.matrix, review_index_path=args.review_index, output_path=args.output)
     except MaterialIndicatorTriageError as error:
         parser.error(str(error))
     print(

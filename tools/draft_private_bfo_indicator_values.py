@@ -98,10 +98,18 @@ def main() -> int:
                 user_prompt=user_prompt,
                 max_tokens=2_500,
                 json_object=True,
+                thinking_enabled=False if args.disable_thinking else None,
             )
             if completion.model != EXPECTED_MODEL:
                 raise MaterialIndicatorDraftError("provider returned a different model than deepseek-v4-flash")
-            drafts.append(untrusted_indicator_value_draft(shortlist=batch_shortlist, catalog=catalog, completion=completion))
+            drafts.append(
+                untrusted_indicator_value_draft(
+                    shortlist=batch_shortlist,
+                    catalog=catalog,
+                    completion=completion,
+                    drop_invalid_facts=True,
+                )
+            )
         draft = combine_untrusted_indicator_value_drafts(drafts)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(draft, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -114,6 +122,7 @@ def main() -> int:
                 "model": draft["model"],
                 "provider_batch_count": draft["provider_batch_count"],
                 "fact_count": len(draft["facts"]),
+                "rejected_fact_count": draft["rejected_fact_count"],
             },
             ensure_ascii=False,
         )

@@ -18,8 +18,8 @@ _SEMANTICS = {
     "exact", "approximate", "range", "lower_bound", "upper_bound",
     "maximum", "minimum", "plus_minus", "categorical",
 }
-_FACT_FIELDS = {
-    "draft_fact_id", "document_id", "segment_id", "indicator_id", "category",
+_MODEL_FACT_FIELDS = {
+    "excerpt_index", "indicator_id",
     "reported_value", "reported_lower", "reported_upper", "reported_uncertainty",
     "reported_unit", "value_semantics", "measurement_method", "qualifiers", "limitation",
 }
@@ -74,9 +74,7 @@ def indicator_value_draft_prompts(shortlist: object, catalog: object) -> tuple[s
         for segment in document["segments"]:
             excerpt_rows.append(
                 {
-                    "document_id": document["document_id"],
-                    "segment_id": segment["segment_id"],
-                    "locator": segment["locator"],
+                    "excerpt_index": len(excerpt_rows),
                     "allowed_indicator_ids": document["focus_indicator_ids"],
                     "excerpt": segment["quote"],
                 }
@@ -103,26 +101,24 @@ def indicator_value_draft_prompts(shortlist: object, catalog: object) -> tuple[s
         "output_schema": {
             "facts": [
                 {
-                    "draft_fact_id": "unique lowercase safe ID",
-                    "document_id": "exact input document_id",
-                    "segment_id": "exact input segment_id",
+                    "excerpt_index": "integer copied from the input excerpt",
                     "indicator_id": "one allowed_indicator_id for that excerpt",
-                    "category": "exact catalog category",
-                    "reported_value": "number, short categorical string, or null",
-                    "reported_lower": "number or null",
-                    "reported_upper": "number or null",
-                    "reported_uncertainty": "number or null",
+                    "reported_value": "JSON number without a unit symbol, short categorical string, or null",
+                    "reported_lower": "JSON number without a unit symbol or null",
+                    "reported_upper": "JSON number without a unit symbol or null",
+                    "reported_uncertainty": "JSON number without a unit symbol or null",
                     "reported_unit": "exact allowed unit string or null",
                     "value_semantics": "exact|approximate|range|lower_bound|upper_bound|maximum|minimum|plus_minus|categorical",
                     "measurement_method": "short excerpt-grounded method or not_checked",
-                    "qualifiers": {field: "bounded scalar, not_checked, or not_applicable" for field in QUALIFIER_FIELDS},
+                    "qualifiers": "array of exactly 12 bounded values in qualifier_order",
                     "limitation": "short excerpt-grounded boundary; otherwise not_checked",
                 }
             ]
         },
         "rules": [
-            "Return 1 to 48 facts and no keys outside the schema.",
+            "Return zero to four facts per excerpt and no keys outside the schema. An empty facts array is valid.",
             "A numeric fact must contain the appropriate numeric field and an exact catalog-allowed unit.",
+            "For numeric indicators, never quote a number and never place %, degree signs, or other units inside a numeric field.",
             "A categorical fact uses reported_value text, all numeric bound fields null, and reported_unit null.",
             "Do not interpret citation-list values as experimental results.",
             "When the excerpt does not explicitly report a target value or categorical phase assignment, emit no fact for it.",
@@ -139,7 +135,8 @@ def indicator_value_draft_prompts(shortlist: object, catalog: object) -> tuple[s
 
 
 def untrusted_indicator_value_draft(
-    *, shortlist: object, catalog: object, completion: DraftCompletion
+    *, shortlist: object, catalog: object, completion: DraftCompletion,
+    drop_invalid_facts: bool = False,
 ) -> dict[str, Any]:
     """Validate a completion and bind every candidate to an exact excerpt hash."""
     segment_index, definitions = _validate_inputs(shortlist, catalog)
@@ -147,51 +144,27 @@ def untrusted_indicator_value_draft(
     if not isinstance(payload, dict) or set(payload) != {"facts"}:
         raise MaterialIndicatorDraftError("DeepSeek indicator draft must contain only facts")
     raw_facts = payload.get("facts")
-    if not isinstance(raw_facts, list) or not 1 <= len(raw_facts) <= 48:
-        raise MaterialIndicatorDraftError("DeepSeek indicator draft requires 1 to 48 candidate facts")
+    if not isinstance(raw_facts, list) or len(raw_facts) > min(48, 4 * len(segment_index)):
+        raise MaterialIndicatorDraftError("DeepSeek indicator draft has too many candidate facts")
     facts: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    per_excerpt_counts: dict[int, int] = {}
+    ordered_segments = list(segment_index.items())
+    rejection_reason_counts: dict[str, int] = {}
     for raw in raw_facts:
-        if not isinstance(raw, dict) or set(raw) != _FACT_FIELDS:
-            raise MaterialIndicatorDraftError("DeepSeek indicator fact fields are invalid")
-        fact_id = raw.get("draft_fact_id")
-        document_id = raw.get("document_id")
-        segment_id = raw.get("segment_id")
-        indicator_id = raw.get("indicator_id")
-        key = (document_id, segment_id)
-        source = segment_index.get(key)
-        if (
-            not isinstance(fact_id, str) or not fact_id or len(fact_id) > 120 or fact_id in seen
-            or source is None or indicator_id not in source["allowed_indicator_ids"]
-        ):
-            raise MaterialIndicatorDraftError("DeepSeek indicator fact identity or source binding is invalid")
-        definition = definitions[indicator_id]
-        if raw.get("category") != definition["category"] or raw.get("reported_unit") not in definition["allowed_reported_units"]:
-            raise MaterialIndicatorDraftError("DeepSeek indicator category or unit is not catalog-allowed")
-        semantics = raw.get("value_semantics")
-        if semantics not in _SEMANTICS:
-            raise MaterialIndicatorDraftError("DeepSeek indicator value semantics are invalid")
-        value_fields = ("reported_value", "reported_lower", "reported_upper", "reported_uncertainty")
-        if any(not _bounded_scalar(raw.get(field)) for field in value_fields):
-            raise MaterialIndicatorDraftError("DeepSeek indicator reported values are invalid")
-        _validate_value_shape(raw, definition["value_shape"])
-        method, limitation = raw.get("measurement_method"), raw.get("limitation")
-        if not isinstance(method, str) or not method.strip() or len(method) > 240 or not isinstance(limitation, str) or not limitation.strip() or len(limitation) > 500:
-            raise MaterialIndicatorDraftError("DeepSeek indicator method or limitation is invalid")
-        qualifiers = raw.get("qualifiers")
-        if not isinstance(qualifiers, dict) or set(qualifiers) != set(QUALIFIER_FIELDS):
-            raise MaterialIndicatorDraftError("DeepSeek indicator fact must contain exactly twelve qualifiers")
-        if any(not _bounded_scalar(qualifiers[field], maximum=300) for field in QUALIFIER_FIELDS):
-            raise MaterialIndicatorDraftError("DeepSeek indicator qualifiers are invalid")
-        seen.add(fact_id)
-        facts.append(
-            {
-                **{key: value for key, value in raw.items() if key != "qualifiers"},
-                "qualifiers": {field: qualifiers[field] for field in QUALIFIER_FIELDS},
-                "locator": source["locator"],
-                "source_quote_sha256": source["quote_sha256"],
-            }
-        )
+        try:
+            fact = _validated_model_fact(
+                raw=raw,
+                ordered_segments=ordered_segments,
+                definitions=definitions,
+                per_excerpt_counts=per_excerpt_counts,
+            )
+        except MaterialIndicatorDraftError as error:
+            if not drop_invalid_facts:
+                raise
+            reason = str(error)
+            rejection_reason_counts[reason] = rejection_reason_counts.get(reason, 0) + 1
+        else:
+            facts.append(fact)
     request_id_sha256 = (
         hashlib.sha256(completion.request_id.encode("utf-8")).hexdigest()
         if completion.request_id else None
@@ -205,11 +178,81 @@ def untrusted_indicator_value_draft(
         "model": completion.model,
         "provider_batch_count": 1,
         "request_id_sha256": request_id_sha256,
+        "rejected_fact_count": sum(rejection_reason_counts.values()),
+        "rejection_reason_counts": rejection_reason_counts,
+        "input_segment_bindings": [
+            {
+                "document_id": document_id,
+                "segment_id": segment_id,
+                "source_quote_sha256": source["quote_sha256"],
+            }
+            for (document_id, segment_id), source in ordered_segments
+        ],
         "facts": facts,
         "review_boundary": (
             "This quote-free LLM output is private and unreviewed. Check the bound excerpt, full figure/table context, "
             "unit semantics, and all qualifiers before any Source Map or material observation is created."
         ),
+    }
+
+
+def _validated_model_fact(
+    *,
+    raw: object,
+    ordered_segments: list[tuple[tuple[str, str], dict[str, Any]]],
+    definitions: dict[str, dict[str, Any]],
+    per_excerpt_counts: dict[int, int],
+) -> dict[str, Any]:
+    if not isinstance(raw, dict) or set(raw) != _MODEL_FACT_FIELDS:
+        raise MaterialIndicatorDraftError("unsupported_fact_fields")
+    excerpt_index = raw.get("excerpt_index")
+    if isinstance(excerpt_index, bool) or not isinstance(excerpt_index, int) or not 0 <= excerpt_index < len(ordered_segments):
+        raise MaterialIndicatorDraftError("invalid_excerpt_index")
+    per_excerpt_counts[excerpt_index] = per_excerpt_counts.get(excerpt_index, 0) + 1
+    if per_excerpt_counts[excerpt_index] > 4:
+        raise MaterialIndicatorDraftError("per_excerpt_fact_limit_exceeded")
+    (document_id, segment_id), source = ordered_segments[excerpt_index]
+    indicator_id = raw.get("indicator_id")
+    if indicator_id not in source["allowed_indicator_ids"]:
+        raise MaterialIndicatorDraftError("indicator_not_allowed_for_excerpt")
+    definition = definitions[indicator_id]
+    if raw.get("reported_unit") not in definition["allowed_reported_units"]:
+        raise MaterialIndicatorDraftError("unit_not_catalog_allowed")
+    if raw.get("value_semantics") not in _SEMANTICS:
+        raise MaterialIndicatorDraftError("invalid_value_semantics")
+    value_fields = ("reported_value", "reported_lower", "reported_upper", "reported_uncertainty")
+    if any(not _bounded_scalar(raw.get(field)) for field in value_fields):
+        raise MaterialIndicatorDraftError("invalid_reported_value")
+    try:
+        _validate_value_shape(raw, definition["value_shape"])
+    except MaterialIndicatorDraftError as error:
+        raise MaterialIndicatorDraftError("value_shape_mismatch") from error
+    method, limitation = raw.get("measurement_method"), raw.get("limitation")
+    if not isinstance(method, str) or not method.strip() or len(method) > 240 or not isinstance(limitation, str) or not limitation.strip() or len(limitation) > 500:
+        raise MaterialIndicatorDraftError("invalid_method_or_limitation")
+    qualifier_values = raw.get("qualifiers")
+    if not isinstance(qualifier_values, list) or len(qualifier_values) != len(QUALIFIER_FIELDS):
+        raise MaterialIndicatorDraftError("invalid_qualifier_count")
+    if any(not _bounded_scalar(value, maximum=300) for value in qualifier_values):
+        raise MaterialIndicatorDraftError("invalid_qualifier_value")
+    ordinal = per_excerpt_counts[excerpt_index]
+    fact_id = "draft_" + hashlib.sha256(
+        f"{document_id}:{segment_id}:{indicator_id}:{ordinal}".encode("utf-8")
+    ).hexdigest()[:32]
+    return {
+        "draft_fact_id": fact_id,
+        "document_id": document_id,
+        "segment_id": segment_id,
+        "indicator_id": indicator_id,
+        "category": definition["category"],
+        **{
+            key: value for key, value in raw.items()
+            if key not in {"excerpt_index", "indicator_id", "qualifiers"}
+        },
+        "qualifiers": dict(zip(QUALIFIER_FIELDS, qualifier_values, strict=True)),
+        "locator": source["locator"],
+        "source_quote_sha256": source["quote_sha256"],
+        "supporting_segment_bindings": [],
     }
 
 
@@ -286,34 +329,137 @@ def combine_untrusted_indicator_value_drafts(drafts: list[dict[str, Any]]) -> di
     if first.get("trust_status") != DRAFT_TRUST_STATUS:
         raise MaterialIndicatorDraftError("indicator draft batch trust status is invalid")
     facts: list[dict[str, Any]] = []
+    observation_index: dict[tuple[Any, ...], int] = {}
+    duplicate_fact_count = 0
+    input_bindings: list[dict[str, str]] = []
+    seen_bindings: set[tuple[str, str]] = set()
     seen: set[str] = set()
     request_hashes: list[str] = []
+    rejection_reason_counts: dict[str, int] = {}
     for draft in drafts:
         if not isinstance(draft, dict) or any(draft.get(field) != first.get(field) for field in identity_fields):
             raise MaterialIndicatorDraftError("indicator draft batches do not share one identity and model")
         batch_facts = draft.get("facts")
-        if not isinstance(batch_facts, list) or not batch_facts:
-            raise MaterialIndicatorDraftError("indicator draft batch has no validated facts")
+        if not isinstance(batch_facts, list):
+            raise MaterialIndicatorDraftError("indicator draft batch facts are invalid")
         for fact in batch_facts:
             fact_id = fact.get("draft_fact_id") if isinstance(fact, dict) else None
             if not isinstance(fact_id, str) or fact_id in seen:
                 raise MaterialIndicatorDraftError("indicator draft batches contain duplicate fact IDs")
             seen.add(fact_id)
-            facts.append(fact)
+            if not isinstance(fact.get("supporting_segment_bindings"), list):
+                raise MaterialIndicatorDraftError("indicator draft fact supporting bindings are invalid")
+            if any(
+                not isinstance(item, dict)
+                or set(item) != {"segment_id", "locator", "source_quote_sha256"}
+                or not all(isinstance(value, str) and value for value in item.values())
+                for item in fact["supporting_segment_bindings"]
+            ):
+                raise MaterialIndicatorDraftError("indicator draft fact supporting binding is invalid")
+            candidate = {
+                **fact,
+                "supporting_segment_bindings": [dict(item) for item in fact["supporting_segment_bindings"]],
+            }
+            observation_key = _observation_key(candidate)
+            existing_index = observation_index.get(observation_key)
+            if existing_index is None:
+                observation_index[observation_key] = len(facts)
+                facts.append(candidate)
+            else:
+                duplicate_fact_count += 1
+                existing = facts[existing_index]
+                if _fact_grounding_score(candidate) > _fact_grounding_score(existing):
+                    preferred, duplicate = candidate, existing
+                    facts[existing_index] = preferred
+                else:
+                    preferred, duplicate = existing, candidate
+                _append_supporting_binding(preferred, duplicate)
+        bindings = draft.get("input_segment_bindings")
+        if not isinstance(bindings, list) or not bindings:
+            raise MaterialIndicatorDraftError("indicator draft batch has no input segment binding")
+        for binding in bindings:
+            if not isinstance(binding, dict) or set(binding) != {"document_id", "segment_id", "source_quote_sha256"}:
+                raise MaterialIndicatorDraftError("indicator draft batch input binding is invalid")
+            binding_key = (binding.get("document_id"), binding.get("segment_id"))
+            if not all(isinstance(value, str) and value for value in binding.values()) or binding_key in seen_bindings or len(binding["source_quote_sha256"]) != 64:
+                raise MaterialIndicatorDraftError("indicator draft batch input binding is duplicated or invalid")
+            seen_bindings.add(binding_key)
+            input_bindings.append(binding)
         request_hash = draft.get("request_id_sha256")
         if request_hash is not None:
             if not isinstance(request_hash, str) or len(request_hash) != 64:
                 raise MaterialIndicatorDraftError("indicator draft batch request fingerprint is invalid")
             request_hashes.append(request_hash)
-    if len(facts) > 48:
-        raise MaterialIndicatorDraftError("combined indicator draft exceeds 48 candidate facts")
+        batch_rejections = draft.get("rejection_reason_counts")
+        if not isinstance(batch_rejections, dict) or any(
+            not isinstance(reason, str) or not isinstance(count, int) or isinstance(count, bool) or count < 1
+            for reason, count in batch_rejections.items()
+        ):
+            raise MaterialIndicatorDraftError("indicator draft batch rejection summary is invalid")
+        if draft.get("rejected_fact_count") != sum(batch_rejections.values()):
+            raise MaterialIndicatorDraftError("indicator draft batch rejection count does not match")
+        for reason, count in batch_rejections.items():
+            rejection_reason_counts[reason] = rejection_reason_counts.get(reason, 0) + count
+    if len(facts) > 48 or len(input_bindings) > 12:
+        raise MaterialIndicatorDraftError("combined indicator draft exceeds its fact or segment boundary")
     aggregate_request_hash = (
         hashlib.sha256(":".join(request_hashes).encode("utf-8")).hexdigest()
         if request_hashes else None
     )
     return {
-        **{key: value for key, value in first.items() if key not in {"facts", "provider_batch_count", "request_id_sha256"}},
+        **{
+            key: value for key, value in first.items()
+            if key not in {
+                "facts", "input_segment_bindings", "provider_batch_count", "request_id_sha256",
+                "rejected_fact_count", "rejection_reason_counts",
+                "duplicate_fact_count",
+            }
+        },
         "provider_batch_count": len(drafts),
         "request_id_sha256": aggregate_request_hash,
+        "rejected_fact_count": sum(rejection_reason_counts.values()),
+        "rejection_reason_counts": rejection_reason_counts,
+        "duplicate_fact_count": duplicate_fact_count,
+        "input_segment_bindings": input_bindings,
         "facts": facts,
     }
+
+
+def _observation_key(fact: dict[str, Any]) -> tuple[Any, ...]:
+    """Identify repeated same-document reports while retaining the richer binding."""
+    return (
+        fact.get("document_id"), fact.get("indicator_id"),
+        fact.get("reported_value"), fact.get("reported_lower"), fact.get("reported_upper"),
+        fact.get("reported_uncertainty"), fact.get("reported_unit"), fact.get("value_semantics"),
+    )
+
+
+def _fact_grounding_score(fact: dict[str, Any]) -> tuple[int, int]:
+    qualifiers = fact.get("qualifiers")
+    known = sum(
+        value not in {None, "not_checked"}
+        for value in qualifiers.values()
+    ) if isinstance(qualifiers, dict) else 0
+    return known, int(fact.get("measurement_method") != "not_checked")
+
+
+def _append_supporting_binding(preferred: dict[str, Any], duplicate: dict[str, Any]) -> None:
+    supporting = preferred["supporting_segment_bindings"]
+    candidates = [
+        {
+            "segment_id": duplicate.get("segment_id"),
+            "locator": duplicate.get("locator"),
+            "source_quote_sha256": duplicate.get("source_quote_sha256"),
+        },
+        *duplicate.get("supporting_segment_bindings", []),
+    ]
+    existing = {(item.get("segment_id"), item.get("source_quote_sha256")) for item in supporting}
+    for binding in candidates:
+        if not isinstance(binding, dict) or set(binding) != {"segment_id", "locator", "source_quote_sha256"} or not all(
+            isinstance(value, str) and value for value in binding.values()
+        ) or len(binding["source_quote_sha256"]) != 64:
+            raise MaterialIndicatorDraftError("indicator draft fact supporting binding is invalid")
+        key = (binding["segment_id"], binding["source_quote_sha256"])
+        if key != (preferred.get("segment_id"), preferred.get("source_quote_sha256")) and key not in existing:
+            supporting.append(binding)
+            existing.add(key)

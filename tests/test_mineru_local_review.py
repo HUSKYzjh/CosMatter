@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from cosmatter.cli import main
 from cosmatter.mineru import MinerUTask
-from cosmatter.mineru_local_review import MinerULocalReviewError, prepare_mineru_markdown_review_pool, source_map_pool_review_template, source_map_selection_from_pool_review, write_source_map_pool_review_selection
+from cosmatter.mineru_local_review import MinerULocalReviewError, all_markdown_candidate_segments, prepare_mineru_markdown_review_pool, source_map_pool_review_template, source_map_selection_from_pool_review, write_source_map_pool_review_selection
 from cosmatter.models import MissionBrief
 from cosmatter.source_parse import record_source_parse_task
 from cosmatter.source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, source_map_from_pool_review
@@ -76,6 +76,16 @@ class MinerULocalReviewTests(unittest.TestCase):
         self.assertEqual(first["candidate_segments"][0]["quote"], paragraphs[0])
         self.assertEqual(first["candidate_segments"][-1]["quote"], paragraphs[-1])
         self.assertTrue(any("Paragraph 045" in item["quote"] for item in first["candidate_segments"]))
+
+    def test_full_segmentation_marks_reference_section_locators(self) -> None:
+        segments = all_markdown_candidate_segments(
+            "# Results\n\nWe measured conductive domain walls at room temperature.\n\n"
+            "# References\n\n1. Example et al. Domain-wall conductivity (2020)."
+        )
+        result = next(item for item in segments if "We measured" in item["quote"])
+        citation = next(item for item in segments if "Example et al." in item["quote"])
+        self.assertTrue(result["locator"].startswith("markdown_line:"))
+        self.assertTrue(citation["locator"].startswith("markdown_reference_line:"))
 
 
     def test_review_template_resolves_exact_pool_segments_into_hash_bound_source_map(self) -> None:

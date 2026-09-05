@@ -43,14 +43,20 @@ _INDICATOR_TERMS: dict[str, tuple[str, ...]] = {
     ),
     "ferroelectric_transition_temperature": (
         "ferroelectric transition", "curie temperature", "curie point", "alpha-beta transition",
-        "beta-to-alpha", "beta to alpha",
+        "beta-to-alpha", "beta to alpha", "ferroelectric to paraelectric", "ferroelectric – paraelectric",
+        "paraelectric beta", "paraelectric β",
     ),
     "insulator_metal_transition_temperature": (
         "metal-insulator", "insulator-metal", "metallic", "semiconducting", "gamma phase",
     ),
     "domain_wall_conductivity": (
         "domain-wall conduction", "domain wall conduction", "domain-wall conductivity",
-        "domain wall conductivity", "conductive wall", "conducting wall", "c-afm",
+        "domain wall conductivity", "conductive wall", "conducting wall", "conductive dws",
+        "fraction of conductive", "fractions of dws", "dws exhibiting current", "c-afm",
+    ),
+    "conductive_domain_wall_fraction": (
+        "conductive wall fraction", "conductive domain wall fraction", "fraction of conductive",
+        "fractions of dws", "dws exhibiting current", "fraction of the analysed dws",
     ),
     "resistance_switching_ratio": (
         "switching ratio", "on/off", "on-off", "resistance ratio", "orders of magnitude",
@@ -63,9 +69,11 @@ _NUMERIC_RE = re.compile(
     r"(?:\s*[×x]\s*10\s*\^?\s*[+-]?\d+|\s*[eE][+-]?\d+)?)"
 )
 _UNIT_RE = re.compile(
+    r"(?<![A-Za-z])(?:"
     r"(?:μ|µ|u)c\s*/\s*cm(?:\^?2|²)|kv\s*/\s*cm|mv\s*/\s*cm|v\s*/\s*(?:cm|m)|"
-    r"(?:°\s*c|deg\s*c|kelvin|\bk\b)|%|nm|μm|µm|angstrom|å|pa|na|μa|µa|ma|"
-    r"a\s*/\s*cm(?:\^?2|²)|s\s*/\s*cm|ev|mev|hz|khz|mhz|pm\s*/\s*v",
+    r"°\s*c|deg\s*c|kelvin|k|%|nm|μm|µm|angstrom|å|pa|na|μa|µa|ma|"
+    r"a\s*/\s*cm(?:\^?2|²)|s\s*/\s*cm|ev|mev|hz|khz|mhz|pm\s*/\s*v"
+    r")(?![A-Za-z])",
     re.IGNORECASE,
 )
 _CONDITION_TERMS = (
@@ -84,11 +92,70 @@ _BOUNDARY_TERMS = (
     "unsaturated", "degradation", "uncertainty", "not observed", "no evidence", "depends on",
     "rather than", "in contrast", "only", "approximately",
 )
+_RESULT_TERMS = (
+    "we measured", "we measure", "we find", "we found", "we extract", "we infer",
+    "our measurement", "our results", "we observe", "we observed", "we demonstrate",
+    "we demonstrated", "we have demonstrated", "this study demonstrates", "investigation demonstrates",
+    "demonstrates that",
+)
+_BACKGROUND_TERMS = (
+    "theoretical studies", "calculations predict", "recently", "previously reported",
+    "according to the authors", "in thin films", "reference ",
+)
+_CITED_COMPARISON_TERMS = (
+    "according to the authors", "these authors reported", "who found", "as reported by",
+)
 _REFERENCE_RE = re.compile(
     r"(?:^|\n)\s*(?:#{1,4}\s*)?(?:references|bibliography)\b|"
     r"(?:^|\n)\s*\[?\d{1,3}\]?\s+[A-Z][A-Za-z-]+(?:\s+et\s+al\.)?.{0,100}\b(?:19|20)\d{2}\b",
     re.IGNORECASE,
 )
+
+
+def _normalized_scientific_text(value: str) -> str:
+    """Normalize common MinerU TeX spacing only for deterministic matching."""
+    text = value.casefold().replace("μ", "u").replace("µ", "u")
+    text = text.replace("\\mu", "u").replace("\\textdegree", " deg ").replace("\\circ", " deg ")
+    text = re.sub(r"\\(?:mathrm|mathbf|textup|mathfrak|mathsf|tt)\s*", " ", text)
+    text = text.replace("\\", " ").replace("$", " ").replace("{", " ").replace("}", " ").replace("~", " ")
+    # MinerU often renders 820 as ``8 2 0`` and uC/cm2 as
+    # ``u C . c m ^ - 2``. This form is used for matching only; the original
+    # quote and its hash remain unchanged.
+    text = re.sub(r"(?<=\d)\s+(?=\d)", "", text)
+    text = re.sub(r"(?<=\d)\s*\.\s*(?=\d)", ".", text)
+    text = re.sub(r"u\s*c\s*[.·]\s*c\s*m\s*\^?\s*-\s*2", "uc/cm2", text)
+    text = re.sub(r"u\s*c\s*/\s*c\s*m\s*\^?\s*2", "uc/cm2", text)
+    text = re.sub(r"\bdeg\s*(?:o\s*)?c\b", "degc", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _indicator_value_hits(text: str, matched: list[str]) -> int:
+    hits = 0
+    if "spontaneous_polarization_ps" in matched and re.search(r"uc\s*/\s*cm(?:2|\^2)", text):
+        hits += 1
+    if "hysteresis_saturation" in matched and re.search(r"(?:uc\s*/\s*cm(?:2|\^2)|kv\s*/\s*cm|saturat)", text):
+        hits += 1
+    if "epitaxial_strain" in matched and "%" in text:
+        hits += 1
+    if "tetragonality_c_over_a" in matched and re.search(
+        r"\bc\s*/\s*a\s*(?:ratio\s*)?(?:(?:was|is|of|changes?\s+from|from)\s*)?"
+        r"(?:e|≈|=)?\s*1\.\d+(?:\s*(?:to|[-–—])\s*1\.\d+)?\b", text,
+    ):
+        hits += 1
+    if any(item in matched for item in ("ferroelectric_transition_temperature", "insulator_metal_transition_temperature")) and re.search(r"(?:\bdegc\b|°\s*c|\b\d{3,4}\s*k\b)", text):
+        hits += 1
+    if "domain_wall_conductivity" in matched and re.search(
+        r"(?:s\s*/\s*cm|a\s*/\s*cm2|\b(?:pa|na|ua|ma)\b|conductive\s+(?:fraction|walls?)|"
+        r"fractions?\s+of\s+(?:the\s+)?dws?.{0,80}(?:current|conductive))", text,
+    ):
+        hits += 1
+    if "conductive_domain_wall_fraction" in matched and "%" in text:
+        hits += 1
+    if "resistance_switching_ratio" in matched and re.search(r"(?:orders? of magnitude|on\s*[/−-]\s*off|switching ratio)", text):
+        hits += 1
+    if "space_group" in matched and re.search(r"\b(?:r3c|pbnm|pnma|p4mm|cc)\b", text):
+        hits += 1
+    return hits
 
 
 def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
@@ -97,18 +164,34 @@ def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
 
 def _score_segment(segment: dict[str, str], focus_indicator_ids: list[str]) -> dict[str, Any] | None:
     quote = segment["quote"]
-    text = quote.casefold()
+    text = _normalized_scientific_text(quote)
     matched = [
         indicator_id
         for indicator_id in focus_indicator_ids
         if _contains_any(text, _INDICATOR_TERMS.get(indicator_id, (indicator_id.replace("_", " "),)))
     ]
-    has_number = _NUMERIC_RE.search(quote) is not None
-    has_unit = _UNIT_RE.search(quote) is not None
+    has_number = _NUMERIC_RE.search(text) is not None
+    has_unit = _UNIT_RE.search(text) is not None
+    has_range = (
+        re.search(r"[+-]?\d+(?:\.\d+)?\s*(?:to|[-–—])\s*[+-]?\d+(?:\.\d+)?", text) is not None
+        or re.search(r"\bc\s*/\s*a.{0,40}\bfrom\s+1\.\d+.{0,40}\bto\s+1\.\d+", text) is not None
+    )
     condition_hits = sum(term in text for term in _CONDITION_TERMS)
     method_hits = sum(term in text for term in _METHOD_TERMS)
     boundary_hits = sum(term in text for term in _BOUNDARY_TERMS)
-    reference_like = _REFERENCE_RE.search(quote) is not None
+    result_hits = sum(term in text for term in _RESULT_TERMS)
+    background_hits = sum(term in text for term in _BACKGROUND_TERMS)
+    cited_comparison = any(term in text for term in _CITED_COMPARISON_TERMS)
+    indicator_value_hits = _indicator_value_hits(text, matched)
+    off_target_property = re.search(r"\b(?:band\s*gap|electronic density of states|density of states)\b", text) is not None and not any(
+        indicator_id in focus_indicator_ids
+        for indicator_id in ("band_gap", "electronic_structure")
+    )
+    off_target_energy = re.search(r"\b\d+(?:\.\d+)?\s*(?:m?ev)\b", text) is not None and not any(
+        indicator_id in focus_indicator_ids
+        for indicator_id in ("band_gap", "activation_energy", "energy_barrier")
+    )
+    reference_like = segment["locator"].startswith("markdown_reference_line:") or _REFERENCE_RE.search(quote) is not None
 
     # A generic number alone is too weak.  Keep an excerpt only when it names a
     # target indicator, or when a measured value/unit is tied to method/context.
@@ -118,9 +201,19 @@ def _score_segment(segment: dict[str, str], focus_indicator_ids: list[str]) -> d
     score = 8 * len(matched)
     score += 5 if has_number else 0
     score += 4 if has_unit else 0
+    score += 8 if has_range else 0
+    score += 6 if matched and has_number and has_unit else 0
     score += min(condition_hits, 4) * 2
     score += min(method_hits, 3) * 2
     score += min(boundary_hits, 2)
+    score += min(result_hits, 2) * 6
+    score += indicator_value_hits * 14
+    score -= min(background_hits, 2) * 10
+    score -= 12 if cited_comparison else 0
+    score -= 12 if off_target_property else 0
+    score -= 12 if off_target_energy else 0
+    if segment["kind"] == "figure_caption" and matched and has_number:
+        score += 4
     if reference_like:
         score -= 18
     if score <= 0:
@@ -131,6 +224,8 @@ def _score_segment(segment: dict[str, str], focus_indicator_ids: list[str]) -> d
     if has_number or has_unit:
         candidate_roles.append("reported_value_candidate")
         reason_codes.append("numeric_or_unit_expression")
+    if has_range:
+        reason_codes.append("numeric_range_expression")
     if condition_hits:
         candidate_roles.append("measurement_condition_candidate")
         reason_codes.append("measurement_context_term")
@@ -140,6 +235,18 @@ def _score_segment(segment: dict[str, str], focus_indicator_ids: list[str]) -> d
     if boundary_hits:
         candidate_roles.append("boundary_or_limitation_candidate")
         reason_codes.append("boundary_term")
+    if result_hits:
+        reason_codes.append("primary_result_language")
+    if background_hits:
+        reason_codes.append("background_or_cited_comparison_penalty")
+    if cited_comparison:
+        reason_codes.append("explicit_cited_comparison_penalty")
+    if off_target_property:
+        reason_codes.append("off_target_property_penalty")
+    if off_target_energy:
+        reason_codes.append("off_target_energy_value_penalty")
+    if indicator_value_hits:
+        reason_codes.append("indicator_compatible_value_or_unit")
     if matched:
         reason_codes.append("focus_indicator_term")
     if reference_like:

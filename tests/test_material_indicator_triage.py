@@ -11,7 +11,7 @@ from cosmatter.material_indicator_triage import (
     SHORTLIST_TRUST_STATUS,
     build_private_indicator_shortlist,
 )
-from tools.build_private_bfo_indicator_shortlist import PROJECT_ROOT, build
+from tools.build_private_bfo_indicator_shortlist import PROJECT_ROOT, build, build_from_manifest
 
 
 class MaterialIndicatorTriageTests(unittest.TestCase):
@@ -97,6 +97,134 @@ class MaterialIndicatorTriageTests(unittest.TestCase):
         identifiers = [item["segment_id"] for item in first["documents"][0]["segments"]]
         self.assertNotIn("ref", identifiers)
 
+    def test_mineru_tex_spaced_value_and_unit_are_ranked(self) -> None:
+        digest = "f" * 64
+        result = build_private_indicator_shortlist(
+            matrix=self._matrix(),
+            review_index=self._index(("paper_a",), digest),
+            pools_by_document={
+                "paper_a": self._pool(
+                    "paper_a",
+                    digest,
+                    [
+                        ("plain", "The spontaneous polarization was discussed."),
+                        ("tex", r"The measured spontaneous polarization was $6 0 \ \mu \mathrm { C . c m } ^ { - 2 }$ at room temperature."),
+                    ],
+                )
+            },
+            max_segments_per_document=1,
+        )
+        selected = result["documents"][0]["segments"][0]
+        self.assertEqual(selected["segment_id"], "tex")
+        self.assertIn("numeric_or_unit_expression", selected["reason_codes"])
+
+    def test_primary_result_language_beats_background_comparison(self) -> None:
+        digest = "1" * 64
+        result = build_private_indicator_shortlist(
+            matrix=self._matrix(),
+            review_index=self._index(("paper_a",), digest),
+            pools_by_document={
+                "paper_a": self._pool(
+                    "paper_a",
+                    digest,
+                    [
+                        ("background", "Recently a spontaneous polarization of 90 uC/cm2 was observed in thin films."),
+                        ("result", "From our measurement we extract a spontaneous polarization of 60 uC/cm2 at room temperature."),
+                    ],
+                )
+            },
+            max_segments_per_document=1,
+        )
+        selected = result["documents"][0]["segments"][0]
+        self.assertEqual(selected["segment_id"], "result")
+        self.assertIn("primary_result_language", selected["reason_codes"])
+
+    def test_indicator_compatible_unit_beats_unrelated_energy_value(self) -> None:
+        digest = "2" * 64
+        matrix = {
+            "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+            "catalog_id": "bfo-p0-experimental-indicators/v1",
+            "material_scope": "BiFeO3",
+            "questions": [
+                {
+                    "question_id": "strain",
+                    "focus_indicator_ids": ["epitaxial_strain", "tetragonality_c_over_a"],
+                    "source_candidates": [{"source_id": "paper_a", "role": "primary_support", "access_status": "private_mineru_review_pool_ready"}],
+                }
+            ],
+        }
+        result = build_private_indicator_shortlist(
+            matrix=matrix,
+            review_index=self._index(("paper_a",), digest),
+            pools_by_document={
+                "paper_a": self._pool(
+                    "paper_a",
+                    digest,
+                    [
+                        ("energy", "The band gap was 2.6 eV and correlated with epitaxial strain and c/a."),
+                        ("ratio", r"Under epitaxial strain the measured c/a ratio was $1 . 2 6$."),
+                    ],
+                )
+            },
+            max_segments_per_document=1,
+        )
+        selected = result["documents"][0]["segments"][0]
+        self.assertEqual(selected["segment_id"], "ratio")
+        self.assertIn("indicator_compatible_value_or_unit", selected["reason_codes"])
+
+    def test_c_over_a_change_range_is_indicator_compatible(self) -> None:
+        digest = "3" * 64
+        matrix = {
+            "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+            "catalog_id": "bfo-p0-experimental-indicators/v1",
+            "material_scope": "BiFeO3",
+            "questions": [{
+                "question_id": "ratio", "focus_indicator_ids": ["tetragonality_c_over_a"],
+                "source_candidates": [{"source_id": "paper_a", "role": "primary_support", "access_status": "private_mineru_review_pool_ready"}],
+            }],
+        }
+        result = build_private_indicator_shortlist(
+            matrix=matrix,
+            review_index=self._index(("paper_a",), digest),
+            pools_by_document={"paper_a": self._pool(
+                "paper_a", digest,
+                [("ratio", "Thus, the c/a ratio changes from 1.07 for the R phase to 1.27 in the T phase over 10 unit cells.")],
+            )},
+            max_segments_per_document=1,
+        )
+        selected = result["documents"][0]["segments"][0]
+        self.assertIn("indicator_compatible_value_or_unit", selected["reason_codes"])
+        self.assertIn("numeric_range_expression", selected["reason_codes"])
+
+    def test_domain_wall_fraction_beats_ac_voltage_method_settings(self) -> None:
+        digest = "4" * 64
+        matrix = {
+            "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+            "catalog_id": "bfo-p0-experimental-indicators/v1",
+            "material_scope": "BiFeO3",
+            "questions": [{
+                "question_id": "walls", "focus_indicator_ids": ["domain_wall_conductivity", "conductive_domain_wall_fraction"],
+                "source_candidates": [{"source_id": "paper_a", "role": "primary_support", "access_status": "private_mineru_review_pool_ready"}],
+            }],
+        }
+        result = build_private_indicator_shortlist(
+            matrix=matrix,
+            review_index=self._index(("paper_a",), digest),
+            pools_by_document={"paper_a": self._pool(
+                "paper_a", digest,
+                [
+                    ("settings", "c-AFM used 8 V a.c. voltage and a d.c. bias from 7 to 17 V."),
+                    ("fractions", "Fractions of DWs exhibiting current signals were 69% pristine, 22% quenched, and 59% aged."),
+                ],
+            )},
+            max_segments_per_document=1,
+        )
+        self.assertEqual(result["documents"][0]["segments"][0]["segment_id"], "fractions")
+        self.assertIn(
+            "indicator_compatible_value_or_unit",
+            result["documents"][0]["segments"][0]["reason_codes"],
+        )
+
     def test_total_cap_preserves_one_segment_per_document_before_seconds(self) -> None:
         digest = "c" * 64
         document_ids = tuple(f"paper_{index}" for index in range(7))
@@ -136,6 +264,46 @@ class MaterialIndicatorTriageTests(unittest.TestCase):
                 review_index_path=PROJECT_ROOT / "private-index.json",
                 output_path=PROJECT_ROOT / "private-shortlist.json",
             )
+
+    def test_full_manifest_route_ranks_value_missing_from_sampled_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            markdown_root = root / "markdown"
+            markdown_root.mkdir()
+            markdown = markdown_root / "paper.md"
+            filler = "\n\n".join(f"Unrelated paragraph {index}." for index in range(80))
+            markdown.write_text(
+                filler + "\n\nAt room temperature the measured spontaneous polarization was 60 μC/cm2 along [012].",
+                encoding="utf-8",
+            )
+            digest = hashlib.sha256(markdown.read_bytes()).hexdigest()
+            manifest = root / "manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "private_output_only": True,
+                        "entries": [
+                            {
+                                "status": "downloaded",
+                                "source_relative_path": "lebeugle2007_apl_2753390.pdf",
+                                "markdown_relative_path": "paper.md",
+                                "markdown_sha256": digest,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            matrix_path = PROJECT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json"
+            result = build_from_manifest(
+                matrix_path=matrix_path,
+                manifest_path=manifest,
+                markdown_root=markdown_root,
+                output_path=root / "shortlist.json",
+            )
+            self.assertEqual(result["selection_method"], "deterministic_full_markdown_indicator_numeric_condition_ranking_v2")
+            self.assertEqual(result["documents"][0]["document_id"], "lebeugle2007_apl_2753390")
+            self.assertIn("60 μC/cm2", result["documents"][0]["segments"][0]["quote"])
 
 
 if __name__ == "__main__":

@@ -178,7 +178,7 @@
     },
     {
       "question_id": "bfo_p0_domain_wall_transport",
-      "focus_indicator_ids": ["domain_wall_conductivity", "resistance_switching_ratio"],
+      "focus_indicator_ids": ["domain_wall_conductivity", "conductive_domain_wall_fraction", "resistance_switching_ratio"],
       "comparison_question_zh": "BFO 畴壁导电由哪些畴型、缺陷和热处理条件控制，哪些畴壁并不导电？",
       "source_candidates": [
         {

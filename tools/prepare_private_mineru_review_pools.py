@@ -52,7 +52,7 @@ def _safe_relative(value: object, *, suffix: str | None = None) -> Path:
     return path
 
 
-def _load_entries(manifest_path: Path, markdown_root: Path) -> list[dict[str, str]]:
+def load_verified_markdown_entries(manifest_path: Path, markdown_root: Path) -> list[dict[str, str]]:
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -107,7 +107,7 @@ def prepare(*, manifest_path: Path, markdown_root: Path, output: Path, mission_i
     if private_output.exists():
         raise ManifestReviewError("private review output already exists and will not be overwritten")
     private_manifest = _outside_project(manifest_path)
-    entries = _load_entries(private_manifest, private_markdown_root)
+    entries = load_verified_markdown_entries(private_manifest, private_markdown_root)
     private_output.mkdir(parents=True, exist_ok=False)
     index: list[dict[str, str | int]] = []
     try:

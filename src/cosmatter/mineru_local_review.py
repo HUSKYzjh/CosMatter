@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -92,7 +93,31 @@ def _read_markdown(path: Path) -> str:
 
 
 def _candidate_segments(content: str) -> list[dict[str, str]]:
+    unbounded = all_markdown_candidate_segments(content)
+    sampled = _full_document_sample(unbounded, _MAX_CANDIDATES)
+    return [
+        {"segment_id": f"mineru_md_{index:03d}", **{key: value for key, value in item.items() if key != "segment_id"}}
+        for index, item in enumerate(sampled, 1)
+    ]
+
+
+def all_markdown_candidate_segments(content: str, *, max_segments: int = 5_000) -> list[dict[str, str]]:
+    """Split all bounded Markdown segments without the generic 48-item sample.
+
+    This is intended for private, deterministic relevance ranking before a
+    much smaller shortlist is written. It does not assign relevance or create
+    a Source Map.
+    """
+    if not isinstance(content, str) or not content or not 1 <= max_segments <= 5_000:
+        raise MinerULocalReviewError("full Markdown candidate segmentation input is invalid")
     lines = content.splitlines()
+    reference_start = next(
+        (
+            number for number, line in enumerate(lines, 1)
+            if re.match(r"^\s*#{0,4}\s*(?:references|bibliography)\b", line, re.IGNORECASE)
+        ),
+        None,
+    )
     groups: list[tuple[int, int, list[str]]] = []
     start = 0
     current: list[str] = []
@@ -112,17 +137,19 @@ def _candidate_segments(content: str) -> list[dict[str, str]]:
         text = "\n".join(group).strip()
         for part_index, quote in enumerate(_split_quote(text), 1):
             suffix = f":part:{part_index}" if len(text) > _MAX_QUOTE_CHARS else ""
+            locator_prefix = "markdown_reference_line" if reference_start is not None and start >= reference_start else "markdown_line"
             unbounded.append(
                 {
-                    "locator": f"markdown_line:{start}-{end}{suffix}",
+                    "locator": f"{locator_prefix}:{start}-{end}{suffix}",
                     "kind": kind,
                     "quote": quote,
                 }
             )
-    sampled = _full_document_sample(unbounded, _MAX_CANDIDATES)
+    if len(unbounded) > max_segments:
+        raise MinerULocalReviewError("full Markdown candidate segmentation exceeds its safe limit")
     return [
-        {"segment_id": f"mineru_md_{index:03d}", **item}
-        for index, item in enumerate(sampled, 1)
+        {"segment_id": f"mineru_full_md_{index:04d}", **item}
+        for index, item in enumerate(unbounded, 1)
     ]
 
 

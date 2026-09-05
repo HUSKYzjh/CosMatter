@@ -41,6 +41,7 @@ class DeepSeekAdapter:
         user_prompt: str,
         max_tokens: int | None = None,
         json_object: bool = False,
+        thinking_enabled: bool | None = None,
     ) -> DraftCompletion:
         if not system_prompt.strip() or not user_prompt.strip():
             raise ValueError("system_prompt and user_prompt must be nonempty")
@@ -60,9 +61,12 @@ class DeepSeekAdapter:
             ],
             "stream": False,
         }
-        if self.settings.llm_thinking_enabled:
+        effective_thinking = self.settings.llm_thinking_enabled if thinking_enabled is None else thinking_enabled
+        if effective_thinking:
             payload["thinking"] = {"type": "enabled"}
-        if self.settings.llm_reasoning_effort:
+        elif thinking_enabled is False:
+            payload["thinking"] = {"type": "disabled"}
+        if self.settings.llm_reasoning_effort and thinking_enabled is not False:
             payload["reasoning_effort"] = self.settings.llm_reasoning_effort
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
@@ -93,11 +97,23 @@ class DeepSeekAdapter:
                 last_error = error
                 if error.code not in {429, 502, 503}:
                     raise DeepSeekRequestError(f"DeepSeek request failed with HTTP {error.code}") from error
-            except (URLError, TimeoutError, json.JSONDecodeError, DeepSeekRequestError) as error:
+            except DeepSeekRequestError:
+                # A structurally invalid successful response is deterministic
+                # for this payload; retrying it only repeats private content.
+                raise
+            except (URLError, TimeoutError, json.JSONDecodeError) as error:
                 last_error = error
             if attempt + 1 < self.settings.api_max_retries:
                 self._sleep(2**attempt)
-        raise DeepSeekRequestError("DeepSeek request failed after configured retries") from last_error
+        if isinstance(last_error, json.JSONDecodeError):
+            reason = "invalid_json_response"
+        elif isinstance(last_error, TimeoutError):
+            reason = "timeout"
+        elif isinstance(last_error, HTTPError):
+            reason = f"http_{last_error.code}"
+        else:
+            reason = "transport"
+        raise DeepSeekRequestError(f"DeepSeek request failed after configured retries: {reason}") from last_error
 
 
 def _content_from_response(data: Any) -> str:
