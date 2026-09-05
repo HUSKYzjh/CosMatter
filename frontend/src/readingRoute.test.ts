@@ -50,7 +50,7 @@ describe("readingRoute", () => {
       node("none", "Sodium ordering in layered oxides"),
     ], {}, 6, {
       material: "BiFeO₃",
-      property: "相转变温度、铁电居里温度与奈尔温度",
+      question: "BiFeO₃ 的相转变温度、铁电居里温度与奈尔温度分别是多少？",
     });
 
     expect(route.map((entry) => [entry.documentId, entry.titleAnchorMatch])).toEqual([
@@ -61,6 +61,32 @@ describe("readingRoute", () => {
       ["context", "context"],
       ["none", "none"],
     ]);
+
+    const legacyStrainRoute = readingRoute([
+      node("material", "Growth of BiFeO3 nanoparticles"),
+      node("wrong-material", "Strain-induced phase transitions in epitaxial BiCoO3 thin films"),
+      node("both", "Thickness-dependent strain and phase stability in epitaxial BiFeO3 films"),
+      node("optical", "Optical band gap in epitaxial BiFeO3 thin films"),
+    ], {}, 6, {
+      material: "BiFeO3 epitaxial thin films",
+      question: "How do substrate-induced strain and film thickness relate to reported phase stability?",
+    });
+    expect(legacyStrainRoute.map((entry) => [entry.documentId, entry.titleAnchorMatch])).toEqual([
+      ["both", "material-and-context"],
+      ["material", "material"],
+      ["optical", "material"],
+      ["wrong-material", "context"],
+    ]);
+
+    const legacyScopeRoute = readingRoute([
+      node("optical", "Revisiting the optical band gap in epitaxial BiFeO3 thin films"),
+    ], {}, 6, {
+      material: "BiFeO3 epitaxial thin films",
+      property: "phase stability",
+      question: "For BiFeO3 epitaxial thin films, how do substrate-induced strain and film thickness relate to reported phase stability, and what counterevidence identifies confounding conditions?",
+      scope: "Bounded end-to-end provider test: DeepSeek-v4-flash planning plus Sciverse retrieval and one human-screened bounded full-text context; no scientific conclusion or automatic evidence acceptance.",
+    });
+    expect(legacyScopeRoute[0].titleAnchorMatch).toBe("material");
   });
 
   it("keeps unanchored candidates for review and never lets title anchors override workflow recovery", () => {

@@ -9,6 +9,7 @@ export interface ReadingRouteTaskAnchors {
   material?: string | null;
   property?: string | null;
   scope?: string | null;
+  question?: string | null;
 }
 
 export interface ReadingRouteEntry {
@@ -72,10 +73,10 @@ function normalizeAnchorText(value: string): string {
 }
 
 const CONTEXT_ALIASES: ReadonlyArray<{ pattern: RegExp; aliases: readonly string[] }> = [
-  { pattern: /相转变|相变|phase transition/, aliases: ["phase transition", "phase transitions", "phase diagram", "structural transition", "structural transitions"] },
+  { pattern: /相转变|相变|phase transition|phase stability|structural phase/, aliases: ["phase transition", "phase transitions", "phase diagram", "phase stability", "structural transition", "structural transitions"] },
   { pattern: /居里|curie/, aliases: ["curie", "ferroelectric transition", "ferroelectric transitions"] },
   { pattern: /奈尔|neel/, aliases: ["neel", "antiferromagnetic transition", "antiferromagnetic transitions", "magnetic transition", "magnetic behavior", "magnetic ordering"] },
-  { pattern: /应变|strain/, aliases: ["strain", "strained", "epitaxial", "misfit"] },
+  { pattern: /应变|strain/, aliases: ["strain", "strained", "misfit", "film thickness"] },
   { pattern: /氧空位|oxygen vacanc/, aliases: ["oxygen vacancy", "oxygen vacancies", "oxygen deficient", "vacancy ordering"] },
   { pattern: /缺陷|defect/, aliases: ["defect", "defects", "disorder"] },
   { pattern: /循环稳定性|cycling stability|cycle life/, aliases: ["cycling stability", "cycle life", "capacity retention"] },
@@ -83,7 +84,7 @@ const CONTEXT_ALIASES: ReadonlyArray<{ pattern: RegExp; aliases: readonly string
 ];
 
 function contextAnchorTerms(anchors: ReadingRouteTaskAnchors): string[] {
-  const context = normalizeAnchorText(`${anchors.property ?? ""} ${anchors.scope ?? ""}`);
+  const context = normalizeAnchorText(`${anchors.question ?? ""} ${anchors.property ?? ""} ${anchors.scope ?? ""}`);
   const explicit = [...anchorTerms(anchors.property), ...anchorTerms(anchors.scope)];
   const aliases = CONTEXT_ALIASES.flatMap((entry) => entry.pattern.test(context) ? entry.aliases : []);
   return [...new Set([...explicit, ...aliases].map(normalizeAnchorText).filter(Boolean))];
@@ -97,15 +98,33 @@ function anchorTerms(value: string | null | undefined): string[] {
 function titleMatches(title: string, terms: readonly string[]): boolean {
   const normalizedTitle = normalizeAnchorText(title);
   const compactTitle = normalizedTitle.replace(/\s+/g, "");
-  return terms.some((term) => normalizedTitle.includes(term) || compactTitle.includes(term.replace(/\s+/g, "")));
+  const titleTokens = new Set(normalizedTitle.split(/\s+/).filter(Boolean));
+  return terms.some((rawTerm) => {
+    const term = normalizeAnchorText(rawTerm);
+    if (!term) return false;
+    const compactTerm = term.replace(/\s+/g, "");
+    if (/[\u3400-\u9fff]/.test(term)) return normalizedTitle.includes(term) || compactTitle.includes(compactTerm);
+    if (term.includes(" ")) return normalizedTitle.includes(term) || compactTitle.includes(compactTerm);
+    if (/\d/.test(term)) return titleTokens.has(term) || compactTitle.includes(compactTerm);
+    return titleTokens.has(term);
+  });
+}
+
+function formulaAnchorTerms(value: string | null | undefined): string[] {
+  if (!value) return [];
+  const formulas = value.normalize("NFKC").match(/\b(?:[A-Z][a-z]?\d*){2,}\b/g) ?? [];
+  return [...new Set(formulas.map(normalizeAnchorText).filter(Boolean))];
 }
 
 function materialTitleMatches(title: string, material: string | null | undefined): boolean {
-  if (titleMatches(title, anchorTerms(material))) return true;
+  const formulas = formulaAnchorTerms(material);
+  if (formulas.length && titleMatches(title, formulas)) return true;
   const materialCompact = normalizeAnchorText(material ?? "").replace(/\s+/g, "");
-  if (!materialCompact.includes("bifeo3")) return false;
-  const titleCompact = normalizeAnchorText(title).replace(/\s+/g, "");
-  return titleCompact.includes("bismuthferrite") || /bi[a-z0-9]{0,14}fe[a-z0-9]{0,14}o3/.test(titleCompact);
+  if (materialCompact.includes("bifeo3")) {
+    const titleCompact = normalizeAnchorText(title).replace(/\s+/g, "");
+    return titleCompact.includes("bismuthferrite") || /bi[a-z0-9]{0,14}fe[a-z0-9]{0,14}o3/.test(titleCompact);
+  }
+  return formulas.length ? false : titleMatches(title, anchorTerms(material));
 }
 
 function taskTitleAnchorMatch(title: string, anchors: ReadingRouteTaskAnchors): TaskTitleAnchorMatch {

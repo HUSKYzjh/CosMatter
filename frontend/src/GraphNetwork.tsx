@@ -148,6 +148,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     material: props.bundle.mission.material,
     property: props.bundle.mission.property,
     scope: props.bundle.mission.scope,
+    question: props.bundle.mission.question,
   }));
   const relationCounts = createMemo(() => graph().edges.reduce<Record<EdgeGroup, number>>((counts, edge) => ({ ...counts, [edgeGroup(edge)]: counts[edgeGroup(edge)] + 1 }), { discovery: 0, evidence: 0, conditions: 0, bibliography: 0, related: 0, structure: 0 }));
   const paperStateLabel = (state: PaperWorkflowState | undefined) => {
