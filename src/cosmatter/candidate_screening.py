@@ -126,13 +126,14 @@ def require_document_screened_for_fulltext(
     """Require a current explicit include decision before an external parser call."""
     if not isinstance(document_id, str) or not document_id.strip():
         raise CandidateScreeningError("document_id must be nonempty")
-    artifact = load_candidate_screening(run_dir / "candidate_screening.json", mission_id)
-    if artifact is None and allow_delegated_automated_trial:
-        artifact = load_automated_trial_candidate_screening(run_dir / "automated_trial_candidate_screening.json", mission_id)
-    if artifact is None:
+    human_artifact = load_candidate_screening(run_dir / "candidate_screening.json", mission_id)
+    automated_artifact = load_automated_trial_candidate_screening(run_dir / "automated_trial_candidate_screening.json", mission_id) if allow_delegated_automated_trial else None
+    artifacts = [artifact for artifact in (human_artifact, automated_artifact) if artifact is not None]
+    if not artifacts:
         raise CandidateScreeningError("full-text parsing requires a completed human candidate screening or explicit delegated automated trial screening")
     allowed_statuses = {_REVIEW_STATUS, _AUTOMATED_TRIAL_REVIEW_STATUS} if allow_delegated_automated_trial else {_REVIEW_STATUS}
-    if not screening_matches_candidates(artifact, candidate_payload, allowed_statuses=allowed_statuses):
+    artifact = next((item for item in artifacts if screening_matches_candidates(item, candidate_payload, allowed_statuses=allowed_statuses)), None)
+    if artifact is None:
         raise CandidateScreeningError("candidate screening is stale; review the current retrieval candidate set")
     reviewed = {item["document_id"]: item["decision"] for item in artifact["decisions"]}
     if reviewed.get(document_id) != "include_for_fulltext":

@@ -1,3 +1,4 @@
+import copy
 import json
 import tempfile
 import unittest
@@ -88,6 +89,33 @@ class CandidateScreeningTests(unittest.TestCase):
                 "mission_screen",
                 candidates(),
                 "doc_include",
+                allow_delegated_automated_trial=True,
+            )
+
+    def test_current_automated_trial_can_replace_a_stale_human_screening_only_with_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            original = candidates()
+            human = candidate_screening_from_review("mission_screen", original, reviewed())
+            write_candidate_screening(run_dir, human)
+            current = copy.deepcopy(original)
+            current["candidates"].append({"document_id": "doc_new", "title": "A new bounded candidate."})
+            current_review = reviewed()
+            current_review["decisions"].append({"document_id": "doc_new", "decision": "include_for_fulltext", "reason_codes": ["material_match", "scope_match"]})
+            automated = candidate_screening_from_automated_trial(
+                "mission_screen",
+                current,
+                current_review,
+            )
+            write_automated_trial_candidate_screening(run_dir, automated)
+
+            with self.assertRaises(CandidateScreeningError):
+                require_document_screened_for_fulltext(run_dir, "mission_screen", current, "doc_new")
+            require_document_screened_for_fulltext(
+                run_dir,
+                "mission_screen",
+                current,
+                "doc_new",
                 allow_delegated_automated_trial=True,
             )
 
