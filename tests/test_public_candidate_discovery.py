@@ -17,6 +17,15 @@ class PublicDiscoveryTests(unittest.TestCase):
         with self.assertRaises(PublicDiscoveryError):
             validate_redirect_chain(["https://arxiv.org/a", "https://arxiv.org/a"])
 
+    def test_policy_allows_only_the_reviewed_nature_host(self):
+        self.assertEqual(
+            validate_public_url("https://www.nature.com/articles/example.pdf"),
+            "https://www.nature.com/articles/example.pdf",
+        )
+        for url in ("https://nature.com/articles/example.pdf", "https://nature.example/articles/example.pdf"):
+            with self.assertRaises(PublicDiscoveryError):
+                validate_public_url(url)
+
     def test_probe_requires_pdf_signature_or_media_type_and_redacts_url(self):
         class Response:
             status = 206

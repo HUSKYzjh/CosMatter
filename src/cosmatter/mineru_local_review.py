@@ -106,23 +106,38 @@ def _candidate_segments(content: str) -> list[dict[str, str]]:
             current = []
     if current:
         groups.append((start, len(lines), current))
-    result: list[dict[str, str]] = []
+    unbounded: list[dict[str, str]] = []
     for start, end, group in groups:
         kind = _kind(group)
         text = "\n".join(group).strip()
         for part_index, quote in enumerate(_split_quote(text), 1):
-            if len(result) >= _MAX_CANDIDATES:
-                return result
             suffix = f":part:{part_index}" if len(text) > _MAX_QUOTE_CHARS else ""
-            result.append(
+            unbounded.append(
                 {
-                    "segment_id": f"mineru_md_{len(result) + 1:03d}",
                     "locator": f"markdown_line:{start}-{end}{suffix}",
                     "kind": kind,
                     "quote": quote,
                 }
             )
-    return result
+    sampled = _full_document_sample(unbounded, _MAX_CANDIDATES)
+    return [
+        {"segment_id": f"mineru_md_{index:03d}", **item}
+        for index, item in enumerate(sampled, 1)
+    ]
+
+
+def _full_document_sample(items: list[dict[str, str]], limit: int) -> list[dict[str, str]]:
+    """Keep a deterministic, order-preserving sample across the whole document.
+
+    A prefix-only cap hides conclusions, limitations, and methods in longer
+    MinerU results.  Equally spaced indexes retain the beginning and end while
+    exposing every part of the document to the private review step.  This is
+    coverage sampling only; it does not rank a segment as relevant or evidence.
+    """
+    if len(items) <= limit:
+        return items
+    last = len(items) - 1
+    return [items[round(position * last / (limit - 1))] for position in range(limit)]
 
 
 def _kind(lines: list[str]) -> str:

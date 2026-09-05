@@ -54,6 +54,29 @@ class MinerULocalReviewTests(unittest.TestCase):
             with self.assertRaises(MinerULocalReviewError):
                 prepare_mineru_markdown_review_pool(mission_id="mission_1", document_id="doc_1", source_task=task, input_path=input_path, output_path=output_path)
 
+    def test_long_pool_samples_the_full_document_instead_of_only_its_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "long.md"
+            paragraphs = [f"Paragraph {index:03d} carries bounded review text." for index in range(90)]
+            paragraphs[-1] = "Final limitation that a prefix-only pool would hide."
+            input_path.write_text("\n\n".join(paragraphs), encoding="utf-8")
+            task = {"document_id": "doc_1", "provider": "mineru", "state": "done", "task_id": "task_1"}
+            first = prepare_mineru_markdown_review_pool(
+                mission_id="mission_1", document_id="doc_1", source_task=task,
+                input_path=input_path, output_path=root / "pool_1.json",
+            )
+            second = prepare_mineru_markdown_review_pool(
+                mission_id="mission_1", document_id="doc_1", source_task=task,
+                input_path=input_path, output_path=root / "pool_2.json",
+            )
+
+        self.assertEqual(len(first["candidate_segments"]), 48)
+        self.assertEqual(first["candidate_segments"], second["candidate_segments"])
+        self.assertEqual(first["candidate_segments"][0]["quote"], paragraphs[0])
+        self.assertEqual(first["candidate_segments"][-1]["quote"], paragraphs[-1])
+        self.assertTrue(any("Paragraph 045" in item["quote"] for item in first["candidate_segments"]))
+
 
     def test_review_template_resolves_exact_pool_segments_into_hash_bound_source_map(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
