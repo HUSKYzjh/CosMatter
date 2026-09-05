@@ -5,7 +5,7 @@ import { isCurrentCandidateResponse } from "./launchCandidateRequest";
 import { isLaunchMissionReady, launchMissionMissingFields, type LaunchMissionField } from "./launchMissionValidation";
 import { bfoTaskPresets, isBfoTaskPresetId } from "./bfoTaskPresets";
 import { bfoTaskFormation } from "./bfoTaskFormation";
-import { researchObjectFromQuestion } from "./launchQuestionObject";
+import { questionBoundFallbackCandidates } from "./launchQuestionCandidates";
 
 export type LaunchMode = "question" | "pdf" | "resume";
 export interface LaunchCandidate { id: string; question: string; material: string; property: string; scope: string; kind: "survey" | "contrast" | "mechanism"; }
@@ -30,41 +30,7 @@ function nextFleetIndex(previous?: number) {
   const offset = 1 + Math.floor(Math.random() * (launchFleetMasks.length - 1));
   return previous === undefined ? Math.floor(Math.random() * launchFleetMasks.length) : (previous + offset) % launchFleetMasks.length;
 }
-const fallbackCandidates = (question: string): LaunchCandidate[] => [
-  {
-    id: "survey",
-    question: copy(
-      `围绕该研究议题，现有文献的研究对象、报告结论与证据边界分别是什么？`,
-      `What research objects, reported outcomes, and evidence boundaries define the literature landscape for this topic?`,
-    ),
-    material: researchObjectFromQuestion(question) ?? copy("由输入问题识别，待人工确认", "Inferred from the prompt; confirm manually"),
-    property: copy("研究背景与证据全景", "Research background and evidence landscape"),
-    scope: copy(`以“${question}”作为检索意图，不将原句直接作为研究任务。`, `Use “${question}” as retrieval intent, not as the task wording.`),
-    kind: "survey",
-  },
-  {
-    id: "contrast",
-    question: copy(
-      "哪些可比较的制备、几何、环境与测量条件，可能解释文献中相互不一致的报告？",
-      "Which comparable preparation, geometry, environment, and measurement conditions may explain divergent reports?",
-    ),
-    material: copy("允许多个材料或样品对象", "Multiple materials or sample objects allowed"),
-    property: copy("条件依赖的报告差异", "Condition-dependent reporting differences"),
-    scope: copy(`围绕“${question}”构建条件矩阵、可比性规则与反例检索。`, `Build a condition matrix, comparability rules, and counterexample search around “${question}”.`),
-    kind: "contrast",
-  },
-  {
-    id: "mechanism",
-    question: copy(
-      "需要优先核对哪些可定位的原文证据，才能区分竞争机制、样品差异或方法学偏差？",
-      "Which located primary-source evidence should be checked first to distinguish mechanisms, sample differences, or methodological bias?",
-    ),
-    material: copy("待由来源定位后规范化", "Normalize after source location"),
-    property: copy("可证伪解释与证据判别", "Falsifiable explanations and evidence discrimination"),
-    scope: copy(`围绕“${question}”建立来源定位、条件字段与人工审核门禁。`, `Establish source locations, condition fields, and a human review gate for “${question}”.`),
-    kind: "mechanism",
-  },
-];
+const fallbackCandidates = (question: string): LaunchCandidate[] => questionBoundFallbackCandidates(question, uiLanguage());
 
 const MODES: Array<{ id: LaunchMode; icon: string; zh: string; en: string; zhDetail: string; enDetail: string }> = [
   { id: "question", icon: "✦", zh: "问题启航", en: "Question", zhDetail: "问题 → 候选资料库 / 计划", enDetail: "Question → candidates / plan" },
