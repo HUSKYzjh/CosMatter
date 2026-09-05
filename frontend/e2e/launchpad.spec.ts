@@ -59,6 +59,24 @@ test("keeps launch regions separate across structural breakpoints", async ({ pag
   }
 });
 
+test("centres the wide launch route and keeps its primary sections aligned", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+
+  const boxes = await Promise.all([
+    page.locator(".launch-hero").boundingBox(),
+    page.locator(".launch-workspace").boundingBox(),
+    page.locator(".launch-flow").boundingBox(),
+    page.locator(".signal-receiver").boundingBox(),
+  ]);
+  if (boxes.some((box) => !box)) throw new Error("wide launch sections did not render layout boxes");
+  const [hero, workspace, flow, receiver] = boxes as Array<{ x: number; y: number; width: number; height: number }>;
+  expect(Math.abs(hero.x - (1920 - hero.width) / 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs(hero.x - workspace.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(workspace.x - flow.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(workspace.width - receiver.width)).toBeLessThanOrEqual(1);
+});
+
 test("renders BFO templates as readable cards without a line crossing their copy", async ({ page }) => {
   for (const width of [1440, 880, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -136,6 +154,29 @@ test("keeps operational labels and evidence copy at a readable scale", async ({ 
     ".stage-note",
   ]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test("wraps narrow rail handoffs and manifest counts without collisions", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "预览：受控编排" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+
+  const railVector = page.locator(".research-rail .route-handoff-vector");
+  expect(await railVector.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
+  for (const selector of [".route-handoff-origin", ".route-handoff-destination"]) {
+    const station = page.locator(`.research-rail ${selector}`);
+    expect(await station.locator("strong").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await station.locator("span").evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
+  }
+
+  const manifestEntry = page.locator(".handoff-manifest-entry").first();
+  await expect(manifestEntry).toBeVisible(lazyWorkspaceContentLoad);
+  const count = manifestEntry.locator(":scope > small");
+  const [entryBox, countBox] = await Promise.all([manifestEntry.boundingBox(), count.boundingBox()]);
+  if (!entryBox || !countBox) throw new Error("manifest entry or artifact count did not render a layout box");
+  expect(countBox.width).toBeGreaterThan(entryBox.width * 0.45);
+  expect(await count.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
 test("turns a typed question into an explicit selectable and confirmable mission path", async ({ page }) => {
