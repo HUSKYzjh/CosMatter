@@ -1,6 +1,7 @@
 # DSH 公开插件调研建议：实施与证据审计
 
 > 审计日期：2026-08-29
+> 最近复验：2026-09-05
 > 依据：[公开插件调研建议](DSH_PUBLIC_PLUGIN_RESEARCH_AND_RECOMMENDATIONS_2026-08-29.zh-CN.md)
 > 范围：仓库内的工程控制面、合成验收与受控试点边界；不构成科学证据、真实 provider 可用性承诺或第三方插件安全认证。
 
@@ -64,8 +65,7 @@
 .\.venv\Scripts\python.exe -m unittest discover -s tests -q
 ```
 
-截至本审计，Harness recipe 的四项检查均通过；全量 Python 测试为 `490` 项通过。测试中
-UI 负路径产生的两个 `ResourceWarning` 不表示失败，仍应在后续 Python/测试运行时升级时复核。
+2026-09-05 从新 PowerShell 终端执行统一入口 `scripts/acceptance.ps1`：Harness recipe 四项检查、7 个 DSH bundle 的测试与 dry-run 打包、579 项 Python 测试、前端类型检查以及 95 个文件中的 322 项前端测试均通过，最后输出 `OK - CosMatter full local acceptance passed.`。浏览器 E2E 另行复跑为 16 项通过。测试中 UI 负路径产生的 `ResourceWarning` 不表示失败，仍应在后续 Python/测试运行时升级时复核。
 
 ## 不应由本审计推导的结论
 

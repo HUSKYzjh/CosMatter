@@ -18,6 +18,8 @@
 
 前端候选入口已同时验收三种来源状态：DeepSeek 成功且通过问题锚点校验、本机 API 未启用时的问题绑定回退、以及模型失败/输出失配后的显式回退与人工重试。提供方健康状态每 30 秒刷新不得重复发送同一研究问题。
 
+2026-09-05 已从新 PowerShell 终端执行 `./scripts/acceptance.ps1` 并取得最终行 `OK - CosMatter full local acceptance passed.`。该次本地验收包含 579 项 Python 测试、95 个前端测试文件中的 322 项测试、7 个 DSH bundle 的发布/回放/打包门禁与 Git 空白检查；浏览器 E2E 另行复跑为 16 项通过。测试计数只描述该提交的工程覆盖，不证明真实 provider SLA 或材料结论。
+
 ## 1. 目的与完成定义
 
 本试点验证从一个受限研究问题到可审计文献调研工件的链路，重点确认：
@@ -61,12 +63,12 @@
 
 1. 在新的 PowerShell 终端进入 `D:\CosMatter\development\CosMatter`，运行 `./scripts/acceptance.ps1`；它只执行本地测试、打包与合成回放，不读取 `.env` 或调用提供商。若需要保留本次基线的脱敏验收收据，可显式附加 `-ReportPath <新建的 .json 路径>`；收据只记录步骤状态与耗时，且默认拒绝覆盖已有收据。schema `1.1` 收据含内容 SHA-256，可用 `./scripts/verify-acceptance-receipt.ps1 -Path <收据路径>` 离线验证。若只需诊断 Python 套件，可使用 `./scripts/test-all.ps1`。
 2. 确认 `python`、`git`、`gh`、`dsh`、`sciverse`、`xelatex`、`bibtex` 可执行。
-3. 运行 Python 全量测试、前端类型检查与测试、六个 DSH bundle 测试。
+3. 运行 Python 全量测试、前端类型检查与测试、七个 DSH bundle 测试。
 4. 运行 Git 空白错误检查与敏感字段扫描；扫描结果不得输出 `.env` 内容。
 
 ### 验收标准
 
-- Python 测试、前端测试、六个 bundle 测试均以退出码 `0` 结束；
+- Python 测试、前端测试、七个 bundle 测试均以退出码 `0` 结束；
 - `git diff --check` 无空白错误；
 - 运行目录、`case-data`、`.env`、token、完整正文和 URL 不在待提交文件中；
 - 失败时只修复本地代码或配置，不调用任何外部提供商。
