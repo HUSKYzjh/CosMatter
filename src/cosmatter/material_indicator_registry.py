@@ -17,9 +17,11 @@ from .unit_normalization import UnitNormalizationError, validate_reported_normal
 
 
 CATALOG_SCHEMA_VERSION = "cosmatter.material-indicator-catalog/v1"
+CATALOG_SCHEMA_VERSION_V2 = "cosmatter.material-indicator-catalog/v2"
 OBSERVATION_SCHEMA_VERSION = "cosmatter.material-observation-set/v1"
 SOURCE_MATRIX_SCHEMA_VERSION = "cosmatter.material-source-candidate-matrix/v1"
 P0_BFO_CATALOG_ID = "bfo-p0-experimental-indicators/v1"
+BFO_CATALOG_ID_V2 = "bfo-experimental-indicators/v2"
 
 QUALIFIER_FIELDS = (
     "sample_form",
@@ -73,7 +75,21 @@ _SOURCE_CANDIDATE_FIELDS = {
     "independence_note", "sample_scope", "method_scope", "reported_lead",
     "claim_boundary", "fulltext_route", "access_status", "evidence_status",
 }
-_FAMILIES = {"structure_phase", "ferroelectric", "electrical_transport", "phase_transition"}
+_P0_FAMILIES = {"structure_phase", "ferroelectric", "electrical_transport", "phase_transition"}
+_EXPANDED_FAMILIES = _P0_FAMILIES | {
+    "dielectric_piezoelectric",
+    "magnetic",
+    "optical_photovoltaic",
+    "defect_chemistry",
+    "process_reproducibility",
+}
+_CATALOG_PROFILES = {
+    (CATALOG_SCHEMA_VERSION, P0_BFO_CATALOG_ID): (_P0_FAMILIES, {"P0"}),
+    (CATALOG_SCHEMA_VERSION_V2, BFO_CATALOG_ID_V2): (
+        _EXPANDED_FAMILIES,
+        {"P0", "P1", "P2"},
+    ),
+}
 _CATEGORIES = {"structure", "property", "experimental_condition"}
 _VALUE_SHAPES = {"numeric", "categorical"}
 _SEMANTICS = {
@@ -125,13 +141,14 @@ def load_material_source_candidate_matrix(path: Path, catalog: dict[str, Any]) -
 def validate_material_indicator_catalog(value: object) -> None:
     if not isinstance(value, dict) or set(value) != _CATALOG_FIELDS:
         raise MaterialIndicatorRegistryError("material indicator catalog fields are invalid")
+    profile = _CATALOG_PROFILES.get((value.get("schema_version"), value.get("registry_id")))
     if (
-        value.get("schema_version") != CATALOG_SCHEMA_VERSION
-        or value.get("registry_id") != P0_BFO_CATALOG_ID
+        profile is None
         or value.get("material_scope") != "BiFeO3"
         or value.get("trust_status") != "curated_indicator_vocabulary_not_scientific_evidence"
     ):
         raise MaterialIndicatorRegistryError("material indicator catalog identity is invalid")
+    allowed_families, allowed_priorities = profile
 
     qualifiers = value.get("qualifier_fields")
     if not isinstance(qualifiers, list) or len(qualifiers) != len(QUALIFIER_FIELDS):
@@ -151,6 +168,7 @@ def validate_material_indicator_catalog(value: object) -> None:
         raise MaterialIndicatorRegistryError("material indicator definitions are invalid")
     seen: set[str] = set()
     families: set[str] = set()
+    priorities: set[str] = set()
     for indicator in indicators:
         if not isinstance(indicator, dict) or set(indicator) != _INDICATOR_FIELDS:
             raise MaterialIndicatorRegistryError("material indicator definition fields are invalid")
@@ -158,7 +176,11 @@ def validate_material_indicator_catalog(value: object) -> None:
         if not _safe_id(indicator_id) or indicator_id in seen:
             raise MaterialIndicatorRegistryError("material indicator IDs must be unique safe identifiers")
         family = indicator.get("family")
-        if family not in _FAMILIES or indicator.get("priority") != "P0" or indicator.get("category") not in _CATEGORIES:
+        if (
+            family not in allowed_families
+            or indicator.get("priority") not in allowed_priorities
+            or indicator.get("category") not in _CATEGORIES
+        ):
             raise MaterialIndicatorRegistryError("material indicator family, priority, or category is invalid")
         if not _bounded_text(indicator.get("display_name_zh"), 120) or not _safe_id(indicator.get("quantity_kind")):
             raise MaterialIndicatorRegistryError("material indicator name or quantity kind is invalid")
@@ -175,8 +197,11 @@ def validate_material_indicator_catalog(value: object) -> None:
             raise MaterialIndicatorRegistryError("material indicator required qualifiers are invalid")
         seen.add(indicator_id)
         families.add(family)
-    if families != _FAMILIES:
-        raise MaterialIndicatorRegistryError("material indicator catalog must cover every P0 family")
+        priorities.add(indicator["priority"])
+    if families != allowed_families:
+        raise MaterialIndicatorRegistryError("material indicator catalog must cover every profile family")
+    if priorities != allowed_priorities:
+        raise MaterialIndicatorRegistryError("material indicator catalog must cover every profile priority")
     _require_distinct_indicator_semantics(seen)
 
 

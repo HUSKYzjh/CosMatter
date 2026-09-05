@@ -38,6 +38,11 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 | 强压缩下的四方度 | `c/a≈1.26` | 全应变薄膜，衬底失配覆盖约 −7% 到 +1%；高压缩区为 T-like 单斜相 | 需与 `c/a≈1.23` 的其他 T-like 报告按衬底、厚度与结构模型分组 | Sando 等，Nature Communications 2016，[原文](https://www.nature.com/articles/ncomms10718) |
 | 应变相边界 | 约 −4.5% 压缩应变附近出现 R-like/T-like 共存 | 外延 BFO/LaAlO₃ 等体系；电场可驱动相互转换 | 是候选相边界，不是与厚度、温度无关的固定阈值 | Zeches 等，Science 2009，DOI [10.1126/science.1177046](https://doi.org/10.1126/science.1177046) |
 | 导电畴壁占比 | 原始态 69%；淬火态 22%；时效态 59% | 多晶 BFO；PFM/c-AFM；每种状态约统计 200 个畴壁；占比按超过畴内背景的电流信号判定 | 这是按测试阈值定义的“导电畴壁比例”，不能写成 S/cm 电导率；热历史是必要限定字段 | Bencan 等，Nature Communications 2020，DOI [10.1038/s41467-020-15595-0](https://doi.org/10.1038/s41467-020-15595-0) |
+| 直接压电系数 `d33` | 43±6 pC/N | 400 nm 商用 BFO/Pt 薄膜；对预写入相反极化区域做 DPFM 电荷积分；结果为两个扫描方向的平均 | 这是直接压电电荷系数，不能与 PFM 得到的有效 `pm/V` 响应静默合并 | Gómez 等，Nature Communications 2017，DOI [10.1038/s41467-017-01361-2](https://doi.org/10.1038/s41467-017-01361-2) |
+| 单晶胞隧穿电致电阻 | 最高约 370% | 1 u.c. 四方 BFO/SrRuO₃/SrTiO₃(001)；室温垂直铁电隧道结 | `up to` 是器件与读出定义绑定的最大值；写入电压、读出偏压和高低阻定义仍需图级复核 | Wang 等，Nature Communications 2018，DOI [10.1038/s41467-018-05662-y](https://doi.org/10.1038/s41467-018-05662-y) |
+| 畴壁内外 EELS 能量起始差 | 畴壁内 179.3 eV；相邻畴内 178.3 eV | 多晶 BFO 的 109° 头尾相接畴壁；STEM-EELS；O-K 与 Fe-L₃ 起始能量差 | 这是用于判断 Fe 氧化态的成对谱学观测，不是 Fe⁴⁺ 浓度或输运激活能 | Bencan 等，Nature Communications 2020，DOI [10.1038/s41467-020-15595-0](https://doi.org/10.1038/s41467-020-15595-0) |
+| 畴壁 Bi 柱强度下降 | 约 20% | 同一原始态 109° 畴壁；定量 HAADF-STEM；畴壁内与相邻畴归一化比较 | 强度下降支持缺失 Bi 柱，但不能直接改写成 `20 at.%` Bi 空位浓度 | Bencan 等，Nature Communications 2020，DOI [10.1038/s41467-020-15595-0](https://doi.org/10.1038/s41467-020-15595-0) |
+| 缺陷状态相关畴壁厚度 | 原始态约 6 个晶胞；淬火态约 3 个晶胞 | 两条不同的 109° 畴壁；按 Fe 位移偏离相邻畴的范围定义宽度 | 这是条件对比而非对同一畴壁的原位追踪，也不能在未确认晶格参数时擅自换算为 nm | Bencan 等，Nature Communications 2020，DOI [10.1038/s41467-020-15595-0](https://doi.org/10.1038/s41467-020-15595-0) |
 | 厚度相关 `d33` | 约 46 pm/V（150 nm）降至约 8 pm/V（6 nm） | BFO/LSMO/(001)-SrTiO₃；PFM 定量；1–150 nm 系列，约 6 nm 以下未见清楚铁电畴 | 可用于检验厚度效应，但 PFM 有效系数不能与所有宏观 `d33` 无条件合并 | Chen 等，Physica B 2012，DOI [10.1016/j.physb.2012.03.010](https://doi.org/10.1016/j.physb.2012.03.010) |
 | 薄膜直接带隙 | 2.7 eV | 两种 Bi/Fe 前驱体比例的溶液法 BFO 薄膜；UV–vis/Tauc | 在该样品与拟合定义下两组相同，不代表所有 BFO 形貌 | Role of Excess Bi，ACS Applied Energy Materials 2023，DOI [10.1021/acsaem.3c01926](https://doi.org/10.1021/acsaem.3c01926) |
 | 纳米颗粒带隙 | 直接 2.17 eV；间接 1.84 eV | 生物模板 BFO 纳米颗粒；Kubelka–Munk 拟合；平均晶粒约 14.59 nm | 是 2.7 eV 薄膜值的条件反例；直接/间接定义必须分列 | J. Phys. Chem. C 2016，DOI [10.1021/acs.jpcc.6b08548](https://doi.org/10.1021/acs.jpcc.6b08548) |
@@ -87,8 +92,10 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 ### 4.1 已落地的机器可读工件
 
 - `configs/bfo_p0_material_indicator_catalog.json`：冻结结构/相、铁电、输运和相变四个 P0 指标族，以及固定顺序的 12 个限定字段；`P_s`、`P_r`、`2P_r`、`E_c` 和 `2E_c` 使用不同 `indicator_id`。
+- `configs/bfo_experimental_indicator_catalog_v2.json`：在完全保留 v1 P0 指标的基础上扩展为 9 个指标族和 P0/P1/P2 三层优先级，加入介电/压电、磁性、光学/光伏、缺陷化学与工艺复现指标。直接 `d33`、PFM 有效 `d33`、畴壁导电占比、绝对畴壁电导、EELS 能量差与缺陷浓度均为不同的规范字段。
 - `configs/bfo_p0_source_candidate_matrix.json`：为极化、应变相边界、高温相变和畴壁输运各登记一条主证据路线、一条独立来源路线和一条条件反例路线，共 12 篇原始实验论文候选；同时保存作者组独立性、样品/方法边界和公开全文替代路线状态。
 - `examples/frozen/bfo_p0_literature_observation_candidates.json`：把首批 P0 数值拆成逐观测记录。其中已经按原始态、淬火态和时效态分别登记 Bencan 等报告的导电畴壁占比 `69%`、`22%` 和 `59%`，并绑定各自热处理、c-AFM 偏压、扫描频率和统计口径；它们全部保持 `literature_mentioned + unreviewed + source_map_status=none`，只用于后续选文和人工核对。
+- `examples/frozen/bfo_expanded_literature_observation_candidates_v2.json`：登记第一批 7 条扩展候选，包括直接 `d33=43±6 pC/N`、单晶胞隧穿电致电阻最高约 `370%`、畴壁内外 EELS `179.3/178.3 eV`、Bi 柱强度约降 `20%` 以及原始/淬火畴壁约 `6/3` 个晶胞。每条都包含 12 项条件、方法和不可越过的解释边界，仍未建立人工 Source Map。
 - `src/cosmatter/material_indicator_registry.py`：无依赖校验器，拒绝缺字段、越级成熟度、伪造 Source Map 绑定、非法单位和不完整的范围/误差语义。
 - `src/cosmatter/material_indicator_triage.py` 与 `tools/build_private_bfo_indicator_shortlist.py`：可对仓库外且哈希核验通过的整篇 MinerU Markdown 做确定性排序，不再受通用 48 段抽样限制；排序综合指标术语、数值/单位、测量条件、方法和限制语句，并对参考文献、引用型比较与非目标性质降权。每篇最多 2 段、全批最多 12 段；结果保留原文及双重哈希，只是私有导航候选，不是 Source Map 或证据。
 - `src/cosmatter/material_indicator_draft.py` 与 `tools/draft_private_bfo_indicator_values.py`：可在明确外发授权下把上述受控片段逐批交给 `deepseek-v4-flash`，只接受与文献、片段、指标、允许单位及固定 12 项条件严格绑定的 JSON；输出不含引文，仍是未审核草案。单条非法事实按固定原因码拒绝；同文献同指标且数值语义完全相同的重复候选会合并，同时保留辅助片段哈希。
@@ -112,7 +119,7 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 ## 6. 下一批执行顺序
 
 1. **已完成**：冻结 P0 指标名、单位语义与 12 个限定字段，覆盖相变、结构、极化和输运，并建立候选观测校验器和关系数据库模板。
-2. **进行中**：四个核心比较问题已经各有两条独立原始实验路线和一条条件反例；继续把同一覆盖扩展到其余 P0 指标。优先使用公开论文、作者稿或校园账号本地核对，不在仓库保存受限全文。
+2. **进行中**：四个核心比较问题已经各有两条独立原始实验路线和一条条件反例；继续把同一覆盖扩展到其余 P0 指标，以及 v2 新增的介电/压电、磁性、光学/光伏、缺陷和工艺指标。优先使用公开论文、作者稿或校园账号本地核对，不在仓库保存受限全文。
 3. **已完成**：对 Lebeugle 2007、Teague 1970、Zeches 2009、Sando 2016、Arnold 2009 与 Bencan 2020 的六条公开 PDF 路线完成文件签名、私有 MinerU 解析和 Markdown 哈希核验，生成 6 个私有未审核候选池与 6 份空白 Source Map 选择模板。5 个长文池各含 48 个确定性全文分层片段，2 页 Teague 文献含 26 个片段；模板均为全未选状态。公开仓库只登记 `private_mineru_review_pool_ready`，不保存该批次的直接 PDF URL、PDF、Markdown、候选片段、提供方任务 ID 或私有路径。
 4. **已完成技术定位和模型草案、待数据复核**：确定性指标排序已从六篇哈希核验 Markdown 各选出 2 段，共 12 段；四个问题均有命中。受控 `deepseek-v4-flash` 重跑完成 12 个逐段批次，严格校验后得到 16 条去重候选、合并 4 条重复观测、0 条结构拒绝。该输出仍为 `untrusted_llm_private_indicator_value_draft_not_source_map_or_evidence`；逐篇图表定位、数值语义、误差、方法与限定条件仍须核对，且不得写入 `material_facts`。
 5. 先按“样品形态 → 相/取向 → 测量定义 → 条件”分组，再运行跨文献比较；不生成跨组平均值。

@@ -9,6 +9,7 @@ from cosmatter.material_indicator_registry import (
     load_material_indicator_catalog,
     load_material_observation_set,
     load_material_source_candidate_matrix,
+    validate_material_indicator_catalog,
     validate_material_observation_set,
     validate_material_source_candidate_matrix,
 )
@@ -17,10 +18,17 @@ from cosmatter.material_indicator_registry import (
 class MaterialIndicatorRegistryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.catalog_path = AGENT_ROOT / "configs" / "bfo_p0_material_indicator_catalog.json"
+        self.expanded_catalog_path = AGENT_ROOT / "configs" / "bfo_experimental_indicator_catalog_v2.json"
         self.seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_p0_literature_observation_candidates.json"
+        self.expanded_seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_expanded_literature_observation_candidates_v2.json"
         self.source_matrix_path = AGENT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json"
         self.catalog = load_material_indicator_catalog(self.catalog_path)
+        self.expanded_catalog = load_material_indicator_catalog(self.expanded_catalog_path)
         self.seed = load_material_observation_set(self.seed_path, self.catalog)
+        self.expanded_seed = load_material_observation_set(
+            self.expanded_seed_path,
+            self.expanded_catalog,
+        )
         self.source_matrix = load_material_source_candidate_matrix(self.source_matrix_path, self.catalog)
 
     def test_p0_catalog_freezes_four_families_and_twelve_qualifiers(self) -> None:
@@ -33,6 +41,46 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
             {"structure_phase", "ferroelectric", "electrical_transport", "phase_transition"},
         )
         self.assertTrue(all(item["priority"] == "P0" for item in self.catalog["indicators"]))
+
+    def test_v2_catalog_is_a_strict_superset_with_all_priority_tiers(self) -> None:
+        p0_ids = {item["indicator_id"] for item in self.catalog["indicators"]}
+        expanded_ids = {
+            item["indicator_id"] for item in self.expanded_catalog["indicators"]
+        }
+        self.assertTrue(p0_ids.issubset(expanded_ids))
+        self.assertEqual(
+            {item["family"] for item in self.expanded_catalog["indicators"]},
+            {
+                "structure_phase", "ferroelectric", "electrical_transport",
+                "phase_transition", "dielectric_piezoelectric", "magnetic",
+                "optical_photovoltaic", "defect_chemistry",
+                "process_reproducibility",
+            },
+        )
+        self.assertEqual(
+            {item["priority"] for item in self.expanded_catalog["indicators"]},
+            {"P0", "P1", "P2"},
+        )
+
+    def test_v2_catalog_rejects_an_unknown_priority(self) -> None:
+        candidate = copy.deepcopy(self.expanded_catalog)
+        candidate["indicators"][-1]["priority"] = "P3"
+        with self.assertRaisesRegex(
+            MaterialIndicatorRegistryError,
+            "family, priority, or category",
+        ):
+            validate_material_indicator_catalog(candidate)
+
+    def test_v2_catalog_requires_every_declared_priority_tier(self) -> None:
+        candidate = copy.deepcopy(self.expanded_catalog)
+        for indicator in candidate["indicators"]:
+            if indicator["priority"] == "P2":
+                indicator["priority"] = "P1"
+        with self.assertRaisesRegex(
+            MaterialIndicatorRegistryError,
+            "cover every profile priority",
+        ):
+            validate_material_indicator_catalog(candidate)
 
     def test_polarization_and_coercive_field_semantics_are_distinct(self) -> None:
         ids = {item["indicator_id"] for item in self.catalog["indicators"]}
@@ -53,6 +101,40 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         self.assertEqual(fraction["canonical_unit"], "percent")
         self.assertEqual(conductivity["quantity_kind"], "conductivity")
         self.assertEqual(conductivity["canonical_unit"], "S/cm")
+
+    def test_direct_and_effective_d33_are_distinct_in_v2(self) -> None:
+        indicators = {
+            item["indicator_id"]: item
+            for item in self.expanded_catalog["indicators"]
+        }
+        direct = indicators["piezoelectric_coefficient_d33"]
+        effective = indicators["effective_piezoelectric_response_d33"]
+        self.assertEqual(direct["canonical_unit"], "pC/N")
+        self.assertEqual(effective["canonical_unit"], "pm/V")
+        self.assertNotEqual(direct["quantity_kind"], effective["quantity_kind"])
+
+    def test_expanded_leads_keep_method_and_condition_boundaries(self) -> None:
+        observations = self.expanded_seed["observations"]
+        self.assertEqual(len(observations), 7)
+        self.assertTrue(all(item["source_map_status"] == "none" for item in observations))
+        d33 = next(
+            item for item in observations
+            if item["indicator_id"] == "piezoelectric_coefficient_d33"
+        )
+        self.assertEqual((d33["reported_value"], d33["reported_uncertainty"]), (43, 6))
+        self.assertEqual(d33["reported_unit"], "pC/N")
+        eels = [
+            item for item in observations
+            if item["indicator_id"] == "eels_o_k_fe_l3_energy_separation"
+        ]
+        self.assertEqual([item["reported_value"] for item in eels], [179.3, 178.3])
+        self.assertEqual(
+            {item["qualifiers"]["measurement_geometry"] for item in eels},
+            {
+                "spectrum_acquired_inside_domain_wall_region",
+                "spectrum_acquired_outside_domain_wall_region",
+            },
+        )
 
     def test_seed_observations_are_explicitly_unreviewed_literature_leads(self) -> None:
         self.assertEqual(
