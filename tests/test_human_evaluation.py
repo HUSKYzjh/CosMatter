@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cosmatter.cli import main
-from cosmatter.corpus_preparation import corpus_manifest_from_review, write_corpus_manifest
+from cosmatter.corpus_preparation import corpus_manifest_from_review, gold_standard_template_from_manifest, write_corpus_manifest
 from cosmatter.human_evaluation import (
     HumanEvaluationError,
     load_reviewed_retrieval_gold,
@@ -39,6 +39,13 @@ def gold_payload() -> dict[str, object]:
         "mission_id": "mission_1",
         "corpus_id": "bfo_test",
         "trust_status": "human_reviewed_gold_standard_for_evaluation",
+        "annotation_instructions": {
+            "retrieval_relevance": "Mark relevance after reading the authorized paper.",
+            "evidence_annotations": "Record bounded evidence annotations.",
+            "material_fact_annotations": "Record reviewed fact annotations.",
+            "comparison_annotations": "Record condition-bounded comparisons.",
+            "gap_annotations": "Record reviewed gap annotations.",
+        },
         "documents": [
             {
                 "document_id": document_id,
@@ -63,6 +70,32 @@ def candidate_artifact() -> dict[str, object]:
 
 
 class HumanEvaluationTests(unittest.TestCase):
+    def test_shipped_reviewed_example_matches_the_evaluator_schema(self) -> None:
+        labels = load_reviewed_retrieval_gold(
+            Path(__file__).parents[1] / "examples" / "templates" / "human_reviewed_gold_standard.example.json",
+            mission_id="mission_bfo_live_001",
+            corpus_id="bfo_90_v1",
+            corpus_document_ids={"bfo_001"},
+        )
+        self.assertEqual(labels, {"bfo_001": "relevant"})
+
+    def test_generated_template_can_be_reviewed_without_rewriting_its_schema(self) -> None:
+        manifest = corpus_manifest_from_review(mission_id="mission_1", material="BiFeO3", selection=selection())
+        reviewed = gold_standard_template_from_manifest(manifest)
+        reviewed["trust_status"] = "human_reviewed_gold_standard_for_evaluation"
+        for item, relevance in zip(reviewed["documents"], ("relevant", "partially_relevant", "not_relevant"), strict=True):
+            item["retrieval_relevance"] = relevance
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reviewed-gold.json"
+            path.write_text(json.dumps(reviewed), encoding="utf-8")
+            labels = load_reviewed_retrieval_gold(
+                path,
+                mission_id="mission_1",
+                corpus_id="bfo_test",
+                corpus_document_ids={"doc_1", "doc_2", "doc_3"},
+            )
+        self.assertEqual(labels, {"doc_1": "relevant", "doc_2": "partially_relevant", "doc_3": "not_relevant"})
+
     def test_calculates_strict_precision_recall_and_graded_ndcg(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             gold_path = Path(directory) / "gold.json"

@@ -309,6 +309,92 @@ test("reviews a local question set without network activity or implicit approval
   expect(apiRequests).toEqual([]);
 });
 
+test("reviews frozen-corpus relevance locally with exact bibliography binding and no implicit attestation", async ({ page }) => {
+  const apiRequests: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) apiRequests.push(request.url());
+  });
+  await openMissionDefinitionWithPendingArtifacts(page);
+
+  const instructions = {
+    retrieval_relevance: "Mark relevance after reading the authorized paper.",
+    evidence_annotations: "Preserve reviewed evidence annotations.",
+    material_fact_annotations: "Preserve reviewed material-fact annotations.",
+    comparison_annotations: "Preserve reviewed comparisons.",
+    gap_annotations: "Preserve reviewed gap annotations.",
+  };
+  const gold = {
+    schema_version: "1.0",
+    mission_id: "mission-bfo-corpus-review",
+    corpus_id: "bfo-ui-corpus-3",
+    trust_status: "blank_human_annotation_template_not_evaluation_result",
+    annotation_instructions: instructions,
+    documents: [1, 2, 3].map((number) => ({
+      document_id: `bfo-paper-${number}`,
+      retrieval_relevance: "unreviewed",
+      evidence_annotations: number === 1 ? [{ retained: "opaque" }] : [],
+      material_fact_annotations: [],
+      comparison_annotations: [],
+      gap_annotations: [],
+    })),
+  };
+  const manifest = {
+    schema_version: "1.0",
+    mission_id: gold.mission_id,
+    corpus_id: gold.corpus_id,
+    material: "BiFeO3",
+    trust_status: "human_reviewed_authorized_corpus_manifest_not_evaluation_result",
+    access_boundary: "institutional_access_local_review_only_no_fulltext_redistribution",
+    documents: [1, 2, 3].map((number) => ({
+      document_id: `bfo-paper-${number}`,
+      title: `Source-located BiFeO3 transition study ${number}`,
+      doi: number === 1 ? "10.1000/bfo.1" : null,
+      access_policy: "institutional_access_internal_review_only",
+    })),
+  };
+
+  const desk = page.getByLabel("冻结语料相关性人工审核台");
+  await desk.locator("summary").click();
+  const fileInputs = desk.locator("input[type=file]");
+  await fileInputs.nth(0).setInputFiles({ name: "bfo-human-gold.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gold)) });
+  await expect(desk).toContainText("0/3");
+  await fileInputs.nth(1).setInputFiles({ name: "bfo-corpus-manifest.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(manifest)) });
+  await expect(desk).toContainText("Source-located BiFeO3 transition study 1");
+  await expect(desk).toContainText("10.1000/bfo.1");
+
+  const attestation = desk.locator(".corpus-review-release input[type=checkbox]");
+  await expect(attestation).toBeDisabled();
+  const items = desk.locator(".corpus-review-item");
+  await expect(items).toHaveCount(3);
+  await items.nth(0).locator("select").selectOption("relevant");
+  await items.nth(1).locator("select").selectOption("partially_relevant");
+  await items.nth(2).locator("select").selectOption("not_relevant");
+  await expect(desk).toContainText("3/3");
+  await expect(attestation).toBeEnabled();
+  await expect(desk.getByRole("button", { name: "导出本地相关性草稿" })).toBeVisible();
+  await attestation.check();
+  await expect(desk.getByRole("button", { name: "导出可评测金标准" })).toBeVisible();
+
+  await page.getByRole("button", { name: /^02 受控编排/ }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await page.getByRole("button", { name: /^01 任务定义/ }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-discover/, workspaceLoad);
+  await desk.locator("summary").click();
+  await expect(desk).toContainText("已恢复本浏览器会话中的相关性草稿");
+  await expect(desk.locator(".corpus-review-item").first().locator("select")).toHaveValue("relevant");
+  await expect(desk.locator(".corpus-review-release input[type=checkbox]")).not.toBeChecked();
+  await expect(desk.getByRole("button", { name: "导出本地相关性草稿" })).toBeVisible();
+
+  await desk.locator("input[type=file]").first().setInputFiles({ name: "invalid-human-gold.json", mimeType: "application/json", buffer: Buffer.from("{not-json") });
+  await expect(desk.getByRole("alert")).toContainText("当前草稿保持不变");
+  await expect(desk.locator(".corpus-review-item")).toHaveCount(3);
+  await desk.getByRole("button", { name: "清除本会话草稿" }).click();
+  await expect(desk.locator(".corpus-review-item")).toHaveCount(3);
+  await desk.getByRole("button", { name: "再次点击确认清除" }).click();
+  await expect(desk.locator(".corpus-review-item")).toHaveCount(0);
+  expect(apiRequests).toEqual([]);
+});
+
 test("renders cross-source reconciliation revisions in the map without calling a local API", async ({ page }) => {
   const apiRequests: string[] = [];
   page.on("request", (request) => {

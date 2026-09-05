@@ -3,6 +3,13 @@
   "mission_id": "mission_bfo_live_001",
   "corpus_id": "bfo_90_v1",
   "trust_status": "human_reviewed_gold_standard_for_evaluation",
+  "annotation_instructions": {
+    "retrieval_relevance": "Mark relevant, partially_relevant, or not_relevant after reading the authorized paper.",
+    "evidence_annotations": "Record only reviewer-selected evidence IDs, locators, and correctness judgments; do not paste unrestricted full text.",
+    "material_fact_annotations": "Record fact IDs and field-level correctness after local comparison with the authorized source.",
+    "comparison_annotations": "Mark whether paired evidence is comparable under stated conditions; do not turn a comparison into a conclusion.",
+    "gap_annotations": "For every candidate, judge evidence completeness, novelty review status, and actionability; candidate status is not a scientific finding."
+  },
   "documents": [
     {
       "document_id": "bfo_001",

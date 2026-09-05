@@ -12,7 +12,14 @@ from .models import normalized_doi_or_none
 
 HUMAN_GOLD_SCHEMA_VERSION = "1.0"
 _EVALUATION_SCHEMA_VERSION = "1.1"
-_GOLD_FIELDS = {"schema_version", "mission_id", "corpus_id", "trust_status", "documents"}
+_GOLD_FIELDS = {"schema_version", "mission_id", "corpus_id", "trust_status", "annotation_instructions", "documents"}
+_GOLD_INSTRUCTION_FIELDS = {
+    "retrieval_relevance",
+    "evidence_annotations",
+    "material_fact_annotations",
+    "comparison_annotations",
+    "gap_annotations",
+}
 _GOLD_DOCUMENT_FIELDS = {
     "document_id",
     "retrieval_relevance",
@@ -51,6 +58,13 @@ def load_reviewed_retrieval_gold(
         or payload.get("trust_status") != "human_reviewed_gold_standard_for_evaluation"
     ):
         raise HumanEvaluationError("reviewed human gold identity or trust status is invalid")
+    instructions = payload.get("annotation_instructions")
+    if (
+        not isinstance(instructions, dict)
+        or set(instructions) != _GOLD_INSTRUCTION_FIELDS
+        or not all(isinstance(value, str) and value.strip() and len(value) <= 1_000 for value in instructions.values())
+    ):
+        raise HumanEvaluationError("reviewed human gold annotation instructions are invalid")
     documents = payload.get("documents")
     if not isinstance(documents, list) or len(documents) != len(corpus_document_ids):
         raise HumanEvaluationError("reviewed human gold must annotate every frozen corpus document")

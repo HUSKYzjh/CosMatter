@@ -1166,3 +1166,69 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .question-review-item fieldset label { grid-template-columns: 1fr; }
   .question-review-item h3 { font-size: .92rem; }
 }
+
+/* Frozen-corpus relevance review remains a local, explicit human annotation surface. */
+.corpus-review-desk { max-width: 75rem; margin: 1rem 0; padding: .8rem .9rem 1rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 42%, var(--line)); border-inline-start: 3px solid var(--signal-teal); background: linear-gradient(115deg, color-mix(in srgb, var(--signal-teal) 6%, transparent), transparent 58%); }
+.corpus-review-desk > summary { color: var(--ink); font: 750 1rem/1.35 Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; cursor: pointer; }
+.corpus-review-desk > p { max-width: 61rem; margin: .55rem 0 .8rem; color: color-mix(in srgb, var(--muted) 76%, var(--ink)); font-size: .82rem; line-height: 1.6; }
+.corpus-review-imports { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; max-width: 69rem; }
+.corpus-review-imports label { display: grid; gap: .42rem; padding: .68rem .75rem; border: 1px dashed color-mix(in srgb, var(--signal-teal) 55%, var(--line)); color: var(--signal-teal); font-size: .82rem; font-weight: 750; }
+.corpus-review-imports label.disabled { opacity: .55; }
+.corpus-review-imports input { min-width: 0; color: var(--muted); font-size: .78rem; }
+.corpus-review-imports input::file-selector-button { margin-right: .65rem; padding: .42rem .62rem; border: 1px solid var(--signal-teal); color: var(--signal-teal); background: var(--surface); font-weight: 750; cursor: pointer; }
+.corpus-review-session-note { max-width: 61rem; margin: .55rem 0 0; color: var(--signal-teal) !important; font-size: .76rem !important; }
+.corpus-review-error { padding: .6rem .72rem; border-inline-start: 3px solid var(--signal-amber); color: var(--signal-amber) !important; background: color-mix(in srgb, var(--signal-amber) 7%, transparent); }
+.corpus-review-status { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-top: 1rem; padding: .75rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.corpus-review-status > div { display: grid; gap: .18rem; min-width: 0; }
+.corpus-review-status small, .corpus-review-release small { color: var(--signal-teal); font: .7rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .08em; }
+.corpus-review-status strong { overflow-wrap: anywhere; font-size: 1.05rem; }
+.corpus-review-status span { overflow-wrap: anywhere; color: var(--muted); font-size: .76rem; }
+.corpus-review-status dl { display: grid; grid-template-columns: repeat(4, minmax(5.4rem, 1fr)); gap: .45rem; margin: 0; }
+.corpus-review-status dl div { padding: .38rem .5rem; border-top: 2px solid color-mix(in srgb, var(--signal-teal) 55%, var(--line)); background: color-mix(in srgb, var(--surface) 82%, transparent); }
+.corpus-review-status dt { color: var(--muted); font-size: .72rem; }
+.corpus-review-status dd { margin: .12rem 0 0; color: var(--ink); font: 750 .8rem ui-monospace, monospace; }
+.corpus-review-toolbar { display: grid; grid-template-columns: minmax(15rem, .85fr) minmax(24rem, 1.65fr); align-items: end; gap: .7rem 1rem; margin-top: .8rem; }
+.corpus-review-toolbar > label { display: grid; gap: .3rem; color: var(--muted); font-size: .74rem; font-weight: 700; }
+.corpus-review-toolbar input { min-height: 2.35rem; padding: .45rem .55rem; border: 1px solid var(--line); color: var(--ink); background: var(--surface); font: .8rem "Aptos", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
+.corpus-review-toolbar > div { display: flex; justify-content: end; flex-wrap: wrap; gap: .32rem; }
+.corpus-review-toolbar button, .corpus-review-pagination button { padding: .42rem .55rem; border: 1px solid var(--line); color: var(--muted); background: color-mix(in srgb, var(--surface) 82%, transparent); font-size: .72rem; cursor: pointer; }
+.corpus-review-toolbar button[aria-pressed="true"] { border-color: var(--signal-teal); color: var(--signal-teal); background: color-mix(in srgb, var(--signal-teal) 8%, var(--surface)); }
+.corpus-review-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin-top: .75rem; }
+.corpus-review-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(9rem, .42fr); align-items: end; gap: .48rem .8rem; min-width: 0; padding: .72rem .78rem .78rem; border: 1px solid var(--line); border-inline-start: 3px solid var(--signal-amber); background: color-mix(in srgb, var(--surface) 80%, transparent); }
+.corpus-review-item.reviewed { border-inline-start-color: var(--signal-teal); }
+.corpus-review-item > header, .corpus-review-item > h3, .corpus-review-item > p { grid-column: 1 / -1; }
+.corpus-review-item > header { display: flex; justify-content: space-between; gap: .7rem; color: var(--muted); font: .68rem ui-monospace, "Cascadia Mono", monospace; }
+.corpus-review-item > header span { overflow-wrap: anywhere; text-align: end; }
+.corpus-review-item h3 { margin: 0; font: 720 .9rem/1.45 Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
+.corpus-review-item > p { margin: 0; color: var(--muted); font-size: .72rem; overflow-wrap: anywhere; }
+.corpus-review-item > label { display: grid; gap: .28rem; color: var(--ink); font-size: .76rem; font-weight: 700; }
+.corpus-review-item select { min-height: 2.25rem; padding: .42rem .48rem; border: 1px solid color-mix(in srgb, var(--line) 82%, var(--ink)); color: var(--ink); background: var(--surface); font: .78rem "Aptos", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
+.corpus-review-item > small { color: var(--muted); font-size: .68rem; line-height: 1.45; text-align: end; }
+.corpus-review-empty { margin: .75rem 0 0; padding: .75rem; border: 1px dashed var(--line); color: var(--muted); font-size: .78rem; }
+.corpus-review-pagination { display: flex; align-items: center; justify-content: center; gap: .7rem; margin-top: .7rem; }
+.corpus-review-pagination span { color: var(--muted); font: .72rem ui-monospace, "Cascadia Mono", monospace; }
+.corpus-review-pagination button:disabled { opacity: .42; cursor: default; }
+.corpus-review-release { display: grid; grid-template-columns: minmax(0, 1fr) minmax(19rem, 1.35fr) auto; align-items: end; gap: .8rem 1rem; margin-top: .85rem; padding: .9rem; border-top: 2px solid var(--signal-teal); background: linear-gradient(100deg, color-mix(in srgb, var(--signal-teal) 9%, transparent), transparent 72%); }
+.corpus-review-release > div { display: grid; gap: .2rem; }
+.corpus-review-release strong { font-size: .94rem; line-height: 1.42; }
+.corpus-review-release p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.5; }
+.corpus-review-release .consent { max-width: none; font-size: .78rem; }
+.corpus-review-release .primary-action { white-space: nowrap; }
+.corpus-review-release > .corpus-review-actions { display: flex; align-items: end; justify-content: end; flex-wrap: wrap; gap: .45rem; }
+.corpus-review-actions > button:not(.primary-action) { padding: .5rem .6rem; border: 0; border-bottom: 1px solid var(--signal-amber); color: var(--signal-amber); background: transparent; font-size: .72rem; cursor: pointer; }
+.corpus-review-actions > button.clear-armed { border: 1px solid var(--signal-amber); background: color-mix(in srgb, var(--signal-amber) 9%, transparent); }
+
+@media (max-width: 880px) {
+  .corpus-review-imports, .corpus-review-toolbar, .corpus-review-list, .corpus-review-release { grid-template-columns: 1fr; }
+  .corpus-review-status { align-items: start; flex-direction: column; }
+  .corpus-review-status dl { width: 100%; }
+  .corpus-review-toolbar > div, .corpus-review-release > .corpus-review-actions { justify-content: start; }
+}
+
+@media (max-width: 560px) {
+  .corpus-review-desk { padding: .68rem .62rem .78rem; }
+  .corpus-review-status dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .corpus-review-item { grid-template-columns: 1fr; padding: .65rem .62rem .7rem; }
+  .corpus-review-item > header, .corpus-review-item > h3, .corpus-review-item > p { grid-column: auto; }
+  .corpus-review-item > small { text-align: start; }
+}

@@ -71,6 +71,38 @@ For the planned 90-paper cohort, use exactly 90 unique document IDs after manual
 
 After annotation, report real metrics only with the frozen manifest identifier, annotation date, evaluator, model/prompt version, retrieval candidate universe, and a failure-case log. The synthetic benchmark in examples/frozen remains a regression test and is not evidence of 90-paper performance. Its generated records include a SHA-256 of the fixture bytes, so same-named fixture edits cannot be silently compared as the same regression input; this hash identifies only the synthetic fixture content and contains no paper text, DOI, path, or credential.
 
+## Browser-local corpus relevance review desk
+
+The Mission Definition page includes a separate **Human corpus relevance review
+desk** for the document-level `retrieval_relevance` field. Explicitly select the
+CLI-generated `human_gold_standard_template.json`. You may then select the
+matching `corpus_manifest.json` to display each title and DOI while reviewing;
+the manifest is accepted only when its mission ID, corpus ID, document count,
+and complete document-ID set exactly match the gold template. No title or DOI
+is used to infer a label.
+
+The desk supports local search, relevance filters, and pages of 25 records for
+the planned 90-paper cohort. It edits only `retrieval_relevance` and preserves
+the evidence, material-fact, comparison, and Gap annotation arrays without
+rendering or interpreting them. The reviewed state remains unavailable until
+every record is labelled and at least one record is strictly `relevant`. A
+separate independent-review checkbox is then required. Any label change or
+session restoration clears that checkbox.
+
+The desk never calls an API, reads PDF or Markdown content, writes to `runs`, or
+persists the independent-review declaration. Its same-origin `sessionStorage`
+copy is only crash/route-change protection. An incomplete or unattested export
+retains `blank_human_annotation_template_not_evaluation_result`; only a
+complete, explicitly attested export uses
+`human_reviewed_gold_standard_for_evaluation`. Invalid imports do not replace
+the active draft, and clearing the session copy requires two clicks.
+
+Use the exported JSON as input to both `audit-human-annotation-coverage` and
+`evaluate-human-retrieval`. The CLI remains authoritative: it rechecks the
+schema, frozen identity, all document IDs, relevance completeness, and trust
+status. Browser export does not itself create a metric or establish that a
+human actually read a paper.
+
 
 ## Annotation coverage gate
 
@@ -89,7 +121,9 @@ After every frozen-corpus document has been reviewed, copy the generated
 human_gold_standard_template JSON, change its trust_status to
 human_reviewed_gold_standard_for_evaluation, and replace every unreviewed
 retrieval_relevance with relevant, partially_relevant, or not_relevant. The
-evaluated file must contain every manifest document exactly once.
+evaluated file must contain every manifest document exactly once. Keep the
+generated `annotation_instructions` object unchanged; the coverage audit and
+retrieval evaluator consume the same reviewed file schema.
 
 Run evaluate-human-retrieval with the reviewed file, the saved search-history
 index, and K. The result contains strict Precision@K and Recall@K (only
