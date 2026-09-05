@@ -488,6 +488,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 .launch-brief-editor > .launch-confirmation { display: grid; grid-template-columns: minmax(0, 1fr); flex: 0 1 18rem; gap: .55rem; }
 .launch-confirmation .launch-brief-warning { color: var(--signal-amber); font: .68rem/1.5 ui-sans-serif, system-ui, sans-serif; }
+.launch-confirmation .launch-auto-sources { margin: 0; padding: .5rem .58rem; border-left: 2px solid var(--signal-teal); color: var(--muted); background: color-mix(in srgb, var(--signal-teal) 7%, transparent); font: .7rem/1.5 ui-sans-serif, system-ui, sans-serif; }
+.launch-confirmation .launch-auto-sources strong { display: block; margin-top: .12rem; color: var(--ink); font-weight: 720; }
 .launch-confirmation .launch-primary { justify-self: end; }
 @media (max-width: 880px) { .launch-confirmation .launch-primary { width: 100%; justify-self: stretch; } }
 

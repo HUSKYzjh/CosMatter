@@ -13,7 +13,7 @@ import { previewAllowsRunAction } from "./previewExecutionPolicy";
 import { hasNavigableLiteratureGraph, missionJourney, type JourneyStage } from "./missionJourney";
 import { automaticGraphHandoffAlreadySettled, automaticGraphHandoffTarget } from "./automaticGraphHandoff";
 import { automaticCancellationEnabled } from "./automaticCancellation";
-import { reconcileRetrievalSources, type LocalApiCapabilityHealth } from "./localApiCapabilities";
+import { availableRetrievalSources, reconcileRetrievalSources, type LocalApiCapabilityHealth } from "./localApiCapabilities";
 import { liveBundleMatchesRun, runtimeProjectionsMatchRun } from "./liveRunIdentity";
 import { operationRecovery, type OperationRecoveryKind } from "./operationRecovery";
 import { deriveMissionArtifactStatus, taskBoundaryFingerprint, type MissionArtifactStatus } from "./missionArtifactStatus";
@@ -226,7 +226,11 @@ export function App() {
   const [apiSummary, setApiSummary] = createSignal(text("本地 API 未启用。", "Local API is disabled."));
   const [apiProviders, setApiProviders] = createSignal<Record<string, boolean>>({});
   const [apiCapabilityHealth, setApiCapabilityHealth] = createSignal<LocalApiCapabilityHealth>("disabled");
-  const [retrievalSources, setRetrievalSources] = createSignal<RetrievalSource[]>(["crossref"]);
+  // Start without a hidden provider preference. The first validated capability
+  // snapshot selects every available metadata source; later snapshots preserve
+  // the user's still-viable manual selection through reconcileRetrievalSources.
+  const [retrievalSources, setRetrievalSources] = createSignal<RetrievalSource[]>([]);
+  let retrievalSourcesInitialized = false;
   const [liveRunId, setLiveRunId] = createSignal<string | null>(null);
   const [stageContract, setStageContract] = createSignal<StageContract | null>(null);
   const [workflowDag, setWorkflowDag] = createSignal<WorkflowDag | null>(null);
@@ -1675,7 +1679,13 @@ export function App() {
       if (!isLocalApiStatus(result)) throw new Error("invalid local API capability snapshot");
       const enabled = Object.entries(result.providers).filter(([, value]) => value).map(([name]) => name).join(", ");
       setApiProviders(result.providers);
-      setRetrievalSources((current) => reconcileRetrievalSources(current, result.providers));
+      setRetrievalSources((current) => {
+        if (!retrievalSourcesInitialized) {
+          retrievalSourcesInitialized = true;
+          return availableRetrievalSources(result.providers);
+        }
+        return reconcileRetrievalSources(current, result.providers);
+      });
       setApiCapabilityHealth("ready");
       setApiSummary(enabled
         ? text(`本地 API 能力快照已更新：${enabled}。所有执行仍需单独批准。`, `Local API capability snapshot updated: ${enabled}. Each execution still needs separate approval.`)
@@ -1705,7 +1715,7 @@ export function App() {
   });
 
   return <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionAvailable={localApiUsable() && retrievalSources().length > 0} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionAvailable={localApiUsable() && retrievalSources().length > 0} automaticExecutionSources={SOURCES.filter((source) => retrievalSources().includes(source.id)).map((source) => source.label)} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>

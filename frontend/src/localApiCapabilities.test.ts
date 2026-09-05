@@ -8,9 +8,10 @@ describe("local API capability snapshot", () => {
     expect(availableRetrievalSources(providers)).toEqual(["sciverse", "crossref"]);
   });
 
-  it("keeps a viable user selection and replaces a fully stale selection", () => {
+  it("keeps a viable user selection without silently replacing an empty or stale selection", () => {
     const providers = { sciverse: true, openalex: false, crossref: true };
+    expect(reconcileRetrievalSources([], providers)).toEqual([]);
     expect(reconcileRetrievalSources(["crossref"], providers)).toEqual(["crossref"]);
-    expect(reconcileRetrievalSources(["openalex"], providers)).toEqual(["sciverse", "crossref"]);
+    expect(reconcileRetrievalSources(["openalex"], providers)).toEqual([]);
   });
 });

@@ -141,6 +141,23 @@ test("labels a rejected model result and retries without silently presenting it 
   expect(candidateRequests).toBe(2);
 });
 
+test("discloses every available automatic metadata destination before consent", async ({ page }) => {
+  await page.route("**/api/status", async (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ api_mode: "loopback_only", providers: { deepseek: false, sciverse: true, mineru: true, openalex: true, crossref: true, crossref_polite_contact: true } }),
+  }));
+
+  await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
+  await page.getByLabel("候选航向研究问题").fill("BiFeO3的相转变温度是多少？");
+  await page.locator(".candidate-planet").first().click();
+
+  const destinations = page.getByRole("status").filter({ hasText: "本次元数据将发送至" });
+  await expect(destinations).toContainText("Sciverse、OpenAlex、Crossref");
+  await expect(page.getByLabel(/我确认本次任务可向上列书目服务发送/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "确认并授权元数据检索" })).toBeDisabled();
+});
+
 test("activates a BFO task template through the keyboard with an explicit pressed state", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const bfo = page.getByRole("button", { name: /BFO-01/ });

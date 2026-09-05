@@ -12,9 +12,8 @@ export function availableRetrievalSources(providers: Record<string, boolean>): R
   return sources.filter((source) => providers[source.provider] === true).map((source) => source.id);
 }
 
-/** Retain a user's viable selection; use the available set only when none remains. */
+/** Retain only a user's still-viable explicit selection. */
 export function reconcileRetrievalSources(current: RetrievalSource[], providers: Record<string, boolean>): RetrievalSource[] {
   const available = availableRetrievalSources(providers);
-  const retained = current.filter((source) => available.includes(source));
-  return retained.length ? retained : available;
+  return current.filter((source) => available.includes(source));
 }
