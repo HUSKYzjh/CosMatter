@@ -93,16 +93,48 @@ test("keeps operational labels and evidence copy at a readable scale", async ({ 
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
   const fontPixels = (selector: string) => page.locator(selector).first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  const expectReadableMetadata = async (selectors: string[]) => {
+    for (const selector of selectors) {
+      await expect(page.locator(selector).first()).toBeVisible();
+      expect(await fontPixels(selector), selector).toBeGreaterThanOrEqual(12);
+    }
+  };
   expect(await fontPixels(".launch-modes button span")).toBeGreaterThanOrEqual(15);
   expect(await fontPixels(".launch-modes button small")).toBeGreaterThanOrEqual(12);
   expect(await fontPixels(".launch-stage-copy strong")).toBeGreaterThanOrEqual(14);
   expect(await fontPixels(".launch-stage-copy small")).toBeGreaterThanOrEqual(12);
+  await expectReadableMetadata([".launch-modes button b", ".bfo-task-deck > header small", ".bfo-task-deck button > small", ".bfo-task-deck button em"]);
 
   await page.getByRole("button", { name: "预览：受控编排" }).click();
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
   expect(await fontPixels(".workflow-artifact-flow h2")).toBeGreaterThanOrEqual(20);
   expect(await fontPixels(".workflow-artifact-flow p")).toBeGreaterThanOrEqual(15);
   expect(await fontPixels(".journey-track button small")).toBeGreaterThanOrEqual(12);
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expectReadableMetadata([
+    ".journey-track button span",
+    ".rail-context > summary small",
+    ".workflow-artifact-flow article > small",
+    ".mission-event-ledger > header small",
+    ".fleet-deployment-radar > header small",
+    ".fleet-handoff-manifest > header small",
+    ".stage-note",
+  ]);
+  const [deploymentPlane, firstShip] = await Promise.all([
+    page.locator(".deployment-plane").boundingBox(),
+    page.locator(".deployment-ship").first().boundingBox(),
+  ]);
+  if (!deploymentPlane || !firstShip) throw new Error("mobile deployment station did not render a layout box");
+  expect(firstShip.width).toBeGreaterThanOrEqual(deploymentPlane.width * 0.9);
+  expect(await page.locator(".deployment-ship").first().evaluate((element) => element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight)).toBe(true);
+
+  await page.getByRole("button", { name: /^05 研究拓展/ }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-horizon/, workspaceLoad);
+  await expectReadableMetadata([
+    ".evidence-maturity-panel > header small",
+    ".simulation-campaign-panel > header small",
+    ".stage-note",
+  ]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 

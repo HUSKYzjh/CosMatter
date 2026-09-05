@@ -1415,3 +1415,259 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .rail-context > summary { grid-template-columns: auto minmax(0, 1fr); }
   .rail-context > summary small { grid-column: 2; max-width: 13rem; }
 }
+
+/* Operational typography floor: metadata stays secondary without becoming microtext. */
+.workbench :where(small, dt, em),
+.workbench :where(main span),
+.research-rail :where(span),
+.workbench :where(button) { font-size: max(.75rem, 12px); }
+.workbench :where(main strong),
+.research-rail :where(strong),
+.workbench :where(label) { font-size: max(.82rem, 14px); }
+.workbench :where(main p:not(.launch-kicker):not(.stage-kicker)) { font-size: max(.82rem, 14px); }
+
+/* Shared context and preview notices use the same readable hierarchy on every stage. */
+.rail-preview-note,
+.route-command-handoff > header span,
+.route-handoff-origin > span,
+.route-handoff-destination > span,
+.session-handoff > p,
+.rail-status > p,
+.readonly-preview-context > p { font-size: max(.78rem, 13px); line-height: 1.5; }
+.route-command-handoff > header small,
+.route-handoff-origin > small,
+.route-handoff-destination > small,
+.session-handoff header small,
+.session-handoff header span,
+.readonly-preview-context > small { font-size: max(.75rem, 12px); }
+.route-handoff-origin > strong,
+.route-handoff-destination > strong,
+.session-handoff > strong,
+.readonly-preview-context > strong { font-size: max(.84rem, 14px); line-height: 1.4; }
+.session-handoff > code { font-size: max(.75rem, 12px); }
+.session-handoff > button,
+.readonly-preview-context > button { min-height: 2.5rem; padding: .48rem .62rem; font-size: max(.78rem, 13px); }
+
+/* Work cards are opaque reading surfaces; decorative vectors never cross copy. */
+.mission-preview > .artifact-grid::before,
+.mission-flight-track::before,
+.fleet-route-track::before,
+.reader-proof-track::before,
+.evidence-convoy-track::before,
+.fleet-handoff-manifest > div::before,
+.screening-contact-strip::before,
+.evidence-acceptance-track::before { display: none; }
+
+.mission-preview > .artifact-grid { gap: .62rem; }
+.mission-preview .artifact-card {
+  min-height: 13rem;
+  gap: .48rem;
+  padding: .75rem .82rem .82rem;
+  border: 1px solid color-mix(in srgb, var(--artifact-accent) 34%, var(--line));
+  border-inline-start: 3px solid var(--artifact-accent);
+  background: color-mix(in srgb, var(--surface) 94%, var(--paper));
+}
+.mission-preview .artifact-card::before { top: .68rem; right: .65rem; left: auto; width: .42rem; height: .42rem; box-shadow: 0 0 .45rem color-mix(in srgb, var(--artifact-accent) 42%, transparent); }
+.artifact-card header { padding-right: .7rem; }
+.artifact-card header small,
+.artifact-card header span,
+.artifact-card dt,
+.artifact-card dd,
+.artifact-card footer,
+.artifact-card footer small { font-size: max(.75rem, 12px); line-height: 1.45; }
+.mission-preview .artifact-card p { min-height: 0; font-size: max(.82rem, 14px); line-height: 1.55; }
+.artifact-card dt,
+.artifact-card dd { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+
+/* Dense bridge strips wrap into readable stations instead of shrinking seven or ten columns. */
+.mission-flight-track,
+.fleet-route-track,
+.reader-proof-track,
+.evidence-convoy-track { grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .55rem; }
+.mission-flight-station,
+.fleet-route-station,
+.reader-proof-station,
+.convoy-station {
+  min-height: 9.4rem;
+  gap: .22rem;
+  padding: .65rem .78rem .72rem;
+  border: 1px solid color-mix(in srgb, var(--station-signal, var(--line)) 34%, var(--line));
+  border-inline-start: 3px solid var(--station-signal);
+  background: color-mix(in srgb, var(--surface) 94%, var(--paper));
+}
+.mission-flight-station { --station-signal: var(--flight-signal); }
+.fleet-route-station { --station-signal: var(--route-board-signal); }
+.reader-proof-station { --station-signal: var(--reader-proof-signal); }
+.convoy-station { --station-signal: var(--convoy-signal); }
+.mission-flight-station::before,
+.fleet-route-station::before,
+.reader-proof-station::before,
+.convoy-station::before {
+  top: .68rem;
+  right: .65rem;
+  left: auto;
+  width: .42rem;
+  height: .42rem;
+  background: var(--station-signal);
+  box-shadow: 0 0 .42rem color-mix(in srgb, var(--station-signal) 72%, transparent);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  opacity: .68;
+}
+.mission-flight-station::after,
+.fleet-route-station::after,
+.reader-proof-station::after,
+.convoy-station::after { display: none; }
+.mission-flight-station > span,
+.mission-flight-station > small,
+.mission-flight-station > b,
+.fleet-route-station > span,
+.fleet-route-station > small,
+.fleet-route-station > b,
+.reader-proof-station > span,
+.reader-proof-station > small,
+.convoy-index,
+.convoy-label { font-size: max(.75rem, 12px); line-height: 1.4; }
+.mission-flight-station strong,
+.fleet-route-station strong,
+.reader-proof-station strong,
+.convoy-station strong {
+  display: block;
+  overflow: visible;
+  font-size: max(.86rem, 14px);
+  line-height: 1.42;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: unset;
+}
+.mission-flight-station em,
+.fleet-route-station em,
+.reader-proof-station em,
+.convoy-station small {
+  display: block;
+  overflow: visible;
+  max-width: none;
+  font-size: max(.78rem, 13px);
+  line-height: 1.5;
+  text-overflow: clip;
+  white-space: normal;
+  -webkit-line-clamp: unset;
+}
+.mission-flight-recorder > header small,
+.mission-flight-recorder > header span,
+.mission-flight-recorder > footer,
+.fleet-route-board > header small,
+.fleet-route-board > header span,
+.fleet-route-board > footer,
+.reader-proof-chain > header small,
+.reader-proof-chain > header span,
+.evidence-convoy > header small,
+.evidence-convoy > header span { font-size: max(.75rem, 12px); line-height: 1.5; }
+
+/* Quick navigation and fleet manifests keep their command role without ellipsis-only labels. */
+.bridge-quick-nav { gap: .4rem; padding: .38rem; }
+.bridge-quick-nav a { min-height: 4.7rem; gap: .16rem; padding: .55rem .62rem .58rem .75rem; }
+.bridge-quick-nav small,
+.bridge-quick-nav span { font-size: max(.75rem, 12px); line-height: 1.4; }
+.bridge-quick-nav strong { font-size: max(.84rem, 14px); line-height: 1.35; }
+.bridge-quick-nav :is(small, strong, span) { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+
+.deployment-flagship { width: min(14rem, 28vw); gap: .25rem; padding: .85rem 1rem; }
+.deployment-flagship small,
+.deployment-flagship span,
+.deployment-ship small,
+.deployment-ship span { font-size: max(.75rem, 12px); line-height: 1.4; }
+.deployment-flagship strong,
+.deployment-ship strong { font-size: max(.84rem, 14px); }
+.deployment-ship { width: min(13.5rem, 23vw); min-height: 5.4rem; gap: .18rem; padding: .52rem .55rem .56rem 2.8rem; }
+.deployment-ship :is(small, strong, span) { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+
+.fleet-handoff-manifest > div { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .5rem; }
+.handoff-manifest-entry { min-height: 8.2rem; gap: .2rem .4rem; padding: .58rem .65rem .64rem .82rem; border: 1px solid color-mix(in srgb, var(--manifest-signal) 32%, var(--line)); border-inline-start: 3px solid var(--manifest-signal); background: color-mix(in srgb, var(--surface) 94%, var(--paper)); }
+.handoff-manifest-entry::before { display: none; }
+.handoff-manifest-entry > span,
+.handoff-manifest-entry > small,
+.handoff-manifest-entry > i { font-size: max(.75rem, 12px); line-height: 1.45; }
+.handoff-manifest-entry strong { font-size: max(.84rem, 14px); line-height: 1.4; }
+.handoff-manifest-entry :is(strong, em, i) { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; -webkit-line-clamp: unset; }
+
+/* Evidence maturity and evaluation panels share the same information density. */
+.evidence-maturity-levels,
+.simulation-campaign-panel dl,
+.evaluation-metric-grid { gap: .55rem; }
+.evidence-maturity-levels article,
+.simulation-campaign-panel dl div,
+.evaluation-metric-grid article,
+.evaluation-readiness > div {
+  padding: .62rem .68rem;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  background: color-mix(in srgb, var(--surface) 92%, var(--paper));
+}
+.evidence-maturity-levels article > small,
+.evidence-maturity-levels article > span,
+.evidence-maturity-levels article p,
+.evidence-maturity-empty,
+.evidence-maturity-trust,
+.simulation-campaign-panel :is(small, dt),
+.simulation-campaign-panel > header > span,
+.simulation-campaign-panel > p,
+.simulation-campaign-chain li,
+.evaluation-metric-grid small,
+.evaluation-metric-grid dt,
+.evaluation-metric-grid dd,
+.evaluation-readiness dt,
+.evaluation-readiness dd,
+.evaluation-readiness :is(p, small),
+.evaluation-readiness-boundary { font-size: max(.75rem, 12px); line-height: 1.48; }
+.evidence-maturity-levels article strong,
+.simulation-campaign-panel h2 { font-size: max(.84rem, 14px); line-height: 1.4; }
+.evidence-maturity-levels article strong,
+.simulation-campaign-panel dd { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+
+/* Component-specific rules below earlier mobile declarations enforce the same floor everywhere. */
+.launch-modes button b,
+.journey-track button span,
+.rail-context > summary small,
+.workflow-artifact-flow article > small,
+.mission-event-ledger > header small,
+.fleet-deployment-radar > header small,
+.fleet-handoff-manifest > header small,
+.evidence-maturity-panel > header small,
+.simulation-campaign-panel > header small { font-size: max(.75rem, 12px); }
+.bfo-task-deck > header small,
+.bfo-task-deck button > small,
+.bfo-task-deck button em,
+.stage-note { font-size: max(.75rem, 12px); line-height: 1.48; }
+
+@media (max-width: 1040px) {
+  .mission-preview > .artifact-grid,
+  .evidence-maturity-levels,
+  .simulation-campaign-panel dl,
+  .evaluation-metric-grid,
+  .evaluation-readiness { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bridge-quick-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); position: relative; top: auto; }
+}
+
+@media (max-width: 760px) {
+  .deployment-flagship,
+  .deployment-ship { width: auto; }
+}
+
+@media (max-width: 560px) {
+  .mission-preview > .artifact-grid,
+  .mission-flight-track,
+  .fleet-route-track,
+  .reader-proof-track,
+  .evidence-convoy-track,
+  .evidence-maturity-levels,
+  .simulation-campaign-panel dl,
+  .evaluation-metric-grid,
+  .evaluation-readiness,
+  .bridge-quick-nav { grid-template-columns: 1fr; }
+  .mission-preview .artifact-card,
+  .mission-flight-station,
+  .fleet-route-station,
+  .reader-proof-station,
+  .convoy-station { min-height: 0; }
+  .deployment-flagship { width: auto; margin-inline: 0; }
+}
