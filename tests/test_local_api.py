@@ -746,6 +746,18 @@ class LocalMissionApiTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "target property"):
             _candidate_payload(wrong_property, original_question=original)
 
+    def test_question_candidates_reject_generic_visible_questions_with_hidden_anchors(self):
+        original = "BiFeO3的相转变温度是多少？"
+        generic_questions = {
+            "candidates": [
+                {"question": "围绕该研究议题，现有文献的研究对象、报告结论与证据边界分别是什么？", "material": "BiFeO3", "property": "相转变温度", "scope": "BiFeO3 相转变温度文献", "kind": "survey"},
+                {"question": "哪些可比较的制备、几何、环境与测量条件可能解释不同报告？", "material": "BiFeO3", "property": "相转变温度", "scope": "BiFeO3 相转变温度条件", "kind": "contrast"},
+                {"question": "需要优先核对哪些可定位的原文证据，才能区分竞争解释？", "material": "BiFeO3", "property": "相转变温度", "scope": "BiFeO3 相转变温度证据", "kind": "mechanism"},
+            ]
+        }
+        with self.assertRaisesRegex(ValueError, "candidate question must name every explicit material formula"):
+            _candidate_payload(generic_questions, original_question=original)
+
     def test_question_candidates_require_explicit_model_consent(self):
         with patch("cosmatter.local_api.DeepSeekAdapter") as adapter:
             with self.assertRaisesRegex(LocalApiError, "explicit consent"):
