@@ -70,6 +70,7 @@ def validate_evidence_maturity_registry(value: object) -> None:
         if claim_id in seen:
             raise EvidenceMaturityRegistryError("evidence maturity registry claim IDs must be unique")
         seen.add(claim_id)
+    _validate_registry_trust_boundary(value["trust_status"], claims)
 
 
 def audit_evidence_maturity_registry_against_runs(value: object, runs_root: Path) -> dict[str, Any]:
@@ -156,6 +157,8 @@ def _validate_claim(value: object) -> None:
         raise EvidenceMaturityRegistryError("evidence maturity level or authority is invalid")
     if authority == "delegated_automated_trial" and level != "literature_mentioned":
         raise EvidenceMaturityRegistryError("automated trial claims cannot exceed literature-mentioned maturity")
+    if authority == "unreviewed" and level != "literature_mentioned":
+        raise EvidenceMaturityRegistryError("unreviewed claims cannot exceed literature-mentioned maturity")
     if level == "data_supported" and authority not in {"human_data_review", "human_reproducibility_review", "independent_reproduction_review"}:
         raise EvidenceMaturityRegistryError("data-supported maturity requires human data review")
     _validate_support(value.get("support_records"))
@@ -168,6 +171,41 @@ def _validate_claim(value: object) -> None:
     limitations = value.get("limitations")
     if not isinstance(limitations, list) or not limitations or len(limitations) > 30 or not all(_safe_public_text(item, 500) for item in limitations):
         raise EvidenceMaturityRegistryError("evidence maturity claim limitations are invalid")
+
+
+def _validate_registry_trust_boundary(trust_status: str, claims: list[object]) -> None:
+    """Prevent a registry-level trust label from laundering claim-level review states."""
+    assert all(isinstance(claim, dict) for claim in claims)
+    typed_claims = [claim for claim in claims if isinstance(claim, dict)]
+    if trust_status == "delegated_automated_trial_evidence_maturity_registry_not_scientific_evidence":
+        for claim in typed_claims:
+            if claim["assessment_authority"] != "delegated_automated_trial" or claim["maturity_level"] != "literature_mentioned":
+                raise EvidenceMaturityRegistryError("automated trial registry cannot contain human-reviewed or promoted claims")
+            if any(
+                support["source_map_status"] not in {"none", "automated_trial_only"}
+                or support["data_status"] != "not_checked"
+                or support["conditions_status"] not in {"not_checked", "partial"}
+                for support in claim["support_records"]
+            ):
+                raise EvidenceMaturityRegistryError("automated trial registry cannot claim human-reviewed source or data states")
+            reproducibility = claim["reproducibility"]
+            reproduction = claim["independent_reproduction"]
+            if any(reproducibility[key] == "complete_human_checked" for key in ("protocol_status", "materials_status", "measurement_status")) or reproducibility["assessment"] == "reproducibility_ready_human_reviewed" or reproduction["status"] not in {"not_attempted", "planned", "in_progress"} or reproduction["result_comparison"] != "not_available" or reproduction["review_status"] == "human_reviewed":
+                raise EvidenceMaturityRegistryError("automated trial registry cannot contain human-reviewed reproducibility states")
+    elif trust_status == "blank_human_evidence_maturity_registry_template_not_evidence":
+        if any(
+            claim["assessment_authority"] != "unreviewed"
+            or claim["maturity_level"] != "literature_mentioned"
+            or any(support["source_map_status"] != "none" or support["data_status"] != "not_checked" or support["conditions_status"] != "not_checked" for support in claim["support_records"])
+            for claim in typed_claims
+        ):
+            raise EvidenceMaturityRegistryError("blank registry template cannot contain reviewed or promoted claims")
+    elif any(
+        claim["assessment_authority"] in {"unreviewed", "delegated_automated_trial"}
+        or any(support["source_map_status"] == "automated_trial_only" for support in claim["support_records"])
+        for claim in typed_claims
+    ):
+        raise EvidenceMaturityRegistryError("human-reviewed registry cannot contain unreviewed or automated-trial claims")
 
 
 def _validate_support(value: object) -> None:

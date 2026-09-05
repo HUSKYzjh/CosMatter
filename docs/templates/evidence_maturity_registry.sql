@@ -38,7 +38,7 @@ CREATE TABLE research_claim (
     PRIMARY KEY (registry_id, claim_id),
     CHECK (length(trim(claim_id)) BETWEEN 1 AND 120),
     CHECK (length(trim(claim_text)) BETWEEN 1 AND 1000),
-    CHECK (assessment_authority <> 'delegated_automated_trial' OR maturity_level = 'literature_mentioned')
+    CHECK (assessment_authority NOT IN ('unreviewed', 'delegated_automated_trial') OR maturity_level = 'literature_mentioned')
 );
 
 -- Optional metadata-only version registry. DOI is optional and never the sole

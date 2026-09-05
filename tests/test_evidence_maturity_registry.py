@@ -41,6 +41,7 @@ class EvidenceMaturityRegistryTests(unittest.TestCase):
 
     def test_data_supported_needs_human_checked_data_and_complete_conditions(self) -> None:
         invalid = copy.deepcopy(registry())
+        invalid["trust_status"] = "human_reviewed_evidence_maturity_registry_not_scientific_conclusion"
         claim = invalid["claims"][0]
         claim.update({"maturity_level": "data_supported", "assessment_authority": "human_data_review"})
         with self.assertRaises(EvidenceMaturityRegistryError):
@@ -50,6 +51,7 @@ class EvidenceMaturityRegistryTests(unittest.TestCase):
 
     def test_independent_reproduction_requires_a_distinct_confirmed_run(self) -> None:
         invalid = copy.deepcopy(registry())
+        invalid["trust_status"] = "human_reviewed_evidence_maturity_registry_not_scientific_conclusion"
         claim = invalid["claims"][0]
         claim.update({"maturity_level": "independently_reproduced", "assessment_authority": "independent_reproduction_review"})
         claim["support_records"][0].update({"source_map_status": "human_reviewed", "data_status": "numeric_or_figure_data_human_checked", "conditions_status": "complete_human_checked"})
@@ -61,6 +63,35 @@ class EvidenceMaturityRegistryTests(unittest.TestCase):
             validate_evidence_maturity_registry(invalid)
         claim["independent_reproduction"]["independent_run_id"] = "lab_run_2"
         validate_evidence_maturity_registry(invalid)
+
+    def test_registry_trust_status_cannot_launder_claim_authority(self) -> None:
+        invalid = copy.deepcopy(registry())
+        claim = invalid["claims"][0]
+        claim.update({"maturity_level": "data_supported", "assessment_authority": "human_data_review"})
+        claim["support_records"][0].update({"source_map_status": "human_reviewed", "data_status": "numeric_or_figure_data_human_checked", "conditions_status": "complete_human_checked"})
+        with self.assertRaises(EvidenceMaturityRegistryError):
+            validate_evidence_maturity_registry(invalid)
+
+        invalid = copy.deepcopy(registry())
+        invalid["trust_status"] = "human_reviewed_evidence_maturity_registry_not_scientific_conclusion"
+        with self.assertRaises(EvidenceMaturityRegistryError):
+            validate_evidence_maturity_registry(invalid)
+
+    def test_automated_registry_cannot_claim_human_reviewed_support(self) -> None:
+        invalid = copy.deepcopy(registry())
+        invalid["claims"][0]["support_records"][0]["source_map_status"] = "human_reviewed"
+        with self.assertRaises(EvidenceMaturityRegistryError):
+            validate_evidence_maturity_registry(invalid)
+
+        invalid = copy.deepcopy(registry())
+        invalid["claims"][0]["reproducibility"]["protocol_status"] = "complete_human_checked"
+        with self.assertRaises(EvidenceMaturityRegistryError):
+            validate_evidence_maturity_registry(invalid)
+
+        invalid = copy.deepcopy(registry())
+        invalid["claims"][0]["independent_reproduction"].update({"status": "replicated", "result_comparison": "within_predefined_tolerance"})
+        with self.assertRaises(EvidenceMaturityRegistryError):
+            validate_evidence_maturity_registry(invalid)
 
     def test_run_identifier_cannot_escape_audit_root(self) -> None:
         invalid = copy.deepcopy(registry())

@@ -12,6 +12,52 @@
     "trust_status": {"enum": ["blank_human_evidence_maturity_registry_template_not_evidence", "delegated_automated_trial_evidence_maturity_registry_not_scientific_evidence", "human_reviewed_evidence_maturity_registry_not_scientific_conclusion"]},
     "claims": {"type": "array", "minItems": 1, "maxItems": 500, "items": {"$ref": "#/$defs/claim"}}
   },
+  "allOf": [
+    {
+      "if": {"properties": {"trust_status": {"const": "delegated_automated_trial_evidence_maturity_registry_not_scientific_evidence"}}, "required": ["trust_status"]},
+      "then": {"properties": {"claims": {"items": {
+        "properties": {
+          "maturity_level": {"const": "literature_mentioned"},
+          "assessment_authority": {"const": "delegated_automated_trial"},
+          "support_records": {"items": {"properties": {
+            "source_map_status": {"enum": ["none", "automated_trial_only"]},
+            "data_status": {"const": "not_checked"},
+            "conditions_status": {"enum": ["not_checked", "partial"]}
+          }}},
+          "reproducibility": {"properties": {
+            "protocol_status": {"enum": ["not_checked", "partial"]},
+            "materials_status": {"enum": ["not_checked", "partial"]},
+            "measurement_status": {"enum": ["not_checked", "partial"]},
+            "assessment": {"enum": ["not_assessed", "insufficient"]}
+          }},
+          "independent_reproduction": {"properties": {
+            "status": {"enum": ["not_attempted", "planned", "in_progress"]},
+            "result_comparison": {"const": "not_available"},
+            "review_status": {"const": "not_reviewed"}
+          }}
+        }
+      }}}}
+    },
+    {
+      "if": {"properties": {"trust_status": {"const": "blank_human_evidence_maturity_registry_template_not_evidence"}}, "required": ["trust_status"]},
+      "then": {"properties": {"claims": {"items": {"properties": {
+        "maturity_level": {"const": "literature_mentioned"},
+        "assessment_authority": {"const": "unreviewed"},
+        "support_records": {"items": {"properties": {
+          "source_map_status": {"const": "none"},
+          "data_status": {"const": "not_checked"},
+          "conditions_status": {"const": "not_checked"}
+        }}}
+      }}}}}
+    },
+    {
+      "if": {"properties": {"trust_status": {"const": "human_reviewed_evidence_maturity_registry_not_scientific_conclusion"}}, "required": ["trust_status"]},
+      "then": {"properties": {"claims": {"items": {"properties": {
+        "assessment_authority": {"enum": ["human_source_review", "human_data_review", "human_reproducibility_review", "independent_reproduction_review"]},
+        "support_records": {"items": {"properties": {"source_map_status": {"enum": ["none", "human_reviewed"]}}}}
+      }}}}}
+    }
+  ],
   "$defs": {
     "claim": {
       "type": "object",
@@ -30,6 +76,10 @@
       "allOf": [
         {
           "if": {"properties": {"assessment_authority": {"const": "delegated_automated_trial"}}, "required": ["assessment_authority"]},
+          "then": {"properties": {"maturity_level": {"const": "literature_mentioned"}}}
+        },
+        {
+          "if": {"properties": {"assessment_authority": {"const": "unreviewed"}}, "required": ["assessment_authority"]},
           "then": {"properties": {"maturity_level": {"const": "literature_mentioned"}}}
         },
         {

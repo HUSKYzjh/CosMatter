@@ -11,7 +11,7 @@
 | `reproducibility_ready`（可复现） | 经人工检查，合成、样品、测试、分析和必要原始数据/合理缺失声明足以形成预注册复现实验。 | 完整协议/材料/测量状态、人审可复现性判断、预定义比较容差。 | 已由他人或本项目复现。 |
 | `independently_reproduced`（已经复现） | 独立执行记录在预先定义条件和容差下与原主张一致。 | 不与原文支撑运行重复的独立运行 ID、容差内比较结果、人工复核和 `replicated` 状态。 | 自动等同于所有条件下成立，或把不复现/不确定结果称为“已经复现”。 |
 
-自动试点仅可写入 `assessment_authority=delegated_automated_trial` 和 `source_map_status=automated_trial_only`；它的成熟度上限为 `literature_mentioned`。只有人工审核才能进入 `data_supported` 以上等级。
+自动试点登记表的根 `trust_status`、每条主张的 `assessment_authority` 与 Source Map 状态必须一致：仅可写入 `assessment_authority=delegated_automated_trial`，Source Map 只能是 `automated_trial_only` 或不存在，数据状态不能冒充人工核验；它的成熟度上限为 `literature_mentioned`。反过来，人工审核登记表也拒绝混入 `unreviewed` 或 `delegated_automated_trial` 主张。只有人工审核才能进入 `data_supported` 以上等级。
 
 进入 `data_supported` 及其以上等级还必须至少有一条人工 Source Map、人工核对的数值/图表数据、完整条件和 `supports`、`contradicts` 或 `mixed` 立场。`not_replicated` 与 `inconclusive` 是必须保留的独立实验结果，但不能把主张升级为 `independently_reproduced`。
 
@@ -33,8 +33,8 @@
 审核后的登记表可显式绑定到一个本地任务；此命令不联网，也不会修改原始输入文件：
 
 ```powershell
-python -m cosmatter.cli record-evidence-maturity-registry --run-id <run_id> --input <reviewed_registry.json>
-python -m cosmatter.cli export-ui --run-id <run_id>
+python -m cosmatter record-evidence-maturity-registry --run-id <run_id> --input <reviewed_registry.json>
+python -m cosmatter export-ui --run-id <run_id>
 ```
 
 写入前，`question_id` 必须匹配该任务的 `mission_id`，每条支撑记录必须通过候选与同一任务 Source Map 的链接审计。运行目录会同时保存登记表和仅含计数、稳定 ID 与 SHA-256 绑定值的审计收据。导出界面会重新执行链接审计；登记表或收据任一项被修改、缺失或失配时，界面只显示“登记表未通过交付校验”，不会显示任何成熟度升级。浏览器也会再次比较导入登记表的 `question_id` 与 UI 任务 ID，跨任务登记表一律拒绝。
@@ -44,7 +44,7 @@ python -m cosmatter.cli export-ui --run-id <run_id>
 跨多个本地运行的研究登记表不能绑定为某一个任务的运行工件，但可以离线生成一份新的、只含计数和哈希绑定的链接审计：
 
 ```powershell
-python -m cosmatter.cli audit-evidence-maturity-registry `
+python -m cosmatter audit-evidence-maturity-registry `
   --input <private_registry.json> `
   --output <new_private_audit.json>
 ```
@@ -68,5 +68,7 @@ python -m cosmatter.cli audit-evidence-maturity-registry `
 | FCC 高熵合金 | 3 | 10 条（两篇 CrCoNi 预印本 + Fe-rich SLM 边界反例） | `literature_mentioned` | 两篇 CrCoNi 预印本有作者重叠；新增文献仅是作者集合不重叠的材料/工艺边界反例，仍需匹配成分/热处理的独立研究。 |
 
 这些判定刻意保守：试点的“直接支持”只表示自动审核与已选摘录的文字匹配，并非人工数据核验。
+
+同一门禁也已用于三条 BFO 受控试点。跨运行私有聚合登记包含 3 条限定主张、6 条支撑记录与 6 个自动 Source Map；当前链接审计为零错误。相变问题有实验与模拟两条路线，薄膜应变问题仍只有一条受控全文路线，缺陷稳定性问题的三条路线分别覆盖畴壁、空位有序与晶界开关，不能当作同一子命题的三次独立复现。三条主张都保持在 `literature_mentioned`，且独立性、数值、条件和可复现性均未标记为人工核验。
 
 本轮真实运行的私有登记实例保存在未纳入版本库的私有数据根目录；本公开文档不记录其本机路径、文件名或运行日期。P2 和 SrTiO3 各纳入 3 个候选（2 个受控 PDF/MinerU/自动 Source Map，另 1 个仅有 Sciverse 内容访问）；高熵合金纳入 4 个候选（3 个受控全文，其中 1 个为 `boundary_counterexample`，另 1 个仅有 Sciverse 内容访问）。全部停留在 `literature_mentioned`。该私有登记表已用当前 v2 审计重新绑定内容哈希并复核现有运行；聚合结果仍为 3 条主张、10 条支撑记录、7 个自动 Source Map、3 个仅上下文候选和零链接错误。这个通过结果只证明登记表引用的候选与 Source Map 状态仍存在且一致，不证明数据真实性、研究独立性或可复现性。
