@@ -40,6 +40,54 @@ test("keeps the narrow launch workspace horizontally contained", async ({ page }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test("keeps launch regions separate across structural breakpoints", async ({ page }) => {
+  const separated = async (first: string, second: string) => {
+    const [a, b] = await Promise.all([page.locator(first).boundingBox(), page.locator(second).boundingBox()]);
+    if (!a || !b) throw new Error(`missing layout box for ${first} or ${second}`);
+    const horizontalGap = Math.max(a.x, b.x) - Math.min(a.x + a.width, b.x + b.width);
+    const verticalGap = Math.max(a.y, b.y) - Math.min(a.y + a.height, b.y + b.height);
+    expect(Math.max(horizontalGap, verticalGap)).toBeGreaterThanOrEqual(0);
+  };
+
+  for (const width of [1440, 1040, 880, 560, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await separated(".launch-controls", ".launch-briefing");
+    await separated(".launch-briefing", ".launch-stage-column");
+    await separated(".launch-hero", ".launch-workspace");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
+});
+
+test("renders BFO templates as readable cards without a line crossing their copy", async ({ page }) => {
+  for (const width of [1440, 880, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const deck = page.locator(".bfo-task-deck");
+    const first = deck.getByRole("button").first();
+    await expect(first).toBeVisible();
+    expect(await deck.locator(":scope > div").evaluate((element) => getComputedStyle(element, "::before").display)).toBe("none");
+    expect(await first.locator("strong").evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(13);
+    expect(await first.locator("span").evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(11);
+    expect(await first.evaluate((element) => element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight)).toBe(true);
+  }
+});
+
+test("moves the research rail above the workspace before it crowds operational cards", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 900 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "预览：受控编排" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+
+  const columns = await page.locator(".workbench").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/));
+  expect(columns).toHaveLength(1);
+  const [rail, stage] = await Promise.all([page.locator(".research-rail").boundingBox(), page.locator(".workflow-stage").boundingBox()]);
+  if (!rail || !stage) throw new Error("research rail or workflow stage did not render a layout box");
+  expect(rail.y + rail.height).toBeLessThanOrEqual(stage.y + 1);
+  await expect(page.locator(".rail-context")).not.toHaveAttribute("open", "");
+  expect(await page.locator(".deployment-flagship").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
 test("keeps operational labels and evidence copy at a readable scale", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 900 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -92,6 +140,7 @@ test("keeps fallback routes tied to the entered material property instead of gen
   await expect(routes.nth(0)).toContainText("转变温区");
   await expect(routes.nth(1)).toContainText("体相、陶瓷与薄膜");
   await expect(routes.nth(2)).toContainText("材料分解与测量伪影");
+  expect(await routes.nth(0).locator("strong").evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
   await expect(page.getByRole("status", { name: "候选生成来源" })).toContainText("本地问题绑定回退");
   await expect(page.getByRole("status", { name: "候选生成来源" })).toContainText("未连接本机候选生成 API");
   const visibleRoutes = (await routes.allTextContents()).join(" ");

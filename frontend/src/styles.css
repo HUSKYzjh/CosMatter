@@ -1247,3 +1247,171 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .corpus-review-item > header, .corpus-review-item > h3, .corpus-review-item > p { grid-column: auto; }
   .corpus-review-item > small { text-align: start; }
 }
+
+/* Layout consistency pass: one breakpoint owns each structural transition. */
+.launch-hero > *,
+.launch-workspace > *,
+.signal-receiver > *,
+.launch-brief-editor > *,
+.research-rail > * { min-width: 0; }
+
+/* Template and formation cards are content surfaces; route decoration must not cross their copy. */
+.bfo-task-deck > div,
+.bfo-formation-brief > div { gap: .52rem; }
+.bfo-task-deck > div::before,
+.bfo-formation-brief > div::before { display: none; }
+.bfo-task-deck > header small,
+.bfo-formation-brief > header small { font-size: .65rem; }
+.bfo-task-deck > header span,
+.bfo-formation-brief > header span { font-size: .72rem; line-height: 1.5; }
+.bfo-task-deck button {
+  min-height: 9rem;
+  gap: .22rem;
+  padding: .62rem 1.05rem .68rem .78rem;
+  border: 1px solid color-mix(in srgb, var(--bfo-signal) 38%, var(--line));
+  border-inline-start: 3px solid var(--bfo-signal);
+  background: linear-gradient(115deg, color-mix(in srgb, var(--bfo-signal) 8%, transparent), transparent 72%), color-mix(in srgb, var(--surface) 94%, var(--paper));
+}
+.bfo-task-deck button::before {
+  top: .7rem;
+  right: .62rem;
+  left: auto;
+  width: .42rem;
+  height: .42rem;
+  background: color-mix(in srgb, var(--bfo-signal) 72%, transparent);
+  box-shadow: 0 0 .45rem color-mix(in srgb, var(--bfo-signal) 42%, transparent);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+.bfo-task-deck button > small { font-size: .65rem; }
+.bfo-task-deck button strong {
+  display: block;
+  overflow: visible;
+  font-size: .86rem;
+  line-height: 1.42;
+}
+.bfo-task-deck button span,
+.bfo-task-deck button em {
+  display: block;
+  overflow: visible;
+  font-size: .72rem;
+  line-height: 1.48;
+}
+.bfo-formation-brief [role="listitem"] {
+  min-height: 8.6rem;
+  gap: .18rem;
+  padding: .56rem .65rem .62rem .78rem;
+  border: 1px solid color-mix(in srgb, var(--formation-signal) 34%, var(--line));
+  border-inline-start: 3px solid var(--formation-signal);
+  background: linear-gradient(115deg, color-mix(in srgb, var(--formation-signal) 7%, transparent), transparent 72%), color-mix(in srgb, var(--surface) 94%, var(--paper));
+}
+.bfo-formation-brief [role="listitem"]::before {
+  top: .67rem;
+  right: .6rem;
+  left: auto;
+  width: .4rem;
+  height: .4rem;
+  background: color-mix(in srgb, var(--formation-signal) 72%, transparent);
+  box-shadow: 0 0 .42rem color-mix(in srgb, var(--formation-signal) 40%, transparent);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+.bfo-formation-brief [role="listitem"] > span { font-size: .62rem; }
+.bfo-formation-brief [role="listitem"] strong { font-size: .78rem; line-height: 1.38; }
+.bfo-formation-brief [role="listitem"] em,
+.bfo-formation-brief [role="listitem"] .formation-intake,
+.bfo-formation-brief [role="listitem"] .formation-artifact,
+.bfo-formation-brief [role="listitem"] .formation-gate {
+  display: block;
+  overflow: visible;
+  font-size: .66rem;
+  line-height: 1.45;
+}
+
+/* The flagship label wraps inside its hull instead of bleeding into the orbital decoration. */
+.deployment-flagship { max-width: calc(100% - 1rem); }
+.deployment-flagship span { overflow-wrap: anywhere; }
+.deployment-flagship::before { left: 0; }
+.deployment-flagship::after { right: 0; }
+.candidate-planet strong {
+  display: block;
+  overflow: visible;
+  min-height: 0;
+  -webkit-line-clamp: unset;
+}
+
+@media (max-width: 1040px) {
+  .launchpad { padding: 1.35rem; }
+  .launch-hero { grid-template-columns: 1fr; gap: 1rem; padding-top: 5rem; }
+  .launch-briefing { max-width: 52rem; }
+  .launch-stage-column { justify-self: start; width: min(52rem, 100%); }
+  .launch-stage-column ol { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: .35rem; }
+  .launch-stage-column li:nth-child(odd)::after { display: none; }
+  .launch-stage-column li:last-child { grid-column: 1 / -1; }
+
+  .workbench:not(.view-launch) { grid-template-columns: 1fr; }
+  .research-rail {
+    position: relative;
+    top: auto;
+    z-index: auto;
+    min-height: 0;
+    max-height: none;
+    gap: .72rem;
+    padding: 1rem 1.2rem;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 .32rem 1.1rem color-mix(in srgb, var(--ink) 5%, transparent);
+  }
+  .journey-track { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .journey-track li { padding-left: 0; }
+  .journey-track li::before,
+  .journey-track li::after { display: none; }
+  .journey-track button { grid-template-columns: 1.5rem minmax(0, 1fr); }
+  .journey-track button small { display: none; }
+
+  .rail-context {
+    display: block;
+    gap: .72rem;
+    padding: .55rem .65rem;
+    border-top: 1px solid color-mix(in srgb, var(--signal-blue) 34%, var(--line));
+    border-bottom: 1px solid color-mix(in srgb, var(--signal-blue) 24%, var(--line));
+    background: color-mix(in srgb, var(--signal-blue) 3%, transparent);
+  }
+  .rail-context > summary {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .5rem;
+    min-width: 0;
+    color: var(--ink);
+    cursor: pointer;
+    list-style: none;
+  }
+  .rail-context > summary::-webkit-details-marker { display: none; }
+  .rail-context > summary::before { color: var(--signal-blue); content: "+"; font: 1rem/1 ui-monospace, "Cascadia Mono", monospace; }
+  .rail-context[open] > summary::before { content: "−"; }
+  .rail-context > summary span { overflow: hidden; font-size: .76rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+  .rail-context > summary small { overflow: hidden; max-width: 20rem; color: var(--muted); font-size: .68rem; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+  .rail-context[open] > summary { padding-bottom: .5rem; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+}
+
+@media (max-width: 760px) {
+  .bfo-task-deck button,
+  .bfo-formation-brief [role="listitem"] { min-height: 0; }
+}
+
+@media (max-width: 560px) {
+  .launchpad { padding: 1rem; }
+  .launch-hero { padding-top: 4rem; }
+  .launch-stage-column ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .launch-stage-column li:last-child { grid-column: 1 / -1; }
+  .launch-stage-column header { grid-template-columns: 1fr; }
+  .launch-stage-column header p,
+  .launch-stage-column header strong,
+  .launch-stage-column header span { grid-column: 1; max-width: none; text-align: left; }
+  .bfo-task-deck button { padding: .58rem .92rem .62rem .68rem; }
+  .bfo-task-deck button strong { font-size: .84rem; }
+  .bfo-task-deck button span,
+  .bfo-task-deck button em { font-size: .7rem; }
+  .rail-context > summary { grid-template-columns: auto minmax(0, 1fr); }
+  .rail-context > summary small { grid-column: 2; max-width: 13rem; }
+}

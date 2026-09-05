@@ -1686,7 +1686,7 @@ export function App() {
     setStatus(text("已从本机预览服务载入脱敏 UI 工件；当前为只读模式，不会连接运行任务或执行外部操作。", "Loaded the redacted UI artifact from the local preview server in read-only mode; it is not connected to an executable run and performs no external operation."));
   }
   onMount(() => {
-    if (window.matchMedia("(max-width: 560px)").matches) setRailContextOpen(false);
+    if (window.matchMedia("(max-width: 1040px)").matches) setRailContextOpen(false);
     if (!serverUiPreviewRequested(window.location.search)) return;
     setUiImportPending(true);
     const operationId = beginActiveOperation(text("正在载入本机预览工件", "Loading local preview artifact"), text("只读取固定同源 /ui.json；不会发送凭据、跟随重定向或调用提供方。", "Reading only the fixed same-origin /ui.json route; no credentials, redirects, or provider calls are allowed."));
