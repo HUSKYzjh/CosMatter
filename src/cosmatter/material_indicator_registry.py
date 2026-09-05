@@ -18,6 +18,7 @@ from .unit_normalization import UnitNormalizationError, validate_reported_normal
 
 CATALOG_SCHEMA_VERSION = "cosmatter.material-indicator-catalog/v1"
 OBSERVATION_SCHEMA_VERSION = "cosmatter.material-observation-set/v1"
+SOURCE_MATRIX_SCHEMA_VERSION = "cosmatter.material-source-candidate-matrix/v1"
 P0_BFO_CATALOG_ID = "bfo-p0-experimental-indicators/v1"
 
 QUALIFIER_FIELDS = (
@@ -57,6 +58,21 @@ _OBSERVATION_FIELDS = {
     "source_quote_sha256", "source_map_status", "data_status", "conditions_status",
     "maturity_level", "assessment_authority", "limitation",
 }
+_SOURCE_MATRIX_FIELDS = {
+    "schema_version", "catalog_id", "material_scope", "trust_status",
+    "provider_probe_summary", "questions",
+}
+_PROVIDER_PROBE_FIELDS = {
+    "provider", "operation", "search_status", "content_status", "probe_scope",
+}
+_SOURCE_QUESTION_FIELDS = {
+    "question_id", "focus_indicator_ids", "comparison_question_zh", "source_candidates",
+}
+_SOURCE_CANDIDATE_FIELDS = {
+    "source_id", "normalized_doi", "title", "year", "role", "independence_group",
+    "independence_note", "sample_scope", "method_scope", "reported_lead",
+    "claim_boundary", "fulltext_route", "access_status", "evidence_status",
+}
 _FAMILIES = {"structure_phase", "ferroelectric", "electrical_transport", "phase_transition"}
 _CATEGORIES = {"structure", "property", "experimental_condition"}
 _VALUE_SHAPES = {"numeric", "categorical"}
@@ -95,6 +111,13 @@ def load_material_indicator_catalog(path: Path) -> dict[str, Any]:
 def load_material_observation_set(path: Path, catalog: dict[str, Any]) -> dict[str, Any]:
     value = _load_json(path, "material observation set")
     validate_material_observation_set(value, catalog)
+    assert isinstance(value, dict)
+    return value
+
+
+def load_material_source_candidate_matrix(path: Path, catalog: dict[str, Any]) -> dict[str, Any]:
+    value = _load_json(path, "material source candidate matrix")
+    validate_material_source_candidate_matrix(value, catalog)
     assert isinstance(value, dict)
     return value
 
@@ -183,6 +206,92 @@ def validate_material_observation_set(value: object, catalog: dict[str, Any]) ->
         if observation_id in seen:
             raise MaterialIndicatorRegistryError("material observation IDs must be unique")
         seen.add(observation_id)
+
+
+def validate_material_source_candidate_matrix(value: object, catalog: dict[str, Any]) -> None:
+    """Require an independent A/B source pair plus a boundary counterexample."""
+    validate_material_indicator_catalog(catalog)
+    if not isinstance(value, dict) or set(value) != _SOURCE_MATRIX_FIELDS:
+        raise MaterialIndicatorRegistryError("material source candidate matrix fields are invalid")
+    if (
+        value.get("schema_version") != SOURCE_MATRIX_SCHEMA_VERSION
+        or value.get("catalog_id") != catalog["registry_id"]
+        or value.get("material_scope") != catalog["material_scope"]
+        or value.get("trust_status") != "source_candidates_not_screened_or_source_mapped"
+    ):
+        raise MaterialIndicatorRegistryError("material source candidate matrix identity is invalid")
+    probe = value.get("provider_probe_summary")
+    if not isinstance(probe, dict) or set(probe) != _PROVIDER_PROBE_FIELDS:
+        raise MaterialIndicatorRegistryError("material source provider probe summary is invalid")
+    if (
+        probe.get("provider") != "sciverse"
+        or probe.get("operation") != "semantic_search_and_bounded_content"
+        or probe.get("search_status") not in {"succeeded", "failed_closed"}
+        or probe.get("content_status") not in {"succeeded", "failed_closed", "not_attempted"}
+        or not _safe_public_text(probe.get("probe_scope"), 240)
+    ):
+        raise MaterialIndicatorRegistryError("material source provider probe status is invalid")
+    questions = value.get("questions")
+    if not isinstance(questions, list) or not 1 <= len(questions) <= 50:
+        raise MaterialIndicatorRegistryError("material source candidate questions are invalid")
+    indicator_ids = {item["indicator_id"] for item in catalog["indicators"]}
+    seen_questions: set[str] = set()
+    for question in questions:
+        if not isinstance(question, dict) or set(question) != _SOURCE_QUESTION_FIELDS:
+            raise MaterialIndicatorRegistryError("material source candidate question fields are invalid")
+        question_id = question.get("question_id")
+        if not _safe_id(question_id) or question_id in seen_questions:
+            raise MaterialIndicatorRegistryError("material source candidate question identity is invalid")
+        focus = question.get("focus_indicator_ids")
+        if not isinstance(focus, list) or not focus or len(focus) > 12 or len(focus) != len(set(focus)) or any(item not in indicator_ids for item in focus):
+            raise MaterialIndicatorRegistryError("material source candidate focus indicators are invalid")
+        if not _safe_public_text(question.get("comparison_question_zh"), 500):
+            raise MaterialIndicatorRegistryError("material source comparison question is invalid")
+        _validate_source_candidates(question.get("source_candidates"))
+        seen_questions.add(question_id)
+
+
+def _validate_source_candidates(value: object) -> None:
+    if not isinstance(value, list) or not 3 <= len(value) <= 12:
+        raise MaterialIndicatorRegistryError("each material question requires at least three source candidates")
+    roles: dict[str, list[dict[str, Any]]] = {
+        "primary_support": [], "independent_support": [], "boundary_counterexample": [],
+    }
+    seen_ids: set[str] = set()
+    seen_dois: set[str] = set()
+    for source in value:
+        if not isinstance(source, dict) or set(source) != _SOURCE_CANDIDATE_FIELDS:
+            raise MaterialIndicatorRegistryError("material source candidate fields are invalid")
+        source_id, doi, role = source.get("source_id"), source.get("normalized_doi"), source.get("role")
+        if not _safe_id(source_id) or source_id in seen_ids or not isinstance(doi, str) or not _DOI.fullmatch(doi) or doi.casefold() in seen_dois:
+            raise MaterialIndicatorRegistryError("material source candidate identity or DOI is invalid")
+        if role not in roles:
+            raise MaterialIndicatorRegistryError("material source candidate role is invalid")
+        if not isinstance(source.get("year"), int) or isinstance(source.get("year"), bool) or not 1900 <= source["year"] <= 2100:
+            raise MaterialIndicatorRegistryError("material source candidate year is invalid")
+        if not _safe_id(source.get("independence_group")):
+            raise MaterialIndicatorRegistryError("material source independence group is invalid")
+        for field, maximum in (
+            ("title", 500), ("independence_note", 400), ("sample_scope", 500),
+            ("method_scope", 500), ("reported_lead", 600), ("claim_boundary", 600),
+        ):
+            if not _safe_public_text(source.get(field), maximum):
+                raise MaterialIndicatorRegistryError("material source candidate public text is invalid")
+        if source.get("fulltext_route") not in {"publisher_open_access", "author_manuscript", "public_repository", "institutional_access_required", "abstract_only"}:
+            raise MaterialIndicatorRegistryError("material source candidate full-text route is invalid")
+        if source.get("access_status") not in {"publicly_retrievable", "candidate_route_not_probed", "institutional_access_required"}:
+            raise MaterialIndicatorRegistryError("material source candidate access status is invalid")
+        if source.get("evidence_status") != "metadata_or_abstract_checked_not_source_mapped":
+            raise MaterialIndicatorRegistryError("material source candidate cannot claim reviewed evidence")
+        roles[role].append(source)
+        seen_ids.add(source_id)
+        seen_dois.add(doi.casefold())
+    if not all(roles.values()):
+        raise MaterialIndicatorRegistryError("material source matrix requires support, independent support, and a counterexample")
+    primary_groups = {item["independence_group"] for item in roles["primary_support"]}
+    independent_groups = {item["independence_group"] for item in roles["independent_support"]}
+    if primary_groups & independent_groups:
+        raise MaterialIndicatorRegistryError("primary and independent support sources must use distinct independence groups")
 
 
 def _validate_observation(value: object, definitions: dict[str, dict[str, Any]], trust: str) -> None:
@@ -324,6 +433,17 @@ def _safe_id(value: object) -> bool:
 
 def _bounded_text(value: object, maximum: int) -> bool:
     return isinstance(value, str) and bool(value.strip()) and len(value) <= maximum
+
+
+def _safe_public_text(value: object, maximum: int) -> bool:
+    if not _bounded_text(value, maximum):
+        return False
+    assert isinstance(value, str)
+    lowered = value.casefold()
+    return not any(marker in lowered for marker in (
+        "https://", "http://", "file://", "api_key", "authorization", "bearer ",
+        "c:\\users\\", "/home/",
+    ))
 
 
 def _number(value: object) -> bool:

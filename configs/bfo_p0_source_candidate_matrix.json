@@ -1,0 +1,235 @@
+{
+  "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+  "catalog_id": "bfo-p0-experimental-indicators/v1",
+  "material_scope": "BiFeO3",
+  "trust_status": "source_candidates_not_screened_or_source_mapped",
+  "provider_probe_summary": {
+    "provider": "sciverse",
+    "operation": "semantic_search_and_bounded_content",
+    "search_status": "succeeded",
+    "content_status": "succeeded",
+    "probe_scope": "polarization_route_only_no_source_text_persisted"
+  },
+  "questions": [
+    {
+      "question_id": "bfo_p0_polarization_condition_dependence",
+      "focus_indicator_ids": ["spontaneous_polarization_ps", "hysteresis_saturation"],
+      "comparison_question_zh": "不同样品形态、取向、温度和回线饱和条件下，BFO 的自发极化报告为何不同？",
+      "source_candidates": [
+        {
+          "source_id": "wang2003_science_1080615",
+          "normalized_doi": "10.1126/science.1080615",
+          "title": "Epitaxial BiFeO3 Multiferroic Thin Film Heterostructures",
+          "year": 2003,
+          "role": "primary_support",
+          "independence_group": "ramesh_berkeley_bfo_films_2003",
+          "independence_note": "Primary thin-film source group.",
+          "sample_scope": "Epitaxially constrained BiFeO3 thin films",
+          "method_scope": "Ferroelectric hysteresis with structural characterization",
+          "reported_lead": "Room-temperature spontaneous polarization of about 50 to 60 uC/cm2.",
+          "claim_boundary": "The value is film- and orientation-specific and does not by itself prove an intrinsic strain enhancement.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "lebeugle2007_apl_2753390",
+          "normalized_doi": "10.1063/1.2753390",
+          "title": "Very large spontaneous electric polarization in BiFeO3 single crystals at room temperature and its evolution under cycling fields",
+          "year": 2007,
+          "role": "independent_support",
+          "independence_group": "cea_saclay_bfo_single_crystals_2007",
+          "independence_note": "Independent authors, institution, single-crystal route, and measurement campaign.",
+          "sample_scope": "High-resistivity flux-grown BiFeO3 single crystals",
+          "method_scope": "Room-temperature electric polarization loops under cycling fields",
+          "reported_lead": "Spontaneous polarization exceeds 100 uC/cm2 before cycling degradation prevents full saturation.",
+          "claim_boundary": "High resistivity enables saturation; cycling degradation and crystallographic direction remain essential comparison fields.",
+          "fulltext_route": "author_manuscript",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "teague1970_ssc_90262",
+          "normalized_doi": "10.1016/0038-1098(70)90262-0",
+          "title": "Dielectric hysteresis in single crystal BiFeO3",
+          "year": 1970,
+          "role": "boundary_counterexample",
+          "independence_group": "missouri_rolla_bfo_single_crystals_1970",
+          "independence_note": "Independent early flux-growth and low-temperature measurement route.",
+          "sample_scope": "Bi2O3-flux-grown single crystals measured in liquid nitrogen",
+          "method_scope": "Unsaturated 60 Hz dielectric hysteresis loops with maximum field 55 kV/cm",
+          "reported_lead": "Measured 3.5 uC/cm2 along 100, corresponding to 6.1 uC/cm2 along 111, at 77 K.",
+          "claim_boundary": "The loops were explicitly unsaturated, so the low value is a measurement-boundary counterexample rather than an intrinsic bulk polarization.",
+          "fulltext_route": "public_repository",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_p0_strain_phase_boundary",
+      "focus_indicator_ids": ["epitaxial_strain", "tetragonality_c_over_a", "space_group"],
+      "comparison_question_zh": "BFO 薄膜的 R-like/T-like 相边界能否由单一失配应变决定，还是同时受厚度和温度控制？",
+      "source_candidates": [
+        {
+          "source_id": "zeches2009_science_1177046",
+          "normalized_doi": "10.1126/science.1177046",
+          "title": "A strain-driven morphotropic phase boundary in BiFeO3",
+          "year": 2009,
+          "role": "primary_support",
+          "independence_group": "ramesh_multisite_bfo_strain_2009",
+          "independence_note": "Primary report of the strain-driven mixed-phase route.",
+          "sample_scope": "Epitaxial BiFeO3 films on highly compressive substrates",
+          "method_scope": "Epitaxial growth, structural characterization, and electric-field phase conversion",
+          "reported_lead": "R-like and T-like phase coexistence occurs near about -4.5 percent compressive strain.",
+          "claim_boundary": "The approximate boundary is tied to substrate, thickness, and the monoclinic phase definitions used in the study.",
+          "fulltext_route": "public_repository",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "you2012_prb_014104",
+          "normalized_doi": "10.1103/physrevb.85.014104",
+          "title": "Strain-driven phase boundaries in BiFeO3 thin films studied by atomic force microscopy and x-ray diffraction",
+          "year": 2012,
+          "role": "independent_support",
+          "independence_group": "taiwan_bfo_film_phase_team_2012",
+          "independence_note": "Independent film series and author group with AFM and XRD measurements.",
+          "sample_scope": "Compressively strained epitaxial BiFeO3 films across thickness and temperature",
+          "method_scope": "Atomic force microscopy and x-ray diffraction",
+          "reported_lead": "T-like films have c/a near 1.2; high temperature and high strain favor the T-like phase, and an MC-to-MA transition is reported near 150 degC.",
+          "claim_boundary": "The result directly makes thickness and temperature part of the phase boundary rather than treating strain as the only coordinate.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "sando2016_ncomms10718",
+          "normalized_doi": "10.1038/ncomms10718",
+          "title": "Large elasto-optic effect and reversible electrochromism in multiferroic BiFeO3",
+          "year": 2016,
+          "role": "boundary_counterexample",
+          "independence_group": "thales_cnrs_unige_bfo_strain_2016",
+          "independence_note": "Independent substrate series and diffraction analysis.",
+          "sample_scope": "Fully strained films on substrates spanning about -7 to +1 percent mismatch",
+          "method_scope": "Pulsed-laser deposition, x-ray diffraction, and reciprocal-space mapping",
+          "reported_lead": "High compression at or beyond about -4 percent yields a T-like monoclinic phase with c/a about 1.26; all measured films remain monoclinic variants.",
+          "claim_boundary": "A broad substrate series gives a related but not identical threshold and warns against relabelling T-like monoclinic films as a true tetragonal phase.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_p0_high_temperature_transition",
+      "focus_indicator_ids": ["ferroelectric_transition_temperature", "insulator_metal_transition_temperature", "space_group"],
+      "comparison_question_zh": "BFO 在约 820 至 930 摄氏度的结构相变和绝缘—金属指派是否被不同实验方法一致支持？",
+      "source_candidates": [
+        {
+          "source_id": "arnold2009_prl_027602",
+          "normalized_doi": "10.1103/physrevlett.102.027602",
+          "title": "The beta-to-alpha transition in BiFeO3: a powder neutron diffraction study",
+          "year": 2009,
+          "role": "primary_support",
+          "independence_group": "edinburgh_isis_bfo_neutron_2009",
+          "independence_note": "Primary variable-temperature neutron-diffraction campaign.",
+          "sample_scope": "Bulk powder BiFeO3 under variable temperature",
+          "method_scope": "Powder neutron diffraction with phase coexistence analysis",
+          "reported_lead": "First-order R3c-to-Pbnm ferroelectric transition across about 820 to 830 degC.",
+          "claim_boundary": "Heating and cooling path, decomposition, and the high-temperature observation window must be retained.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "palai2008_prb_014110",
+          "normalized_doi": "10.1103/physrevb.77.014110",
+          "title": "Beta phase and gamma-beta metal-insulator transition in multiferroic BiFeO3",
+          "year": 2008,
+          "role": "independent_support",
+          "independence_group": "arkansas_multimethod_bfo_transition_2008",
+          "independence_note": "Independent thin-film, crystal, and ceramic multi-method campaign.",
+          "sample_scope": "Thin films, single crystals, and ceramics at high temperature",
+          "method_scope": "Thermal analysis, Raman, x-ray diffraction, dc transport, and optical measurements",
+          "reported_lead": "A beta region of about 820 to 925 degC and a gamma region beginning at 925 plus or minus 5 degC were reported with a metal-insulator interpretation.",
+          "claim_boundary": "The multi-sample phase assignment must not be merged with neutron results without matching sample stability and decomposition conditions.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "selbach2010_jssc_03_014",
+          "normalized_doi": "10.1016/j.jssc.2010.03.014",
+          "title": "Phase transitions, electrical conductivity and chemical stability of BiFeO3 at high temperatures",
+          "year": 2010,
+          "role": "boundary_counterexample",
+          "independence_group": "ntnu_bfo_thermal_stability_2010",
+          "independence_note": "Independent calorimetry, dilatometry, conductivity, and oxygen-pressure study.",
+          "sample_scope": "Bulk BiFeO3 under controlled high-temperature and oxygen-pressure conditions",
+          "method_scope": "Calorimetry, dilatometry, electrical conductivity, and chemical-stability analysis",
+          "reported_lead": "A first-order transition near 925 plus or minus 5 degC was observed, but the phase above it remained semiconducting rather than metallic.",
+          "claim_boundary": "Oxygen partial pressure changes decomposition stability, directly limiting universal gamma-phase and metallic claims.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "institutional_access_required",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_p0_domain_wall_transport",
+      "focus_indicator_ids": ["domain_wall_conductivity", "resistance_switching_ratio"],
+      "comparison_question_zh": "BFO 畴壁导电由哪些畴型、缺陷和热处理条件控制，哪些畴壁并不导电？",
+      "source_candidates": [
+        {
+          "source_id": "seidel2009_nmat2373",
+          "normalized_doi": "10.1038/nmat2373",
+          "title": "Conduction at domain walls in oxide multiferroics",
+          "year": 2009,
+          "role": "primary_support",
+          "independence_group": "berkeley_ornl_bfo_domain_walls_2009",
+          "independence_note": "Primary thin-film c-AFM domain-wall conduction report.",
+          "sample_scope": "Approximately 100 nm epitaxial BiFeO3 films with written 71, 109, and 180 degree walls",
+          "method_scope": "PFM, conductive AFM, high-resolution TEM, and first-principles calculations",
+          "reported_lead": "Current was in the pA regime at 109 and 180 degree walls, while 71 degree walls showed no conduction in that film route.",
+          "claim_boundary": "Current depends on bias, tip contact, wall type, substrate, growth conditions, and time after writing; it is not an absolute bulk conductivity.",
+          "fulltext_route": "author_manuscript",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "rojac2017_nmat4799",
+          "normalized_doi": "10.1038/nmat4799",
+          "title": "Domain-wall conduction in ferroelectric BiFeO3 controlled by accumulation of charged defects",
+          "year": 2017,
+          "role": "independent_support",
+          "independence_group": "jozef_stefan_epfl_bfo_ceramics_2017",
+          "independence_note": "Independent polycrystalline sample route with atomic-scale chemistry.",
+          "sample_scope": "Air-processed polycrystalline BiFeO3 with head-to-tail domain walls",
+          "method_scope": "Atomic-resolution STEM and EELS with PFM and conductive AFM",
+          "reported_lead": "Fe4+ and bismuth-vacancy accumulation supports p-type hopping conduction, tunable by annealing atmosphere.",
+          "claim_boundary": "The identified defect mechanism is specific to the polycrystalline processing route and must not be generalized to every wall or film.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "institutional_access_required",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "bencan2020_ncomms15595",
+          "normalized_doi": "10.1038/s41467-020-15595-0",
+          "title": "Domain-wall pinning and defect ordering in BiFeO3 probed on the atomic and nanoscale",
+          "year": 2020,
+          "role": "boundary_counterexample",
+          "independence_group": "jozef_stefan_bfo_ceramics_2020",
+          "independence_note": "Follow-up group overlaps the 2017 ceramic route, so it is a boundary control rather than the independent support source.",
+          "sample_scope": "Pristine, quenched, and aged polycrystalline BiFeO3; up to about 200 walls sampled per condition",
+          "method_scope": "PFM, conductive AFM, STEM, EELS, controlled quenching, and slow-cooling aging",
+          "reported_lead": "Quenching depletes mobile defects and greatly reduces the fraction of conductive walls; slow cooling restores a larger conductive fraction, and not every wall exceeds background.",
+          "claim_boundary": "Conductive-wall fraction is thermal-history dependent, so a wall identity alone cannot determine conductivity.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    }
+  ]
+}

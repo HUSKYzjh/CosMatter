@@ -8,7 +8,9 @@ from cosmatter.material_indicator_registry import (
     QUALIFIER_FIELDS,
     load_material_indicator_catalog,
     load_material_observation_set,
+    load_material_source_candidate_matrix,
     validate_material_observation_set,
+    validate_material_source_candidate_matrix,
 )
 
 
@@ -16,8 +18,10 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.catalog_path = AGENT_ROOT / "configs" / "bfo_p0_material_indicator_catalog.json"
         self.seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_p0_literature_observation_candidates.json"
+        self.source_matrix_path = AGENT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json"
         self.catalog = load_material_indicator_catalog(self.catalog_path)
         self.seed = load_material_observation_set(self.seed_path, self.catalog)
+        self.source_matrix = load_material_source_candidate_matrix(self.source_matrix_path, self.catalog)
 
     def test_p0_catalog_freezes_four_families_and_twelve_qualifiers(self) -> None:
         self.assertEqual(
@@ -82,6 +86,45 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         observation["normalized_unit"] = "uC/cm2"
         with self.assertRaisesRegex(MaterialIndicatorRegistryError, "normalized value does not match"):
             validate_material_observation_set(candidate, self.catalog)
+
+    def test_each_p0_question_has_independent_support_and_a_counterexample(self) -> None:
+        self.assertEqual(len(self.source_matrix["questions"]), 4)
+        for question in self.source_matrix["questions"]:
+            roles = {item["role"] for item in question["source_candidates"]}
+            self.assertEqual(
+                roles,
+                {"primary_support", "independent_support", "boundary_counterexample"},
+            )
+            primary = next(item for item in question["source_candidates"] if item["role"] == "primary_support")
+            independent = next(item for item in question["source_candidates"] if item["role"] == "independent_support")
+            self.assertNotEqual(primary["independence_group"], independent["independence_group"])
+
+    def test_source_matrix_records_the_bounded_sciverse_content_probe(self) -> None:
+        self.assertEqual(self.source_matrix["provider_probe_summary"], {
+            "provider": "sciverse",
+            "operation": "semantic_search_and_bounded_content",
+            "search_status": "succeeded",
+            "content_status": "succeeded",
+            "probe_scope": "polarization_route_only_no_source_text_persisted",
+        })
+
+    def test_source_matrix_rejects_false_independence_and_evidence_promotion(self) -> None:
+        candidate = copy.deepcopy(self.source_matrix)
+        sources = candidate["questions"][0]["source_candidates"]
+        sources[1]["independence_group"] = sources[0]["independence_group"]
+        with self.assertRaisesRegex(MaterialIndicatorRegistryError, "distinct independence groups"):
+            validate_material_source_candidate_matrix(candidate, self.catalog)
+
+        candidate = copy.deepcopy(self.source_matrix)
+        candidate["questions"][0]["source_candidates"][0]["evidence_status"] = "human_reviewed"
+        with self.assertRaisesRegex(MaterialIndicatorRegistryError, "cannot claim reviewed evidence"):
+            validate_material_source_candidate_matrix(candidate, self.catalog)
+
+    def test_source_matrix_rejects_urls_in_public_candidate_text(self) -> None:
+        candidate = copy.deepcopy(self.source_matrix)
+        candidate["questions"][0]["source_candidates"][0]["claim_boundary"] = "See https://example.invalid"
+        with self.assertRaisesRegex(MaterialIndicatorRegistryError, "public text"):
+            validate_material_source_candidate_matrix(candidate, self.catalog)
 
     def test_relational_template_creates_bounded_observation_tables(self) -> None:
         schema = (AGENT_ROOT / "docs" / "templates" / "material_observation_registry.sql").read_text(encoding="utf-8")

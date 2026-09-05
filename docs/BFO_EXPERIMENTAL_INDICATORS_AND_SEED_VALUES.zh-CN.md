@@ -86,11 +86,14 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 ### 4.1 已落地的机器可读工件
 
 - `configs/bfo_p0_material_indicator_catalog.json`：冻结结构/相、铁电、输运和相变四个 P0 指标族，以及固定顺序的 12 个限定字段；`P_s`、`P_r`、`2P_r`、`E_c` 和 `2E_c` 使用不同 `indicator_id`。
+- `configs/bfo_p0_source_candidate_matrix.json`：为极化、应变相边界、高温相变和畴壁输运各登记一条主证据路线、一条独立来源路线和一条条件反例路线，共 12 篇原始实验论文候选；同时保存作者组独立性、样品/方法边界和公开全文替代路线状态。
 - `examples/frozen/bfo_p0_literature_observation_candidates.json`：把首批 P0 数值拆成逐观测记录。它们全部保持 `literature_mentioned + unreviewed + source_map_status=none`，只用于后续选文和人工核对。
 - `src/cosmatter/material_indicator_registry.py`：无依赖校验器，拒绝缺字段、越级成熟度、伪造 Source Map 绑定、非法单位和不完整的范围/误差语义。
 - `docs/templates/material_observation_registry.sql`：SQLite/PostgreSQL 兼容的关系数据库模板，分别保存指标定义、允许单位、必需条件、观测、12 项条件和 Source Map 审核状态；不保存 PDF、长引文、URL、凭据或本地路径。
 
 这套格式不会替代现有 `material_facts`。候选观测只有在人工核对来源、数据和条件后，才可映射成正式材料事实；数据库中的候选信任状态也通过检查约束禁止升级为 `data_supported`。
+
+2026-09-06 还对 Sciverse 做了一次不落正文的真实交叉检查：`semantic_search` 返回的相关命中没有 `is_content_accessible` 布尔值，但带有效 `doc_id`；随后用其中一个 `doc_id` 调用 `content` 成功返回 HTTP 200、4,000 字符和下一偏移量。由此验证当前适配器的判断是正确的：显式布尔值存在时服从它，不存在时可把有效 `doc_id` 视为可尝试的正文路由；是否真正可读仍以 `content` 调用结果为准。仓库只记录上述状态，不保存返回正文或 provider 文献 ID。
 
 ## 5. 分层证明标准
 
@@ -106,7 +109,7 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 ## 6. 下一批执行顺序
 
 1. **已完成**：冻结 P0 指标名、单位语义与 12 个限定字段，覆盖相变、结构、极化和输运，并建立候选观测校验器和关系数据库模板。
-2. **下一步**：每个 P0 指标检索至少两篇独立原始实验论文和一条条件反例；优先使用公开论文、作者稿或校园账号本地核对，不在仓库保存受限全文。
-3. 对选中文献生成 Source Map；人工核对图表定位、误差、方法和条件后，再写入正式 `material_facts`。
+2. **进行中**：四个核心比较问题已经各有两条独立原始实验路线和一条条件反例；继续把同一覆盖扩展到其余 P0 指标。优先使用公开论文、作者稿或校园账号本地核对，不在仓库保存受限全文。
+3. **下一步**：先对矩阵中标为公开可获得的文献探测 PDF 版本并生成私有 MinerU 候选池；正式 Source Map 仍需人工核对图表定位、误差、方法和条件后，再写入 `material_facts`。
 4. 先按“样品形态 → 相/取向 → 测量定义 → 条件”分组，再运行跨文献比较；不生成跨组平均值。
 5. 前端只展示通过相应门禁的数值，并同时显示样品、方法、条件完整度和证据成熟度；候选值保留“待复核”标识。
