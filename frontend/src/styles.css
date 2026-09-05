@@ -799,6 +799,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* The route reason is derived from registered workflow state, never from a relevance score. */
 .fleet-reading-cards b { overflow: hidden; color: color-mix(in srgb, var(--formation-accent) 82%, var(--ink)); font: 600 .47rem/1.35 ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-reading-cards .route-anchor { overflow: hidden; color: var(--muted); font: 500 .45rem/1.3 ui-monospace, monospace; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-reading-cards .route-anchor-material { color: color-mix(in srgb, var(--signal-teal) 86%, var(--ink)); }
+.fleet-reading-cards .route-anchor-context { color: color-mix(in srgb, var(--signal-blue) 82%, var(--ink)); }
+.fleet-reading-cards .route-anchor-none { color: color-mix(in srgb, var(--signal-amber) 82%, var(--ink)); }
 
 /* A route slot carries both its audited state and the next controlled action. */
 .fleet-reading-cards { grid-template-rows: repeat(3, 4.9rem); }
