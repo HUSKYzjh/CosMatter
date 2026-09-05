@@ -41,6 +41,16 @@ python -m cosmatter.cli export-ui --run-id <run_id>
 
 通过“导入 JSON 文件”打开的包只在浏览器中进行结构、交付标记和任务 ID 检查；浏览器不会重新读取私有 Source Map 或重算链接审计。因此，手工导入文件中的 `accepted` 仅是该导出包的声明，不是当前浏览器独立作出的核验。要取得当前链接审计结论，应通过本机 loopback 服务重新导出对应运行；界面会明确区分这两种状态。
 
+跨多个本地运行的研究登记表不能绑定为某一个任务的运行工件，但可以离线生成一份新的、只含计数和哈希绑定的链接审计：
+
+```powershell
+python -m cosmatter.cli audit-evidence-maturity-registry `
+  --input <private_registry.json> `
+  --output <new_private_audit.json>
+```
+
+输出目标必须位于 `runs/` 之外且不得已经存在，避免把跨任务聚合误装成单任务工件或覆盖旧审计。命令会重新读取当前候选和逐文献 Source Map，写入 v2 审计的登记表 ID、问题 ID、内容 SHA-256 与聚合计数；标准输出不显示输入/输出路径、主张正文、文献 ID、URL 或摘录。链接不一致时仍写出 `passed=false` 的诊断收据并以退出码 `2` 结束。
+
 该命令还要求任务在写入前通过当前的敏感工件扫描，并在写入后刷新该扫描收据；因此提交执行清单不会把过期的“清洁”扫描状态当作新登记表的证明。
 
 登记表会拒绝 URL、授权头、密钥标记与常见私有路径出现在可显示的主张或限制文字中；原文摘录、下载链接和凭据仍必须留在既有的私有边界之外。
@@ -59,4 +69,4 @@ python -m cosmatter.cli export-ui --run-id <run_id>
 
 这些判定刻意保守：试点的“直接支持”只表示自动审核与已选摘录的文字匹配，并非人工数据核验。
 
-本轮真实运行的私有登记实例保存在未纳入版本库的私有数据根目录；本公开文档不记录其本机路径、文件名或运行日期。P2 和 SrTiO3 各纳入 3 个候选（2 个受控 PDF/MinerU/自动 Source Map，另 1 个仅有 Sciverse 内容访问）；高熵合金纳入 4 个候选（3 个受控全文，其中 1 个为 `boundary_counterexample`，另 1 个仅有 Sciverse 内容访问）。全部停留在 `literature_mentioned`。相应链接审计的聚合结果为：3 条主张、10 条支撑记录、7 个自动 Source Map、3 个仅上下文候选，零链接错误。
+本轮真实运行的私有登记实例保存在未纳入版本库的私有数据根目录；本公开文档不记录其本机路径、文件名或运行日期。P2 和 SrTiO3 各纳入 3 个候选（2 个受控 PDF/MinerU/自动 Source Map，另 1 个仅有 Sciverse 内容访问）；高熵合金纳入 4 个候选（3 个受控全文，其中 1 个为 `boundary_counterexample`，另 1 个仅有 Sciverse 内容访问）。全部停留在 `literature_mentioned`。该私有登记表已用当前 v2 审计重新绑定内容哈希并复核现有运行；聚合结果仍为 3 条主张、10 条支撑记录、7 个自动 Source Map、3 个仅上下文候选和零链接错误。这个通过结果只证明登记表引用的候选与 Source Map 状态仍存在且一致，不证明数据真实性、研究独立性或可复现性。

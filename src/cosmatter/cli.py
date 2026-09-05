@@ -401,6 +401,33 @@ def command_record_evidence_maturity_registry(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_audit_evidence_maturity_registry(args: argparse.Namespace) -> int:
+    """Write a fresh count-only link audit without binding the registry to one run."""
+    output_path = Path(args.output)
+    try:
+        resolved_output = output_path.resolve()
+        if resolved_output.is_relative_to(_runs_dir().resolve()):
+            raise EvidenceMaturityRegistryError("standalone evidence maturity audit output must remain outside the runs directory")
+        registry = load_evidence_maturity_registry(Path(args.input))
+        audit = audit_evidence_maturity_registry_against_runs(registry, _runs_dir())
+        write_evidence_maturity_registry_audit(output_path, audit)
+    except (OSError, EvidenceMaturityRegistryError) as error:
+        _json_print({"error": str(error)})
+        return 2
+    _json_print({
+        "schema_version": audit["schema_version"],
+        "registry_id": audit["registry_id"],
+        "question_id": audit["question_id"],
+        "claim_count": audit["claim_count"],
+        "support_record_count": audit["support_record_count"],
+        "controlled_source_map_count": audit["controlled_source_map_count"],
+        "context_only_count": audit["context_only_count"],
+        "link_error_count": audit["link_error_count"],
+        "passed": audit["passed"],
+    })
+    return 0 if audit["passed"] else 2
+
+
 def command_approve_plan(args: argparse.Namespace) -> int:
     run_dir = _run_dir(args.run_id)
     try:
@@ -3062,6 +3089,10 @@ def build_parser() -> argparse.ArgumentParser:
     maturity_registry.add_argument("--run-id", required=True)
     maturity_registry.add_argument("--input", required=True, help="reviewed evidence-maturity registry JSON; the source file is not modified")
     maturity_registry.set_defaults(handler=command_record_evidence_maturity_registry)
+    maturity_audit = commands.add_parser("audit-evidence-maturity-registry", help="write a fresh count-only link audit for a registry that may reference multiple local runs")
+    maturity_audit.add_argument("--input", required=True, help="evidence-maturity registry JSON; the source file is not modified")
+    maturity_audit.add_argument("--output", required=True, help="new audit JSON destination outside the runs directory; existing files are never overwritten")
+    maturity_audit.set_defaults(handler=command_audit_evidence_maturity_registry)
     approve_plan = commands.add_parser("approve-plan", help="persist a human-reviewed bounded FlightPlan JSON")
     approve_plan.add_argument("--run-id", required=True)
     approve_plan.add_argument("--input", required=True, help="path to reviewed FlightPlan JSON; never reads LLM draft implicitly")
