@@ -711,9 +711,9 @@ class LocalMissionApiTests(unittest.TestCase):
         original = "Why do thin-film studies disagree about phase stability?"
         valid = {
             "candidates": [
-                {"question": "What evidence landscape defines reported thin-film phase outcomes?", "material": "thin films", "property": "reported phase outcomes", "scope": "studies and evidence boundaries", "kind": "survey"},
-                {"question": "Which comparable preparation and measurement conditions explain divergent thin-film reports?", "material": "thin films", "property": "reporting differences", "scope": "conditions and comparability", "kind": "contrast"},
-                {"question": "Which located observations distinguish competing explanations for the reported differences?", "material": "thin films", "property": "discriminating evidence", "scope": "source locations and review", "kind": "mechanism"},
+                {"question": "What evidence landscape defines reported thin-film phase stability?", "material": "thin films", "property": "phase stability", "scope": "studies and evidence boundaries", "kind": "survey"},
+                {"question": "Which comparable preparation and measurement conditions explain divergent thin-film phase-stability reports?", "material": "thin films", "property": "phase stability", "scope": "conditions and comparability", "kind": "contrast"},
+                {"question": "Which located observations distinguish competing explanations for thin-film phase stability?", "material": "thin films", "property": "phase stability", "scope": "source locations and review", "kind": "mechanism"},
             ]
         }
         result = _candidate_payload(valid, original_question=original)
@@ -724,6 +724,27 @@ class LocalMissionApiTests(unittest.TestCase):
         missing_focus = {"candidates": [{**item, "kind": "survey"} for item in valid["candidates"]]}
         with self.assertRaisesRegex(ValueError, "cover survey"):
             _candidate_payload(missing_focus, original_question=original)
+
+    def test_question_candidates_reject_routes_detached_from_explicit_material_and_property(self):
+        original = "BiFeO3的相转变温度是多少？"
+        detached = {
+            "candidates": [
+                {"question": "哪些文献提供了可定位的研究背景？", "material": "材料体系", "property": "研究背景", "scope": "文献梳理", "kind": "survey"},
+                {"question": "哪些条件可用于比较不同报告？", "material": "材料体系", "property": "可比性", "scope": "条件比较", "kind": "contrast"},
+                {"question": "哪些观测可区分竞争解释？", "material": "材料体系", "property": "解释", "scope": "原始证据", "kind": "mechanism"},
+            ]
+        }
+        with self.assertRaisesRegex(ValueError, "explicit material formula"):
+            _candidate_payload(detached, original_question=original)
+
+        wrong_property = {
+            "candidates": [
+                {"question": f"BiFeO3 {item['question']}", "material": "BiFeO3", "property": item["property"], "scope": item["scope"], "kind": item["kind"]}
+                for item in detached["candidates"]
+            ]
+        }
+        with self.assertRaisesRegex(ValueError, "target property"):
+            _candidate_payload(wrong_property, original_question=original)
 
     def test_question_candidates_require_explicit_model_consent(self):
         with patch("cosmatter.local_api.DeepSeekAdapter") as adapter:

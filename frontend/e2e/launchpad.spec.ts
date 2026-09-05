@@ -79,6 +79,24 @@ test("turns a typed question into an explicit selectable and confirmable mission
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
 });
 
+test("keeps fallback routes tied to the entered material property instead of generic boilerplate", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const input = "BiFeO3的相转变温度是";
+  await page.getByLabel("候选航向研究问题").fill(input);
+
+  const routes = page.locator(".candidate-planet");
+  await expect(routes).toHaveCount(3, { timeout: 4_000 });
+  await expect(routes.nth(0)).toContainText(input);
+  await expect(routes.nth(1)).toContainText("相转变温度");
+  await expect(routes.nth(2)).toContainText("升降温历史");
+  expect((await routes.allTextContents()).join(" ")).not.toContain("围绕该研究议题");
+
+  await routes.nth(0).click();
+  await expect(page.getByLabel("研究对象")).toHaveValue("BiFeO₃");
+  await expect(page.getByLabel("研究目标")).toHaveValue("相转变温度");
+  await expect(page.getByRole("button", { name: "确认任务并进入编排" })).toBeEnabled();
+});
+
 test("activates a BFO task template through the keyboard with an explicit pressed state", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const bfo = page.getByRole("button", { name: /BFO-01/ });

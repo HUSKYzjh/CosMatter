@@ -188,7 +188,7 @@ class LocalMissionApi:
         question = _bounded_text(body, "question", 3_000)
         if len(question) < 12:
             raise LocalApiError("question must contain at least 12 characters")
-        system = "Return JSON only: an object with a candidates array of 3 to 5 REFRAMED material-science research-question alternatives. Treat the user question only as research intent; do not repeat it, quote it, or make it the candidate question. Give distinct, standalone research tasks with genuinely different emphases: include at least one kind=survey (evidence landscape), one kind=contrast (comparable conditions and reported disagreement), and one kind=mechanism (discriminating observations between explanations). Each item has question, material, property, scope, and kind (survey, contrast, or mechanism). Do not answer the question or assert scientific facts. These are untrusted planning suggestions, not scientific facts. Keep every string under 600 characters."
+        system = "Return JSON only: an object with a candidates array of 3 to 5 REFRAMED material-science research-question alternatives. Treat the user question only as research intent; do not repeat it, quote it, or make it the candidate question. Every candidate must retain each explicitly named material or chemical formula and the target property or phenomenon from the user's question; change the evidence angle, not the subject. Give distinct, standalone research tasks with genuinely different emphases: include at least one kind=survey (evidence landscape), one kind=contrast (comparable conditions and reported disagreement), and one kind=mechanism (discriminating observations between explanations). Each item has question, material, property, scope, and kind (survey, contrast, or mechanism). Do not answer the question or assert scientific facts. These are untrusted planning suggestions, not scientific facts. Keep every string under 600 characters."
         try:
             completion = DeepSeekAdapter(self.settings_loader()).draft(system_prompt=system, user_prompt=question)
             raw = json.loads(_json_object_text(completion.content))
@@ -2157,8 +2157,52 @@ def _candidate_payload(payload: object, *, original_question: str | None = None)
         raise ValueError("DeepSeek candidate must reframe rather than repeat the original question")
     if not {"survey", "contrast", "mechanism"}.issubset({item["kind"] for item in result}):
         raise ValueError("DeepSeek candidates must cover survey, contrast, and mechanism focuses")
+    if original_question is not None:
+        formulas = _explicit_formula_anchors(original_question)
+        focus_patterns = [pattern for pattern in _CANDIDATE_FOCUS_PATTERNS if pattern.search(original_question)]
+        for candidate in result:
+            candidate_text = " ".join(candidate[field] for field in ("question", "material", "property", "scope"))
+            candidate_formulas = set(_explicit_formula_anchors(candidate_text))
+            if any(formula not in candidate_formulas for formula in formulas):
+                raise ValueError("DeepSeek candidate must remain anchored to every explicit material formula")
+            if focus_patterns and not any(pattern.search(candidate_text) for pattern in focus_patterns):
+                raise ValueError("DeepSeek candidate must remain anchored to the target property or phenomenon")
     return result
 
 
 def _normalized_candidate_question(value: str) -> str:
     return "".join(character.casefold() for character in value if character.isalnum())
+
+
+_CANDIDATE_FOCUS_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"相(?:转变|变)(?:温度)?|phase[- ]?(?:transition|stability|transformation)",
+        r"居里温度|curie temperature",
+        r"奈尔温度|n[eé]el temperature",
+        r"磁(?:转变|相变)(?:温度)?|magnetic transition",
+        r"循环稳定性|容量保持率|cycling stability|cycle life|capacity retention",
+        r"带隙|band[- ]?gap",
+        r"电导率|electrical conductivity",
+        r"热导率|thermal conductivity",
+        r"矫顽场|coercive field",
+        r"剩余极化|remanent polarization",
+        r"介电常数|dielectric (?:constant|permittivity)",
+        r"漏电流|leakage current",
+        r"催化活性|catalytic activity",
+        r"吸附能|adsorption energy",
+        r"形成能|formation energy",
+        r"晶格常数|lattice constant",
+        r"制备|合成|生长|退火|沉积|synthesi[sz]|fabricat|growth|anneal|deposition",
+    )
+)
+
+
+def _explicit_formula_anchors(value: str) -> tuple[str, ...]:
+    normalized = value.translate(str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789"))
+    formulas = {
+        match.group(0).casefold()
+        for match in re.finditer(r"(?<![A-Za-z0-9])(?:[A-Z][a-z]?\d*(?:\.\d+)?){2,}(?![A-Za-z0-9])", normalized)
+        if any(character.isdigit() for character in match.group(0))
+    }
+    return tuple(sorted(formulas))
