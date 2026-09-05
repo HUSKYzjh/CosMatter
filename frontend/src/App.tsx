@@ -44,6 +44,7 @@ import { createOperationActivity, type OperationActivity } from "./operationActi
 import { dispatchRecoveryItems } from "./dispatchRecovery";
 import { stageRecoveryNavigation } from "./stageRecoveryNavigation";
 import { ordinaryStatus, recoverableStatus } from "./statusRecovery";
+import { fetchServerUiPreview, serverUiPreviewRequested } from "./serverUiPreview";
 type Theme = "light" | "dark" | "eye";
 type View = "launch" | "discover" | "workflow" | "graph" | "reader" | "horizon";
 type RouteRecovery = { view: View; zh: string; en: string; contextZh?: string; contextEn?: string };
@@ -63,16 +64,19 @@ const GraphNetwork = lazy(() => import("./GraphNetwork").then((module) => ({ def
 const PaperReader = lazy(() => import("./PaperReader").then((module) => ({ default: module.PaperReader })));
 const ResearchExpansion = lazy(() => import("./ResearchExpansion").then((module) => ({ default: module.ResearchExpansion })));
 
-function localImportReceipt(file: File, imported: ImportedBundle): LocalImportReceipt {
+function bundleImportReceipt(fileName: string, byteLength: number, imported: ImportedBundle): LocalImportReceipt {
   return {
-    fileName: file.name.slice(0, 160) || "ui.json",
-    byteLength: Math.max(0, file.size),
+    fileName: fileName.slice(0, 160) || "ui.json",
+    byteLength: Math.max(0, byteLength),
     importedAt: Date.now(),
     generatedAt: imported.generatedAt,
     schemaVersion: imported.schemaVersion.slice(0, 80),
     visibleRecordCount: imported.stations.length + imported.facilities.length + imported.evidenceCards.length + imported.conditionMatrix.length + imported.researchGapCandidates.length + imported.literatureGraph.nodes.length,
     withheldAcceptedEvidenceCount: imported.importDiagnostics.withheldAcceptedEvidenceCount,
   };
+}
+function localImportReceipt(file: File, imported: ImportedBundle): LocalImportReceipt {
+  return bundleImportReceipt(file.name, file.size, imported);
 }
 function localImportSize(byteLength: number): string {
   if (byteLength < 1024) return `${byteLength} B`;
@@ -203,7 +207,9 @@ export function App() {
   const [theme, setTheme] = createSignal<Theme>("light");
   const [language, setLanguage] = createSignal(uiLanguage());
   const [view, setView] = createSignal<View>("launch");
-  const [launchPreview, setLaunchPreview] = createSignal(false);
+  const [launchPreview, setLaunchPreview] = createSignal(
+    serverUiPreviewRequested(window.location.search),
+  );
   const [launchNotice, setLaunchNotice] = createSignal<string | null>(null);
   const [activeOperation, setActiveOperation] = createSignal<OperationActivity | null>(null);
   const [status, setStatusRaw] = createSignal(text("当前显示本地演示工件；尚未发起网络请求。", "Showing local demonstration artifacts; no network request has been made."));
@@ -1660,8 +1666,33 @@ export function App() {
       : text(`已定位 Gap 所引用的 EvidenceCard ${evidence.evidenceId}；不同论文的私有 PDF 已移出当前会话，请在阅读页核对导入来源与条件。`, `Located Gap-linked EvidenceCard ${evidence.evidenceId}. Private PDFs for other papers were removed from this session; verify imported provenance and conditions in the reader.`));
     setView("reader");
   }
+  async function loadServerSelectedUiPreview() {
+    const queuedTaskEpoch = taskEpoch;
+    const result = await fetchServerUiPreview(window.location.search);
+    if (!result || !isCurrentTask(queuedTaskEpoch)) return;
+    // Validate before replacing any existing browser state. A malformed or
+    // unavailable server bundle must fail closed on the launch surface.
+    const imported = readBundle(result.payload);
+    if (!isCurrentTask(queuedTaskEpoch)) return;
+    const importEpoch = supersedeActiveRun();
+    clearRunScopedClientArtifacts();
+    setLiveRunId(null);
+    if (!isCurrentTask(importEpoch)) return;
+    applyImportedBundle(imported);
+    setUiImportReceipt(bundleImportReceipt("server-selected ui.json", result.byteLength, imported));
+    setLaunchPreview(true);
+    setView(hasNavigableLiteratureGraph(imported) ? "graph" : "workflow");
+    setStatus(text("已从本机预览服务载入脱敏 UI 工件；当前为只读模式，不会连接运行任务或执行外部操作。", "Loaded the redacted UI artifact from the local preview server in read-only mode; it is not connected to an executable run and performs no external operation."));
+  }
   onMount(() => {
     if (window.matchMedia("(max-width: 560px)").matches) setRailContextOpen(false);
+    if (!serverUiPreviewRequested(window.location.search)) return;
+    setUiImportPending(true);
+    const operationId = beginActiveOperation(text("正在载入本机预览工件", "Loading local preview artifact"), text("只读取固定同源 /ui.json；不会发送凭据、跟随重定向或调用提供方。", "Reading only the fixed same-origin /ui.json route; no credentials, redirects, or provider calls are allowed."));
+    void loadServerSelectedUiPreview().catch(() => {
+      setLaunchNotice(text("无法载入本机服务器选择的脱敏 UI 工件；页面已保持在安全起始状态。", "The redacted UI artifact selected by the local server could not be loaded; the page remains in its safe launch state."));
+      setStatus(text("本机只读预览载入失败；未替换当前工件，也未执行外部操作。", "The local read-only preview could not be loaded; no artifact was replaced and no external operation ran."));
+    }).finally(() => { setUiImportPending(false); finishActiveOperation(operationId); });
   });
 
   async function refreshLocalApiCapabilities() {

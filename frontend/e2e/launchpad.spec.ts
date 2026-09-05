@@ -99,6 +99,32 @@ test("keeps fallback routes tied to the entered material property instead of gen
   await expect(page.getByRole("button", { name: "确认任务并进入编排" })).toBeEnabled();
 });
 
+test("loads an explicitly server-selected UI bundle as a read-only literature map", async ({ page }) => {
+  const apiRequests: string[] = [];
+  page.on("request", (request) => { if (request.url().includes("/api/")) apiRequests.push(request.url()); });
+  await page.route("**/ui.json", async (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      schema_version: "1.0",
+      generated_at: "2026-09-05T00:00:00Z",
+      mission: { mission_id: "mission_server_preview", question: "BiFeO3 的相变温度是多少？", material: "BiFeO3", property_name: "相变温度", scope: "按样品状态与测量条件比较" },
+      literature_graph: {
+        trust_status: "metadata_only_navigation_not_scientific_evidence",
+        nodes: [{ node_id: "paper:bfo", kind: "candidate_paper", label: "Phase transitions in BiFeO3", trust_status: "candidate_metadata_not_scientific_evidence", source: "Sciverse" }],
+        edges: [],
+      },
+    }),
+  }));
+
+  await page.goto("/?ui=server&api=local", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".workbench")).toHaveClass(/view-graph/, lazyWorkspaceContentLoad);
+  await expect(page.getByText("只读预览：可查看阶段与空态")).toBeVisible();
+  await expect(page.locator(".fleet-reading-cards")).toContainText("Phase transitions in BiFeO3");
+  await expect(page.locator(".fleet-reading-cards")).toContainText("任务对象题名命中");
+  expect(apiRequests).toEqual([]);
+});
+
 test("labels a rejected model result and retries without silently presenting it as DeepSeek output", async ({ page }) => {
   let candidateRequests = 0;
   await page.route("**/api/status", async (route) => route.fulfill({
