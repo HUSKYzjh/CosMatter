@@ -85,7 +85,7 @@ const CONTEXT_ALIASES: ReadonlyArray<{ pattern: RegExp; aliases: readonly string
 
 function contextAnchorTerms(anchors: ReadingRouteTaskAnchors): string[] {
   const context = normalizeAnchorText(`${anchors.question ?? ""} ${anchors.property ?? ""} ${anchors.scope ?? ""}`);
-  const explicit = [...anchorTerms(anchors.property), ...anchorTerms(anchors.scope)];
+  const explicit = anchorTerms(anchors.property);
   const aliases = CONTEXT_ALIASES.flatMap((entry) => entry.pattern.test(context) ? entry.aliases : []);
   return [...new Set([...explicit, ...aliases].map(normalizeAnchorText).filter(Boolean))];
 }
@@ -122,7 +122,11 @@ function materialTitleMatches(title: string, material: string | null | undefined
   const materialCompact = normalizeAnchorText(material ?? "").replace(/\s+/g, "");
   if (materialCompact.includes("bifeo3")) {
     const titleCompact = normalizeAnchorText(title).replace(/\s+/g, "");
-    return titleCompact.includes("bismuthferrite") || /bi[a-z0-9]{0,14}fe[a-z0-9]{0,14}o3/.test(titleCompact);
+    const formulaText = title.normalize("NFKC").toLocaleLowerCase()
+      .replace(/<[^>]+>/g, "")
+      .replace(/\[!?\/?sub\]/g, "");
+    return titleCompact.includes("bismuthferrite")
+      || /\bbi[a-z0-9$_{}[\].!+\/\-−]{0,40}fe[a-z0-9$_{}[\].!+\/\-−]{0,40}o[a-z0-9$_{}[\].!+\/\-−]{0,12}3\b/.test(formulaText);
   }
   return formulas.length ? false : titleMatches(title, anchorTerms(material));
 }

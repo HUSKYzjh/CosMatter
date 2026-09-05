@@ -166,12 +166,13 @@ def command_assign_fleet(args: argparse.Namespace) -> int:
     assignment = MissionDispatcher.from_project().assign(brief, args.mission_type)
     run_id = args.run_id or brief.mission_id.replace("mission_", "run_")
     recorder = FlightRecorder(_runs_dir(), run_id)
+    current_state = _last_recorded_state(recorder.run_dir / "events.jsonl")
     assignment_path = recorder.run_dir / "fleet_assignment.json"
     assignment_path.write_text(json.dumps(assignment.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     recorder.record(
         event_type="fleet_assigned",
         actor="mission_dispatch",
-        state=MissionState.INTAKE,
+        state=current_state,
         payload=assignment.to_dict(),
     )
     _json_print(

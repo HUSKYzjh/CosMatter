@@ -35,7 +35,7 @@ from .gap_analysis import GapAnalysisError, load_gap_candidates
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance
 from .material_extraction import MaterialExtractionError, iter_material_facts, load_material_facts, validate_material_fact_source_links
 from .reading_guide import ReadingGuideError, load_reading_guide
-from .source_map import SourceMapError, iter_source_maps, load_source_map
+from .source_map import HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map
 from .paper_structure import PaperStructureError, iter_paper_structures, load_paper_structure
 from .relation_reconciliation import RelationReconciliationError, load_relation_reconciliation
 from .condition_normalization import ConditionNormalizationError, load_condition_normalization
@@ -1025,7 +1025,7 @@ def _sciverse_receipt_count(path: Path) -> int:
         if provider == "sciverse" and operation == "agentic_search":
             count += 1
         elif (provider == "sciverse" and operation == "content") or (
-            provider == "mineru" and operation in {"source_parse_submit", "source_parse_poll"}
+            provider == "mineru" and operation in {"source_parse_submit", "source_parse_poll", "source_parse_output_fetch"}
         ):
             continue
         else:
@@ -1240,7 +1240,15 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     simulation_evidence, simulation_evidence_delivery_status = _simulation_evidence_projection(run_dir, mission.mission_id)
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
-        source_maps = iter_source_maps(run_dir, mission.mission_id)
+        all_source_maps = iter_source_maps(run_dir, mission.mission_id)
+        # Automated-trial maps are valid private workflow artifacts, but they
+        # are not human-reviewed evidence.  Keep them out of every browser
+        # source-map, fact-link, and provenance projection while still
+        # allowing metadata-only candidates from the same run to be viewed.
+        source_maps = tuple(
+            source_map for source_map in all_source_maps
+            if source_map.get("trust_status") == HUMAN_SOURCE_MAP_TRUST_STATUS
+        )
         if any(
             decision.mission_id == mission.mission_id and decision.status is ReviewStatus.ACCEPTED
             for decision in verification_decisions

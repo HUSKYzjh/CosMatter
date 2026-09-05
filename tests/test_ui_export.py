@@ -96,6 +96,54 @@ class UiExportTests(unittest.TestCase):
         self.assertNotIn("private reviewer", serialised)
         self.assertNotIn("c" * 64, serialised)
 
+    def test_export_withholds_automated_trial_source_maps_but_keeps_candidate_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            self._write_run(runs_dir, "automated_trial_preview")
+            run_dir = runs_dir / "automated_trial_preview"
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps({
+                "candidates": [{
+                    "document_id": "doc_trial",
+                    "title": "Oxygen vacancy ordering in BiFeO3",
+                    "source": "Sciverse",
+                    "publication_year": 2025,
+                }],
+            }), encoding="utf-8")
+            automated_map = source_map_from_review(
+                mission_id="mission_ui_export_001",
+                document_id="doc_trial",
+                source_task={"document_id": "doc_trial", "provider": "mineru", "state": "done", "task_id": "task_trial"},
+                selection={"document_id": "doc_trial", "segments": [{
+                    "segment_id": "segment_trial",
+                    "locator": "page:4",
+                    "kind": "paragraph",
+                    "quote": "Private automated-trial excerpt that must stay outside the UI.",
+                }]},
+                trust_status=AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS,
+            )
+            write_source_map_for_document(run_dir, automated_map)
+            (run_dir / "provider_receipts.jsonl").write_text(
+                "\n".join(json.dumps(item) for item in (
+                    {"provider": "sciverse", "operation": "agentic_search"},
+                    {"provider": "mineru", "operation": "source_parse_output_fetch"},
+                )) + "\n",
+                encoding="utf-8",
+            )
+            export_run_to_ui(runs_dir, "automated_trial_preview")
+            bundle = json.loads((run_dir / "ui.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(bundle["reviewed_source_map_summary"], {
+            "document_count": 0,
+            "segment_count": 0,
+            "document_ids": [],
+        })
+        self.assertIsNone(bundle["paper_source_map"])
+        self.assertEqual(bundle["audit_summary"]["external_retrieval"]["sciverse_agentic_search_count"], 1)
+        self.assertTrue(any(node["label"] == "Oxygen vacancy ordering in BiFeO3" for node in bundle["literature_graph"]["nodes"]))
+        serialised = json.dumps(bundle, ensure_ascii=False)
+        self.assertNotIn("Private automated-trial excerpt", serialised)
+        self.assertNotIn("page:4", serialised)
+
     def test_maturity_registry_reaches_ui_only_after_a_bound_link_audit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runs_dir = Path(directory)

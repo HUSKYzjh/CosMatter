@@ -87,6 +87,22 @@ describe("readingRoute", () => {
       scope: "Bounded end-to-end provider test: DeepSeek-v4-flash planning plus Sciverse retrieval and one human-screened bounded full-text context; no scientific conclusion or automatic evidence acceptance.",
     });
     expect(legacyScopeRoute[0].titleAnchorMatch).toBe("material");
+
+    const defectRoute = readingRoute([
+      node("bfo-vacancy", "Thermodynamic stabilization of oxygen vacancies in BiFeO3"),
+      node("bafe", "Stability of oxygen-defective BaFeO3"),
+      node("photoanode", "Combined experimental and theoretical investigations of n-type BiFeO3 as a photoanode"),
+    ], {}, 6, {
+      material: "BiFeO3",
+      property: "defect-mediated phase stability",
+      question: "How do oxygen vacancies and substitution alter phase stability in BiFeO3?",
+      scope: "Compare synthesis and computational studies, with contradictory evidence retained.",
+    });
+    expect(defectRoute.map((entry) => [entry.documentId, entry.titleAnchorMatch])).toEqual([
+      ["bfo-vacancy", "material-and-context"],
+      ["photoanode", "material"],
+      ["bafe", "context"],
+    ]);
   });
 
   it("keeps unanchored candidates for review and never lets title anchors override workflow recovery", () => {
