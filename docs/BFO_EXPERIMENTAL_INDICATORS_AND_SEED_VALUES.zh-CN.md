@@ -88,7 +88,7 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 
 - `configs/bfo_p0_material_indicator_catalog.json`：冻结结构/相、铁电、输运和相变四个 P0 指标族，以及固定顺序的 12 个限定字段；`P_s`、`P_r`、`2P_r`、`E_c` 和 `2E_c` 使用不同 `indicator_id`。
 - `configs/bfo_p0_source_candidate_matrix.json`：为极化、应变相边界、高温相变和畴壁输运各登记一条主证据路线、一条独立来源路线和一条条件反例路线，共 12 篇原始实验论文候选；同时保存作者组独立性、样品/方法边界和公开全文替代路线状态。
-- `examples/frozen/bfo_p0_literature_observation_candidates.json`：把首批 P0 数值拆成逐观测记录。它们全部保持 `literature_mentioned + unreviewed + source_map_status=none`，只用于后续选文和人工核对。
+- `examples/frozen/bfo_p0_literature_observation_candidates.json`：把首批 P0 数值拆成逐观测记录。其中已经按原始态、淬火态和时效态分别登记 Bencan 等报告的导电畴壁占比 `69%`、`22%` 和 `59%`，并绑定各自热处理、c-AFM 偏压、扫描频率和统计口径；它们全部保持 `literature_mentioned + unreviewed + source_map_status=none`，只用于后续选文和人工核对。
 - `src/cosmatter/material_indicator_registry.py`：无依赖校验器，拒绝缺字段、越级成熟度、伪造 Source Map 绑定、非法单位和不完整的范围/误差语义。
 - `src/cosmatter/material_indicator_triage.py` 与 `tools/build_private_bfo_indicator_shortlist.py`：可对仓库外且哈希核验通过的整篇 MinerU Markdown 做确定性排序，不再受通用 48 段抽样限制；排序综合指标术语、数值/单位、测量条件、方法和限制语句，并对参考文献、引用型比较与非目标性质降权。每篇最多 2 段、全批最多 12 段；结果保留原文及双重哈希，只是私有导航候选，不是 Source Map 或证据。
 - `src/cosmatter/material_indicator_draft.py` 与 `tools/draft_private_bfo_indicator_values.py`：可在明确外发授权下把上述受控片段逐批交给 `deepseek-v4-flash`，只接受与文献、片段、指标、允许单位及固定 12 项条件严格绑定的 JSON；输出不含引文，仍是未审核草案。单条非法事实按固定原因码拒绝；同文献同指标且数值语义完全相同的重复候选会合并，同时保留辅助片段哈希。

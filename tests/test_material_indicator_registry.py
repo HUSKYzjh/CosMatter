@@ -43,6 +43,17 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         self.assertNotIn("polarization", ids)
         self.assertNotIn("coercive_field", ids)
 
+    def test_conductive_wall_fraction_is_not_domain_wall_conductivity(self) -> None:
+        indicators = {
+            item["indicator_id"]: item for item in self.catalog["indicators"]
+        }
+        fraction = indicators["conductive_domain_wall_fraction"]
+        conductivity = indicators["domain_wall_conductivity"]
+        self.assertEqual(fraction["quantity_kind"], "fraction")
+        self.assertEqual(fraction["canonical_unit"], "percent")
+        self.assertEqual(conductivity["quantity_kind"], "conductivity")
+        self.assertEqual(conductivity["canonical_unit"], "S/cm")
+
     def test_seed_observations_are_explicitly_unreviewed_literature_leads(self) -> None:
         self.assertEqual(
             self.seed["trust_status"],
@@ -58,6 +69,21 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
             self.assertIsNone(item["segment_id"])
             self.assertIsNone(item["locator"])
             self.assertIsNone(item["source_quote_sha256"])
+
+    def test_conductive_wall_fractions_remain_separate_condition_bound_observations(self) -> None:
+        observations = [
+            item for item in self.seed["observations"]
+            if item["indicator_id"] == "conductive_domain_wall_fraction"
+        ]
+        self.assertEqual([item["reported_value"] for item in observations], [69, 22, 59])
+        self.assertEqual({item["reported_unit"] for item in observations}, {"percent"})
+        self.assertEqual(len({item["qualifiers"]["preparation"] for item in observations}), 3)
+        self.assertTrue(all(
+            "not an absolute" in item["limitation"]
+            or "not an S/cm" in item["limitation"]
+            or "universal" in item["limitation"]
+            for item in observations
+        ))
 
     def test_missing_qualifier_is_rejected(self) -> None:
         candidate = copy.deepcopy(self.seed)
