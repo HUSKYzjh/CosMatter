@@ -121,7 +121,7 @@ test("loads an explicitly server-selected UI bundle as a read-only literature ma
   await expect(page.locator(".workbench")).toHaveClass(/view-graph/, lazyWorkspaceContentLoad);
   await expect(page.getByText("只读预览：可查看阶段与空态")).toBeVisible();
   await expect(page.locator(".fleet-reading-cards")).toContainText("Phase transitions in BiFeO3");
-  await expect(page.locator(".fleet-reading-cards")).toContainText("任务对象题名命中");
+  await expect(page.locator(".fleet-reading-cards")).toContainText("任务对象与维度双命中");
   expect(apiRequests).toEqual([]);
 });
 

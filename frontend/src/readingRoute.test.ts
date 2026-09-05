@@ -40,6 +40,29 @@ describe("readingRoute", () => {
     ]);
   });
 
+  it("uses bilingual task-context aliases and ranks double matches above broad material matches", () => {
+    const route = readingRoute([
+      node("material", "Atomic-scale growth of BiFeO3 nanoparticles"),
+      node("context", "Phase transitions in oxide perovskites"),
+      node("both", "Thermodynamic phase diagram for multiferroic BiFeO3"),
+      node("doped", "High-temperature magnetic behavior of Bi1-xCaxFeO3 ceramics"),
+      node("neel", "Néel transition in BiFeO3 ceramics"),
+      node("none", "Sodium ordering in layered oxides"),
+    ], {}, 6, {
+      material: "BiFeO₃",
+      property: "相转变温度、铁电居里温度与奈尔温度",
+    });
+
+    expect(route.map((entry) => [entry.documentId, entry.titleAnchorMatch])).toEqual([
+      ["both", "material-and-context"],
+      ["doped", "material-and-context"],
+      ["neel", "material-and-context"],
+      ["material", "material"],
+      ["context", "context"],
+      ["none", "none"],
+    ]);
+  });
+
   it("keeps unanchored candidates for review and never lets title anchors override workflow recovery", () => {
     const route = readingRoute([
       node("relevant", "Phase transitions in BiFeO3"),

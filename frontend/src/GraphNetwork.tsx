@@ -156,9 +156,10 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     };
     return t(...(labels[state ?? "untracked"]));
   };
-  const titleAnchorLabel = (match: "material" | "context" | "none") => ({
-    material: t("任务对象题名命中", "material title anchor"),
-    context: t("任务维度题名命中", "task-context title anchor"),
+  const titleAnchorLabel = (match: "material-and-context" | "context" | "material" | "none") => ({
+    "material-and-context": t("任务对象与维度双命中", "material + task-context title anchors"),
+    material: t("仅对象命中 · 研究维度待核对", "material only · task context needs review"),
+    context: t("仅维度命中 · 研究对象待核对", "task context only · material needs review"),
     none: t("题名未命中任务锚点 · 优先人工判读", "no task title anchor · review first"),
   }[match]);
   const routeActionLabel = (action: ReadingRouteAction) => ({

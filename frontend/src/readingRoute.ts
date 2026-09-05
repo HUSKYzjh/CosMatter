@@ -3,7 +3,7 @@ import type { LiteratureGraphNode } from "./model";
 import type { PaperWorkflowState } from "./paperWorkflowState";
 
 export type ReadingRouteAction = "recover-pdf" | "register-source-map" | "review-evidence" | "audit-provenance" | "verify-evidence" | "select-pdf" | "screen-paper" | "load-screening" | "wait-for-parse";
-export type TaskTitleAnchorMatch = "material" | "context" | "none";
+export type TaskTitleAnchorMatch = "material-and-context" | "context" | "material" | "none";
 
 export interface ReadingRouteTaskAnchors {
   material?: string | null;
@@ -47,9 +47,10 @@ const PRIORITY: Record<ReadingRouteAction, number> = {
 };
 
 const TITLE_ANCHOR_PRIORITY: Record<TaskTitleAnchorMatch, number> = {
-  material: 0,
-  context: 1,
-  none: 2,
+  "material-and-context": 0,
+  material: 1,
+  context: 2,
+  none: 3,
 };
 
 const GENERIC_ANCHOR_TERMS = new Set([
@@ -59,12 +60,33 @@ const GENERIC_ANCHOR_TERMS = new Set([
 
 function normalizeAnchorText(value: string): string {
   return value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
     .normalize("NFKC")
     .toLocaleLowerCase()
+    .replace(/\[!?\/?sub\]/g, "")
     .replace(/<[^>]+>/g, " ")
     .replace(/&(?:amp|lt|gt|quot|apos|nbsp|#\d+|#x[\da-f]+);/g, " ")
     .replace(/[^a-z0-9\u3400-\u9fff]+/g, " ")
     .trim();
+}
+
+const CONTEXT_ALIASES: ReadonlyArray<{ pattern: RegExp; aliases: readonly string[] }> = [
+  { pattern: /相转变|相变|phase transition/, aliases: ["phase transition", "phase transitions", "phase diagram", "structural transition", "structural transitions"] },
+  { pattern: /居里|curie/, aliases: ["curie", "ferroelectric transition", "ferroelectric transitions"] },
+  { pattern: /奈尔|neel/, aliases: ["neel", "antiferromagnetic transition", "antiferromagnetic transitions", "magnetic transition", "magnetic behavior", "magnetic ordering"] },
+  { pattern: /应变|strain/, aliases: ["strain", "strained", "epitaxial", "misfit"] },
+  { pattern: /氧空位|oxygen vacanc/, aliases: ["oxygen vacancy", "oxygen vacancies", "oxygen deficient", "vacancy ordering"] },
+  { pattern: /缺陷|defect/, aliases: ["defect", "defects", "disorder"] },
+  { pattern: /循环稳定性|cycling stability|cycle life/, aliases: ["cycling stability", "cycle life", "capacity retention"] },
+  { pattern: /带隙|band gap/, aliases: ["band gap", "electronic structure", "optical properties"] },
+];
+
+function contextAnchorTerms(anchors: ReadingRouteTaskAnchors): string[] {
+  const context = normalizeAnchorText(`${anchors.property ?? ""} ${anchors.scope ?? ""}`);
+  const explicit = [...anchorTerms(anchors.property), ...anchorTerms(anchors.scope)];
+  const aliases = CONTEXT_ALIASES.flatMap((entry) => entry.pattern.test(context) ? entry.aliases : []);
+  return [...new Set([...explicit, ...aliases].map(normalizeAnchorText).filter(Boolean))];
 }
 
 function anchorTerms(value: string | null | undefined): string[] {
@@ -78,9 +100,20 @@ function titleMatches(title: string, terms: readonly string[]): boolean {
   return terms.some((term) => normalizedTitle.includes(term) || compactTitle.includes(term.replace(/\s+/g, "")));
 }
 
+function materialTitleMatches(title: string, material: string | null | undefined): boolean {
+  if (titleMatches(title, anchorTerms(material))) return true;
+  const materialCompact = normalizeAnchorText(material ?? "").replace(/\s+/g, "");
+  if (!materialCompact.includes("bifeo3")) return false;
+  const titleCompact = normalizeAnchorText(title).replace(/\s+/g, "");
+  return titleCompact.includes("bismuthferrite") || /bi[a-z0-9]{0,14}fe[a-z0-9]{0,14}o3/.test(titleCompact);
+}
+
 function taskTitleAnchorMatch(title: string, anchors: ReadingRouteTaskAnchors): TaskTitleAnchorMatch {
-  if (titleMatches(title, anchorTerms(anchors.material))) return "material";
-  if (titleMatches(title, [...anchorTerms(anchors.property), ...anchorTerms(anchors.scope)])) return "context";
+  const materialMatches = materialTitleMatches(title, anchors.material);
+  const contextMatches = titleMatches(title, contextAnchorTerms(anchors));
+  if (materialMatches && contextMatches) return "material-and-context";
+  if (contextMatches) return "context";
+  if (materialMatches) return "material";
   return "none";
 }
 
@@ -96,7 +129,7 @@ export function readingRoute(
   limit = 6,
   taskAnchors: ReadingRouteTaskAnchors = {},
 ): ReadingRouteEntry[] {
-  return nodes.flatMap((node) => {
+  return nodes.flatMap((node, sourceOrder) => {
     const documentId = documentIdForReviewablePaper(node);
     const workflowState = paperStates[node.nodeId] ?? "untracked";
     if (!documentId || workflowState === "excluded") return [];
@@ -107,11 +140,19 @@ export function readingRoute(
       workflowState,
       action: ROUTE_ACTION[workflowState],
       titleAnchorMatch: taskTitleAnchorMatch(node.label, taskAnchors),
+      sourceOrder,
     }];
   }).sort((left, right) => PRIORITY[left.action] - PRIORITY[right.action]
       || TITLE_ANCHOR_PRIORITY[left.titleAnchorMatch] - TITLE_ANCHOR_PRIORITY[right.titleAnchorMatch]
-      || left.title.localeCompare(right.title)
-      || left.nodeId.localeCompare(right.nodeId))
+      || left.sourceOrder - right.sourceOrder)
     .slice(0, Math.max(0, limit))
-    .map((entry, index) => ({ ...entry, ordinal: index + 1 }));
+    .map((entry, index) => ({
+      ordinal: index + 1,
+      nodeId: entry.nodeId,
+      documentId: entry.documentId,
+      title: entry.title,
+      workflowState: entry.workflowState,
+      action: entry.action,
+      titleAnchorMatch: entry.titleAnchorMatch,
+    }));
 }
