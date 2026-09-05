@@ -39,6 +39,7 @@ from .source_map import HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_sour
 from .paper_structure import PaperStructureError, iter_paper_structures, load_paper_structure
 from .relation_reconciliation import RelationReconciliationError, load_relation_reconciliation
 from .condition_normalization import ConditionNormalizationError, load_condition_normalization
+from .delegated_trial import has_delegated_test_review_boundary
 from .evidence_maturity_registry import EvidenceMaturityRegistryError, audit_evidence_maturity_registry_against_runs, load_evidence_maturity_registry, validate_evidence_maturity_registry_audit
 from .verification import VerificationDecision
 from .citation_expansion import CitationExpansionError, validate_citation_expansion
@@ -1078,6 +1079,7 @@ def build_ui_bundle(
     simulation_campaign_delivery_status: str = "not_supplied",
     simulation_evidence: dict[str, Any] | None = None,
     simulation_evidence_delivery_status: str = "not_supplied",
+    delegated_test_boundary: bool = False,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -1136,6 +1138,7 @@ def build_ui_bundle(
     return {
         "schema_version": UI_SCHEMA_VERSION,
         "generated_at": utc_now(),
+        "delegated_test_boundary": delegated_test_boundary,
         "mission": {
             "mission_id": mission.mission_id,
             "question": mission.question,
@@ -1217,6 +1220,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     """Export one local run as a browser-safe JSON file and record only a summary."""
     safe_run_id = _safe_run_id(run_id)
     run_dir = runs_dir / safe_run_id
+    delegated_test_boundary = has_delegated_test_review_boundary(run_dir)
     mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
     assignment = _assignment_from_payload(_load_object(run_dir / "fleet_assignment.json", "fleet assignment artifact"))
     state = _last_recorded_state(run_dir / "events.jsonl")
@@ -1238,6 +1242,21 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     maturity_registry, maturity_delivery_status = _evidence_maturity_registry_projection(run_dir, runs_dir, mission.mission_id)
     simulation_campaign, simulation_campaign_delivery_status = _simulation_campaign_projection(run_dir, mission.mission_id)
     simulation_evidence, simulation_evidence_delivery_status = _simulation_evidence_projection(run_dir, mission.mission_id)
+    if delegated_test_boundary:
+        # Older delegated trials may contain artifacts that were written with
+        # human-looking labels while exercising the workflow.  The run-level
+        # marker is authoritative: retain only task and bibliographic metadata
+        # in the browser projection and never launder those artifacts into
+        # accepted evidence, findings, reports, evaluations, or simulations.
+        evidence_cards = ()
+        verification_decisions = ()
+        mission_report = None
+        condition_matrix = None
+        research_gap_candidates = None
+        timeline = []
+        maturity_registry, maturity_delivery_status = None, "not_supplied"
+        simulation_campaign, simulation_campaign_delivery_status = None, "not_supplied"
+        simulation_evidence, simulation_evidence_delivery_status = None, "not_supplied"
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         all_source_maps = iter_source_maps(run_dir, mission.mission_id)
@@ -1247,7 +1266,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         # allowing metadata-only candidates from the same run to be viewed.
         source_maps = tuple(
             source_map for source_map in all_source_maps
-            if source_map.get("trust_status") == HUMAN_SOURCE_MAP_TRUST_STATUS
+            if not delegated_test_boundary and source_map.get("trust_status") == HUMAN_SOURCE_MAP_TRUST_STATUS
         )
         if any(
             decision.mission_id == mission.mission_id and decision.status is ReviewStatus.ACCEPTED
@@ -1260,18 +1279,33 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
                 source_maps=source_maps,
             )
         paper_source_map = source_maps[0] if source_maps else None
-        paper_structures = iter_paper_structures(run_dir, mission.mission_id)
+        paper_structures = () if delegated_test_boundary else iter_paper_structures(run_dir, mission.mission_id)
         paper_structure = paper_structures[0] if paper_structures else None
-        material_fact_artifacts = iter_material_facts(run_dir, mission.mission_id)
+        material_fact_artifacts = () if delegated_test_boundary else iter_material_facts(run_dir, mission.mission_id)
         validate_material_fact_source_links(
             mission_id=mission.mission_id,
             artifacts=material_fact_artifacts,
             source_maps=source_maps,
         )
         material_facts = material_fact_artifacts[0] if material_fact_artifacts else None
-        relation_reconciliation = load_relation_reconciliation(run_dir / "relation_reconciliation.json", mission.mission_id)
-        condition_normalization = load_condition_normalization(run_dir / "condition_normalization.json", mission.mission_id)
+        relation_reconciliation = None if delegated_test_boundary else load_relation_reconciliation(run_dir / "relation_reconciliation.json", mission.mission_id)
+        condition_normalization = None if delegated_test_boundary else load_condition_normalization(run_dir / "condition_normalization.json", mission.mission_id)
         audit_summary = _audit_summary_from_run(run_dir, mission.mission_id)
+        if delegated_test_boundary:
+            audit_summary["report_evidence"] = None
+            audit_summary["evidence_provenance"] = None
+            audit_summary["submission_readiness"] = {
+                "question_set": None,
+                "frozen_corpus": None,
+                "human_annotation": None,
+                "bibliographic_source": None,
+            }
+            audit_summary["evaluation"] = {
+                "evidence_quality": None,
+                "retrieval": None,
+                "material_facts": None,
+                "research_gaps": None,
+            }
     except (ReadingGuideError, SourceMapError, PaperStructureError, MaterialExtractionError, ProvenanceAuditError, RelationReconciliationError, ConditionNormalizationError) as error:
         raise UiExportError(str(error)) from error
     bundle = build_ui_bundle(
@@ -1304,6 +1338,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         simulation_campaign_delivery_status=simulation_campaign_delivery_status,
         simulation_evidence=simulation_evidence,
         simulation_evidence_delivery_status=simulation_evidence_delivery_status,
+        delegated_test_boundary=delegated_test_boundary,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

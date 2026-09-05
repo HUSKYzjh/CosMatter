@@ -48,11 +48,18 @@ class SubmissionReadinessTests(unittest.TestCase):
                 (package / name).write_text("present\n", encoding="utf-8")
             (package / "citation_audit.json").write_text(json.dumps({"citation_bibliography_bijection": True}), encoding="utf-8")
             report = submission_readiness(repository_root=root, run_dir=run)
+            (run / "test_only_delegated_review.json").write_text(json.dumps({
+                "trust_status": "user_authorized_delegated_test_review_not_scientific_evidence",
+                "scientific_use_prohibited": True,
+            }), encoding="utf-8")
+            delegated_report = submission_readiness(repository_root=root, run_dir=run)
         self.assertTrue(report["ready"])
         self.assertTrue(report["checks"]["latex_main.pdf"])
         self.assertTrue(report["checks"]["run_external_resource_disclosure"])
         self.assertTrue(report["checks"]["key_parameters_declared"])
         self.assertTrue(report["checks"]["python_source_present"])
+        self.assertFalse(delegated_report["ready"])
+        self.assertFalse(delegated_report["checks"]["run_not_delegated_test_review"])
 
     def test_rejects_inconsistent_existing_real_evaluation_record(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

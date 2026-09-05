@@ -144,6 +144,77 @@ class UiExportTests(unittest.TestCase):
         self.assertNotIn("Private automated-trial excerpt", serialised)
         self.assertNotIn("page:4", serialised)
 
+    def test_delegated_trial_marker_overrides_legacy_human_labels_in_ui(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            self._write_run(runs_dir, "legacy_delegated_trial")
+            run_dir = runs_dir / "legacy_delegated_trial"
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps({
+                "candidates": [{
+                    "document_id": "doc_legacy",
+                    "title": "Strain-driven phase stability in BiFeO3",
+                    "source": "Sciverse",
+                    "publication_year": 2024,
+                }],
+            }), encoding="utf-8")
+            (run_dir / "test_only_delegated_review.json").write_text(json.dumps({
+                "schema_version": "1.0",
+                "trust_status": "user_authorized_delegated_test_review_not_scientific_evidence",
+                "scientific_use_prohibited": True,
+            }), encoding="utf-8")
+            (run_dir / "evidence_cards.json").write_text(json.dumps([{
+                "evidence_id": "legacy_evidence",
+                "claim": "Legacy delegated claim that must be withheld.",
+                "stance": "support",
+                "material": "BiFeO3",
+                "property_name": "phase stability",
+                "conditions": {"sample_form": "film"},
+                "quote": "Legacy delegated quote that must be withheld.",
+                "provenance": {
+                    "document_id": "doc_legacy",
+                    "locator": "page:7",
+                    "source": "fixture",
+                    "access_policy": "oa",
+                },
+            }]), encoding="utf-8")
+            (run_dir / "verification_decisions.json").write_text(json.dumps([{
+                "mission_id": "mission_ui_export_001",
+                "evidence_id": "legacy_evidence",
+                "status": "accepted",
+                "reason": "legacy delegated workflow exercise",
+            }]), encoding="utf-8")
+            write_source_map_for_document(run_dir, source_map_from_review(
+                mission_id="mission_ui_export_001",
+                document_id="doc_legacy",
+                source_task={"provider": "mineru", "task_id": "legacy_task", "state": "done", "document_id": "doc_legacy"},
+                selection={"document_id": "doc_legacy", "segments": [{
+                    "segment_id": "legacy_segment",
+                    "locator": "page:7",
+                    "kind": "paragraph",
+                    "quote": "Legacy delegated quote that must be withheld.",
+                }]},
+            ))
+            (run_dir / "condition_matrix.json").write_text(json.dumps([{
+                "condition_cluster": "legacy delegated comparison",
+                "supporting_evidence_ids": ["legacy_evidence"],
+                "contradicting_evidence_ids": ["legacy_evidence"],
+                "differing_fields": ["strain"],
+                "unknowns": [],
+            }]), encoding="utf-8")
+            export_run_to_ui(runs_dir, "legacy_delegated_trial")
+            bundle = json.loads((run_dir / "ui.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(bundle["evidence_cards"], [])
+        self.assertTrue(bundle["delegated_test_boundary"])
+        self.assertEqual(bundle["condition_matrix"], [])
+        self.assertEqual(bundle["reviewed_source_map_summary"]["segment_count"], 0)
+        self.assertIsNone(bundle["paper_source_map"])
+        self.assertTrue(any(node["label"] == "Strain-driven phase stability in BiFeO3" for node in bundle["literature_graph"]["nodes"]))
+        serialised = json.dumps(bundle, ensure_ascii=False)
+        self.assertNotIn("Legacy delegated claim", serialised)
+        self.assertNotIn("Legacy delegated quote", serialised)
+        self.assertNotIn("page:7", serialised)
+
     def test_maturity_registry_reaches_ui_only_after_a_bound_link_audit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runs_dir = Path(directory)

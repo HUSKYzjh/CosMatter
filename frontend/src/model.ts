@@ -155,6 +155,7 @@ export interface AuditSummary {
 export interface ImportedBundle {
   schemaVersion: string;
   generatedAt: string | null;
+  delegatedTestBoundary: boolean;
   mission: Mission;
   source: "demo" | "local-file" | "loopback";
   fleet: { displayName: string; missionType: string; releaseGate: string } | null;
@@ -640,6 +641,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
   return {
     schemaVersion: typeof root.schema_version === "string" ? root.schema_version : "unknown",
     generatedAt: generatedAt(root.generated_at),
+    delegatedTestBoundary: root.delegated_test_boundary === true,
     mission, source,
     fleet: rawFleet ? { displayName: typeof rawFleet.display_name_zh === "string" ? rawFleet.display_name_zh : typeof rawFleet.display_name_en === "string" ? rawFleet.display_name_en : "Unclassified fleet", missionType: typeof rawFleet.mission_type === "string" ? rawFleet.mission_type : "unknown", releaseGate: typeof rawFleet.release_gate === "string" ? rawFleet.release_gate : "unknown" } : null,
     status: rawStatus ? { missionState: typeof rawStatus.mission_state === "string" ? rawStatus.mission_state : "unknown", retryCount: typeof rawStatus.retry_count === "number" ? rawStatus.retry_count : 0, retryBudget: typeof rawStatus.retry_budget === "number" ? rawStatus.retry_budget : 0, returnReason: typeof rawStatus.return_reason === "string" ? rawStatus.return_reason : null } : null,

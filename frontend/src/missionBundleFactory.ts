@@ -10,6 +10,7 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
   return {
     schemaVersion: "1.0",
     generatedAt: null,
+    delegatedTestBoundary: false,
     mission,
     source: "local-file",
     fleet: null,

@@ -50,7 +50,7 @@ type View = "launch" | "discover" | "workflow" | "graph" | "reader" | "horizon";
 type RouteRecovery = { view: View; zh: string; en: string; contextZh?: string; contextEn?: string };
 type RootPdfMission = LaunchMission & { missionId: string };
 type RootPdfRetry = { file: File; mission: RootPdfMission };
-type LocalImportReceipt = { fileName: string; byteLength: number; importedAt: number; generatedAt: string | null; schemaVersion: string; visibleRecordCount: number; withheldAcceptedEvidenceCount: number };
+type LocalImportReceipt = { fileName: string; byteLength: number; importedAt: number; generatedAt: string | null; schemaVersion: string; visibleRecordCount: number; withheldAcceptedEvidenceCount: number; delegatedTestBoundary: boolean };
 const text = (zhText: string, enText: string) => uiLanguage() === "zh" ? zhText : enText;
 const SOURCES: Array<{ id: RetrievalSource; label: string; provider: string }> = [
   { id: "sciverse", label: "Sciverse", provider: "sciverse" },
@@ -73,6 +73,7 @@ function bundleImportReceipt(fileName: string, byteLength: number, imported: Imp
     schemaVersion: imported.schemaVersion.slice(0, 80),
     visibleRecordCount: imported.stations.length + imported.facilities.length + imported.evidenceCards.length + imported.conditionMatrix.length + imported.researchGapCandidates.length + imported.literatureGraph.nodes.length,
     withheldAcceptedEvidenceCount: imported.importDiagnostics.withheldAcceptedEvidenceCount,
+    delegatedTestBoundary: imported.delegatedTestBoundary,
   };
 }
 function localImportReceipt(file: File, imported: ImportedBundle): LocalImportReceipt {
@@ -1764,7 +1765,7 @@ export function App() {
       <section class="mission-identity" aria-label={text("当前任务", "Current mission")}>
         <small>{text("当前研究任务", "CURRENT MISSION")}</small><strong>{bundle().mission.material}</strong><span>{bundle().mission.property}</span><em>{bundle().status?.missionState ?? "LOCAL"}</em><Show when={taskArtifactLocked()}><b class="artifact-lock">{text("旧工件待重新核验", "ARTIFACTS REQUIRE RECHECK")}</b></Show>
       </section>
-      <Show when={uiImportReceipt()}>{(receipt) => <section class="rail-import-receipt" aria-label={text("当前本地工件", "Current local artifact")}><small>{text("当前本地工件 / 浏览器内存", "CURRENT LOCAL ARTIFACT / BROWSER MEMORY")}</small><strong>{receipt().fileName}</strong><p>{text(`工件自述版本 ${receipt().schemaVersion} · ${localImportTimestamp(receipt().generatedAt, language())}`, `Artifact-declared version ${receipt().schemaVersion} · ${localImportTimestamp(receipt().generatedAt, language())}`)}</p><span>{text(`${localImportSize(receipt().byteLength)} · ${receipt().visibleRecordCount} 个可显示数据项`, `${localImportSize(receipt().byteLength)} · ${receipt().visibleRecordCount} visible record(s)`)}</span><Show when={receipt().withheldAcceptedEvidenceCount > 0}><p>{text(`已安全隐藏 ${receipt().withheldAcceptedEvidenceCount} 条不符合 UI 证据边界的已接受卡片；未显示其内容。`, `${receipt().withheldAcceptedEvidenceCount} declared accepted card(s) were safely withheld by the UI boundary; their content is not shown.`)}</p></Show></section>}</Show>
+      <Show when={uiImportReceipt()}>{(receipt) => <section class="rail-import-receipt" aria-label={text("当前本地工件", "Current local artifact")}><small>{text("当前本地工件 / 浏览器内存", "CURRENT LOCAL ARTIFACT / BROWSER MEMORY")}</small><strong>{receipt().fileName}</strong><p>{text(`工件自述版本 ${receipt().schemaVersion} · ${localImportTimestamp(receipt().generatedAt, language())}`, `Artifact-declared version ${receipt().schemaVersion} · ${localImportTimestamp(receipt().generatedAt, language())}`)}</p><span>{text(`${localImportSize(receipt().byteLength)} · ${receipt().visibleRecordCount} 个可显示数据项`, `${localImportSize(receipt().byteLength)} · ${receipt().visibleRecordCount} visible record(s)`)}</span><Show when={receipt().delegatedTestBoundary}><p>{text("该运行已永久标记为受托技术试跑；仅显示任务与候选元数据，所有证据、结论、报告和发布资格均已隐藏。正式人审必须在新的非试跑任务中进行。", "This run is permanently marked as a delegated technical trial. Only task and candidate metadata are shown; evidence, findings, reports, and release eligibility are withheld. Formal human review must use a new non-trial run.")}</p></Show><Show when={receipt().withheldAcceptedEvidenceCount > 0}><p>{text(`已安全隐藏 ${receipt().withheldAcceptedEvidenceCount} 条不符合 UI 证据边界的已接受卡片；未显示其内容。`, `${receipt().withheldAcceptedEvidenceCount} declared accepted card(s) were safely withheld by the UI boundary; their content is not shown.`)}</p></Show></section>}</Show>
       <section class={`session-handoff state-${sessionHandoff().state}`} aria-label={text("当前审核锚点", "Current review anchor")}>
         <header><small>{text("当前审核锚点 / 只读", "CURRENT REVIEW ANCHOR / READ ONLY")}</small><span>{sessionHandoff().evidenceId ? text("EvidenceCard 已选", "EvidenceCard selected") : text("尚未选择 EvidenceCard", "No EvidenceCard selected")}</span></header>
         <strong>{sessionHandoffLabel(sessionHandoff().state)}</strong>

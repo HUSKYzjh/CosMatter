@@ -21,6 +21,15 @@ describe("readBundle", () => {
     expect(bundle.auditSummary.sciverseAgenticSearchCount).toBe(2);
     expect(bundle.auditSummary.evaluation.retrieval).toBeNull();
     expect(bundle.report?.summary).toBe("Approved");
+    expect(bundle.delegatedTestBoundary).toBe(false);
+  });
+
+  it("preserves an explicit delegated technical-trial boundary", () => {
+    const bundle = readBundle({
+      delegated_test_boundary: true,
+      mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
+    });
+    expect(bundle.delegatedTestBoundary).toBe(true);
   });
 
   it("projects only aggregate human-reviewed evaluation metrics", () => {

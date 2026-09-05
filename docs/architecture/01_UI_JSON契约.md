@@ -8,6 +8,7 @@
 - 不输出 PDF、HTML 全文、缓存或未获准的长摘录。
 - `evidence_cards` 只可含审核状态为 `accepted`、许可范围内的 `quote` 短摘录。首版导出器不从运行日志推断证据，因此默认是空数组。
 - `mission_report` 只有通过发布门禁后才可填充；首版默认为 `null`。
+- `delegated_test_boundary=true` 表示该运行带有永久受托技术试跑标记；此时导出器只保留任务和候选书目元数据，证据卡、来源片段、材料事实、条件矩阵、报告、评测与发布资格一律不投影。单个旧工件上的 `human_reviewed` 标签不能覆盖运行级边界。
 - UI 只显示 `status.mission_state` 等摘要；可投影固定白名单动作形成 `timeline`，但不展示 `events.jsonl` 的 actor、event ID、payload、请求记录、查询文本或审核理由。
 
 ## 顶层结构
@@ -16,6 +17,7 @@
 {
   "schema_version": "1.0",
   "generated_at": "2026-08-03T00:00:00+00:00",
+  "delegated_test_boundary": false,
   "mission": {"mission_id": "...", "question": "...", "material": "...", "property_name": "...", "scope": "...", "source_policy": "authorized"},
   "fleet_assignment": {"assignment_id": "...", "fleet_type": "route_diagnostics", "display_name_zh": "航道诊断舰队", "display_name_en": "Route Diagnostics Fleet", "mission_type": "literature_discrepancy", "reason": "...", "release_gate": "cross_check_review"},
   "status": {"mission_state": "INTAKE", "retry_count": 0, "retry_budget": 2, "return_reason": null},

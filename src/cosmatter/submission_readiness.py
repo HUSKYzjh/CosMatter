@@ -14,6 +14,7 @@ from .evaluation_operational_disclosure import (
 )
 from .evaluation_run_record import EvaluationRunRecordError, reviewed_evaluation_run_record
 from .corpus_preparation import CorpusPreparationError, load_corpus_manifest
+from .delegated_trial import has_delegated_test_review_boundary
 from .question_set import QuestionSetError, load_frozen_question_set_binding
 from .ui_export import UiExportError, _mission_from_payload
 
@@ -54,9 +55,12 @@ def submission_readiness(*, repository_root: Path, run_dir: Path | None = None) 
     checks["secrets_ignored"] = ".env" in ignored and "runs/" in ignored and ".private/" in ignored
     report_checks: dict[str, bool] = {}
     if run_dir is not None:
+        # A delegated technical trial cannot become a release candidate even
+        # when legacy files inside it carry human-looking trust labels.
         package = run_dir / "latex_submission"
         names = {"main.tex", "references.bib", "citation_audit.json", "latex_report_manifest.json", "main.pdf"}
         report_checks = {f"latex_{name}": (package / name).is_file() and (package / name).stat().st_size > 0 for name in names}
+        report_checks["run_not_delegated_test_review"] = not has_delegated_test_review_boundary(run_dir)
         audit = _load_json(package / "citation_audit.json") if report_checks["latex_citation_audit.json"] else None
         manifest = _load_json(package / "latex_report_manifest.json") if report_checks["latex_latex_report_manifest.json"] else None
         report_checks["latex_citation_bijection"] = isinstance(audit, dict) and audit.get("citation_bibliography_bijection") is True
