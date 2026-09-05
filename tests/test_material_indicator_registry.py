@@ -21,8 +21,10 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         self.expanded_catalog_path = AGENT_ROOT / "configs" / "bfo_experimental_indicator_catalog_v2.json"
         self.seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_p0_literature_observation_candidates.json"
         self.expanded_seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_expanded_literature_observation_candidates_v2.json"
+        self.remaining_seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_magnetic_optical_process_literature_observation_candidates_v2.json"
         self.source_matrix_path = AGENT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json"
         self.expanded_source_matrix_path = AGENT_ROOT / "configs" / "bfo_expanded_source_candidate_matrix_v2.json"
+        self.remaining_source_matrix_path = AGENT_ROOT / "configs" / "bfo_magnetic_optical_process_source_candidate_matrix_v2.json"
         self.catalog = load_material_indicator_catalog(self.catalog_path)
         self.expanded_catalog = load_material_indicator_catalog(self.expanded_catalog_path)
         self.seed = load_material_observation_set(self.seed_path, self.catalog)
@@ -30,9 +32,17 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
             self.expanded_seed_path,
             self.expanded_catalog,
         )
+        self.remaining_seed = load_material_observation_set(
+            self.remaining_seed_path,
+            self.expanded_catalog,
+        )
         self.source_matrix = load_material_source_candidate_matrix(self.source_matrix_path, self.catalog)
         self.expanded_source_matrix = load_material_source_candidate_matrix(
             self.expanded_source_matrix_path,
+            self.expanded_catalog,
+        )
+        self.remaining_source_matrix = load_material_source_candidate_matrix(
+            self.remaining_source_matrix_path,
             self.expanded_catalog,
         )
 
@@ -173,6 +183,81 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         self.assertEqual(probe["search_status"], "failed_closed")
         self.assertEqual(probe["content_status"], "not_attempted")
         self.assertIn("not_probed", probe["probe_scope"])
+
+    def test_remaining_v2_families_have_independent_routes_and_real_bounded_probe(self) -> None:
+        self.assertEqual(len(self.remaining_source_matrix["questions"]), 3)
+        self.assertEqual(
+            {question["question_id"] for question in self.remaining_source_matrix["questions"]},
+            {
+                "bfo_v2_spin_cycloid_period_boundary",
+                "bfo_v2_optical_gap_definition_and_morphology_boundary",
+                "bfo_v2_process_window_transferability",
+            },
+        )
+        for question in self.remaining_source_matrix["questions"]:
+            by_role = {
+                role: [
+                    source for source in question["source_candidates"]
+                    if source["role"] == role
+                ]
+                for role in (
+                    "primary_support", "independent_support",
+                    "boundary_counterexample",
+                )
+            }
+            self.assertTrue(all(by_role.values()))
+            self.assertTrue(
+                {source["independence_group"] for source in by_role["primary_support"]}
+                .isdisjoint({
+                    source["independence_group"]
+                    for source in by_role["independent_support"]
+                })
+            )
+        probe = self.remaining_source_matrix["provider_probe_summary"]
+        self.assertEqual(
+            (probe["search_status"], probe["content_status"]),
+            ("succeeded", "succeeded"),
+        )
+        self.assertIn("one_500_character_window_each", probe["probe_scope"])
+        self.assertIn("no_source_text_persisted", probe["probe_scope"])
+
+    def test_remaining_v2_observations_keep_state_and_definition_boundaries(self) -> None:
+        observations = self.remaining_seed["observations"]
+        self.assertEqual(len(observations), 15)
+        self.assertEqual(
+            {item["indicator_id"] for item in observations},
+            {
+                "cycloid_period", "direct_band_gap", "indirect_band_gap",
+                "growth_temperature", "oxygen_partial_pressure",
+                "annealing_temperature",
+            },
+        )
+        self.assertTrue(all(item["source_map_status"] == "none" for item in observations))
+        self.assertTrue(all(item["data_status"] == "not_checked" for item in observations))
+        self.assertTrue(all(item["maturity_level"] == "literature_mentioned" for item in observations))
+
+        haykal = [
+            item for item in observations
+            if item["normalized_doi"] == "10.1038/s41467-020-15501-8"
+        ]
+        self.assertEqual([item["reported_value"] for item in haykal], [78, 65, 84])
+        self.assertEqual(len({item["qualifiers"]["field_protocol"] for item in haykal}), 3)
+
+        nanoparticle_gaps = [
+            item for item in observations
+            if item["normalized_doi"] == "10.1021/acs.jpcc.6b08548"
+        ]
+        self.assertEqual(
+            [(item["indicator_id"], item["reported_value"]) for item in nanoparticle_gaps],
+            [("direct_band_gap", 2.17), ("indirect_band_gap", 1.84)],
+        )
+
+        plumes = [
+            item for item in observations
+            if item["indicator_id"] == "oxygen_partial_pressure"
+        ]
+        self.assertEqual([item["reported_value"] for item in plumes], [0.01, 0.4])
+        self.assertEqual({item["reported_unit"] for item in plumes}, {"mbar"})
 
     def test_seed_observations_are_explicitly_unreviewed_literature_leads(self) -> None:
         self.assertEqual(

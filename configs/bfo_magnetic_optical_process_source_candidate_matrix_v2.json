@@ -1,0 +1,180 @@
+{
+  "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+  "catalog_id": "bfo-experimental-indicators/v2",
+  "material_scope": "BiFeO3",
+  "trust_status": "source_candidates_not_screened_or_source_mapped",
+  "provider_probe_summary": {
+    "provider": "sciverse",
+    "operation": "semantic_search_and_bounded_content",
+    "search_status": "succeeded",
+    "content_status": "succeeded",
+    "probe_scope": "three_remaining_v2_queries_one_500_character_window_each_no_source_text_persisted"
+  },
+  "questions": [
+    {
+      "question_id": "bfo_v2_spin_cycloid_period_boundary",
+      "focus_indicator_ids": ["cycloid_period"],
+      "comparison_question_zh": "BFO 的自旋螺旋周期在块体、薄膜、不同应变和电场写入状态下是否保持不变？",
+      "source_candidates": [
+        {
+          "source_id": "sosnowska1982_jphysc_23_020",
+          "normalized_doi": "10.1088/0022-3719/15/23/020",
+          "title": "Spiral magnetic ordering in bismuth ferrite",
+          "year": 1982,
+          "role": "primary_support",
+          "independence_group": "sosnowska_neutron_bfo_1982",
+          "independence_note": "Original high-resolution time-of-flight neutron diffraction report of the long-period bulk cycloid.",
+          "sample_scope": "Bulk BiFeO3 specimen; exact physical form remains pending full-text Source Map review",
+          "method_scope": "High-resolution time-of-flight neutron diffraction and magnetic-peak splitting",
+          "reported_lead": "Cycloidal spiral period of 620 plus or minus 20 angstrom.",
+          "claim_boundary": "The diffraction-derived bulk period is not an unconditional thin-film value and its original angstrom uncertainty must be preserved.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "gross2017_nature23656",
+          "normalized_doi": "10.1038/nature23656",
+          "title": "Real-space imaging of non-collinear antiferromagnetic order with a single-spin magnetometer",
+          "year": 2017,
+          "role": "independent_support",
+          "independence_group": "jacques_nv_bfo_2017",
+          "independence_note": "Independent real-space experiment using a scanning nitrogen-vacancy magnetometer rather than neutron peak splitting.",
+          "sample_scope": "Thirty-two nanometre BiFeO3 film on SrRuO3 buffered DyScO3",
+          "method_scope": "Room-temperature scanning nitrogen-vacancy magnetometry with quantitative stray-field fitting",
+          "reported_lead": "Real-space spin-cycloid period of about 70 nanometres.",
+          "claim_boundary": "Approximate real-space fitting on one strained heterostructure is only a cross-method comparison, not exact reproduction of the bulk number.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "haykal2020_ncomms_15501",
+          "normalized_doi": "10.1038/s41467-020-15501-8",
+          "title": "Antiferromagnetic textures in BiFeO3 controlled by strain and electric field",
+          "year": 2020,
+          "role": "boundary_counterexample",
+          "independence_group": "haykal_thales_strain_bfo_2020",
+          "independence_note": "Independent substrate-strain series with local NV imaging and resonant X-ray scattering exposes state-dependent periods.",
+          "sample_scope": "Thirty to sixty nanometre BiFeO3 films on multiple scandate and SrTiO3 substrates spanning compressive to tensile strain",
+          "method_scope": "Scanning nitrogen-vacancy magnetometry, PFM writing and resonant elastic X-ray scattering",
+          "reported_lead": "Period changes from 78 plus or minus 5 to 65 plus or minus 2 nanometres after writing on DyScO3, and reaches 84 plus or minus 3 nanometres at plus 0.50 percent tensile strain.",
+          "claim_boundary": "Substrate strain, surface projection, ferroelectric domain state and electric writing are necessary grouping variables; one universal 62 nanometre value is invalid.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_v2_optical_gap_definition_and_morphology_boundary",
+      "focus_indicator_ids": ["direct_band_gap", "indirect_band_gap"],
+      "comparison_question_zh": "BFO 的直接和间接光学带隙如何受拟合定义、薄膜形貌、颗粒尺寸与化学计量影响？",
+      "source_candidates": [
+        {
+          "source_id": "prasad2023_acsaem_3c01926",
+          "normalized_doi": "10.1021/acsaem.3c01926",
+          "title": "Role of Excess Bi on the Properties and Performance of BiFeO3 Thin-Film Photocathodes",
+          "year": 2023,
+          "role": "primary_support",
+          "independence_group": "prasad_differ_bfo_photocathode_2023",
+          "independence_note": "Primary paired-composition thin-film study with direct Tauc analysis and independent stoichiometry measurements.",
+          "sample_scope": "About one-hundred nanometre sol-gel BiFeO3 films on FTO with nominal Bi to Fe ratios of 1 to 1 and 1.1 to 1",
+          "method_scope": "Transmission UV-visible spectroscopy and direct-transition Tauc fitting",
+          "reported_lead": "Both stoichiometric and excess-bismuth films yield a direct band gap of 2.7 electronvolts.",
+          "claim_boundary": "The equal value is specific to these porous films and a direct Tauc assumption; it does not prove morphology-independent or indirect-gap equality.",
+          "fulltext_route": "author_manuscript",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "yamada2014_prb_035133",
+          "normalized_doi": "10.1103/PhysRevB.89.035133",
+          "title": "Measurement of transient photoabsorption and photocurrent of BiFeO3 thin films: Evidence for long-lived trapped photocarriers",
+          "year": 2014,
+          "role": "independent_support",
+          "independence_group": "kanemitsu_kyoto_bfo_photo_2014",
+          "independence_note": "Independent optical and photocurrent experiment that explicitly classifies the observed gap as indirect.",
+          "sample_scope": "BiFeO3 thin films; substrate and thickness remain pending full-text Source Map review",
+          "method_scope": "Absorption spectroscopy, photocurrent and transient photoabsorption",
+          "reported_lead": "Indirect band-gap energy of about 2.4 electronvolts, with fast and slow carrier-decay components reported separately.",
+          "claim_boundary": "An indirect absorption and photocurrent onset cannot be substituted for the 2.7 electronvolt direct Tauc result.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "satar2016_jpcc_6b08548",
+          "normalized_doi": "10.1021/acs.jpcc.6b08548",
+          "title": "Experimental and First-Principles Investigations of Lattice Strain Effect on Electronic and Optical Properties of Biotemplated BiFeO3 Nanoparticles",
+          "year": 2016,
+          "role": "boundary_counterexample",
+          "independence_group": "satar_usm_biotemplate_bfo_2016",
+          "independence_note": "Independent nanoparticle experiment deliberately retained as a morphology and analysis boundary.",
+          "sample_scope": "Biotemplated rhombohedral BiFeO3 nanoparticles with an average crystallite size of 14.59 nanometres",
+          "method_scope": "Diffuse reflectance with Kubelka-Munk transformation and separate direct and indirect linear fits",
+          "reported_lead": "Direct and indirect optical gaps of 2.17 and 1.84 electronvolts, respectively.",
+          "claim_boundary": "Nanoparticle diffuse-reflectance fits cannot be pooled with transmission measurements on approximately one-hundred nanometre films.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_v2_process_window_transferability",
+      "focus_indicator_ids": ["growth_temperature", "oxygen_partial_pressure", "annealing_temperature"],
+      "comparison_question_zh": "BFO 的相纯工艺窗口能否跨 PLD 腔体、压力区间、衬底和溶液退火路线直接迁移？",
+      "source_candidates": [
+        {
+          "source_id": "bea2005_apl_2009808",
+          "normalized_doi": "10.1063/1.2009808",
+          "title": "Influence of parasitic phases on the properties of BiFeO3 epitaxial thin films",
+          "year": 2005,
+          "role": "primary_support",
+          "independence_group": "bea_thales_bfo_growth_2005",
+          "independence_note": "Primary PLD pressure-temperature growth map linked to phase, magnetic and local-conduction checks.",
+          "sample_scope": "Pulsed-laser-deposited BiFeO3 on 001 SrTiO3",
+          "method_scope": "Pressure-temperature growth map with XRD, magnetometry and conductive AFM",
+          "reported_lead": "Single-phase films occur near 580 degrees Celsius and 0.01 millibar; off-window films contain iron oxides or bismuth oxide.",
+          "claim_boundary": "The point is a chamber-, target- and substrate-bound process window, not a universal BFO recipe.",
+          "fulltext_route": "author_manuscript",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "daumont2009_jmmm_02_024",
+          "normalized_doi": "10.1016/j.jmmm.2009.02.024",
+          "title": "Growth and thermal stability of epitaxial BiFeO3 thin films",
+          "year": 2009,
+          "role": "independent_support",
+          "independence_group": "daumont_crismat_bfo_growth_2009",
+          "independence_note": "Independent PLD chamber and growth map on SrTiO3 with RHEED, AFM and XRD characterization.",
+          "sample_scope": "About two-hundred nanometre epitaxial BiFeO3 films on 001 SrTiO3",
+          "method_scope": "PLD scan over 600 to 700 degrees Celsius and 0.05 to 0.5 millibar oxygen",
+          "reported_lead": "High-quality epitaxial films are reported at 650 degrees Celsius and 0.4 millibar.",
+          "claim_boundary": "The different optimum from the 2005 map demonstrates that nominal temperature and oxygen pressure alone do not define transferable equivalence.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "gao2013_ceramint_04_058",
+          "normalized_doi": "10.1016/j.ceramint.2013.04.058",
+          "title": "Effects of annealing temperature on the microstructure, optical, ferroelectric and photovoltaic properties of BiFeO3 thin films prepared by sol-gel method",
+          "year": 2013,
+          "role": "boundary_counterexample",
+          "independence_group": "gao_solgel_bfo_2013",
+          "independence_note": "Independent solution route retained to prevent PLD substrate temperature from being conflated with post-deposition annealing.",
+          "sample_scope": "Sol-gel spin-coated BiFeO3 thin films annealed from 550 to 650 degrees Celsius",
+          "method_scope": "Annealing series with structure, optical, ferroelectric and photovoltaic characterization",
+          "reported_lead": "The 550 degree Celsius film is single phase, while higher annealing temperatures produce Bi2Fe4O9 and band gaps span 2.306 to 2.453 electronvolts.",
+          "claim_boundary": "Annealing temperature is not PLD growth temperature; precursor chemistry and thermal duration must be retained before process comparison.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    }
+  ]
+}
