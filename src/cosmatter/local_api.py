@@ -188,7 +188,7 @@ class LocalMissionApi:
         question = _bounded_text(body, "question", 3_000)
         if len(question) < 12:
             raise LocalApiError("question must contain at least 12 characters")
-        system = "Return JSON only: an object with a candidates array of 3 to 5 REFRAMED material-science research-question alternatives. Treat the user question only as research intent; do not repeat it, quote it, or make it the candidate question. The visible question field of EVERY candidate must itself name each explicitly stated material or chemical formula and the target property or phenomenon from the user's question; placing those anchors only in material, property, or scope is invalid. Change the evidence angle, not the subject. Give distinct, standalone research tasks with genuinely different emphases: include at least one kind=survey (evidence landscape), one kind=contrast (comparable conditions and reported disagreement), and one kind=mechanism (discriminating observations between explanations). Each item has question, material, property, scope, and kind (survey, contrast, or mechanism). Never use generic references such as 'this topic', 'the research question', or 'relevant evidence' in place of the named material and property. Do not answer the question or assert scientific facts. These are untrusted planning suggestions, not scientific facts. Keep every string under 600 characters."
+        system = "Return JSON only: an object with a candidates array of 3 to 5 REFRAMED material-science research-question alternatives. Write every candidate in the same natural language as the user's question. Treat the user question only as research intent; do not repeat it, quote it, or make it the candidate question. The visible question field of EVERY candidate must itself name each explicitly stated material or chemical formula and the target property or phenomenon from the user's question; placing those anchors only in material, property, or scope is invalid. Change the evidence angle, not the subject. Give distinct, standalone research tasks with genuinely different emphases: include at least one kind=survey (evidence landscape), one kind=contrast (comparable conditions and reported disagreement), and one kind=mechanism (discriminating observations between explanations). Each item has question, material, property, scope, and kind (survey, contrast, or mechanism). Never use generic references such as 'this topic', 'the research question', or 'relevant evidence' in place of the named material and property. Do not answer the question or assert scientific facts. These are untrusted planning suggestions, not scientific facts. Keep every string under 600 characters."
         try:
             completion = DeepSeekAdapter(self.settings_loader()).draft(system_prompt=system, user_prompt=question)
             raw = json.loads(_json_object_text(completion.content))
@@ -2160,6 +2160,7 @@ def _candidate_payload(payload: object, *, original_question: str | None = None)
     if original_question is not None:
         formulas = _explicit_formula_anchors(original_question)
         focus_patterns = [pattern for pattern in _CANDIDATE_FOCUS_PATTERNS if pattern.search(original_question)]
+        requires_chinese = bool(re.search(r"[\u3400-\u9fff]", original_question))
         for candidate in result:
             candidate_text = " ".join(candidate[field] for field in ("question", "material", "property", "scope"))
             candidate_formulas = set(_explicit_formula_anchors(candidate_text))
@@ -2168,6 +2169,8 @@ def _candidate_payload(payload: object, *, original_question: str | None = None)
             if focus_patterns and not any(pattern.search(candidate_text) for pattern in focus_patterns):
                 raise ValueError("DeepSeek candidate must remain anchored to the target property or phenomenon")
             visible_question = candidate["question"]
+            if requires_chinese and not re.search(r"[\u3400-\u9fff]", visible_question):
+                raise ValueError("DeepSeek candidate question must use the input question language")
             visible_formulas = set(_explicit_formula_anchors(visible_question))
             if any(formula not in visible_formulas for formula in formulas):
                 raise ValueError("DeepSeek candidate question must name every explicit material formula")

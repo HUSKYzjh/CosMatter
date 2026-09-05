@@ -758,6 +758,18 @@ class LocalMissionApiTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "candidate question must name every explicit material formula"):
             _candidate_payload(generic_questions, original_question=original)
 
+    def test_question_candidates_reject_english_routes_for_a_chinese_question(self):
+        original = "BiFeO3的相转变温度是多少？"
+        english_routes = {
+            "candidates": [
+                {"question": "Which BiFeO3 phase-transition-temperature reports define a comparable evidence landscape?", "material": "BiFeO3", "property": "相转变温度", "scope": "BiFeO3 相转变温度文献", "kind": "survey"},
+                {"question": "Which BiFeO3 phase-transition-temperature measurements remain comparable across sample conditions?", "material": "BiFeO3", "property": "相转变温度", "scope": "BiFeO3 相转变温度条件", "kind": "contrast"},
+                {"question": "Which BiFeO3 phase-transition-temperature observations distinguish competing mechanisms?", "material": "BiFeO3", "property": "相转变温度", "scope": "BiFeO3 相转变温度机制", "kind": "mechanism"},
+            ]
+        }
+        with self.assertRaisesRegex(ValueError, "input question language"):
+            _candidate_payload(english_routes, original_question=original)
+
     def test_question_candidates_require_explicit_model_consent(self):
         with patch("cosmatter.local_api.DeepSeekAdapter") as adapter:
             with self.assertRaisesRegex(LocalApiError, "explicit consent"):
