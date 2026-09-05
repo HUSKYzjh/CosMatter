@@ -57,6 +57,7 @@ from .local_corpus import LocalCorpusSearchError, candidates_from_local_source_i
 from .scibase_local import SciBaseLocalError, build_scibase_local_index, rows_from_scibase_parquet
 from .corpus_preparation import CorpusPreparationError, candidates_from_authorized_corpus_manifest, corpus_manifest_from_review, corpus_manifest_from_selection_review, corpus_selection_template_from_zotero_candidates, gold_standard_template_from_manifest, load_corpus_manifest, write_corpus_manifest, write_corpus_selection_template, write_gold_standard_template
 from .corpus_readiness import CorpusReadinessError, frozen_corpus_readiness, write_frozen_corpus_readiness
+from .question_set import QuestionSetError, bfo_question_set_review_template, freeze_reviewed_question_set, write_frozen_question_set, write_question_set_review_template
 from .annotation_coverage import AnnotationCoverageError, annotation_coverage_audit, write_annotation_coverage_audit
 from .bibliographic_source_coverage import (
     BibliographicSourceCoverageError,
@@ -2927,6 +2928,60 @@ def command_create_gold_standard_template(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_create_bfo_question_set_review_template(args: argparse.Namespace) -> int:
+    """Create BFO question proposals with every human-review field blank."""
+    try:
+        template = bfo_question_set_review_template(args.question_set_id)
+        path = write_question_set_review_template(Path(args.output), template)
+    except (OSError, QuestionSetError) as error:
+        _json_print({"error": str(error), "question_set_id": args.question_set_id})
+        return 2
+    _json_print({
+        "question_set_id": template["question_set_id"],
+        "question_count": len(template["questions"]),
+        "trust_status": template["trust_status"],
+        "review_template_path": str(path),
+    })
+    return 0
+
+
+def command_record_frozen_question_set(args: argparse.Namespace) -> int:
+    """Freeze only a complete human-reviewed question set for one evaluation run."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        review = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        frozen, audit = freeze_reviewed_question_set(
+            mission_id=mission.mission_id, mission_material=mission.material, review=review
+        )
+        frozen_path, audit_path = write_frozen_question_set(run_dir, frozen, audit)
+    except (OSError, json.JSONDecodeError, UiExportError, QuestionSetError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="human_reviewed_question_set_frozen",
+        actor="question_set_reviewer",
+        state=MissionState.HUMAN_REVIEW,
+        payload={
+            "question_set_id": frozen["question_set_id"],
+            "included_question_count": frozen["question_count"],
+            "excluded_question_count": audit["excluded_question_count"],
+            "question_set_sha256": frozen["question_set_sha256"],
+            "freeze_gate": audit["freeze_gate"],
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "question_set_id": frozen["question_set_id"],
+        "included_question_count": frozen["question_count"],
+        "excluded_question_count": audit["excluded_question_count"],
+        "freeze_gate": audit["freeze_gate"],
+        "frozen_question_set_path": str(frozen_path),
+        "question_set_review_audit_path": str(audit_path),
+    })
+    return 0
+
+
 def command_local_zotero_search(args: argparse.Namespace) -> int:
     try:
         candidates = candidates_from_zotero_export(Path(args.input), args.query, args.top_k)
@@ -3365,6 +3420,14 @@ def build_parser() -> argparse.ArgumentParser:
     corpus_manifest.add_argument("--run-id", required=True)
     corpus_manifest.add_argument("--input", required=True, help="reviewed bibliography JSON; document paths, attachments, and full text are prohibited")
     corpus_manifest.set_defaults(handler=command_record_corpus_manifest)
+    question_review = commands.add_parser("create-bfo-question-set-review-template", help="create eight BFO question proposals with blank human quality checks")
+    question_review.add_argument("--question-set-id", default="bfo-core-v1")
+    question_review.add_argument("--output", required=True, help="new JSON review file; existing files are never overwritten")
+    question_review.set_defaults(handler=command_create_bfo_question_set_review_template)
+    frozen_questions = commands.add_parser("record-frozen-question-set", help="freeze a complete human-reviewed question set and write a count-only review audit")
+    frozen_questions.add_argument("--run-id", required=True)
+    frozen_questions.add_argument("--input", required=True, help="complete human question review JSON; every proposal needs a decision, five checks, and a note")
+    frozen_questions.set_defaults(handler=command_record_frozen_question_set)
     gold_template = commands.add_parser("create-gold-standard-template", help="create blank human annotation slots from an authorized corpus manifest")
     gold_template.add_argument("--run-id", required=True)
     gold_template.set_defaults(handler=command_create_gold_standard_template)

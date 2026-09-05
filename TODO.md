@@ -36,6 +36,8 @@
 ## 评测与发布
 
 - [ ] 建立冻结问题集和人工核查记录。
+  - [x] 已提供 8 条分层 BFO 问题的空白审阅模板、五项问题质量检查、不可覆盖的冻结命令与聚合审计工件；空白或部分审阅不能冻结。
+  - [ ] 仍须由独立研究者逐题完成纳入决定、质量检查和理由，形成首份真实 `frozen_question_set.json`；模板或测试审阅不算人工核查。
 - [ ] 报告 Citation Precision、Condition Completeness、Contradiction Precision 与复跑一致性。
 - [x] 增加数据治理、评测和安全文档：[`docs/data-governance.md`](docs/data-governance.md)、[`docs/evaluation.md`](docs/evaluation.md) 与 [`SECURITY.md`](SECURITY.md) 已纳入 README，并由无私有路径/凭据的回归测试覆盖。
 - [x] 已选择 MIT 许可证，并确认仓库为公开状态；后续发布仍须逐次核对私有运行工件、受限 PDF 与密钥未进入版本库。
