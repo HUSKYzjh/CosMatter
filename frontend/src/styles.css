@@ -1112,6 +1112,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .question-review-import { display: grid; width: min(100%, 34rem); gap: .42rem; padding: .68rem .75rem; border: 1px dashed color-mix(in srgb, var(--signal-teal) 55%, var(--line)); color: var(--signal-teal); font-size: .82rem; font-weight: 750; }
 .question-review-import input { color: var(--muted); font-size: .78rem; }
 .question-review-import input::file-selector-button { margin-right: .65rem; padding: .42rem .62rem; border: 1px solid var(--signal-teal); color: var(--signal-teal); background: var(--surface); font-weight: 750; cursor: pointer; }
+.question-review-session-note { max-width: 61rem; margin: .55rem 0 0; color: var(--signal-teal) !important; font-size: .76rem !important; }
 .question-review-error { padding: .6rem .72rem; border-inline-start: 3px solid var(--signal-amber); color: var(--signal-amber) !important; background: color-mix(in srgb, var(--signal-amber) 7%, transparent); }
 .question-review-status { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-top: 1rem; padding: .75rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .question-review-status > div { display: grid; gap: .18rem; min-width: 0; }
@@ -1145,12 +1146,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .question-review-release p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.5; }
 .question-review-release .consent { max-width: none; font-size: .78rem; }
 .question-review-release .primary-action { white-space: nowrap; }
+.question-review-release > .question-review-actions { display: flex; align-items: end; justify-content: end; flex-wrap: wrap; gap: .45rem; }
+.question-review-actions > button:not(.primary-action) { padding: .5rem .6rem; border: 0; border-bottom: 1px solid var(--signal-amber); color: var(--signal-amber); background: transparent; font-size: .72rem; cursor: pointer; }
+.question-review-actions > button.clear-armed { border: 1px solid var(--signal-amber); background: color-mix(in srgb, var(--signal-amber) 9%, transparent); }
 
 @media (max-width: 880px) {
   .question-review-status { align-items: start; flex-direction: column; }
   .question-review-status dl { width: 100%; }
   .question-review-release { grid-template-columns: 1fr; align-items: start; }
-  .question-review-release .primary-action { justify-self: start; }
+  .question-review-release > .question-review-actions { justify-content: start; }
 }
 
 @media (max-width: 560px) {

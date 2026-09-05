@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 
 import {
   QUESTION_REVIEW_CHECKS,
@@ -19,31 +19,63 @@ const CHECK_LABELS: Record<QuestionReviewCheck, { zh: string; en: string }> = {
   avoids_assumed_answer: { zh: "未预设答案", en: "Does not assume an answer" },
 };
 
+const SESSION_DRAFT_KEY = "cosmatter.question-set-review-draft/v1";
+
 export function QuestionSetReviewDesk(props: { locale: "zh" | "en" }) {
   const tr = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const [draft, setDraft] = createSignal<QuestionSetReviewDraft | null>(null);
   const [fileName, setFileName] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [attested, setAttested] = createSignal(false);
+  const [clearArmed, setClearArmed] = createSignal(false);
+  const [sessionStatus, setSessionStatus] = createSignal<"saved" | "restored" | "unavailable" | null>(null);
   const readiness = createMemo(() => draft() ? questionSetReviewReadiness(draft()!) : null);
+
+  function persistSession(nextDraft: QuestionSetReviewDraft, nextFileName: string | null) {
+    try {
+      window.sessionStorage.setItem(SESSION_DRAFT_KEY, JSON.stringify({ draft: nextDraft, file_name: nextFileName }));
+      setSessionStatus("saved");
+    } catch {
+      setSessionStatus("unavailable");
+    }
+  }
+
+  onMount(() => {
+    let stored: string | null;
+    try {
+      stored = window.sessionStorage.getItem(SESSION_DRAFT_KEY);
+    } catch {
+      setSessionStatus("unavailable");
+      return;
+    }
+    if (!stored) return;
+    try {
+      const envelope = JSON.parse(stored) as { draft?: unknown; file_name?: unknown };
+      const restored = exportQuestionSetReviewDraft(parseQuestionSetReviewDraft(envelope.draft), false);
+      setDraft(restored);
+      setFileName(typeof envelope.file_name === "string" ? envelope.file_name.slice(0, 160) : null);
+      setSessionStatus("restored");
+    } catch {
+      try { window.sessionStorage.removeItem(SESSION_DRAFT_KEY); } catch { setSessionStatus("unavailable"); }
+    }
+  });
 
   async function importFile(file: File | undefined) {
     if (!file) return;
     setError(null);
     setAttested(false);
+    setClearArmed(false);
     if (file.size > 512 * 1024) {
-      setDraft(null);
-      setFileName(null);
       setError(tr("问题集审核文件不得超过 512 KiB。", "Question-set review files must not exceed 512 KiB."));
       return;
     }
     try {
-      const parsed = parseQuestionSetReviewDraft(JSON.parse(await file.text()));
+      const parsed = exportQuestionSetReviewDraft(parseQuestionSetReviewDraft(JSON.parse(await file.text())), false);
+      const boundedFileName = file.name.slice(0, 160);
       setDraft(parsed);
-      setFileName(file.name);
+      setFileName(boundedFileName);
+      persistSession(parsed, boundedFileName);
     } catch {
-      setDraft(null);
-      setFileName(null);
       setError(tr("所选文件不是受支持的问题集审核 JSON；没有导入任何内容。", "The selected file is not a supported question-set review JSON; nothing was imported."));
     }
   }
@@ -52,8 +84,26 @@ export function QuestionSetReviewDesk(props: { locale: "zh" | "en" }) {
     const current = draft();
     if (!current) return;
     const questions = current.questions.map((question, currentIndex) => currentIndex === index ? update(structuredClone(question)) : question);
-    setDraft({ ...current, questions });
+    const next = { ...current, questions };
+    setDraft(next);
+    persistSession(next, fileName());
     setAttested(false);
+    setClearArmed(false);
+  }
+
+  function clearSession() {
+    if (!clearArmed()) {
+      setClearArmed(true);
+      return;
+    }
+    let storageUnavailable = false;
+    try { window.sessionStorage.removeItem(SESSION_DRAFT_KEY); } catch { storageUnavailable = true; }
+    setDraft(null);
+    setFileName(null);
+    setError(null);
+    setAttested(false);
+    setClearArmed(false);
+    setSessionStatus(storageUnavailable ? "unavailable" : null);
   }
 
   function updateDecision(index: number, decision: QuestionReviewDecision) {
@@ -84,6 +134,7 @@ export function QuestionSetReviewDesk(props: { locale: "zh" | "en" }) {
       <span>{tr("选择问题集审核 JSON", "Select question-set review JSON")}</span>
       <input type="file" accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void importFile(file); }} />
     </label>
+    <Show when={sessionStatus()}>{(status) => <p class="question-review-session-note" role="status">{status() === "restored" ? tr("已恢复本浏览器会话中的审核草稿；独立审核声明需要重新确认。", "The review draft was restored from this browser session; independent-review attestation must be confirmed again.") : status() === "saved" ? tr("审核草稿已暂存在本浏览器会话中。", "The review draft is temporarily saved in this browser session.") : tr("浏览器会话暂存不可用；请及时导出本地草稿。", "Browser-session storage is unavailable; export a local draft promptly.")}</p>}</Show>
     <Show when={error()}>{(message) => <p class="question-review-error" role="alert">{message()}</p>}</Show>
     <Show when={draft()}>{(current) => <>
       <header class="question-review-status" aria-live="polite">
@@ -108,7 +159,7 @@ export function QuestionSetReviewDesk(props: { locale: "zh" | "en" }) {
       <section class="question-review-release">
         <div><small>{tr("冻结前人工门禁", "HUMAN GATE BEFORE FREEZE")}</small><strong>{readiness()!.readyForAttestation ? tr("内容完整；仍需独立审核声明", "Content complete; independent-review attestation remains") : tr("审核尚未完整", "Review remains incomplete")}</strong><p>{readiness()!.invalidIncludedCount ? tr(`有 ${readiness()!.invalidIncludedCount} 条纳入问题未通过全部五项检查。`, `${readiness()!.invalidIncludedCount} included question(s) do not pass all five checks.`) : readiness()!.includedCount < 3 ? tr("至少需要纳入三条问题。", "At least three questions must be included.") : tr("所有问题均须有决定、五项明确判断和非空理由。", "Every question needs a decision, five explicit checks, and a non-empty reason.")}</p></div>
         <label class="consent"><input type="checkbox" disabled={!readiness()!.readyForAttestation} checked={attested()} onChange={(event) => setAttested(event.currentTarget.checked)} />{tr("我确认这是独立研究者逐题完成的审核；导出仅供后续 CLI 冻结验证，不代表评测结果。", "I confirm that an independent researcher reviewed every question. The export is only for subsequent CLI freeze validation and is not an evaluation result.")}</label>
-        <button type="button" class="primary-action" onClick={exportReview}>{attested() && readiness()!.readyForAttestation ? tr("导出可冻结审核 JSON", "Export freeze-eligible review JSON") : tr("导出本地审核草稿", "Export local review draft")}</button>
+        <div class="question-review-actions"><button type="button" classList={{ "clear-armed": clearArmed() }} onClick={clearSession}>{clearArmed() ? tr("再次点击确认清除", "Click again to confirm clear") : tr("清除本会话草稿", "Clear session draft")}</button><button type="button" class="primary-action" onClick={exportReview}>{attested() && readiness()!.readyForAttestation ? tr("导出可冻结审核 JSON", "Export freeze-eligible review JSON") : tr("导出本地审核草稿", "Export local review draft")}</button></div>
       </section>
     </>}</Show>
   </details>;

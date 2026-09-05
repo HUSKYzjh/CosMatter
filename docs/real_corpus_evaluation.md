@@ -27,9 +27,10 @@ quality-check-failing included questions. It writes an immutable
 The review file remains the human-editable source and must not be replaced by a
 test fixture or an automatically asserted review.
 
-The Research Extension page now includes a local **Human question-set review
-desk**. Open it, explicitly select the generated review JSON, and complete the
-decision, five checks, and review note for every question. The attestation
+The Mission Definition page now includes a local **Human question-set review
+desk** before any evidence or evaluation gate. Open it, explicitly select the
+generated review JSON, and complete the decision, five checks, and review note
+for every question. The attestation
 control remains disabled until all questions are decided, every check is an
 explicit Boolean, every note is nonempty, at least three questions are
 included, and every included question passes all five checks. Any subsequent
@@ -38,11 +39,17 @@ independent-review attestation, export preserves
 `blank_human_question_set_review_not_frozen`; only a complete attested export
 uses `human_reviewed_question_set_for_evaluation`.
 
-This desk is only a browser-local editor: it makes no API request, does not
-upload or retain the selected file, cannot write into `runs`, and cannot freeze
+This desk is only a browser-local editor: it makes no API request, never uploads
+the selected file, cannot write into `runs`, and cannot freeze
 a question set. Treat its export as input to the same
 `record-frozen-question-set` command above. The CLI remains the authoritative
 mission/material/schema gate and creates the immutable count/hash-bound pair.
+The draft is temporarily copied to same-origin browser `sessionStorage` so a
+page refresh or route change does not erase a long review. Attestation is never
+persisted and must be confirmed again after restoration. Imported and restored
+drafts are normalized back to the not-frozen trust state. The reviewer can clear
+the session copy with a two-click confirmation; exporting a JSON remains the
+only durable save.
 
 This workflow prepares the real 90-paper BiFeO3 evaluation cohort without reading a PDF directory, collecting local paths, or redistributing institutional full text. The reviewer first creates a bibliography-only JSON selection with one stable document_id per authorized paper. The full Zotero-to-review path, including the private selection-template boundary, is in [the corpus-onboarding guide](corpus_onboarding.zh-CN.md).
 
@@ -164,7 +171,8 @@ ready state explicitly means question-level evaluation may begin—not that any
 metric has been generated.
 
 The local question-set review desk is intentionally separate from this safe
-aggregate projection. It is an opt-in private editing surface, while the
+aggregate projection and from the Research Extension evidence gate. It is an
+opt-in private editing surface available during task definition, while the
 ordinary imported UI bundle continues to expose aggregate readiness only.
 
 ## Human evidence-quality review

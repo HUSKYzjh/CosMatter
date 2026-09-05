@@ -246,23 +246,8 @@ test("reviews a local question set without network activity or implicit approval
   page.on("request", (request) => {
     if (new URL(request.url()).pathname.startsWith("/api/")) apiRequests.push(request.url());
   });
-  const importInput = await openEditableTaskDefinition(page);
-  await importInput.setInputFiles({
-    name: "question-review-route.json",
-    mimeType: "application/json",
-    buffer: Buffer.from(JSON.stringify({
-      schema_version: "1.0",
-      mission: { mission_id: "question-review-demo", question: "Review a bounded BiFeO3 question set.", material: "BiFeO3", property_name: "phase transition", scope: "local UI fixture" },
-      audit_summary: {
-        submission_readiness: {
-          question_set: { reviewed_question_count: 8, included_question_count: 7, excluded_question_count: 1, included_evidence_level_counts: { literature_mentioned: 1, data_supported: 4, reproducible: 1, already_reproduced: 1 }, freeze_gate: "ready_for_question_level_evaluation_not_metrics" },
-          frozen_corpus: { expected_document_count: 90, frozen_document_count: 90, expected_count_matched: true, document_id_uniqueness_valid: true, doi_present_count: 88, doi_missing_count: 2, authorized_access_boundary_valid: true, evaluation_gate: "ready_for_private_human_annotation" },
-        },
-      },
-    })),
-  });
-  await page.getByRole("button", { name: "05 研究拓展" }).click();
-  await expect(page.locator(".workbench")).toHaveClass(/view-horizon/, workspaceLoad);
+  await openMissionDefinitionWithPendingArtifacts(page);
+  await expect(page.locator(".workbench")).toHaveClass(/view-discover/, workspaceLoad);
 
   const desk = page.getByLabel("冻结问题集人工审核台");
   await desk.locator("summary").click();
@@ -305,6 +290,22 @@ test("reviews a local question set without network activity or implicit approval
   await expect(desk.getByRole("button", { name: "导出本地审核草稿" })).toBeVisible();
   await attestation.check();
   await expect(desk.getByRole("button", { name: "导出可冻结审核 JSON" })).toBeVisible();
+  await page.getByRole("button", { name: /^02 受控编排/ }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await page.getByRole("button", { name: /^01 任务定义/ }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-discover/, workspaceLoad);
+  await desk.locator("summary").click();
+  await expect(desk).toContainText("已恢复本浏览器会话中的审核草稿");
+  await expect(desk.locator(".question-review-item").first().locator("select").first()).toHaveValue("include");
+  await expect(desk.locator(".question-review-release input[type=checkbox]")).not.toBeChecked();
+  await expect(desk.getByRole("button", { name: "导出本地审核草稿" })).toBeVisible();
+  await desk.locator("input[type=file]").setInputFiles({ name: "invalid-review.json", mimeType: "application/json", buffer: Buffer.from("{not-json") });
+  await expect(desk.getByRole("alert")).toContainText("没有导入任何内容");
+  await expect(desk.locator(".question-review-item")).toHaveCount(3);
+  await desk.getByRole("button", { name: "清除本会话草稿" }).click();
+  await expect(desk.locator(".question-review-item")).toHaveCount(3);
+  await desk.getByRole("button", { name: "再次点击确认清除" }).click();
+  await expect(desk.locator(".question-review-item")).toHaveCount(0);
   expect(apiRequests).toEqual([]);
 });
 
