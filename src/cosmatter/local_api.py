@@ -188,7 +188,7 @@ class LocalMissionApi:
         question = _bounded_text(body, "question", 3_000)
         if len(question) < 12:
             raise LocalApiError("question must contain at least 12 characters")
-        system = "Return JSON only: an object with a candidates array of 3 to 5 REFRAMED material-science research-question alternatives. Write every candidate in the same natural language as the user's question. Treat the user question only as research intent; do not repeat it, quote it, or make it the candidate question. The visible question field of EVERY candidate must itself name each explicitly stated material or chemical formula and the target property or phenomenon from the user's question; placing those anchors only in material, property, or scope is invalid. Change the evidence angle, not the subject. Give distinct, standalone research tasks with genuinely different emphases: include at least one kind=survey (evidence landscape), one kind=contrast (comparable conditions and reported disagreement), and one kind=mechanism (discriminating observations between explanations). Each item has question, material, property, scope, and kind (survey, contrast, or mechanism). Never use generic references such as 'this topic', 'the research question', or 'relevant evidence' in place of the named material and property. Do not answer the question or assert scientific facts. These are untrusted planning suggestions, not scientific facts. Keep every string under 600 characters."
+        system = "Return JSON only: an object with a candidates array of 3 to 5 REFRAMED material-science research-question alternatives. Write every candidate in the same natural language as the user's question. Treat the user question only as research intent; do not repeat it, quote it, or make it the candidate question. The visible question field of EVERY candidate must itself name each explicitly stated material or chemical formula and the target property or phenomenon from the user's question; placing those anchors only in material, property, or scope is invalid. Change the evidence angle, not the subject. Give distinct, standalone, directly searchable research tasks with genuinely different emphases: include at least one kind=survey that names concrete reported values, ranges, methods, sample states, or primary signals; one kind=contrast that names concrete conditions to align; and one kind=mechanism that names observations or controls able to distinguish explanations. Each visible question must contain route-specific variables or observables, not merely words such as literature, evidence, conditions, reports, or competing explanations. Each item has question, material, property, scope, and kind (survey, contrast, or mechanism). Never use generic references such as 'this topic', 'the research question', or 'relevant evidence' in place of the named material and property. Do not answer the question or assert scientific facts. These are untrusted planning suggestions, not scientific facts. Keep every string under 600 characters."
         try:
             completion = DeepSeekAdapter(self.settings_loader()).draft(system_prompt=system, user_prompt=question)
             raw = json.loads(_json_object_text(completion.content))
@@ -2176,11 +2176,37 @@ def _candidate_payload(payload: object, *, original_question: str | None = None)
                 raise ValueError("DeepSeek candidate question must name every explicit material formula")
             if focus_patterns and not any(pattern.search(visible_question) for pattern in focus_patterns):
                 raise ValueError("DeepSeek candidate question must name the target property or phenomenon")
+            if not _candidate_question_has_route_detail(candidate["kind"], visible_question):
+                raise ValueError("DeepSeek candidate question must name concrete route variables or observables")
     return result
 
 
 def _normalized_candidate_question(value: str) -> str:
     return "".join(character.casefold() for character in value if character.isalnum())
+
+
+_CANDIDATE_ROUTE_DETAIL_PATTERNS = {
+    "survey": re.compile(
+        r"温区|数值|相结构|晶体结构|样品|谱线|曲线|循环数|倍率|电压窗口|前驱体|化学计量|"
+        r"range|value|phase assignment|crystal structure|sample|spectr|curve|cycle count|current rate|voltage window|precursor|stoichiometry|method",
+        re.IGNORECASE,
+    ),
+    "contrast": re.compile(
+        r"体相|单晶|陶瓷|薄膜|应变|升温|降温|气氛|载量|倍率|电压窗口|接触|频率|边界条件|"
+        r"bulk|single crystal|ceramic|thin[- ]?film|strain|heating|cooling|atmosphere|loading|current rate|voltage window|contact|frequency|boundary condition|preparation|measurement",
+        re.IGNORECASE,
+    ),
+    "mechanism": re.compile(
+        r"原始|信号|衍射|谱线|曲线|对照|证伪|分解|伪影|结构|化学|循环后|"
+        r"raw|signal|diffraction|spectr|curve|control|falsif|decomposition|artefact|artifact|structural|chemical|post[- ]?test|observation",
+        re.IGNORECASE,
+    ),
+}
+
+
+def _candidate_question_has_route_detail(kind: str, question: str) -> bool:
+    pattern = _CANDIDATE_ROUTE_DETAIL_PATTERNS.get(kind)
+    return bool(pattern and pattern.search(question))
 
 
 _CANDIDATE_FOCUS_PATTERNS = tuple(

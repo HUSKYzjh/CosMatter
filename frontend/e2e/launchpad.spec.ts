@@ -74,6 +74,8 @@ test("turns a typed question into an explicit selectable and confirmable mission
   await expect(confirm).toBeDisabled();
 
   await page.getByLabel("研究对象").fill("BiFeO₃ 外延薄膜");
+  await expect(confirm).toBeDisabled();
+  await page.getByLabel("任务简报研究问题").fill("BiFeO₃ 外延薄膜的相稳定性在不同应变条件下如何变化？");
   await expect(confirm).toBeEnabled();
   await confirm.click();
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
@@ -86,12 +88,15 @@ test("keeps fallback routes tied to the entered material property instead of gen
 
   const routes = page.locator(".candidate-planet");
   await expect(routes).toHaveCount(3, { timeout: 4_000 });
-  await expect(routes.nth(0)).toContainText(input);
-  await expect(routes.nth(1)).toContainText("相转变温度");
-  await expect(routes.nth(2)).toContainText("升降温历史");
+  await expect(routes.nth(0)).toContainText("BiFeO₃");
+  await expect(routes.nth(0)).toContainText("转变温区");
+  await expect(routes.nth(1)).toContainText("体相、陶瓷与薄膜");
+  await expect(routes.nth(2)).toContainText("材料分解与测量伪影");
   await expect(page.getByRole("status", { name: "候选生成来源" })).toContainText("本地问题绑定回退");
   await expect(page.getByRole("status", { name: "候选生成来源" })).toContainText("未连接本机候选生成 API");
-  expect((await routes.allTextContents()).join(" ")).not.toContain("围绕该研究议题");
+  const visibleRoutes = (await routes.allTextContents()).join(" ");
+  expect(visibleRoutes).not.toContain("围绕该研究议题");
+  expect(visibleRoutes).not.toContain("需要优先核对哪些可定位的原文证据");
 
   await routes.nth(0).click();
   await expect(page.getByLabel("研究对象")).toHaveValue("BiFeO₃");

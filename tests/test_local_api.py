@@ -711,7 +711,7 @@ class LocalMissionApiTests(unittest.TestCase):
         original = "Why do thin-film studies disagree about phase stability?"
         valid = {
             "candidates": [
-                {"question": "What evidence landscape defines reported thin-film phase stability?", "material": "thin films", "property": "phase stability", "scope": "studies and evidence boundaries", "kind": "survey"},
+                {"question": "Which phase assignments, sample states, and primary structural signals define reported thin-film phase stability?", "material": "thin films", "property": "phase stability", "scope": "studies and evidence boundaries", "kind": "survey"},
                 {"question": "Which comparable preparation and measurement conditions explain divergent thin-film phase-stability reports?", "material": "thin films", "property": "phase stability", "scope": "conditions and comparability", "kind": "contrast"},
                 {"question": "Which located observations distinguish competing explanations for thin-film phase stability?", "material": "thin films", "property": "phase stability", "scope": "source locations and review", "kind": "mechanism"},
             ]
@@ -756,6 +756,18 @@ class LocalMissionApiTests(unittest.TestCase):
             ]
         }
         with self.assertRaisesRegex(ValueError, "candidate question must name every explicit material formula"):
+            _candidate_payload(generic_questions, original_question=original)
+
+    def test_question_candidates_reject_anchored_but_procedural_boilerplate(self):
+        original = "BiFeO3的相转变温度是多少？"
+        generic_questions = {
+            "candidates": [
+                {"question": "BiFeO3相转变温度的现有文献、报告结论与证据边界是什么？", "material": "BiFeO3", "property": "相转变温度", "scope": "BiFeO3 相转变温度文献", "kind": "survey"},
+                {"question": "BiFeO3相转变温度有哪些可比较的制备、几何、环境与测量条件？", "material": "BiFeO3", "property": "相转变温度", "scope": "BiFeO3 相转变温度条件", "kind": "contrast"},
+                {"question": "区分BiFeO3相转变温度竞争解释前需要核对哪些相关证据？", "material": "BiFeO3", "property": "相转变温度", "scope": "BiFeO3 相转变温度证据", "kind": "mechanism"},
+            ]
+        }
+        with self.assertRaisesRegex(ValueError, "concrete route variables or observables"):
             _candidate_payload(generic_questions, original_question=original)
 
     def test_question_candidates_reject_english_routes_for_a_chinese_question(self):

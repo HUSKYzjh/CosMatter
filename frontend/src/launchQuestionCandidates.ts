@@ -21,16 +21,11 @@ export function questionBoundFallbackCandidates(question: string, language: "zh"
   const material = researchObjectFromQuestion(normalized) ?? (language === "zh" ? "输入中的研究对象，待人工确认" : "Research object in the prompt; confirm manually");
   const focus = questionFocus(normalized, language);
   const focusKind = classifyFocus(normalized, focus);
-  const audit = auditRoute(normalized, material, focus, focusKind, language);
-  if (language === "en") return [
-    { id: "survey", kind: "survey", question: normalized, material, property: focus, scope: `Resolve the question as written: “${normalized}”. Preserve each reported definition, sample condition, method, and evidence boundary.`, },
-    { id: "contrast", kind: "contrast", question: `For ${material}, when reports discuss “${focus}”, which definitions, sample states, and measurement conditions make the reported values comparable or non-comparable?`, material, property: focus, scope: `Compare only literature that addresses “${focus}” for the object in “${normalized}”; retain incompatible conditions as explicit boundaries.`, },
-    { id: "mechanism", kind: "mechanism", question: audit.question, material, property: focus, scope: audit.scope, },
-  ];
+  const routes = routeText(normalized, material, focus, focusKind, language);
   return [
-    { id: "survey", kind: "survey", question: normalized, material, property: focus, scope: `按原问题“${normalized}”梳理文献；逐条保留报告中的定义、样品条件、测量方法与证据边界。`, },
-    { id: "contrast", kind: "contrast", question: `针对 ${material} 的“${focus}”，不同论文的定义、样品状态和测量条件分别是什么？哪些报告可比较，哪些不能比较？`, material, property: focus, scope: `只比较与“${focus}”直接相关的文献；把“${normalized}”中未说明的条件保留为待核对边界。`, },
-    { id: "mechanism", kind: "mechanism", question: audit.question, material, property: focus, scope: audit.scope, },
+    { id: "survey", kind: "survey", question: routes.survey.question, material, property: focus, scope: routes.survey.scope },
+    { id: "contrast", kind: "contrast", question: routes.contrast.question, material, property: focus, scope: routes.contrast.scope },
+    { id: "mechanism", kind: "mechanism", question: routes.mechanism.question, material, property: focus, scope: routes.mechanism.scope },
   ];
 }
 
@@ -78,33 +73,101 @@ function classifyFocus(question: string, focus: string): FocusKind {
   return "property";
 }
 
-function auditRoute(originalQuestion: string, material: string, focus: string, kind: FocusKind, language: "zh" | "en"): { question: string; scope: string } {
+type RouteSet = Record<"survey" | "contrast" | "mechanism", { question: string; scope: string }>;
+
+/**
+ * Turn a broad prompt into three domain-shaped retrieval questions.  The
+ * fallback must not invent an answer, but it should still expose the concrete
+ * variables a researcher would search for instead of paraphrasing a generic
+ * review workflow.
+ */
+function routeText(originalQuestion: string, material: string, focus: string, kind: FocusKind, language: "zh" | "en"): RouteSet {
   if (language === "en") {
-    const detail = ({
-      transition: "transition assignments, heating/cooling history, sample state, and raw thermal, structural, magnetic, or electrical signals",
-      electrochemical: "electrode composition, loading, current rate, voltage window, cycle count, retention definition, and post-test evidence",
-      transport: "measurement geometry, temperature/frequency range, contacts, calibration, uncertainty, and raw transport data",
-      electronic: "experimental or computational method, sample state, boundary conditions, uncertainty, and the primary spectrum or response curve",
-      synthesis: "precursors, stoichiometry, atmosphere, process history, phase-purity checks, yield, and independent repetitions",
-      mechanism: "competing explanations, discriminating controls, raw observations, and unresolved alternatives",
-      property: "operational definition, sample condition, primary measurement, uncertainty, controls, and possible confounders",
-    } satisfies Record<FocusKind, string>)[kind];
+    const questions = ({
+      transition: {
+        survey: `Which transition ranges, phase assignments, and primary structural, thermal, magnetic, or electrical signals are reported for ${material} “${focus}”?`,
+        contrast: `How does reported ${material} “${focus}” change across bulk, ceramic, and thin-film sample states, heating or cooling paths, and measurement atmospheres?`,
+        mechanism: `For ${material} “${focus}”, which located signals distinguish a structural or ferroic transition from decomposition or a measurement artefact?`,
+      },
+      electrochemical: {
+        survey: `Which cycle counts, retention definitions, current rates, and voltage windows underlie reported ${material} “${focus}”?`,
+        contrast: `At matched composition, loading, current rate, voltage window, and cycle count, which ${material} “${focus}” reports remain comparable?`,
+        mechanism: `Which post-test structural, chemical, and electrochemical observations distinguish competing explanations for ${material} “${focus}”?`,
+      },
+      transport: {
+        survey: `Which values, temperature or frequency ranges, geometries, and uncertainty statements are reported for ${material} “${focus}”?`,
+        contrast: `When geometry, contacts, sample state, calibration, and temperature or frequency range are aligned, which ${material} “${focus}” reports agree or diverge?`,
+        mechanism: `Which raw transport and control measurements distinguish intrinsic ${material} “${focus}” from contact, electrode, or leakage contributions?`,
+      },
+      electronic: {
+        survey: `Which experimental and computational values, methods, sample states, and uncertainties are reported for ${material} “${focus}”?`,
+        contrast: `How do method, sample state, boundary conditions, and analysis convention affect reported ${material} “${focus}”?`,
+        mechanism: `Which primary spectra or response curves discriminate between competing interpretations of ${material} “${focus}”?`,
+      },
+      synthesis: {
+        survey: `Which precursor, stoichiometry, atmosphere, temperature, time, and phase-purity records define successful ${material} “${focus}”?`,
+        contrast: `At matched composition and characterization criteria, which process variables change the reported ${material} “${focus}”?`,
+        mechanism: `Which controlled process comparisons distinguish the proposed formation pathways for ${material} “${focus}”?`,
+      },
+      mechanism: {
+        survey: `Which competing mechanisms and source-located observations are reported for ${material} “${focus}”?`,
+        contrast: `Under which sample states, environments, and measurement protocols do reports of ${material} “${focus}” support different mechanisms?`,
+        mechanism: `Which controls and raw observations can falsify each proposed mechanism for ${material} “${focus}”?`,
+      },
+      property: {
+        survey: `Which values, operational definitions, sample conditions, primary measurements, and uncertainties are reported for ${material} “${focus}”?`,
+        contrast: `After aligning sample state, environment, method, and uncertainty, which ${material} “${focus}” reports are comparable or contradictory?`,
+        mechanism: `Which controls and primary observations distinguish intrinsic ${material} “${focus}” from plausible confounders?`,
+      },
+    } satisfies Record<FocusKind, Record<"survey" | "contrast" | "mechanism", string>>)[kind];
+    const boundary = `Bounded by the original intent “${originalQuestion}”; retain source locations and incompatible conditions, and do not infer a value or mechanism from the prompt.`;
     return {
-      question: `Before answering “${focus}” for ${material}, which ${detail} must be checked in the primary sources?`,
-      scope: `Use the checks that fit “${focus}” to answer “${originalQuestion}”; do not infer a value or mechanism from the prompt alone.`,
+      survey: { question: questions.survey, scope: boundary },
+      contrast: { question: questions.contrast, scope: boundary },
+      mechanism: { question: questions.mechanism, scope: boundary },
     };
   }
-  const detail = ({
-    transition: "相变指派、升降温历史、样品状态，以及热学、结构、磁学或电学原始信号",
-    electrochemical: "电极组成与载量、倍率、电压窗口、循环数、保持率定义及循环后表征",
-    transport: "测量几何、温度或频率范围、接触方式、校准、不确定度及原始输运数据",
-    electronic: "实验或计算方法、样品状态、边界条件、不确定度及原始谱线或响应曲线",
-    synthesis: "前驱体、化学计量、气氛、工艺历史、物相纯度、产率及独立重复",
-    mechanism: "竞争解释、区分性对照、原始观测和仍未排除的替代机制",
-    property: "操作性定义、样品条件、原始测量、不确定度、对照实验及潜在混杂因素",
-  } satisfies Record<FocusKind, string>)[kind];
+  const questions = ({
+    transition: {
+      survey: `${material} 的“${focus}”研究分别报告了哪些转变温区、相结构指派，以及结构、热学、磁学或电学原始信号？`,
+      contrast: `${material} 的“${focus}”在体相、陶瓷与薄膜样品、升降温路径和测试气氛之间是否可直接比较？`,
+      mechanism: `${material} 的“${focus}”中，哪些可定位信号能区分结构或铁性转变、材料分解与测量伪影？`,
+    },
+    electrochemical: {
+      survey: `${material} 的“${focus}”分别基于多少循环、何种保持率定义、倍率与电压窗口？`,
+      contrast: `在组成、载量、倍率、电压窗口与循环数对齐后，哪些 ${material}“${focus}”报告仍可比较？`,
+      mechanism: `哪些循环后结构、化学与电化学观测能区分 ${material}“${focus}”的竞争解释？`,
+    },
+    transport: {
+      survey: `${material} 的“${focus}”报告分别采用哪些数值、温度或频率范围、测量几何与不确定度？`,
+      contrast: `对齐几何、接触方式、样品状态、校准及温度或频率范围后，${material} 的“${focus}”报告哪些一致、哪些分歧？`,
+      mechanism: `哪些原始输运与对照测量能区分 ${material} 本征“${focus}”和接触、电极或漏电贡献？`,
+    },
+    electronic: {
+      survey: `${material} 的“${focus}”有哪些实验与计算数值，其方法、样品状态和不确定度分别是什么？`,
+      contrast: `实验或计算方法、样品状态、边界条件与分析约定如何影响 ${material} 的“${focus}”报告？`,
+      mechanism: `哪些原始谱线或响应曲线能区分 ${material}“${focus}”的竞争解释？`,
+    },
+    synthesis: {
+      survey: `${material} 的“${focus}”由哪些前驱体、化学计量、气氛、温度、时间与物相纯度记录界定？`,
+      contrast: `在组成与表征判据对齐后，哪些工艺变量改变了 ${material} 的“${focus}”报告？`,
+      mechanism: `哪些受控工艺对比能区分 ${material}“${focus}”的候选形成路径？`,
+    },
+    mechanism: {
+      survey: `${material} 的“${focus}”有哪些竞争机制及可定位原始观测？`,
+      contrast: `在哪些样品状态、环境与测试协议下，${material} 的“${focus}”报告支持不同机制？`,
+      mechanism: `哪些对照与原始观测可以分别证伪 ${material}“${focus}”的候选机制？`,
+    },
+    property: {
+      survey: `${material} 的“${focus}”有哪些报告值、操作性定义、样品条件、原始测量与不确定度？`,
+      contrast: `对齐样品状态、环境、方法与不确定度后，哪些 ${material}“${focus}”报告可比较或相互矛盾？`,
+      mechanism: `哪些对照与原始观测能区分 ${material} 本征“${focus}”和潜在混杂因素？`,
+    },
+  } satisfies Record<FocusKind, Record<"survey" | "contrast" | "mechanism", string>>)[kind];
+  const boundary = `以原问题“${originalQuestion}”为边界；保留来源定位与不兼容条件，不从问题文本推断数值或机制。`;
   return {
-    question: `回答 ${material} 的“${focus}”前，需要优先核对哪些${detail}？`,
-    scope: `用与“${focus}”相匹配的核验项回答“${originalQuestion}”；不从问题文本推断数值或机制。`,
+    survey: { question: questions.survey, scope: boundary },
+    contrast: { question: questions.contrast, scope: boundary },
+    mechanism: { question: questions.mechanism, scope: boundary },
   };
 }
