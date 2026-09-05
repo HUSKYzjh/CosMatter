@@ -22,6 +22,7 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         self.seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_p0_literature_observation_candidates.json"
         self.expanded_seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_expanded_literature_observation_candidates_v2.json"
         self.source_matrix_path = AGENT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json"
+        self.expanded_source_matrix_path = AGENT_ROOT / "configs" / "bfo_expanded_source_candidate_matrix_v2.json"
         self.catalog = load_material_indicator_catalog(self.catalog_path)
         self.expanded_catalog = load_material_indicator_catalog(self.expanded_catalog_path)
         self.seed = load_material_observation_set(self.seed_path, self.catalog)
@@ -30,6 +31,10 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
             self.expanded_catalog,
         )
         self.source_matrix = load_material_source_candidate_matrix(self.source_matrix_path, self.catalog)
+        self.expanded_source_matrix = load_material_source_candidate_matrix(
+            self.expanded_source_matrix_path,
+            self.expanded_catalog,
+        )
 
     def test_p0_catalog_freezes_four_families_and_twelve_qualifiers(self) -> None:
         self.assertEqual(
@@ -135,6 +140,39 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
                 "spectrum_acquired_outside_domain_wall_region",
             },
         )
+
+    def test_expanded_questions_have_independent_support_and_boundary_sources(self) -> None:
+        self.assertEqual(len(self.expanded_source_matrix["questions"]), 4)
+        for question in self.expanded_source_matrix["questions"]:
+            by_role = {
+                role: [
+                    item for item in question["source_candidates"]
+                    if item["role"] == role
+                ]
+                for role in (
+                    "primary_support", "independent_support",
+                    "boundary_counterexample",
+                )
+            }
+            self.assertTrue(all(by_role.values()))
+            primary_groups = {
+                item["independence_group"] for item in by_role["primary_support"]
+            }
+            independent_groups = {
+                item["independence_group"] for item in by_role["independent_support"]
+            }
+            self.assertTrue(primary_groups.isdisjoint(independent_groups))
+            self.assertTrue(all(
+                item["evidence_status"]
+                == "metadata_or_abstract_checked_not_source_mapped"
+                for item in question["source_candidates"]
+            ))
+
+    def test_expanded_sciverse_probe_does_not_claim_an_unrun_content_check(self) -> None:
+        probe = self.expanded_source_matrix["provider_probe_summary"]
+        self.assertEqual(probe["search_status"], "failed_closed")
+        self.assertEqual(probe["content_status"], "not_attempted")
+        self.assertIn("not_probed", probe["probe_scope"])
 
     def test_seed_observations_are_explicitly_unreviewed_literature_leads(self) -> None:
         self.assertEqual(

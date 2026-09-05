@@ -94,6 +94,7 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 - `configs/bfo_p0_material_indicator_catalog.json`：冻结结构/相、铁电、输运和相变四个 P0 指标族，以及固定顺序的 12 个限定字段；`P_s`、`P_r`、`2P_r`、`E_c` 和 `2E_c` 使用不同 `indicator_id`。
 - `configs/bfo_experimental_indicator_catalog_v2.json`：在完全保留 v1 P0 指标的基础上扩展为 9 个指标族和 P0/P1/P2 三层优先级，加入介电/压电、磁性、光学/光伏、缺陷化学与工艺复现指标。直接 `d33`、PFM 有效 `d33`、畴壁导电占比、绝对畴壁电导、EELS 能量差与缺陷浓度均为不同的规范字段。
 - `configs/bfo_p0_source_candidate_matrix.json`：为极化、应变相边界、高温相变和畴壁输运各登记一条主证据路线、一条独立来源路线和一条条件反例路线，共 12 篇原始实验论文候选；同时保存作者组独立性、样品/方法边界和公开全文替代路线状态。
+- `configs/bfo_expanded_source_candidate_matrix_v2.json`：为直接/有效 `d33`、隧穿电致电阻、畴壁缺陷解释和介电频率/界面效应四个扩展问题再登记 12 条候选路线。每题固定包含主报告、不同作者组的独立实验路线和条件/定义反例；共享 DPFM 作者的同样品方法比较只作为边界来源，不伪装成独立复现。本轮只核对公开论文页面和机构作者稿，Sciverse 探针明确记为 `failed_closed + not_attempted`，没有虚构正文调用。
 - `examples/frozen/bfo_p0_literature_observation_candidates.json`：把首批 P0 数值拆成逐观测记录。其中已经按原始态、淬火态和时效态分别登记 Bencan 等报告的导电畴壁占比 `69%`、`22%` 和 `59%`，并绑定各自热处理、c-AFM 偏压、扫描频率和统计口径；它们全部保持 `literature_mentioned + unreviewed + source_map_status=none`，只用于后续选文和人工核对。
 - `examples/frozen/bfo_expanded_literature_observation_candidates_v2.json`：登记第一批 7 条扩展候选，包括直接 `d33=43±6 pC/N`、单晶胞隧穿电致电阻最高约 `370%`、畴壁内外 EELS `179.3/178.3 eV`、Bi 柱强度约降 `20%` 以及原始/淬火畴壁约 `6/3` 个晶胞。每条都包含 12 项条件、方法和不可越过的解释边界，仍未建立人工 Source Map。
 - `src/cosmatter/material_indicator_registry.py`：无依赖校验器，拒绝缺字段、越级成熟度、伪造 Source Map 绑定、非法单位和不完整的范围/误差语义。
@@ -119,7 +120,7 @@ BiFeO₃（BFO）的实验结果强烈依赖样品形态、取向、外延应变
 ## 6. 下一批执行顺序
 
 1. **已完成**：冻结 P0 指标名、单位语义与 12 个限定字段，覆盖相变、结构、极化和输运，并建立候选观测校验器和关系数据库模板。
-2. **进行中**：四个核心比较问题已经各有两条独立原始实验路线和一条条件反例；继续把同一覆盖扩展到其余 P0 指标，以及 v2 新增的介电/压电、磁性、光学/光伏、缺陷和工艺指标。优先使用公开论文、作者稿或校园账号本地核对，不在仓库保存受限全文。
+2. **进行中**：四个核心 P0 问题以及直接/有效 `d33`、隧穿电致电阻、畴壁缺陷解释、介电频率/界面效应四个 v2 问题均已具备“主路线 + 独立实验组 + 条件/定义反例”；继续把同一覆盖扩展到磁性、光学/光伏和工艺复现指标。优先使用公开论文、作者稿或校园账号本地核对，不在仓库保存受限全文。
 3. **已完成**：对 Lebeugle 2007、Teague 1970、Zeches 2009、Sando 2016、Arnold 2009 与 Bencan 2020 的六条公开 PDF 路线完成文件签名、私有 MinerU 解析和 Markdown 哈希核验，生成 6 个私有未审核候选池与 6 份空白 Source Map 选择模板。5 个长文池各含 48 个确定性全文分层片段，2 页 Teague 文献含 26 个片段；模板均为全未选状态。公开仓库只登记 `private_mineru_review_pool_ready`，不保存该批次的直接 PDF URL、PDF、Markdown、候选片段、提供方任务 ID 或私有路径。
 4. **已完成技术定位和模型草案、待数据复核**：确定性指标排序已从六篇哈希核验 Markdown 各选出 2 段，共 12 段；四个问题均有命中。受控 `deepseek-v4-flash` 重跑完成 12 个逐段批次，严格校验后得到 16 条去重候选、合并 4 条重复观测、0 条结构拒绝。该输出仍为 `untrusted_llm_private_indicator_value_draft_not_source_map_or_evidence`；逐篇图表定位、数值语义、误差、方法与限定条件仍须核对，且不得写入 `material_facts`。
 5. 先按“样品形态 → 相/取向 → 测量定义 → 条件”分组，再运行跨文献比较；不生成跨组平均值。

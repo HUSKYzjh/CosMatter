@@ -1,0 +1,235 @@
+{
+  "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+  "catalog_id": "bfo-experimental-indicators/v2",
+  "material_scope": "BiFeO3",
+  "trust_status": "source_candidates_not_screened_or_source_mapped",
+  "provider_probe_summary": {
+    "provider": "sciverse",
+    "operation": "semantic_search_and_bounded_content",
+    "search_status": "failed_closed",
+    "content_status": "not_attempted",
+    "probe_scope": "expanded_v2_routes_not_probed_in_sciverse_only_public_metadata_checked"
+  },
+  "questions": [
+    {
+      "question_id": "bfo_v2_direct_and_effective_d33_comparability",
+      "focus_indicator_ids": ["piezoelectric_coefficient_d33", "effective_piezoelectric_response_d33"],
+      "comparison_question_zh": "BFO 的直接压电电荷系数与 PFM 有效位移响应在不同厚度和制备路线下能否直接比较？",
+      "source_candidates": [
+        {
+          "source_id": "gomez2017_ncomms_01361",
+          "normalized_doi": "10.1038/s41467-017-01361-2",
+          "title": "Piezo-generated charge mapping revealed through direct piezoelectric force microscopy",
+          "year": 2017,
+          "role": "primary_support",
+          "independence_group": "gomez_icmab_dpfm_2017",
+          "independence_note": "Primary direct-charge DPFM report on the 400 nm commercial BFO film.",
+          "sample_scope": "Commercial 400 nm BiFeO3 film on platinum with oppositely written domains",
+          "method_scope": "Direct piezoelectric force microscopy and integrated generated charge",
+          "reported_lead": "Average direct d33 of 43 plus or minus 6 pC/N from two scan profiles.",
+          "claim_boundary": "A direct charge coefficient cannot be silently merged with a converse PFM displacement-per-voltage response.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "zhao2012_physicab_03_010",
+          "normalized_doi": "10.1016/j.physb.2012.03.010",
+          "title": "Thickness dependence of piezoelectric property of ultrathin BiFeO3 films",
+          "year": 2012,
+          "role": "independent_support",
+          "independence_group": "zhao_iphy_bfo_thickness_2012",
+          "independence_note": "Independent authors and film series using a converse PFM route.",
+          "sample_scope": "BiFeO3 films from 1 to 150 nm on LSMO buffered SrTiO3 001",
+          "method_scope": "Quantitative PFM response after upward and downward electrical poling",
+          "reported_lead": "Effective d33 decreases from about 46 pm/V at 150 nm to about 8 pm/V at 6 nm.",
+          "claim_boundary": "The result supports strong thickness dependence but reports effective PFM response rather than direct pC/N charge.",
+          "fulltext_route": "public_repository",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "vilafungueirino2018_nanoscale_05737",
+          "normalized_doi": "10.1039/c8nr05737k",
+          "title": "Direct and converse piezoelectric responses at the nanoscale from epitaxial BiFeO3 thin films grown by polymer assisted deposition",
+          "year": 2018,
+          "role": "boundary_counterexample",
+          "independence_group": "carretero_polymer_bfo_2018",
+          "independence_note": "Method-comparison study with some shared DPFM expertise; retained as a boundary source, not independent replication.",
+          "sample_scope": "Sixty nanometre epitaxial BiFeO3 film grown by polymer assisted deposition",
+          "method_scope": "Direct DPFM and converse PFM applied to the same film system",
+          "reported_lead": "Direct and converse results are reported separately as 22 pC/N and 17 pm/V.",
+          "claim_boundary": "Numerically similar values with dimensionally related units do not erase calibration, clamping, geometry, and method differences.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_v2_tunneling_electroresistance_device_boundary",
+      "focus_indicator_ids": ["tunneling_electroresistance", "resistance_switching_ratio"],
+      "comparison_question_zh": "BFO 系隧道结的电致电阻幅度在多大程度上由势垒厚度、掺杂、电极和器件尺寸决定？",
+      "source_candidates": [
+        {
+          "source_id": "wang2018_ncomms_05662",
+          "normalized_doi": "10.1038/s41467-018-05662-y",
+          "title": "Direct observation of room-temperature out-of-plane ferroelectricity and tunneling electroresistance at the two-dimensional limit",
+          "year": 2018,
+          "role": "primary_support",
+          "independence_group": "chen_nus_atomic_bfo_2018",
+          "independence_note": "Primary one-unit-cell tetragonal BFO tunnel-junction study.",
+          "sample_scope": "One-unit-cell tetragonal BiFeO3 on SrRuO3 buffered SrTiO3 001",
+          "method_scope": "PFM, KPFM, STEM and vertical tunnel-junction conductance measurements",
+          "reported_lead": "Tunneling electroresistance reaches up to about 370 percent at room temperature.",
+          "claim_boundary": "The maximum is bound to the one-unit-cell device, resistance definition, writing pulse and readout bias.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "hu2016_ncomms_10808",
+          "normalized_doi": "10.1038/ncomms10808",
+          "title": "Optically controlled electroresistance and electrically controlled photovoltage in ferroelectric tunnel junctions",
+          "year": 2016,
+          "role": "independent_support",
+          "independence_group": "wu_kaust_sm_bfo_ftj_2016",
+          "independence_note": "Independent device group using a Sm-substituted BFO barrier and semiconducting bottom electrode.",
+          "sample_scope": "Three nanometre Sm0.1Bi0.9FeO3 barrier on niobium-doped SrTiO3 with platinum top electrode",
+          "method_scope": "Electrical and optical modulation of ferroelectric tunnel-junction resistance",
+          "reported_lead": "Off-on tunneling electroresistance ratio reaches about 100000 and is further light modulated.",
+          "claim_boundary": "Doping, a semiconducting depletion layer and illumination make the magnitude non-comparable to undoped one-cell BFO without regrouping.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "boyn2016_apl_4971311",
+          "normalized_doi": "10.1063/1.4971311",
+          "title": "Tunnel electroresistance in BiFeO3 junctions: size does matter",
+          "year": 2016,
+          "role": "boundary_counterexample",
+          "independence_group": "garcia_bibes_gregg_ftj_size_2016",
+          "independence_note": "Independent lateral-size study retained to expose incomplete polarization reversal as a device boundary.",
+          "sample_scope": "BiFeO3 junctions with diameters from 1200 to 180 nm",
+          "method_scope": "Polarization imaging, resistance switching and electric-field distribution modelling",
+          "reported_lead": "Micrometre junctions reverse less than ten percent of their area while the smallest junctions approach complete reversal.",
+          "claim_boundary": "Observed electroresistance can be limited by lateral switching fraction and bottom-electrode resistance rather than barrier material alone.",
+          "fulltext_route": "author_manuscript",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_v2_domain_wall_defect_interpretation",
+      "focus_indicator_ids": ["eels_o_k_fe_l3_energy_separation", "bi_column_intensity_reduction", "bismuth_vacancy_fraction", "oxygen_vacancy_fraction", "iron_oxidation_state", "domain_wall_thickness"],
+      "comparison_question_zh": "BFO 畴壁中的 EELS、HAADF 和电输运信号分别支持哪类缺陷解释，哪些样品条件会改变结论？",
+      "source_candidates": [
+        {
+          "source_id": "bencan2020_ncomms_15595",
+          "normalized_doi": "10.1038/s41467-020-15595-0",
+          "title": "Domain-wall pinning and defect ordering in BiFeO3 probed on the atomic and nanoscale",
+          "year": 2020,
+          "role": "primary_support",
+          "independence_group": "rojac_bencan_bfo_walls_2020",
+          "independence_note": "Primary quench-aging and ex-situ field study with paired STEM, EELS, PFM and c-AFM measurements.",
+          "sample_scope": "Air-processed polycrystalline BiFeO3 in pristine, quenched and aged states",
+          "method_scope": "Atomic-resolution HAADF-STEM, EELS, PFM and conductive AFM",
+          "reported_lead": "Wall and domain EELS values, Bi-column intensity, wall thickness and conductive-wall fraction change with defect ordering.",
+          "claim_boundary": "EELS separation, image intensity, inferred oxidation state and simulated vacancy fraction are separate observables and must not be collapsed.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "private_mineru_review_pool_ready",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "schrade2017_jmcc_03345",
+          "normalized_doi": "10.1039/c7tc03345a",
+          "title": "Defect chemistry and electrical properties of BiFeO3",
+          "year": 2017,
+          "role": "independent_support",
+          "independence_group": "west_sheffield_bfo_defect_2017",
+          "independence_note": "Independent authors and macroscopic defect-chemistry route using conductivity and Seebeck measurements.",
+          "sample_scope": "Undoped stoichiometric and calcium acceptor-doped BiFeO3 ceramics",
+          "method_scope": "In-situ conductivity and Seebeck coefficient versus temperature and oxygen partial pressure",
+          "reported_lead": "Undoped material shows mixed intrinsic electron-hole behavior, while calcium doping is mainly compensated by oxygen vacancies.",
+          "claim_boundary": "Macroscopic transport constrains defect models but does not independently reproduce atomic wall concentrations or EELS edge shifts.",
+          "fulltext_route": "author_manuscript",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "liu2021_acsaelm_1c00638",
+          "normalized_doi": "10.1021/acsaelm.1c00638",
+          "title": "Negatively Charged In-Plane and Out-Of-Plane Domain Walls with Oxygen-Vacancy Agglomerations in a Ca-Doped Bismuth-Ferrite Thin Film",
+          "year": 2021,
+          "role": "boundary_counterexample",
+          "independence_group": "liu_ca_bfo_oxygen_walls_2021",
+          "independence_note": "Different group, calcium-doped film, charged walls and oxygen-deficient planar defects define a deliberate boundary case.",
+          "sample_scope": "Calcium-doped bismuth-ferrite thin film with charged in-plane and out-of-plane walls",
+          "method_scope": "Atomic-resolution HAADF-STEM, EELS and charged-wall structural analysis",
+          "reported_lead": "Oxygen-deficient planar defects coincide with negatively charged walls under the doped-film preparation route.",
+          "claim_boundary": "Oxygen-vacancy agglomeration in a calcium-doped charged wall cannot be generalized to undoped head-to-tail ceramic walls.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "candidate_route_not_probed",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_v2_dielectric_frequency_and_interface_boundary",
+      "focus_indicator_ids": ["relative_permittivity", "dielectric_loss_tangent"],
+      "comparison_question_zh": "BFO 的介电常数和损耗如何随频率、温度、测量方向及电极界面模型变化？",
+      "source_candidates": [
+        {
+          "source_id": "ke2012_jes_018202",
+          "normalized_doi": "10.1149/2.018202jes",
+          "title": "Highly 111-orientated BiFeO3 thin film deposited on La0.67Sr0.33MnO3 buffered Pt TiO2 SiO2 Si 100 substrate",
+          "year": 2012,
+          "role": "primary_support",
+          "independence_group": "ke_lu_wang_bfo_lsmo_2012",
+          "independence_note": "Primary combined ferroelectric, dielectric and fatigue report for one heterostructure.",
+          "sample_scope": "Highly 111-oriented BiFeO3 on LSMO buffered platinum silicon stack",
+          "method_scope": "Room-temperature capacitor dielectric and ferroelectric measurements",
+          "reported_lead": "Relative permittivity about 116.8 and loss tangent about 2.7 percent at 1 kHz.",
+          "claim_boundary": "The values apply to the full film-electrode stack at the stated frequency and must not inherit the LSMO magnetic signal as intrinsic BFO.",
+          "fulltext_route": "public_repository",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "ren2012_aipadv_4721670",
+          "normalized_doi": "10.1063/1.4721670",
+          "title": "Dielectric dynamics of epitaxial BiFeO3 thin films",
+          "year": 2012,
+          "role": "independent_support",
+          "independence_group": "ren_wang_ntu_dielectric_2012",
+          "independence_note": "Independent epitaxial-film group using temperature sweeps and equivalent-circuit decomposition.",
+          "sample_scope": "Epitaxial BiFeO3 films on niobium-doped SrTiO3",
+          "method_scope": "Low-temperature dielectric spectroscopy with constant-phase-element circuit fitting",
+          "reported_lead": "Fitted film-related dielectric constants exceed 400 at low temperature and a possible transition appears near 210 K.",
+          "claim_boundary": "Fitted constant-phase-element values are model-dependent and not directly interchangeable with a single-frequency raw capacitance-derived permittivity.",
+          "fulltext_route": "public_repository",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "kumar2012_pssa_201228154",
+          "normalized_doi": "10.1002/pssa.201228154",
+          "title": "In-plane dielectric and magnetoelectric studies of BiFeO3",
+          "year": 2012,
+          "role": "boundary_counterexample",
+          "independence_group": "kumar_katiyar_inplane_bfo_2012",
+          "independence_note": "Independent in-plane geometry and broad temperature-frequency sweep expose dispersion and interface-sensitive anomalies.",
+          "sample_scope": "As-grown BiFeO3 thin film measured in an in-plane electrode geometry",
+          "method_scope": "Frequency-dependent capacitance and loss versus temperature with repeated thermal cycles",
+          "reported_lead": "Diffuse anomalies occur near 450 plus or minus 10 K and 550 K, with additional frequency-dependent low-temperature loss features.",
+          "claim_boundary": "In-plane geometry, skin-layer effects, thermal cycling and dispersion prevent treatment as a universal room-temperature dielectric constant.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    }
+  ]
+}
