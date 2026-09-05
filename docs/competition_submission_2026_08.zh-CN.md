@@ -15,7 +15,7 @@
 
 该工件会被 `check-submission-readiness --run-id YOUR_RUN` 检查；报告的每条已接受 EvidenceCard 还会在 LaTeX 证据表中显示其书目数据来源。
 
-若 `real_corpus_evaluation_run_record.json` 真实声明 `submission_truth_check: completed`，且四类人工指标、失败案例与 API 成本/延迟聚合工件均通过一致性校验，并绑定同一份 `frozen_corpus_readiness.json` 清单哈希、全量人工标注覆盖审计和全覆盖书目来源审计，`build-final-submission-package` 会额外附带这些**不含全文、路径、逐篇标签或服务商原始响应**的聚合评测摘要；未完成或不一致的评测记录不会被打包。
+若 `real_corpus_evaluation_run_record.json` 真实声明 `submission_truth_check: completed`，且四类人工指标、失败案例与 API 成本/延迟聚合工件均通过一致性校验，并绑定同一份预注册冻结问题集、`frozen_corpus_readiness.json` 清单哈希、全量人工标注覆盖审计和全覆盖书目来源审计，`build-final-submission-package` 会额外附带冻结问题集及这些**不含全文、路径、逐篇标签、评审备注或服务商原始响应**的聚合评测摘要；未完成或不一致的评测记录不会被打包。
 
 ## 最小复跑
 

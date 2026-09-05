@@ -223,6 +223,33 @@ def load_question_set_readiness_summary(run_dir: Path, *, mission_id: str) -> di
     not cross this projection boundary. A missing pair means not yet frozen;
     a partial or inconsistent pair is an error rather than an empty result.
     """
+    pair = _load_frozen_question_set_pair(run_dir, mission_id=mission_id)
+    if pair is None:
+        return None
+    _, audit = pair
+    return {
+        "reviewed_question_count": audit["reviewed_question_count"],
+        "included_question_count": audit["included_question_count"],
+        "excluded_question_count": audit["excluded_question_count"],
+        "included_evidence_level_counts": dict(audit["included_evidence_level_counts"]),
+        "freeze_gate": audit["freeze_gate"],
+    }
+
+
+def load_frozen_question_set_binding(run_dir: Path, *, mission_id: str) -> dict[str, Any] | None:
+    """Return the validated identity needed to bind an evaluation run."""
+    pair = _load_frozen_question_set_pair(run_dir, mission_id=mission_id)
+    if pair is None:
+        return None
+    frozen, _ = pair
+    return {
+        "question_set_id": frozen["question_set_id"],
+        "frozen_question_count": frozen["question_count"],
+        "frozen_question_set_sha256": frozen["question_set_sha256"],
+    }
+
+
+def _load_frozen_question_set_pair(run_dir: Path, *, mission_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
     frozen_path = run_dir / "frozen_question_set.json"
     audit_path = run_dir / "question_set_review_audit.json"
     if not frozen_path.exists() and not audit_path.exists():
@@ -237,13 +264,7 @@ def load_question_set_readiness_summary(run_dir: Path, *, mission_id: str) -> di
     _validate_frozen_pair(frozen, audit)
     if frozen["mission_id"] != mission_id:
         raise QuestionSetError("frozen question set does not belong to this mission")
-    return {
-        "reviewed_question_count": audit["reviewed_question_count"],
-        "included_question_count": audit["included_question_count"],
-        "excluded_question_count": audit["excluded_question_count"],
-        "included_evidence_level_counts": dict(audit["included_evidence_level_counts"]),
-        "freeze_gate": audit["freeze_gate"],
-    }
+    return frozen, audit
 
 
 def _validate_review(payload: object, *, reviewed: bool) -> list[dict[str, Any]]:
@@ -301,6 +322,8 @@ def _validate_frozen_pair(frozen: object, audit: object) -> None:
         raise QuestionSetError("question-set review audit is invalid")
     if not all(isinstance(frozen.get(field), str) and frozen[field].strip() for field in ("mission_id", "question_set_id", "material_family", "question_set_sha256", "source_review_sha256")):
         raise QuestionSetError("frozen question-set identity is invalid")
+    if not _is_sha256(frozen["question_set_sha256"]) or not _is_sha256(frozen["source_review_sha256"]):
+        raise QuestionSetError("frozen question-set hashes are invalid")
     if frozen.get("mission_id") != audit.get("mission_id") or frozen.get("question_set_id") != audit.get("question_set_id"):
         raise QuestionSetError("frozen question set and audit identities do not match")
     questions = frozen.get("questions")
@@ -308,6 +331,14 @@ def _validate_frozen_pair(frozen: object, audit: object) -> None:
         raise QuestionSetError("frozen question-set content hash is invalid")
     if any(not isinstance(item, dict) or set(item) != _FROZEN_QUESTION_FIELDS for item in questions):
         raise QuestionSetError("frozen question-set item fields are invalid")
+    if any(
+        not all(isinstance(item.get(field), str) and item[field].strip() for field in _FROZEN_QUESTION_FIELDS)
+        or item.get("intended_evidence_level") not in _EVIDENCE_LEVELS
+        for item in questions
+    ):
+        raise QuestionSetError("frozen question-set item values are invalid")
+    if len({item["question_id"] for item in questions}) != len(questions) or len({_identity_text(item["question"]) for item in questions}) != len(questions):
+        raise QuestionSetError("frozen question-set IDs and question texts must be unique")
     if audit.get("frozen_question_set_sha256") != frozen.get("question_set_sha256") or audit.get("source_review_sha256") != frozen.get("source_review_sha256"):
         raise QuestionSetError("question-set review audit hashes do not match")
     reviewed = audit.get("reviewed_question_count")
@@ -324,6 +355,12 @@ def _validate_frozen_pair(frozen: object, audit: object) -> None:
 
 def _identity_text(value: str) -> str:
     return "".join(character.casefold() for character in value if character.isalnum())
+
+
+def _is_sha256(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 71 and value.startswith("sha256:") and all(
+        character in "0123456789abcdef" for character in value[7:]
+    )
 
 
 def _sha256(value: object) -> str:

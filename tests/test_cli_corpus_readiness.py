@@ -9,6 +9,7 @@ from unittest.mock import patch
 from cosmatter.cli import main
 from cosmatter.corpus_preparation import corpus_manifest_from_review, write_corpus_manifest
 from cosmatter.models import MissionBrief
+from tests.question_set_helpers import write_synthetic_frozen_question_set
 
 
 class CliCorpusReadinessTests(unittest.TestCase):
@@ -84,6 +85,7 @@ class CliCorpusReadinessTests(unittest.TestCase):
                 },
             )
             write_corpus_manifest(run, manifest)
+            write_synthetic_frozen_question_set(run, mission.mission_id)
             output = io.StringIO()
             with patch("cosmatter.cli._runs_dir", return_value=runs), contextlib.redirect_stdout(output):
                 status = main(["prepare-real-evaluation", "--run-id", "evaluation_pack", "--expected-count", "1", "--seed-candidates"])
@@ -108,6 +110,10 @@ class CliCorpusReadinessTests(unittest.TestCase):
         self.assertEqual(gold["trust_status"], "blank_human_annotation_template_not_evaluation_result")
         self.assertEqual(registry["trust_status"], "blank_human_bibliographic_source_template_not_evaluation_result")
         self.assertEqual(run_record["trust_status"], "blank_human_real_corpus_evaluation_run_record_not_a_result")
+        self.assertEqual(run_record["schema_version"], "1.1")
+        self.assertEqual(run_record["question_set_id"], "synthetic-bfo-question-set")
+        self.assertEqual(run_record["frozen_question_count"], 8)
+        self.assertTrue(run_record["frozen_question_set_sha256"].startswith("sha256:"))
         self.assertEqual(candidates["candidates"][0]["score"], None)
         self.assertEqual(unseeded_status, 0, unseeded_output.getvalue())
         self.assertFalse(unseeded_result["candidate_seeding_requested"])
@@ -116,6 +122,32 @@ class CliCorpusReadinessTests(unittest.TestCase):
         self.assertIn("real_corpus_evaluation_preparation_created", events)
         self.assertNotIn("Private institutional title", output.getvalue())
         self.assertNotIn("Private institutional title", events)
+
+    def test_real_evaluation_preparation_requires_a_frozen_question_set(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs = Path(directory)
+            run = runs / "missing_questions"
+            run.mkdir()
+            mission = MissionBrief("why", "BiFeO3", "phase", "scope", mission_id="mission_missing_questions")
+            (run / "mission.json").write_text(json.dumps(mission.to_dict()), encoding="utf-8")
+            manifest = corpus_manifest_from_review(
+                mission_id=mission.mission_id,
+                material=mission.material,
+                selection={"corpus_id": "corpus", "material": "BiFeO3", "documents": [{"document_id": "doc", "title": "Synthetic", "doi": None, "access_policy": "institutional_access_internal_review_only"}]},
+            )
+            write_corpus_manifest(run, manifest)
+            output = io.StringIO()
+            with patch("cosmatter.cli._runs_dir", return_value=runs), contextlib.redirect_stdout(output):
+                status = main(["prepare-real-evaluation", "--run-id", "missing_questions", "--expected-count", "1"])
+            partial_artifacts = [
+                name for name in (
+                    "frozen_corpus_readiness.json", "human_gold_standard_template.json",
+                    "bibliographic_source_registry_template.json", "real_corpus_evaluation_run_record_template.json",
+                ) if (run / name).exists()
+            ]
+        self.assertEqual(status, 2)
+        self.assertIn("frozen question set", json.loads(output.getvalue())["error"])
+        self.assertEqual(partial_artifacts, [])
 
 
 if __name__ == "__main__":

@@ -17,13 +17,15 @@ from .bibliographic_source_coverage import (
     BibliographicSourceCoverageError,
     load_bibliographic_source_coverage,
 )
+from .question_set import QuestionSetError, load_frozen_question_set_binding
 
 
-EVALUATION_RUN_RECORD_SCHEMA_VERSION = "1.0"
+EVALUATION_RUN_RECORD_SCHEMA_VERSION = "1.1"
 _TEMPLATE_STATUS = "blank_human_real_corpus_evaluation_run_record_not_a_result"
 _REVIEWED_STATUS = "human_reviewed_real_corpus_evaluation_run_record"
 _FIELDS = {
-    "schema_version", "mission_id", "corpus_id", "trust_status",
+    "schema_version", "mission_id", "corpus_id", "question_set_id", "trust_status",
+    "frozen_question_count", "frozen_question_set_sha256",
     "frozen_corpus_document_count", "execution_completed_on", "code_revision",
     "service_and_model_disclosure", "human_review_disclosure", "metric_artifacts",
     "failure_case_log_status", "api_cost_and_latency_status", "submission_truth_check",
@@ -44,12 +46,14 @@ class EvaluationRunRecordError(ValueError):
     """Raised when a real-corpus disclosure is incomplete or mismatched."""
 
 
-def evaluation_run_record_template(*, manifest: object, mission_id: str) -> dict[str, Any]:
+def evaluation_run_record_template(*, run_dir: Path, manifest: object, mission_id: str) -> dict[str, Any]:
     corpus_id, document_count = _manifest_identity(manifest, mission_id)
+    question_set = _required_question_set_binding(run_dir, mission_id)
     return {
         "schema_version": EVALUATION_RUN_RECORD_SCHEMA_VERSION,
         "mission_id": mission_id,
         "corpus_id": corpus_id,
+        **question_set,
         "trust_status": _TEMPLATE_STATUS,
         "frozen_corpus_document_count": document_count,
         "execution_completed_on": "",
@@ -70,14 +74,18 @@ def evaluation_run_record_template(*, manifest: object, mission_id: str) -> dict
 
 def reviewed_evaluation_run_record(*, run_dir: Path, manifest: object, mission_id: str, payload: object) -> dict[str, Any]:
     corpus_id, document_count = _manifest_identity(manifest, mission_id)
+    question_set = _required_question_set_binding(run_dir, mission_id)
     _validate(payload, reviewed=True)
     assert isinstance(payload, dict)
     if (
         payload["mission_id"] != mission_id
         or payload["corpus_id"] != corpus_id
         or payload["frozen_corpus_document_count"] != document_count
+        or payload["question_set_id"] != question_set["question_set_id"]
+        or payload["frozen_question_count"] != question_set["frozen_question_count"]
+        or payload["frozen_question_set_sha256"] != question_set["frozen_question_set_sha256"]
     ):
-        raise EvaluationRunRecordError("evaluation run record does not match the frozen manifest")
+        raise EvaluationRunRecordError("evaluation run record does not match the frozen manifest and question set")
     metric_status = payload["metric_artifacts"]
     for key, filename in _METRICS.items():
         exists = (run_dir / filename).is_file()
@@ -138,14 +146,29 @@ def _manifest_identity(manifest: object, mission_id: str) -> tuple[str, int]:
     return corpus_id, len(documents)
 
 
+def _required_question_set_binding(run_dir: Path, mission_id: str) -> dict[str, Any]:
+    try:
+        binding = load_frozen_question_set_binding(run_dir, mission_id=mission_id)
+    except QuestionSetError as error:
+        raise EvaluationRunRecordError(str(error)) from error
+    if binding is None:
+        raise EvaluationRunRecordError("evaluation run record requires a human-reviewed frozen question set")
+    return binding
+
+
 def _validate(payload: object, *, reviewed: bool) -> None:
     if not isinstance(payload, dict) or set(payload) != _FIELDS:
         raise EvaluationRunRecordError("evaluation run record has unsupported or missing fields")
     expected_status = _REVIEWED_STATUS if reviewed else _TEMPLATE_STATUS
     if payload.get("schema_version") != EVALUATION_RUN_RECORD_SCHEMA_VERSION or payload.get("trust_status") != expected_status:
         raise EvaluationRunRecordError("evaluation run record schema or trust status is invalid")
-    if not all(isinstance(payload.get(key), str) and payload[key].strip() for key in ("mission_id", "corpus_id")):
+    if not all(isinstance(payload.get(key), str) and payload[key].strip() for key in ("mission_id", "corpus_id", "question_set_id")):
         raise EvaluationRunRecordError("evaluation run record identity is invalid")
+    if not isinstance(payload.get("frozen_question_count"), int) or isinstance(payload["frozen_question_count"], bool) or payload["frozen_question_count"] < 3:
+        raise EvaluationRunRecordError("evaluation run record question count is invalid")
+    question_hash = payload.get("frozen_question_set_sha256")
+    if not isinstance(question_hash, str) or len(question_hash) != 71 or not question_hash.startswith("sha256:") or any(character not in "0123456789abcdef" for character in question_hash[7:]):
+        raise EvaluationRunRecordError("evaluation run record question-set hash is invalid")
     if not isinstance(payload.get("frozen_corpus_document_count"), int) or payload["frozen_corpus_document_count"] < 1:
         raise EvaluationRunRecordError("evaluation run record corpus count is invalid")
     if not isinstance(payload.get("service_and_model_disclosure"), dict) or set(payload["service_and_model_disclosure"]) != _SERVICES or not all(isinstance(value, str) and value.strip() and len(value) <= 240 for value in payload["service_and_model_disclosure"].values()):

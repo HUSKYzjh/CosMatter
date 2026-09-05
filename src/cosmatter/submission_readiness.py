@@ -14,6 +14,7 @@ from .evaluation_operational_disclosure import (
 )
 from .evaluation_run_record import EvaluationRunRecordError, reviewed_evaluation_run_record
 from .corpus_preparation import CorpusPreparationError, load_corpus_manifest
+from .question_set import QuestionSetError, load_frozen_question_set_binding
 from .ui_export import UiExportError, _mission_from_payload
 
 
@@ -68,9 +69,14 @@ def submission_readiness(*, repository_root: Path, run_dir: Path | None = None) 
             report_checks["run_external_resource_disclosure"] = False
         evaluation_record_path = run_dir / "real_corpus_evaluation_run_record.json"
         if evaluation_record_path.is_file():
+            report_checks["run_frozen_question_set_consistent"] = False
             try:
                 mission_payload = _load_json(run_dir / "mission.json")
                 mission = _mission_from_payload(mission_payload)
+                question_set = load_frozen_question_set_binding(run_dir, mission_id=mission.mission_id)
+                if question_set is None:
+                    raise QuestionSetError("missing frozen question set")
+                report_checks["run_frozen_question_set_consistent"] = True
                 corpus = load_corpus_manifest(run_dir / "corpus_manifest.json", mission.mission_id)
                 if corpus is None:
                     raise CorpusPreparationError("missing corpus manifest")
@@ -79,7 +85,7 @@ def submission_readiness(*, repository_root: Path, run_dir: Path | None = None) 
                     payload=_load_json(evaluation_record_path),
                 )
                 report_checks["run_real_evaluation_record_consistent"] = True
-            except (SubmissionReadinessError, EvaluationRunRecordError, EvaluationOperationalDisclosureError, CorpusPreparationError, UiExportError, ValueError):
+            except (SubmissionReadinessError, EvaluationRunRecordError, EvaluationOperationalDisclosureError, CorpusPreparationError, QuestionSetError, UiExportError, ValueError):
                 report_checks["run_real_evaluation_record_consistent"] = False
         checks.update(report_checks)
     required = tuple(checks)
@@ -93,6 +99,7 @@ def submission_readiness(*, repository_root: Path, run_dir: Path | None = None) 
             "Verify every cited bibliographic record and source locator against the authorized original source.",
             "Confirm actual external resource versions, access dates, licenses, costs, and permitted data redistribution.",
             "Confirm all performance claims are supported by a real frozen evaluation record, not synthetic fixtures.",
+            "Confirm the reviewed evaluation record is bound to the pre-registered frozen research-question set.",
             "Confirm the chosen public repository release and all visual assets are cleared for the stated MIT release boundary.",
         ],
     }

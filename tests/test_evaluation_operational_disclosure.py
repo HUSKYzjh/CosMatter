@@ -18,6 +18,7 @@ from cosmatter.evaluation_run_record import (
     evaluation_run_record_template,
     reviewed_evaluation_run_record,
 )
+from tests.question_set_helpers import write_synthetic_frozen_question_set
 
 
 def manifest():
@@ -110,6 +111,7 @@ class EvaluationOperationalDisclosureTests(unittest.TestCase):
     def test_safe_aggregate_payloads_and_writers(self):
         with tempfile.TemporaryDirectory() as directory:
             run = Path(directory)
+            write_synthetic_frozen_question_set(run)
             failure = failure_case_log_from_review(mission_id="mission_1", corpus_id="bfo_90_v1", payload=failure_payload())
             cost = api_cost_latency_from_review(mission_id="mission_1", corpus_id="bfo_90_v1", payload=cost_payload())
             self.assertTrue(write_failure_case_log(run, failure).is_file())
@@ -128,6 +130,7 @@ class EvaluationOperationalDisclosureTests(unittest.TestCase):
     def test_completed_record_requires_real_operational_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             run = Path(directory)
+            write_synthetic_frozen_question_set(run)
             for filename in (
                 "human_retrieval_evaluation.json",
                 "human_material_fact_evaluation.json",
@@ -135,7 +138,7 @@ class EvaluationOperationalDisclosureTests(unittest.TestCase):
                 "human_gap_evaluation.json",
             ):
                 (run / filename).write_text("{}", encoding="utf-8")
-            record = evaluation_run_record_template(manifest=manifest(), mission_id="mission_1")
+            record = evaluation_run_record_template(run_dir=run, manifest=manifest(), mission_id="mission_1")
             record["trust_status"] = "human_reviewed_real_corpus_evaluation_run_record"
             record["execution_completed_on"] = "2026-08-14"
             record["code_revision"] = "test-snapshot"

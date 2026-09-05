@@ -1359,6 +1359,10 @@ def command_prepare_real_evaluation(args: argparse.Namespace) -> int:
         manifest = load_corpus_manifest(run_dir / "corpus_manifest.json", mission.mission_id)
         if manifest is None:
             raise CorpusPreparationError("real evaluation preparation requires a recorded corpus manifest")
+        # Validate the frozen-question prerequisite before writing any of the
+        # preparation pack, so a missing or tampered pair leaves no partial
+        # evaluation artifacts behind.
+        run_record = evaluation_run_record_template(run_dir=run_dir, manifest=manifest, mission_id=mission.mission_id)
         readiness = frozen_corpus_readiness(
             run_dir=run_dir, mission_id=mission.mission_id, expected_document_count=args.expected_count
         )
@@ -1367,7 +1371,6 @@ def command_prepare_real_evaluation(args: argparse.Namespace) -> int:
         gold_standard_path = write_gold_standard_template(run_dir, gold_standard)
         bibliographic_source = bibliographic_source_template_from_manifest(manifest)
         bibliographic_source_path = write_bibliographic_source_template(run_dir, bibliographic_source)
-        run_record = evaluation_run_record_template(manifest=manifest, mission_id=mission.mission_id)
         run_record_path = write_evaluation_run_record_template(run_dir, run_record)
         candidate_path = None
         if args.seed_candidates:
@@ -2841,7 +2844,7 @@ def command_create_evaluation_run_record_template(args: argparse.Namespace) -> i
         manifest = load_corpus_manifest(run_dir / "corpus_manifest.json", mission.mission_id)
         if manifest is None:
             raise CorpusPreparationError("evaluation run record requires a recorded corpus manifest")
-        template = evaluation_run_record_template(manifest=manifest, mission_id=mission.mission_id)
+        template = evaluation_run_record_template(run_dir=run_dir, manifest=manifest, mission_id=mission.mission_id)
         path = write_evaluation_run_record_template(run_dir, template)
     except (UiExportError, CorpusPreparationError, EvaluationRunRecordError) as error:
         _json_print({"error": str(error), "run_id": args.run_id})

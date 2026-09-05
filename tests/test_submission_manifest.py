@@ -15,6 +15,7 @@ from cosmatter.submission_manifest import (
 from cosmatter.sensitive_artifact_audit import audit_sensitive_artifacts, write_sensitive_artifact_audit
 from cosmatter.evidence_maturity_registry import audit_evidence_maturity_registry_against_runs, write_evidence_maturity_registry, write_evidence_maturity_registry_audit
 from cosmatter.source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, source_map_from_review, write_source_map_for_document
+from tests.question_set_helpers import write_synthetic_frozen_question_set
 
 
 class SubmissionManifestTests(unittest.TestCase):
@@ -48,6 +49,7 @@ class SubmissionManifestTests(unittest.TestCase):
             (run / "potential_execution_protocol.json").write_text(json.dumps({"schema_version": "1.0"}), encoding="utf-8")
             (run / "material_draft_traceability_audit.json").write_text(json.dumps({"trust_status": "automated_non_scientific_material_draft_traceability_audit"}), encoding="utf-8")
             (run / "test_only_delegated_review.json").write_text(json.dumps({"trust_status": "user_authorized_delegated_test_review_not_scientific_evidence"}), encoding="utf-8")
+            write_synthetic_frozen_question_set(run, mission.mission_id)
             write_sensitive_artifact_audit(run, audit_sensitive_artifacts(run, mission.mission_id))
             manifest = build_submission_execution_manifest(run_dir=run, mission=mission)
             serialized = json.dumps(manifest)
@@ -59,11 +61,23 @@ class SubmissionManifestTests(unittest.TestCase):
         self.assertTrue(next(item for item in manifest["artifact_inventory"] if item["name"] == "potential_execution_protocol.json")["exists"])
         self.assertTrue(next(item for item in manifest["artifact_inventory"] if item["name"] == "material_draft_traceability_audit.json")["exists"])
         self.assertTrue(next(item for item in manifest["artifact_inventory"] if item["name"] == "test_only_delegated_review.json")["exists"])
+        self.assertTrue(next(item for item in manifest["artifact_inventory"] if item["name"] == "frozen_question_set.json")["exists"])
+        self.assertTrue(next(item for item in manifest["artifact_inventory"] if item["name"] == "question_set_review_audit.json")["exists"])
         self.assertEqual(manifest["redaction_audit"], {"present": True, "is_clean": True})
         self.assertNotIn("private source quote", serialized)
         self.assertNotIn("D:/private", serialized)
         self.assertNotIn("private query", serialized)
         self.assertNotIn("private-request-id", serialized)
+        self.assertNotIn("synthetic-bfo-question-set", serialized)
+
+    def test_manifest_rejects_an_incomplete_frozen_question_set_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            mission = MissionBrief("question", "BiFeO3", "phase", "scope", mission_id="mission_questions")
+            write_synthetic_frozen_question_set(run, mission.mission_id)
+            (run / "question_set_review_audit.json").unlink()
+            with self.assertRaisesRegex(SubmissionManifestError, "question-set"):
+                build_submission_execution_manifest(run_dir=run, mission=mission)
 
     def test_manifest_rechecks_recorded_maturity_registry_links_and_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -105,7 +119,7 @@ class SubmissionManifestTests(unittest.TestCase):
         self.assertEqual(status, 0, output.getvalue())
         self.assertIn("derived_submission_execution_index", manifest)
         self.assertIn("submission_execution_manifest_built", event_log)
-        self.assertNotIn("question", manifest)
+        self.assertNotIn("question", json.loads(manifest))
 
     def test_rejects_malformed_event_log(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

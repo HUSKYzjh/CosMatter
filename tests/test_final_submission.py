@@ -72,6 +72,7 @@ class FinalSubmissionTests(unittest.TestCase):
             record = {"submission_truth_check": "completed"}
             (run / "real_corpus_evaluation_run_record.json").write_text(json.dumps(record), encoding="utf-8")
             evaluation_names = (
+                "frozen_question_set.json", "question_set_review_audit.json",
                 "frozen_corpus_readiness.json", "human_annotation_coverage.json", "bibliographic_source_coverage.json",
                 "evaluation_failure_case_log.json", "evaluation_api_cost_latency.json",
                 "human_retrieval_evaluation.json", "human_material_fact_evaluation.json",
@@ -85,8 +86,10 @@ class FinalSubmissionTests(unittest.TestCase):
                 result = build_final_submission_package(repository_root=root, run_dir=run, output_path=output)
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
-        self.assertEqual(len(result["real_evaluation_artifacts"]), 10)
+        self.assertEqual(len(result["real_evaluation_artifacts"]), 12)
         self.assertIn("evaluation/real_corpus_evaluation_run_record.json", names)
+        self.assertIn("evaluation/frozen_question_set.json", names)
+        self.assertIn("evaluation/question_set_review_audit.json", names)
         self.assertIn("evaluation/human_gap_evaluation.json", names)
         self.assertIn("evaluation/bibliographic_source_coverage.json", names)
     def test_refuses_unready_run(self) -> None:

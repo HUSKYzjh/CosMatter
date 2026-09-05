@@ -95,6 +95,7 @@ class SubmissionReadinessTests(unittest.TestCase):
                 (run / name).write_text("{}", encoding="utf-8")
             report = submission_readiness(repository_root=root, run_dir=run)
         self.assertFalse(report["ready"])
+        self.assertFalse(report["checks"]["run_frozen_question_set_consistent"])
         self.assertFalse(report["checks"]["run_real_evaluation_record_consistent"])
     def test_reports_missing_license_without_claiming_ready(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

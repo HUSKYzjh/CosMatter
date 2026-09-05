@@ -18,6 +18,7 @@ from .models import MissionBrief
 from .sensitive_artifact_audit import SensitiveArtifactAuditError, load_sensitive_artifact_audit
 from .evidence_maturity_registry import EvidenceMaturityRegistryError, audit_evidence_maturity_registry_against_runs, load_evidence_maturity_registry, validate_evidence_maturity_registry_audit
 from .workflow_readiness import workflow_readiness
+from .question_set import QuestionSetError, load_frozen_question_set_binding
 
 
 SUBMISSION_MANIFEST_SCHEMA_VERSION = "1.0"
@@ -47,6 +48,8 @@ _ARTIFACT_NAMES = (
     "human_material_fact_evaluation.json",
     "human_evidence_quality_evaluation.json",
     "human_gap_evaluation.json",
+    "frozen_question_set.json",
+    "question_set_review_audit.json",
     "frozen_corpus_readiness.json",
     "human_annotation_coverage.json",
     "bibliographic_source_coverage.json",
@@ -78,6 +81,7 @@ def build_submission_execution_manifest(*, run_dir: Path, mission: MissionBrief)
     """Summarize a bounded run without reading or projecting sensitive content."""
     readiness = workflow_readiness(run_dir, mission)
     _validate_evidence_maturity_registry_artifacts(run_dir, mission)
+    _validate_question_set_artifacts(run_dir, mission)
     artifacts = [_artifact_entry(run_dir / name, name) for name in _ARTIFACT_NAMES]
     try:
         redaction = load_sensitive_artifact_audit(run_dir / "sensitive_artifact_audit.json", mission.mission_id)
@@ -149,6 +153,14 @@ def _validate_evidence_maturity_registry_artifacts(run_dir: Path, mission: Missi
             raise EvidenceMaturityRegistryError("evidence maturity registry source links changed after audit")
     except (OSError, json.JSONDecodeError, EvidenceMaturityRegistryError) as error:
         raise SubmissionManifestError("evidence maturity registry artifacts are invalid") from error
+
+
+def _validate_question_set_artifacts(run_dir: Path, mission: MissionBrief) -> None:
+    """Inventory a frozen question set only when its paired audit still matches."""
+    try:
+        load_frozen_question_set_binding(run_dir, mission_id=mission.mission_id)
+    except QuestionSetError as error:
+        raise SubmissionManifestError("frozen question-set artifacts are invalid") from error
 
 
 def write_submission_execution_manifest(run_dir: Path, manifest: dict[str, Any]) -> Path:

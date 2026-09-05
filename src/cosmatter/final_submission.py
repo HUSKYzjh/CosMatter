@@ -25,6 +25,8 @@ _REPORT_FILES = (
 )
 _REAL_EVALUATION_FILES = (
     "real_corpus_evaluation_run_record.json",
+    "frozen_question_set.json",
+    "question_set_review_audit.json",
     "frozen_corpus_readiness.json",
     "human_annotation_coverage.json",
     "bibliographic_source_coverage.json",

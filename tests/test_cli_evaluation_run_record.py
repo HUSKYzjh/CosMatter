@@ -9,6 +9,7 @@ from unittest.mock import patch
 from cosmatter.cli import main
 from cosmatter.corpus_preparation import corpus_manifest_from_review, write_corpus_manifest
 from cosmatter.models import MissionBrief
+from tests.question_set_helpers import write_synthetic_frozen_question_set
 
 
 def selection() -> dict[str, object]:
@@ -32,6 +33,7 @@ class CliEvaluationRunRecordTests(unittest.TestCase):
             (run / "mission.json").write_text(json.dumps(mission.to_dict()), encoding="utf-8")
             manifest = corpus_manifest_from_review(mission_id=mission.mission_id, material=mission.material, selection=selection())
             write_corpus_manifest(run, manifest)
+            write_synthetic_frozen_question_set(run)
             output = io.StringIO()
             with patch("cosmatter.cli._runs_dir", return_value=runs), contextlib.redirect_stdout(output):
                 status_template = main(["create-evaluation-run-record-template", "--run-id", "evaluation_cli"])
@@ -51,6 +53,8 @@ class CliEvaluationRunRecordTests(unittest.TestCase):
         self.assertEqual(status_template, 0, output.getvalue())
         self.assertEqual(status_record, 0, output.getvalue())
         self.assertEqual(saved["frozen_corpus_document_count"], 2)
+        self.assertEqual(saved["question_set_id"], "synthetic-bfo-question-set")
+        self.assertEqual(saved["frozen_question_count"], 8)
         self.assertIn("evaluation_run_record_template_created", events)
         self.assertIn("human_real_corpus_evaluation_run_recorded", events)
         self.assertNotIn(str(input_path), output.getvalue())

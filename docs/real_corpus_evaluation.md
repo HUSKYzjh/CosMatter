@@ -188,7 +188,10 @@ $env:PYTHONPATH = "src"
 ```
 
 This writes `real_corpus_evaluation_run_record_template.json`, bound to the
-mission ID, corpus ID, and manifest document count. It is an empty human
+mission ID, corpus ID, manifest document count, frozen question-set ID, frozen
+question count, and question-set content hash. The command fails closed when
+the validated `frozen_question_set.json` / `question_set_review_audit.json`
+pair is absent or inconsistent. It is an empty human
 disclosure record, not an evaluation result. Copy it to a private reviewed JSON
 file only after the real run. Complete the execution date, code revision,
 service/model and human-review disclosures, then save it with:
@@ -207,6 +210,11 @@ metric artifacts, recorded failure-case/API cost records, a matching
 relevance labels for exactly the frozen corpus. In a completed record all four
 `human_review_disclosure` values must be `completed`. It never reads local PDF
 paths, full text, provider payloads, or environment secrets.
+
+A completed final-submission package includes both validated frozen
+question-set files alongside the aggregate evaluation artifacts. The frozen
+file contains only the included, reviewed research questions and their declared
+scope/evidence level; free-form reviewer notes remain outside the package.
 
 ## Machine-validated operational disclosures
 

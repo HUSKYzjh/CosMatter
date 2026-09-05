@@ -1,8 +1,11 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "mission_id": "<copy_from_mission_json>",
   "corpus_id": "<copy_from_corpus_manifest_json>",
+  "question_set_id": "<copy_from_frozen_question_set_json>",
   "trust_status": "blank_human_real_corpus_evaluation_run_record_not_a_result",
+  "frozen_question_count": 8,
+  "frozen_question_set_sha256": "sha256:<copy_from_frozen_question_set_json>",
   "frozen_corpus_document_count": 90,
   "execution_completed_on": "",
   "code_revision": "",
