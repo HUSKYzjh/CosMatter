@@ -22,9 +22,11 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         self.seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_p0_literature_observation_candidates.json"
         self.expanded_seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_expanded_literature_observation_candidates_v2.json"
         self.remaining_seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_magnetic_optical_process_literature_observation_candidates_v2.json"
+        self.value_seed_path = AGENT_ROOT / "examples" / "frozen" / "bfo_magnetic_pv_process_literature_observation_candidates_v2.json"
         self.source_matrix_path = AGENT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json"
         self.expanded_source_matrix_path = AGENT_ROOT / "configs" / "bfo_expanded_source_candidate_matrix_v2.json"
         self.remaining_source_matrix_path = AGENT_ROOT / "configs" / "bfo_magnetic_optical_process_source_candidate_matrix_v2.json"
+        self.value_source_matrix_path = AGENT_ROOT / "configs" / "bfo_magnetic_pv_process_source_candidate_matrix_v2.json"
         self.catalog = load_material_indicator_catalog(self.catalog_path)
         self.expanded_catalog = load_material_indicator_catalog(self.expanded_catalog_path)
         self.seed = load_material_observation_set(self.seed_path, self.catalog)
@@ -36,6 +38,10 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
             self.remaining_seed_path,
             self.expanded_catalog,
         )
+        self.value_seed = load_material_observation_set(
+            self.value_seed_path,
+            self.expanded_catalog,
+        )
         self.source_matrix = load_material_source_candidate_matrix(self.source_matrix_path, self.catalog)
         self.expanded_source_matrix = load_material_source_candidate_matrix(
             self.expanded_source_matrix_path,
@@ -43,6 +49,10 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         )
         self.remaining_source_matrix = load_material_source_candidate_matrix(
             self.remaining_source_matrix_path,
+            self.expanded_catalog,
+        )
+        self.value_source_matrix = load_material_source_candidate_matrix(
+            self.value_source_matrix_path,
             self.expanded_catalog,
         )
 
@@ -258,6 +268,124 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         ]
         self.assertEqual([item["reported_value"] for item in plumes], [0.01, 0.4])
         self.assertEqual({item["reported_unit"] for item in plumes}, {"mbar"})
+
+    def test_magnetic_pv_process_matrix_has_independent_routes_and_batch_gap(self) -> None:
+        self.assertEqual(len(self.value_source_matrix["questions"]), 5)
+        self.assertEqual(
+            {question["question_id"] for question in self.value_source_matrix["questions"]},
+            {
+                "bfo_v2_magnetic_loop_condition_boundary",
+                "bfo_v2_absorption_coefficient_spectral_boundary",
+                "bfo_v2_photovoltaic_geometry_illumination_boundary",
+                "bfo_v2_deposition_rate_method_boundary",
+                "bfo_v2_independent_batch_reporting_gap",
+            },
+        )
+        for question in self.value_source_matrix["questions"]:
+            by_role = {
+                role: [
+                    source for source in question["source_candidates"]
+                    if source["role"] == role
+                ]
+                for role in (
+                    "primary_support", "independent_support",
+                    "boundary_counterexample",
+                )
+            }
+            self.assertTrue(all(by_role.values()))
+            self.assertTrue(
+                {source["independence_group"] for source in by_role["primary_support"]}
+                .isdisjoint({
+                    source["independence_group"] for source in by_role["independent_support"]
+                })
+            )
+        gap = next(
+            question for question in self.value_source_matrix["questions"]
+            if question["question_id"] == "bfo_v2_independent_batch_reporting_gap"
+        )
+        self.assertEqual(gap["focus_indicator_ids"], ["replicate_batch_count"])
+        unreported = [
+            source for source in gap["source_candidates"]
+            if "no explicit" in source["reported_lead"].casefold()
+        ]
+        self.assertEqual(len(unreported), 2)
+        self.assertTrue(all("batch" in source["reported_lead"].casefold() for source in unreported))
+        explicit = next(
+            source for source in gap["source_candidates"]
+            if source["role"] == "boundary_counterexample"
+        )
+        self.assertEqual(explicit["normalized_doi"], "10.1038/s41467-018-07363-y")
+        self.assertIn("three batches", explicit["reported_lead"].casefold())
+        self.assertIn("17", explicit["reported_lead"])
+        self.assertIn("not three independent repeats", explicit["claim_boundary"].casefold())
+        probe = self.value_source_matrix["provider_probe_summary"]
+        self.assertEqual(
+            (probe["search_status"], probe["content_status"]),
+            ("succeeded", "succeeded"),
+        )
+        self.assertIn("five_indicator_queries", probe["probe_scope"])
+        self.assertIn("no_source_text_or_provider_ids_persisted", probe["probe_scope"])
+
+    def test_magnetic_pv_process_values_preserve_units_signs_and_conditions(self) -> None:
+        observations = self.value_seed["observations"]
+        self.assertEqual(len(observations), 21)
+        self.assertTrue(all(item["source_map_status"] == "none" for item in observations))
+        self.assertTrue(all(item["data_status"] == "not_checked" for item in observations))
+        self.assertTrue(all(item["maturity_level"] == "literature_mentioned" for item in observations))
+        batches = [item for item in observations if item["indicator_id"] == "replicate_batch_count"]
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(
+            (batches[0]["reported_value"], batches[0]["reported_unit"], batches[0]["normalized_doi"]),
+            (3, "batch", "10.1038/s41467-018-07363-y"),
+        )
+        self.assertIn("three different sintering temperatures", batches[0]["limitation"])
+
+        wang = [
+            item for item in observations
+            if item["normalized_doi"] == "10.1126/science.1080615"
+        ]
+        self.assertEqual(
+            [(item["indicator_id"], item["reported_value"], item["reported_unit"]) for item in wang],
+            [
+                ("saturation_magnetization_ms", 150, "emu/cm3"),
+                ("magnetic_coercive_field_hc", 200, "Oe"),
+                ("saturation_magnetization_ms", 5, "emu/cm3"),
+            ],
+        )
+        zhou = [
+            item for item in observations
+            if item["normalized_doi"] == "10.1016/j.tsf.2020.137851"
+        ]
+        self.assertEqual(
+            [(item["indicator_id"], item["reported_value"], item["reported_unit"]) for item in zhou],
+            [
+                ("open_circuit_voltage", 0.17, "V"),
+                ("short_circuit_current_density", -0.61, "uA/cm2"),
+                ("open_circuit_voltage", -0.23, "V"),
+                ("short_circuit_current_density", 57, "uA/cm2"),
+            ],
+        )
+        rates = [
+            item for item in observations if item["indicator_id"] == "deposition_rate"
+        ]
+        self.assertEqual(
+            [(item["value_semantics"], item["reported_value"], item["reported_lower"], item["reported_upper"], item["reported_unit"]) for item in rates],
+            [
+                ("exact", 0.8, None, None, "angstrom/s"),
+                ("range", None, 4, 9, "nm/min"),
+                ("exact", 0.03, None, None, "nm/min"),
+            ],
+        )
+
+    def test_short_circuit_density_accepts_reported_micro_and_nano_units(self) -> None:
+        indicator = next(
+            item for item in self.expanded_catalog["indicators"]
+            if item["indicator_id"] == "short_circuit_current_density"
+        )
+        self.assertEqual(
+            indicator["allowed_reported_units"],
+            ["A/cm2", "mA/cm2", "uA/cm2", "nA/cm2"],
+        )
 
     def test_seed_observations_are_explicitly_unreviewed_literature_leads(self) -> None:
         self.assertEqual(

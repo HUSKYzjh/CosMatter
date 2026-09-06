@@ -1,0 +1,290 @@
+{
+  "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+  "catalog_id": "bfo-experimental-indicators/v2",
+  "material_scope": "BiFeO3",
+  "trust_status": "source_candidates_not_screened_or_source_mapped",
+  "provider_probe_summary": {
+    "provider": "sciverse",
+    "operation": "semantic_search_and_bounded_content",
+    "search_status": "succeeded",
+    "content_status": "succeeded",
+    "probe_scope": "five_indicator_queries_three_hits_each_one_500_character_window_each_no_source_text_or_provider_ids_persisted"
+  },
+  "questions": [
+    {
+      "question_id": "bfo_v2_magnetic_loop_condition_boundary",
+      "focus_indicator_ids": ["saturation_magnetization_ms", "remanent_magnetization_mr", "magnetic_coercive_field_hc", "magnetic_moment_per_fe"],
+      "comparison_question_zh": "BFO 的 Ms、Mr 与 Hc 在外延薄膜、溶胶凝胶薄膜和介孔薄膜中为何相差数个数量级？",
+      "source_candidates": [
+        {
+          "source_id": "wang2003_science_1080615",
+          "normalized_doi": "10.1126/science.1080615",
+          "title": "Epitaxial BiFeO3 Multiferroic Thin Film Heterostructures",
+          "year": 2003,
+          "role": "primary_support",
+          "independence_group": "ramesh_bfo_epitaxy_2003",
+          "independence_note": "Original vibrating-sample magnetometry report for the widely cited thickness-dependent epitaxial-film magnetization.",
+          "sample_scope": "Seventy to four-hundred nanometre epitaxial BiFeO3 films in the reported oxide heterostructure series",
+          "method_scope": "Room-temperature in-plane and out-of-plane vibrating-sample magnetometry with a thickness series",
+          "reported_lead": "A 70 nm film is reported near 150 emu per cubic centimetre with coercive field near 200 Oe, while the 400 nm film is near 5 emu per cubic centimetre.",
+          "claim_boundary": "The substrate background, impurity debate, thickness and field geometry must remain attached; the 150 value is not a bulk BFO constant.",
+          "fulltext_route": "public_repository",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "bai2020_nano10091798",
+          "normalized_doi": "10.3390/nano10091798",
+          "title": "Enhanced Magnetic Properties of Co-Doped BiFeO3 Thin Films via Structural Progression",
+          "year": 2020,
+          "role": "independent_support",
+          "independence_group": "bai_jilin_solgel_bfo_2020",
+          "independence_note": "Independent sol-gel film experiment includes a pristine BFO control measured in the same VSM series as the doped films.",
+          "sample_scope": "Pristine polycrystalline BiFeO3 control film spin-coated on silicon and thermally treated with the reported sol-gel sequence",
+          "method_scope": "Room-temperature vibrating-sample magnetometry over zero to ten kilo-oersted with high-field background treatment described in the article",
+          "reported_lead": "The pristine control is reported with Ms 21.38 and Mr 2.06 emu per cubic centimetre.",
+          "claim_boundary": "A control embedded in a doping study is independently useful but not a reproduction of the 2003 epitaxial heterostructure.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "quickel2015_ncomms7562",
+          "normalized_doi": "10.1038/ncomms7562",
+          "title": "Mesoporous bismuth ferrite with amplified magnetoelectric coupling and electric field-induced ferrimagnetism",
+          "year": 2015,
+          "role": "boundary_counterexample",
+          "independence_group": "tolbert_mesoporous_bfo_2015",
+          "independence_note": "Independent wet-chemical architecture and electric-field comparison exposes how porosity and field history alter the apparent saturation response.",
+          "sample_scope": "Strained mesoporous BiFeO3 and analogous dense non-porous films",
+          "method_scope": "Magnetization comparison before and after electric-field application with mesoporous and dense controls",
+          "reported_lead": "Mesoporous films change from 0.04 to 0.84 Bohr magneton per Fe, whereas dense films change from 0.002 to 0.01 under the same field treatment.",
+          "claim_boundary": "Atom-normalized magnetic moment under an electric-field protocol cannot be pooled with volume magnetization without density and conversion evidence.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "institutional_access_required",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_v2_absorption_coefficient_spectral_boundary",
+      "focus_indicator_ids": ["absorption_coefficient"],
+      "comparison_question_zh": "BFO 的吸收系数在不同波长、厚度、形貌与缺陷补偿下能否直接比较？",
+      "source_candidates": [
+        {
+          "source_id": "singh2014_mrb_2013_08_050",
+          "normalized_doi": "10.1016/j.materresbull.2013.08.050",
+          "title": "Influence of thickness on optical and structural properties of BiFeO3 thin films: PLD grown",
+          "year": 2014,
+          "role": "primary_support",
+          "independence_group": "singh_khan_pld_bfo_2014",
+          "independence_note": "Primary paired-thickness PLD study with the same optical analysis route and substrate family.",
+          "sample_scope": "Two-hundred and six-hundred nanometre BiFeO3 films deposited on ITO-coated glass",
+          "method_scope": "Room-temperature UV-visible absorption spectroscopy and thickness-resolved absorption-coefficient extraction",
+          "reported_lead": "At 500 nm the reported absorption coefficients are 21111 and 48834 inverse centimetres for the 200 and 600 nm films, respectively.",
+          "claim_boundary": "The coefficient is wavelength- and thickness-bound; neither value is a wavelength-independent optical constant.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "institutional_access_required",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "gu2009_oe_010970",
+          "normalized_doi": "10.1364/OE.17.010970",
+          "title": "Femtosecond third-order optical nonlinearity of polycrystalline BiFeO3",
+          "year": 2009,
+          "role": "independent_support",
+          "independence_group": "gu_ji_sputtered_bfo_2009",
+          "independence_note": "Independent radio-frequency sputtered film measured by transmittance and fitted with an envelope and Sellmeier-type method.",
+          "sample_scope": "Polycrystalline BiFeO3 film on quartz with fitted thickness 510 plus or minus 23 nanometres",
+          "method_scope": "Room-temperature optical transmittance with envelope analysis and Sellmeier-type dispersion fitting",
+          "reported_lead": "At 780 nm the linear absorption coefficient is reported as 1.07 times ten to the fourth inverse centimetres.",
+          "claim_boundary": "The near-infrared fitted value is not directly comparable to the 500 nm PLD-film points without retaining wavelength and analysis method.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "seidel2012_ncomms1799",
+          "normalized_doi": "10.1038/ncomms1799",
+          "title": "Prominent electrochromism through vacancy-order melting in a complex oxide",
+          "year": 2012,
+          "role": "boundary_counterexample",
+          "independence_group": "seidel_ca_bfo_electrochromism_2012",
+          "independence_note": "Independent calcium-doped and oxygen-vacancy-compensated BFO comparison reports a wavelength-specific change rather than an absolute pristine-BFO coefficient.",
+          "sample_scope": "Calcium-doped BiFeO3 with and without oxygen-vacancy compensation",
+          "method_scope": "Measured optical-absorption change at 480 nm paired with first-principles absorption spectra",
+          "reported_lead": "The measured absorption-coefficient change at 480 nm is reported as 4.8 million inverse metres between compensation states.",
+          "claim_boundary": "A delta between doped defect states is not an absolute BFO absorption coefficient and must not be stored as one.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_v2_photovoltaic_geometry_illumination_boundary",
+      "focus_indicator_ids": ["open_circuit_voltage", "short_circuit_current_density"],
+      "comparison_question_zh": "BFO 的 Voc 与 Jsc 如何随电极、畴壁几何、极化方向、波长和光强改变？",
+      "source_candidates": [
+        {
+          "source_id": "zhou2020_tsf_137851",
+          "normalized_doi": "10.1016/j.tsf.2020.137851",
+          "title": "Switchable ferroelectric diode and photovoltaic effects in polycrystalline BiFeO3 thin films grown on transparent substrates",
+          "year": 2020,
+          "role": "primary_support",
+          "independence_group": "zhou_jin_poly_bfo_pv_2020",
+          "independence_note": "Primary vertically contacted polycrystalline-film experiment reports signed voltage and current density for opposite polarization states.",
+          "sample_scope": "Au slash BiFeO3 slash ITO on quartz, polycrystalline PLD film",
+          "method_scope": "Current-voltage curves under 375 nm continuous laser illumination at 630 milliwatts per square centimetre",
+          "reported_lead": "Upward polarization gives about plus 0.17 V and minus 0.61 microampere per square centimetre; downward polarization gives minus 0.23 V and plus 57 microampere per square centimetre.",
+          "claim_boundary": "Signs depend on the authors' wiring convention and poling direction; the approximately hundredfold current asymmetry must not be averaged away.",
+          "fulltext_route": "author_manuscript",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "choi2009_science_1168636",
+          "normalized_doi": "10.1126/science.1168636",
+          "title": "Switchable Ferroelectric Diode and Photovoltaic Effect in BiFeO3",
+          "year": 2009,
+          "role": "independent_support",
+          "independence_group": "cheong_bfo_single_crystal_pv_2009",
+          "independence_note": "Independent monodomain single-crystal study compares steady zero-bias photocurrent under green and red illumination.",
+          "sample_scope": "Ferroelectric monodomain BiFeO3 single crystal with lateral silver electrodes",
+          "method_scope": "Steady zero-bias photocurrent under side-selective green and red illumination with polarization-direction checks",
+          "reported_lead": "Steady photocurrent density is about 7.35 microamperes per square centimetre under green light and 2.6 nanoamperes per square centimetre under red light.",
+          "claim_boundary": "The reported zero-bias photocurrent is wavelength- and illumination-geometry-bound and is not a standard one-sun solar-cell Jsc.",
+          "fulltext_route": "institutional_access_required",
+          "access_status": "institutional_access_required",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "bhatnagar2013_ncomms3835",
+          "normalized_doi": "10.1038/ncomms3835",
+          "title": "Role of domain walls in the abnormal photovoltaic effect in BiFeO3",
+          "year": 2013,
+          "role": "boundary_counterexample",
+          "independence_group": "bhatnagar_mpi_bfo_pv_2013",
+          "independence_note": "Independent domain-wall geometry and temperature study tests the earlier wall-step interpretation and reports much larger above-bandgap voltage.",
+          "sample_scope": "Epitaxial BiFeO3 films with 71 and 109 degree periodic stripe domains and controlled electrode-to-wall geometry",
+          "method_scope": "Illuminated current-voltage measurements across temperature, gap width and parallel or perpendicular domain-wall configurations",
+          "reported_lead": "Open-circuit voltage reaches up to about 50 V, while the paper emphasizes geometry, conductivity and bulk-photovoltaic interpretation.",
+          "claim_boundary": "The maximum is an anomalous lateral-geometry result and cannot be compared directly with sub-volt vertical capacitors by voltage alone.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_v2_deposition_rate_method_boundary",
+      "focus_indicator_ids": ["deposition_rate"],
+      "comparison_question_zh": "BFO 沉积速率能否跨 PLD、MOCVD 与磁控溅射路线直接迁移？",
+      "source_candidates": [
+        {
+          "source_id": "haselmann2022_jpcc_2c00674",
+          "normalized_doi": "10.1021/acs.jpcc.2c00674",
+          "title": "Ca Solubility in a BiFeO3-Based System with a Secondary Bi2O3 Phase on a Nanoscale",
+          "year": 2022,
+          "role": "primary_support",
+          "independence_group": "haselmann_leoben_pld_bfo_2022",
+          "independence_note": "Open primary PLD study reports both deposition time, thickness and the resulting rate for its pure BFO control.",
+          "sample_scope": "Pure BiFeO3 control film on 001 SrTiO3 deposited at 700 degrees Celsius and 3 Pa oxygen",
+          "method_scope": "KrF pulsed laser deposition at 5 Hz and 300 mJ pulse energy with ten-minute growth",
+          "reported_lead": "A 48 nm pure BFO film after ten minutes is reported as a growth rate of 0.80 angstrom per second.",
+          "claim_boundary": "The rate is bound to laser fluence, repetition, target distance, pressure and chamber calibration.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "micard2020_nano10040630",
+          "normalized_doi": "10.3390/nano10040630",
+          "title": "Piezoelectric BiFeO3 Thin Films: Optimization of MOCVD Process on Si",
+          "year": 2020,
+          "role": "independent_support",
+          "independence_group": "micard_mocvd_bfo_2020",
+          "independence_note": "Independent MOCVD optimization varies carrier flow and directly reports the associated growth-rate range.",
+          "sample_scope": "Polycrystalline BiFeO3 films grown on silicon-based IrO2 electrode stacks",
+          "method_scope": "Metal-organic chemical vapour deposition with gas-flow comparison and cross-sectional thickness measurement",
+          "reported_lead": "Average growth rate decreases from 9 to 4 nanometres per minute when the carrier-flow condition is increased.",
+          "claim_boundary": "A gas-flow-dependent MOCVD interval is not equivalent to a PLD pulse-normalized rate.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "siadou2013_amse_857465",
+          "normalized_doi": "10.1155/2013/857465",
+          "title": "Electric and Magnetic Properties of Sputter Deposited BiFeO3 Films",
+          "year": 2013,
+          "role": "boundary_counterexample",
+          "independence_group": "siadou_sputter_bfo_2013",
+          "independence_note": "Independent room-temperature magnetron-sputtering route gives a far slower nominal rate and requires post-growth heat treatment.",
+          "sample_scope": "Twenty nanometre polycrystalline BFO films deposited at room temperature and subsequently heat treated",
+          "method_scope": "Magnetron sputtering at five millitorr argon and six-inch target distance",
+          "reported_lead": "The reported sputter deposition rate is 0.03 nanometres per minute.",
+          "claim_boundary": "The slow sputter rate and post-anneal route are a method boundary, not evidence that faster PLD or MOCVD values are wrong.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    },
+    {
+      "question_id": "bfo_v2_independent_batch_reporting_gap",
+      "focus_indicator_ids": ["replicate_batch_count"],
+      "comparison_question_zh": "公开 BFO 原始论文是否明确报告独立制备批次数，而不是只展示同一批样品内的厚度或条件序列？",
+      "source_candidates": [
+        {
+          "source_id": "wang2003_science_batch_gap",
+          "normalized_doi": "10.1126/science.1080615",
+          "title": "Epitaxial BiFeO3 Multiferroic Thin Film Heterostructures",
+          "year": 2003,
+          "role": "primary_support",
+          "independence_group": "ramesh_bfo_epitaxy_batch_reporting_2003",
+          "independence_note": "The public main article was screened specifically for explicit independent synthesis replication rather than sample-series count.",
+          "sample_scope": "Reported epitaxial film thickness series",
+          "method_scope": "Bounded main-article reporting audit for independent growth batches",
+          "reported_lead": "No explicit independent synthesis batch count was located in the screened main article.",
+          "claim_boundary": "Absence in a bounded main-article screen does not prove that one batch was used or that supplementary laboratory records do not exist.",
+          "fulltext_route": "public_repository",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "zhou2020_tsf_batch_gap",
+          "normalized_doi": "10.1016/j.tsf.2020.137851",
+          "title": "Switchable ferroelectric diode and photovoltaic effects in polycrystalline BiFeO3 thin films grown on transparent substrates",
+          "year": 2020,
+          "role": "independent_support",
+          "independence_group": "zhou_jin_poly_bfo_batch_reporting_2020",
+          "independence_note": "An independent full article was screened for a separately prepared batch count and not merely repeated electrical sweeps.",
+          "sample_scope": "Polycrystalline Au slash BiFeO3 slash ITO photovoltaic specimens",
+          "method_scope": "Full-article reporting audit for independently repeated film-growth batches",
+          "reported_lead": "No explicit number of independently repeated film-growth batches was located in the screened article.",
+          "claim_boundary": "Repeated poling states and current-voltage curves are not independent synthesis batches and cannot be counted as such.",
+          "fulltext_route": "author_manuscript",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "liu2018_ncomms_07363",
+          "normalized_doi": "10.1038/s41467-018-07363-y",
+          "title": "Frequency-dependent decoupling of domain-wall motion and lattice strain in bismuth ferrite",
+          "year": 2018,
+          "role": "boundary_counterexample",
+          "independence_group": "liu_daniels_bfo_batch_2018",
+          "independence_note": "The open primary article explicitly states a batch count and total specimen count, providing a positive reporting example independent of the thin-film routes.",
+          "sample_scope": "Polycrystalline BFO ceramics; three batches and seventeen total specimens; batches sintered at 745, 760 and 780 degrees Celsius",
+          "method_scope": "Solid-state reactive sintering followed by frequency-resolved in-situ high-energy X-ray diffraction under sub-coercive electric-field cycling",
+          "reported_lead": "Three batches comprising 17 total specimens are explicitly reported.",
+          "claim_boundary": "The batches correspond to distinct sintering temperatures, so the count demonstrates explicit batch reporting but not three independent repeats under one identical preparation condition.",
+          "fulltext_route": "publisher_open_access",
+          "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        }
+      ]
+    }
+  ]
+}
