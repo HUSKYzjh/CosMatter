@@ -25,3 +25,30 @@ class GovernanceDocumentationTests(unittest.TestCase):
         for text in (governance, evaluation, security):
             self.assertNotIn("C:\\Users\\", text)
             self.assertNotIn("/home/", text.lower())
+
+    def test_pst_md_only_configuration_search_plan_preserves_claim_boundaries(self) -> None:
+        plan = (
+            ROOT / "docs" / "PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md"
+        ).read_text(encoding="utf-8")
+        roadmap = (
+            ROOT / "docs" / "COMPUTATIONAL_SIMULATION_WORKFLOW_COMPETITIVE_ANALYSIS.zh-CN.md"
+        ).read_text(encoding="utf-8")
+        todo = (ROOT / "TODO.md").read_text(encoding="utf-8")
+
+        for required in (
+            "8×8×8",
+            "512",
+            "n_Pb + n_Sr = 512",
+            "Pb ↔ Sr",
+            "Pareto",
+            "随机基线",
+            "至少 3 个独立",
+            "代理预测产生的排名数为 0",
+            "不能证明全局最优",
+            "plan_only / framework_only",
+        ):
+            self.assertIn(required, plan)
+        self.assertIn("PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md", roadmap)
+        self.assertIn("PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md", todo)
+        self.assertNotIn("C:\\Users\\", plan)
+        self.assertNotIn("/home/", plan.lower())

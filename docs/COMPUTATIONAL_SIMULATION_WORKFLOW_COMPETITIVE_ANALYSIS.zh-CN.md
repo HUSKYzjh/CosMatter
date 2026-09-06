@@ -144,7 +144,15 @@ EvidenceCard / 报告中的限定性结论
 
 完成这一步后，团队才有足够清晰的对象边界来决定：优先投入 AiiDA + atomate2 的 DFT 试点，还是优先投入 DP-GEN 的势函数数据闭环。当前产品与研究风险判断更支持前者：先以一条小规模、可回溯的 DFT 配方打通证据到计算的链路，再扩展到高成本的主动学习。
 
-## 7. 官方资料索引
+## 7. 新增研究问题：PST 固溶体 A 位构型的 MD-only 优化
+
+新增独立问题：给定覆盖任意组分的分子动力学势场，对固定组分 `x` 的 `(Pb_xSr_{1-x})TiO3`，在 `8×8×8` 超胞的 512 个 A 位上搜索 Pb/Sr 排列，使指定介电、压电性质或二者 Pareto 组合尽可能优；所有性质评价只能来自 MD，不允许性质预测代理模型。
+
+该问题在算法上可行，但构型空间在 `x=0.5` 附近约为 `10^152.67`，因此有限预算下不能证明全局最优。计划采用保持组分的 `Pb ↔ Sr` 成对交换、多链并行退火或固定基数进化搜索、短/长 MD 分级赛选、独立种子复核和随机构型基线；最终只报告“冻结协议和预算下找到的最佳构型/Pareto 前沿”。结构描述符只用于去重、多样性和事后解释，不参与性质预测或候选排名。
+
+完整问题定义、机器可读工件、四级验收标准和结论措辞边界见 [`PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md`](PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md)。真实 MD 仍受本文件的 `framework_only → approved_submit` 门禁约束；本次追加不构成执行授权，也不产生介电或压电结果。
+
+## 8. 官方资料索引
 
 - AiiDA： [介绍](https://aiida.readthedocs.io/projects/aiida-core/en/stable/intro/index.html)、[谱系概念](https://aiida.readthedocs.io/projects/aiida-core/en/stable/topics/provenance/concepts.html)、[调度器](https://aiida.readthedocs.io/projects/aiida-core/en/stable/topics/schedulers.html)
 - Materials Project 生态： [atomate2](https://materialsproject.github.io/atomate2/user/index.html)、[atomate2 安装与组件](https://materialsproject.github.io/atomate2/user/install.html)、[jobflow](https://materialsproject.github.io/jobflow/)、[jobflow + FireWorks](https://materialsproject.github.io/jobflow/tutorials/8-fireworks)
