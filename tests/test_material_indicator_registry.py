@@ -318,6 +318,13 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
         self.assertIn("three batches", explicit["reported_lead"].casefold())
         self.assertIn("17", explicit["reported_lead"])
         self.assertIn("not three independent repeats", explicit["claim_boundary"].casefold())
+        ready = {
+            source["source_id"]
+            for question in self.value_source_matrix["questions"]
+            for source in question["source_candidates"]
+            if source["access_status"] == "private_mineru_review_pool_ready"
+        }
+        self.assertEqual(ready, {"wang2003", "mazumder2007", "zhou2020"})
         probe = self.value_source_matrix["provider_probe_summary"]
         self.assertEqual(
             (probe["search_status"], probe["content_status"]),
@@ -328,7 +335,7 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
 
     def test_magnetic_pv_process_values_preserve_units_signs_and_conditions(self) -> None:
         observations = self.value_seed["observations"]
-        self.assertEqual(len(observations), 21)
+        self.assertEqual(len(observations), 25)
         self.assertTrue(all(item["source_map_status"] == "none" for item in observations))
         self.assertTrue(all(item["data_status"] == "not_checked" for item in observations))
         self.assertTrue(all(item["maturity_level"] == "literature_mentioned" for item in observations))
@@ -339,6 +346,23 @@ class MaterialIndicatorRegistryTests(unittest.TestCase):
             (3, "batch", "10.1038/s41467-018-07363-y"),
         )
         self.assertIn("three different sintering temperatures", batches[0]["limitation"])
+
+        mazumder = [
+            item for item in observations
+            if item["normalized_doi"] == "10.1063/1.2768201"
+        ]
+        self.assertEqual(
+            [
+                (item["reported_value"], item["reported_unit"], item["qualifiers"]["thickness"])
+                for item in mazumder
+            ],
+            [
+                (0.41, "uB/Fe", "4_nm_particle_size"),
+                (0.27, "uB/Fe", "15_nm_particle_size"),
+                (0.13, "uB/Fe", "25_nm_particle_size"),
+                (0.09, "uB/Fe", "40_nm_particle_size"),
+            ],
+        )
 
         wang = [
             item for item in observations

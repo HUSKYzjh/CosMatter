@@ -225,6 +225,97 @@ class MaterialIndicatorTriageTests(unittest.TestCase):
             result["documents"][0]["segments"][0]["reason_codes"],
         )
 
+    def test_magnetic_abbreviations_and_units_are_indicator_compatible(self) -> None:
+        digest = "5" * 64
+        matrix = {
+            "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+            "catalog_id": "bfo-experimental-indicators/v2",
+            "material_scope": "BiFeO3",
+            "questions": [{
+                "question_id": "magnetism",
+                "focus_indicator_ids": ["saturation_magnetization_ms", "magnetic_coercive_field_hc"],
+                "source_candidates": [{"source_id": "paper_a", "role": "primary_support", "access_status": "private_mineru_review_pool_ready"}],
+            }],
+        }
+        result = build_private_indicator_shortlist(
+            matrix=matrix,
+            review_index=self._index(("paper_a",), digest),
+            pools_by_document={"paper_a": self._pool(
+                "paper_a", digest,
+                [
+                    ("generic", "Magnetic properties were measured at room temperature."),
+                    ("loop", "The 70 nm film has Ms = 150 emu/cm3 and Hc = 200 Oe at room temperature."),
+                ],
+            )},
+            max_segments_per_document=1,
+        )
+        selected = result["documents"][0]["segments"][0]
+        self.assertEqual(selected["segment_id"], "loop")
+        self.assertEqual(
+            selected["matched_indicator_ids"],
+            ["saturation_magnetization_ms", "magnetic_coercive_field_hc"],
+        )
+        self.assertIn("indicator_compatible_value_or_unit", selected["reason_codes"])
+
+    def test_photovoltaic_signs_and_microampere_density_are_ranked(self) -> None:
+        digest = "6" * 64
+        matrix = {
+            "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+            "catalog_id": "bfo-experimental-indicators/v2",
+            "material_scope": "BiFeO3",
+            "questions": [{
+                "question_id": "photovoltaic",
+                "focus_indicator_ids": ["open_circuit_voltage", "short_circuit_current_density"],
+                "source_candidates": [{"source_id": "paper_a", "role": "primary_support", "access_status": "private_mineru_review_pool_ready"}],
+            }],
+        }
+        result = build_private_indicator_shortlist(
+            matrix=matrix,
+            review_index=self._index(("paper_a",), digest),
+            pools_by_document={"paper_a": self._pool(
+                "paper_a", digest,
+                [
+                    ("voltage", "The photovoltaic response was discussed."),
+                    ("signed", r"Under 375 nm illumination, the open-circuit voltage is -0.23 V and the short-circuit current is $+5 7 \mu \mathrm { A } / \mathrm { c m } ^ { 2 }$ after downward poling."),
+                ],
+            )},
+            max_segments_per_document=1,
+        )
+        selected = result["documents"][0]["segments"][0]
+        self.assertEqual(selected["segment_id"], "signed")
+        self.assertEqual(
+            selected["matched_indicator_ids"],
+            ["open_circuit_voltage", "short_circuit_current_density"],
+        )
+        self.assertIn("indicator_compatible_value_or_unit", selected["reason_codes"])
+
+    def test_deposition_rate_and_explicit_batch_count_are_ranked(self) -> None:
+        digest = "7" * 64
+        matrix = {
+            "schema_version": "cosmatter.material-source-candidate-matrix/v1",
+            "catalog_id": "bfo-experimental-indicators/v2",
+            "material_scope": "BiFeO3",
+            "questions": [{
+                "question_id": "process",
+                "focus_indicator_ids": ["deposition_rate", "replicate_batch_count"],
+                "source_candidates": [{"source_id": "paper_a", "role": "primary_support", "access_status": "private_mineru_review_pool_ready"}],
+            }],
+        }
+        result = build_private_indicator_shortlist(
+            matrix=matrix,
+            review_index=self._index(("paper_a",), digest),
+            pools_by_document={"paper_a": self._pool(
+                "paper_a", digest,
+                [
+                    ("rate", "The measured growth rate was 0.80 angstrom/s at 700 deg C."),
+                    ("batches", "Three batches comprising 17 total specimens were sintered at 745, 760 and 780 deg C."),
+                ],
+            )},
+        )
+        selected = result["documents"][0]["segments"]
+        self.assertEqual({item["segment_id"] for item in selected}, {"rate", "batches"})
+        self.assertTrue(all("indicator_compatible_value_or_unit" in item["reason_codes"] for item in selected))
+
     def test_total_cap_preserves_one_segment_per_document_before_seconds(self) -> None:
         digest = "c" * 64
         document_ids = tuple(f"paper_{index}" for index in range(7))
@@ -265,6 +356,16 @@ class MaterialIndicatorTriageTests(unittest.TestCase):
                 output_path=PROJECT_ROOT / "private-shortlist.json",
             )
 
+    def test_writer_rejects_an_unversioned_matrix_even_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(MaterialIndicatorTriageError, "supported versioned"):
+                build(
+                    matrix_path=root / "matrix.json",
+                    review_index_path=root / "private-index.json",
+                    output_path=root / "private-shortlist.json",
+                )
+
     def test_full_manifest_route_ranks_value_missing_from_sampled_prefix(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -304,6 +405,44 @@ class MaterialIndicatorTriageTests(unittest.TestCase):
             self.assertEqual(result["selection_method"], "deterministic_full_markdown_indicator_numeric_condition_ranking_v2")
             self.assertEqual(result["documents"][0]["document_id"], "lebeugle2007_apl_2753390")
             self.assertIn("60 μC/cm2", result["documents"][0]["segments"][0]["quote"])
+
+    def test_full_manifest_route_accepts_the_versioned_magnetic_value_matrix(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            markdown_root = root / "markdown"
+            markdown_root.mkdir()
+            markdown = markdown_root / "wang.md"
+            markdown.write_text(
+                "At room temperature the 70 nm film has Ms = 150 emu/cm3 and Hc = 200 Oe.",
+                encoding="utf-8",
+            )
+            digest = hashlib.sha256(markdown.read_bytes()).hexdigest()
+            manifest = root / "manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "private_output_only": True,
+                        "entries": [{
+                            "status": "downloaded",
+                            "source_relative_path": "wang2003.pdf",
+                            "markdown_relative_path": "wang.md",
+                            "markdown_sha256": digest,
+                        }],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = build_from_manifest(
+                matrix_path=PROJECT_ROOT / "configs" / "bfo_magnetic_pv_process_source_candidate_matrix_v2.json",
+                manifest_path=manifest,
+                markdown_root=markdown_root,
+                output_path=root / "shortlist.json",
+            )
+            self.assertEqual(result["documents"][0]["document_id"], "wang2003")
+            self.assertEqual(
+                result["documents"][0]["segments"][0]["matched_indicator_ids"],
+                ["saturation_magnetization_ms", "magnetic_coercive_field_hc"],
+            )
 
 
 if __name__ == "__main__":

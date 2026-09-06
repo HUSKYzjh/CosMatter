@@ -20,6 +20,22 @@ except ModuleNotFoundError as error:  # direct ``python tools/<script>.py`` exec
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SUPPORTED_MATRIX_PATHS = frozenset(
+    PROJECT_ROOT / "configs" / name
+    for name in (
+        "bfo_p0_source_candidate_matrix.json",
+        "bfo_expanded_source_candidate_matrix_v2.json",
+        "bfo_magnetic_optical_process_source_candidate_matrix_v2.json",
+        "bfo_magnetic_pv_process_source_candidate_matrix_v2.json",
+    )
+)
+
+
+def _supported_matrix(path: Path) -> Path:
+    resolved = path.resolve()
+    if resolved not in SUPPORTED_MATRIX_PATHS:
+        raise MaterialIndicatorTriageError("BFO shortlist requires a supported versioned repository source matrix")
+    return resolved
 
 
 def _outside_project(path: Path) -> Path:
@@ -39,9 +55,7 @@ def _read_json(path: Path, label: str) -> Any:
 
 
 def build(*, matrix_path: Path, review_index_path: Path, output_path: Path) -> dict[str, Any]:
-    matrix_resolved = matrix_path.resolve()
-    if matrix_resolved != PROJECT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json":
-        raise MaterialIndicatorTriageError("BFO shortlist requires the versioned repository source matrix")
+    matrix_resolved = _supported_matrix(matrix_path)
     index_resolved = _outside_project(review_index_path)
     output_resolved = _outside_project(output_path)
     if output_resolved.suffix.casefold() != ".json":
@@ -81,9 +95,7 @@ def build_from_manifest(
     *, matrix_path: Path, manifest_path: Path, markdown_root: Path, output_path: Path,
 ) -> dict[str, Any]:
     """Rank indicator candidates across every verified Markdown segment."""
-    matrix_resolved = matrix_path.resolve()
-    if matrix_resolved != PROJECT_ROOT / "configs" / "bfo_p0_source_candidate_matrix.json":
-        raise MaterialIndicatorTriageError("BFO shortlist requires the versioned repository source matrix")
+    matrix_resolved = _supported_matrix(matrix_path)
     manifest_resolved = _outside_project(manifest_path)
     markdown_resolved = _outside_project(markdown_root)
     output_resolved = _outside_project(output_path)

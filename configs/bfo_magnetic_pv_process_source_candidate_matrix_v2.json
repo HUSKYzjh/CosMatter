@@ -17,7 +17,7 @@
       "comparison_question_zh": "BFO 的 Ms、Mr 与 Hc 在外延薄膜、溶胶凝胶薄膜和介孔薄膜中为何相差数个数量级？",
       "source_candidates": [
         {
-          "source_id": "wang2003_science_1080615",
+          "source_id": "wang2003",
           "normalized_doi": "10.1126/science.1080615",
           "title": "Epitaxial BiFeO3 Multiferroic Thin Film Heterostructures",
           "year": 2003,
@@ -29,7 +29,7 @@
           "reported_lead": "A 70 nm film is reported near 150 emu per cubic centimetre with coercive field near 200 Oe, while the 400 nm film is near 5 emu per cubic centimetre.",
           "claim_boundary": "The substrate background, impurity debate, thickness and field geometry must remain attached; the 150 value is not a bulk BFO constant.",
           "fulltext_route": "public_repository",
-          "access_status": "publicly_retrievable",
+          "access_status": "private_mineru_review_pool_ready",
           "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
         },
         {
@@ -46,6 +46,22 @@
           "claim_boundary": "A control embedded in a doping study is independently useful but not a reproduction of the 2003 epitaxial heterostructure.",
           "fulltext_route": "publisher_open_access",
           "access_status": "publicly_retrievable",
+          "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
+        },
+        {
+          "source_id": "mazumder2007",
+          "normalized_doi": "10.1063/1.2768201",
+          "title": "Ferromagnetism in nanoscale BiFeO3",
+          "year": 2007,
+          "role": "independent_support",
+          "independence_group": "mazumder_cgcsi_nanoparticle_bfo_2007",
+          "independence_note": "Independent glycine-combustion nanoparticle series reports size-resolved room-temperature saturation moment in atom-normalized units.",
+          "sample_scope": "Four nanoscale BiFeO3 powder conditions spanning about 4 to 40 nanometres, with minor impurity content reported below three percent",
+          "method_scope": "Room-temperature magnetic hysteresis over approximately plus or minus 1.5 tesla after size-setting heat treatments",
+          "reported_lead": "Saturation moment decreases from 0.41 to 0.09 Bohr magneton per Fe as particle size increases from 4 to 40 nanometres, with intermediate values 0.27 and 0.13.",
+          "claim_boundary": "The four values are a heat-treatment and particle-size series from one study, not four independent synthesis batches; oxygen deficiency and minor impurities remain interpretation boundaries.",
+          "fulltext_route": "public_repository",
+          "access_status": "private_mineru_review_pool_ready",
           "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
         },
         {
@@ -127,7 +143,7 @@
       "comparison_question_zh": "BFO 的 Voc 与 Jsc 如何随电极、畴壁几何、极化方向、波长和光强改变？",
       "source_candidates": [
         {
-          "source_id": "zhou2020_tsf_137851",
+          "source_id": "zhou2020",
           "normalized_doi": "10.1016/j.tsf.2020.137851",
           "title": "Switchable ferroelectric diode and photovoltaic effects in polycrystalline BiFeO3 thin films grown on transparent substrates",
           "year": 2020,
@@ -139,7 +155,7 @@
           "reported_lead": "Upward polarization gives about plus 0.17 V and minus 0.61 microampere per square centimetre; downward polarization gives minus 0.23 V and plus 57 microampere per square centimetre.",
           "claim_boundary": "Signs depend on the authors' wiring convention and poling direction; the approximately hundredfold current asymmetry must not be averaged away.",
           "fulltext_route": "author_manuscript",
-          "access_status": "publicly_retrievable",
+          "access_status": "private_mineru_review_pool_ready",
           "evidence_status": "metadata_or_abstract_checked_not_source_mapped"
         },
         {

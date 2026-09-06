@@ -61,6 +61,61 @@ _INDICATOR_TERMS: dict[str, tuple[str, ...]] = {
     "resistance_switching_ratio": (
         "switching ratio", "on/off", "on-off", "resistance ratio", "orders of magnitude",
     ),
+    "saturation_magnetization_ms": (
+        "saturation magnetization", "saturation magnetisation", "saturation moment",
+        "m_s", "m s", "ms=", "ms =",
+    ),
+    "remanent_magnetization_mr": (
+        "remanent magnetization", "remanent magnetisation", "remanence",
+        "m_r", "m r", "mr=", "mr =",
+    ),
+    "magnetic_coercive_field_hc": (
+        "magnetic coercive field", "coercive magnetic field", "coercivity",
+        "h_c", "h c", "hc=", "hc =",
+    ),
+    "exchange_bias_field": (
+        "exchange bias", "exchange-bias", "bias field", "h_eb", "heb",
+    ),
+    "magnetic_moment_per_fe": (
+        "magnetic moment per fe", "moment per fe", "bohr magneton per fe",
+        "u_b/fe", "ub/fe", "mu_b/fe",
+    ),
+    "cycloid_period": (
+        "cycloid period", "cycloidal period", "cycloid wavelength", "spin cycloid",
+        "magnetic cycloid", "modulation period",
+    ),
+    "direct_band_gap": (
+        "direct band gap", "direct bandgap", "direct optical gap", "direct transition",
+    ),
+    "indirect_band_gap": (
+        "indirect band gap", "indirect bandgap", "indirect optical gap", "indirect transition",
+    ),
+    "absorption_coefficient": (
+        "absorption coefficient", "absorption coefficients", "linear absorption",
+        "alpha=", "alpha =", "optical absorption",
+    ),
+    "refractive_index": (
+        "refractive index", "index of refraction", "optical index", "n=", "n =",
+    ),
+    "open_circuit_voltage": (
+        "open-circuit voltage", "open circuit voltage", "v_oc", "v oc", "voc=", "voc =",
+    ),
+    "short_circuit_current_density": (
+        "short-circuit current density", "short circuit current density", "short-circuit current",
+        "short circuit current", "zero-bias photocurrent density", "photocurrent density",
+        "j_sc", "j sc", "jsc=", "jsc =", "i_sc", "i sc", "isc=", "isc =",
+    ),
+    "photoresponsivity": (
+        "photoresponsivity", "photo-responsivity", "photodetector responsivity", "responsivity",
+    ),
+    "deposition_rate": (
+        "deposition rate", "growth rate", "film growth rate", "deposited per minute",
+        "deposited per second",
+    ),
+    "replicate_batch_count": (
+        "independent batches", "separate batches", "different batches", "three batches",
+        "batches were", "batch-to-batch", "batch to batch", "total samples", "total specimens",
+    ),
 }
 
 _NUMERIC_RE = re.compile(
@@ -72,7 +127,10 @@ _UNIT_RE = re.compile(
     r"(?<![A-Za-z])(?:"
     r"(?:μ|µ|u)c\s*/\s*cm(?:\^?2|²)|kv\s*/\s*cm|mv\s*/\s*cm|v\s*/\s*(?:cm|m)|"
     r"°\s*c|deg\s*c|kelvin|k|%|nm|μm|µm|angstrom|å|pa|na|μa|µa|ma|"
-    r"a\s*/\s*cm(?:\^?2|²)|s\s*/\s*cm|ev|mev|hz|khz|mhz|pm\s*/\s*v"
+    r"(?:n|u|m)?a\s*/\s*cm(?:\^?2|²)|s\s*/\s*cm|ev|mev|hz|khz|mhz|pm\s*/\s*v|"
+    r"emu\s*/\s*cm(?:\^?3|³)|(?:u|mu)[_ ]?b\s*/\s*fe|oe|mt|"
+    r"(?:cm|m)\s*(?:\^?\s*-\s*1|⁻¹)|(?:n|u|m)?a\s*/\s*w|pc\s*/\s*n|"
+    r"(?:nm|angstrom|å)\s*/\s*(?:s|min)|(?:m|u)?v|batches?|specimens?|samples?"
     r")(?![A-Za-z])",
     re.IGNORECASE,
 )
@@ -115,6 +173,7 @@ _REFERENCE_RE = re.compile(
 def _normalized_scientific_text(value: str) -> str:
     """Normalize common MinerU TeX spacing only for deterministic matching."""
     text = value.casefold().replace("μ", "u").replace("µ", "u")
+    text = re.sub(r"</?(?:sup|sub)>", "", text)
     text = text.replace("\\mu", "u").replace("\\textdegree", " deg ").replace("\\circ", " deg ")
     text = re.sub(r"\\(?:mathrm|mathbf|textup|mathfrak|mathsf|tt)\s*", " ", text)
     text = text.replace("\\", " ").replace("$", " ").replace("{", " ").replace("}", " ").replace("~", " ")
@@ -125,6 +184,10 @@ def _normalized_scientific_text(value: str) -> str:
     text = re.sub(r"(?<=\d)\s*\.\s*(?=\d)", ".", text)
     text = re.sub(r"u\s*c\s*[.·]\s*c\s*m\s*\^?\s*-\s*2", "uc/cm2", text)
     text = re.sub(r"u\s*c\s*/\s*c\s*m\s*\^?\s*2", "uc/cm2", text)
+    text = re.sub(r"([num]?)\s*a\s*/\s*c\s*m\s*\^?\s*2", r"\1a/cm2", text)
+    text = re.sub(r"([num]?)\s*a\s*/\s*w", r"\1a/w", text)
+    text = re.sub(r"m\s*w\s*/\s*c\s*m\s*\^?\s*2", "mw/cm2", text)
+    text = re.sub(r"e\s*m\s*u\s*/\s*c\s*m\s*\^?\s*3", "emu/cm3", text)
     text = re.sub(r"\bdeg\s*(?:o\s*)?c\b", "degc", text)
     return re.sub(r"\s+", " ", text).strip()
 
@@ -154,6 +217,36 @@ def _indicator_value_hits(text: str, matched: list[str]) -> int:
     if "resistance_switching_ratio" in matched and re.search(r"(?:orders? of magnitude|on\s*[/−-]\s*off|switching ratio)", text):
         hits += 1
     if "space_group" in matched and re.search(r"\b(?:r3c|pbnm|pnma|p4mm|cc)\b", text):
+        hits += 1
+    if any(item in matched for item in ("saturation_magnetization_ms", "remanent_magnetization_mr")) and re.search(
+        r"(?:emu\s*/\s*cm(?:3|\^3)|(?:u|mu)[_ ]?b\s*/\s*fe)", text,
+    ):
+        hits += 1
+    if any(item in matched for item in ("magnetic_coercive_field_hc", "exchange_bias_field")) and re.search(
+        r"(?:\boe\b|\bmt\b|\btesla\b)", text,
+    ):
+        hits += 1
+    if "magnetic_moment_per_fe" in matched and re.search(r"(?:u|mu)[_ ]?b\s*/\s*fe|bohr magneton.{0,20}fe", text):
+        hits += 1
+    if "cycloid_period" in matched and re.search(r"(?:nm|angstrom|å)\b", text):
+        hits += 1
+    if any(item in matched for item in ("direct_band_gap", "indirect_band_gap")) and re.search(r"\b(?:m?ev)\b", text):
+        hits += 1
+    if "absorption_coefficient" in matched and re.search(r"(?:cm|m)\s*(?:\^?\s*-\s*1|⁻¹)", text):
+        hits += 1
+    if "open_circuit_voltage" in matched and re.search(r"\b(?:m?v)\b", text):
+        hits += 1
+    if "short_circuit_current_density" in matched and re.search(r"(?:n|u|m)?a\s*/\s*cm(?:2|\^2)", text):
+        hits += 1
+    if "photoresponsivity" in matched and re.search(r"(?:n|u|m)?a\s*/\s*w", text):
+        hits += 1
+    if "deposition_rate" in matched and re.search(r"(?:nm|angstrom|å)\s*/\s*(?:s|min)", text):
+        hits += 1
+    if "replicate_batch_count" in matched and re.search(
+        r"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+        r"(?:independent\s+)?(?:batches?|specimens?|samples?)\b",
+        text,
+    ):
         hits += 1
     return hits
 
