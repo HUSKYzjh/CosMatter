@@ -4,6 +4,21 @@ import { resolve } from "node:path";
 const routeDiagnosticsExport = resolve(process.cwd(), "..", "examples", "ui-demo", "route_diagnostics.json");
 const workspaceLoad = { timeout: 15_000 };
 const lazyWorkspaceContentLoad = { timeout: 30_000 };
+const operationContracts = {
+  schema_version: "cosmatter.operation-parameter-contracts/v1",
+  trust_status: "static_parameter_contracts_not_execution_authorization",
+  operations: {
+    sciverse_read_content: {
+      type: "object",
+      additionalProperties: false,
+      required: ["offset", "limit"],
+      properties: {
+        offset: { type: "integer", minimum: 0, default: 0 },
+        limit: { type: "integer", minimum: 200, maximum: 4000, default: 2000 },
+      },
+    },
+  },
+};
 
 async function openEditableTaskDefinition(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -257,7 +272,7 @@ test("labels a rejected model result and retries without silently presenting it 
   await page.route("**/api/status", async (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ api_mode: "loopback_only", providers: { deepseek: true, sciverse: true, mineru: true, openalex: true, crossref: true, crossref_polite_contact: true } }),
+    body: JSON.stringify({ api_mode: "loopback_only", providers: { deepseek: true, sciverse: true, mineru: true, openalex: true, crossref: true, crossref_polite_contact: true }, operation_contracts: operationContracts }),
   }));
   await page.route("**/api/question-candidates", async (route) => {
     candidateRequests += 1;
@@ -298,7 +313,7 @@ test("discloses every available automatic metadata destination before consent", 
   await page.route("**/api/status", async (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ api_mode: "loopback_only", providers: { deepseek: false, sciverse: true, mineru: true, openalex: true, crossref: true, crossref_polite_contact: true } }),
+    body: JSON.stringify({ api_mode: "loopback_only", providers: { deepseek: false, sciverse: true, mineru: true, openalex: true, crossref: true, crossref_polite_contact: true }, operation_contracts: operationContracts }),
   }));
 
   await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
