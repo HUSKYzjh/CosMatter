@@ -140,3 +140,10 @@ claim_boundary
 3. 只有在 MD 执行适配器、资源上限、势场许可和运行协议另行获批后，才进入真实小规模基线试点。
 4. 小规模试点通过 L0–L3 后再扩大预算；每次扩大都生成新的批准计划，不沿用旧授权。
 
+## 9. 物理引导主算法升级
+
+后续主算法采用 **MD Response-guided Motif Tempering（MRMT）**，普通固定基数 EDA、随机交换和只用短程有序的搜索降为同预算对照。MRMT 同时使用固定组分的化学短程有序、超胞允许的离散成分波、Pb/Sr 界面，以及从已执行 MD 轨迹得到的局域极化、八面体倾斜、局域应变和响应协方差来生成下一批交换/集体操作。
+
+这些物理量只能改变提议分布；新构型的接受、淘汰和 Pareto 排序仍全部使用新 MD 回执。禁止由局域响应拟合下一构型的介电/压电值。Pb²⁺/Sr²⁺ 等价价，因此不采用虚假的“局域电荷平衡”先验；重点检验极化软度、尺寸失配、应变、界面和倾斜耦合。
+
+本次 CosMatter 试用的统计、机制候选、流程问题及分阶段验收见 [`PST_COSMATTER_RESEARCH_AUDIT_AND_IMPROVEMENT_PLAN.zh-CN.md`](PST_COSMATTER_RESEARCH_AUDIT_AND_IMPROVEMENT_PLAN.zh-CN.md)。其中受控上下文均为委托自动试点材料，不是 PST 的已接受证据。

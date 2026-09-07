@@ -52,3 +52,30 @@ class GovernanceDocumentationTests(unittest.TestCase):
         self.assertIn("PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md", todo)
         self.assertNotIn("C:\\Users\\", plan)
         self.assertNotIn("/home/", plan.lower())
+
+    def test_pst_research_audit_records_observed_limits_and_improvement_gates(self) -> None:
+        audit = (
+            ROOT / "docs" / "PST_COSMATTER_RESEARCH_AUDIT_AND_IMPROVEMENT_PLAN.zh-CN.md"
+        ).read_text(encoding="utf-8")
+        plan = (
+            ROOT / "docs" / "PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md"
+        ).read_text(encoding="utf-8")
+
+        for required in (
+            "367 个唯一 `document_id`",
+            "21 个检索回执 + 6 个上下文回执",
+            "367 条候选均缺 DOI",
+            "已筛选候选进入阅读路线",
+            "1/3",
+            "0/3",
+            "provider_advertised → confirmed → failed/expired",
+            "prepare-sciverse-context-review",
+            "property_prediction_count = 0",
+            "不是人工 Source Map",
+            "敏感工件发现类别",
+        ):
+            self.assertIn(required, audit)
+        self.assertIn("MD Response-guided Motif Tempering", plan)
+        self.assertIn("PST_COSMATTER_RESEARCH_AUDIT_AND_IMPROVEMENT_PLAN.zh-CN.md", plan)
+        self.assertNotIn("C:\\Users\\", audit)
+        self.assertNotIn("/home/", audit.lower())

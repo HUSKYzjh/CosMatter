@@ -10,6 +10,8 @@
 - [x] 实现航道诊断舰队：航迹叠加仪、条件差分舱、反证探测器（条件矩阵、反例边界与 Gap 门禁均保留在本地审计链内）。
 - [x] 为每台设施增加输入/输出 Schema、工具白名单、失败路径与单测（封闭静态契约目录覆盖全部 15 项设施；配置加载、只读 API 投影与前端渲染均有回归测试）。
 - [ ] 实现 [`(Pb_xSr_{1-x})TiO3` 固溶体 A 位构型的 MD-only 黑箱优化计划](docs/PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md)：先完成固定组分编码、计划 schema、哈希去重、预算账本与合成目标测试；真实 MD 仅在执行适配器、势场许可、资源上限和协议另行批准后启动。
+  - [ ] 按 [`PST CosMatter 试用审计与改进计划`](docs/PST_COSMATTER_RESEARCH_AUDIT_AND_IMPROVEMENT_PLAN.zh-CN.md) 修复新终端入口、selected-first/反例阅读路线、DOI 补全、三态全文确认和 Sciverse 上下文审阅池。
+  - [ ] 实现 MRMT 计划型核心，并在相同合成预算下与随机、固定基数 EDA、短程有序引导进行消融；真实性质排名保持 `property_prediction_count = 0`。
 
 ## UI / HTML 界面
 
