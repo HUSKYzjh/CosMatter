@@ -1,7 +1,11 @@
 export interface LocalApiStatus {
   api_mode: "loopback_only";
   providers: Record<string, boolean>;
+  operation_contracts: OperationParameterContracts;
 }
+export interface IntegerParameterContract { type: "integer"; minimum: number; maximum?: number; default: number; }
+export interface SciverseReadContentParameterSchema { type: "object"; additionalProperties: false; required: ["offset", "limit"]; properties: { offset: IntegerParameterContract; limit: IntegerParameterContract; }; }
+export interface OperationParameterContracts { schema_version: "cosmatter.operation-parameter-contracts/v1"; trust_status: "static_parameter_contracts_not_execution_authorization"; operations: { sciverse_read_content: SciverseReadContentParameterSchema; }; }
 export interface FacilityContractManifest { facility_type: string; fleet_types: string[]; input_schema: string[]; output_schema: string[]; allowed_descriptors: string[]; failure_modes: string[]; human_review_required: boolean; execution_boundary: "static_contract_only_not_execution_authorization"; }
 export interface FacilityContractCatalogue { schema_version: "cosmatter.facility-contract-catalogue/v1"; trust_status: "static_facility_contracts_not_execution_or_evidence_acceptance"; contracts: FacilityContractManifest[]; }
 export type FacilityCatalogueHealth = "disabled" | "loading" | "ready" | "unavailable";
@@ -140,10 +144,28 @@ const exactObjectKeys = (value: unknown, keys: readonly string[]) => Boolean(val
 
 /** Accept only the fixed, presence-only local API capability surface. */
 export function isLocalApiStatus(value: unknown): value is LocalApiStatus {
-  if (!exactObjectKeys(value, ["api_mode", "providers"])) return false;
+  if (!exactObjectKeys(value, ["api_mode", "providers", "operation_contracts"])) return false;
   const status = value as Record<string, unknown>;
   return status.api_mode === "loopback_only" && exactObjectKeys(status.providers, LOCAL_API_PROVIDER_KEYS)
-    && LOCAL_API_PROVIDER_KEYS.every((key) => typeof (status.providers as Record<string, unknown>)[key] === "boolean");
+    && LOCAL_API_PROVIDER_KEYS.every((key) => typeof (status.providers as Record<string, unknown>)[key] === "boolean")
+    && isOperationParameterContracts(status.operation_contracts);
+}
+
+/** Validate static parameter discovery before displaying or applying a bound. */
+export function isOperationParameterContracts(value: unknown): value is OperationParameterContracts {
+  if (!exactObjectKeys(value, ["schema_version", "trust_status", "operations"])) return false;
+  const contract = value as Record<string, unknown>;
+  if (contract.schema_version !== "cosmatter.operation-parameter-contracts/v1" || contract.trust_status !== "static_parameter_contracts_not_execution_authorization" || !exactObjectKeys(contract.operations, ["sciverse_read_content"])) return false;
+  const read = (contract.operations as Record<string, unknown>).sciverse_read_content;
+  if (!exactObjectKeys(read, ["type", "additionalProperties", "required", "properties"])) return false;
+  const schema = read as Record<string, unknown>;
+  if (schema.type !== "object" || schema.additionalProperties !== false || JSON.stringify(schema.required) !== JSON.stringify(["offset", "limit"]) || !exactObjectKeys(schema.properties, ["offset", "limit"])) return false;
+  const properties = schema.properties as Record<string, unknown>;
+  if (!exactObjectKeys(properties.offset, ["type", "minimum", "default"]) || !exactObjectKeys(properties.limit, ["type", "minimum", "maximum", "default"])) return false;
+  const offset = properties.offset as Record<string, unknown>;
+  const limit = properties.limit as Record<string, unknown>;
+  return offset.type === "integer" && offset.minimum === 0 && offset.default === 0
+    && limit.type === "integer" && limit.minimum === 200 && limit.maximum === 4000 && limit.default === 2000;
 }
 
 /** Treat a malformed reminder projection as unavailable instead of actionable. */

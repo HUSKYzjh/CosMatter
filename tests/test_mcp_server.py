@@ -8,6 +8,7 @@ from pathlib import Path
 
 from cosmatter.local_api import LocalMissionApi
 from cosmatter.mcp_server import CosMatterMcpServer, MCP_PROTOCOL_VERSION, serve_stdio
+from cosmatter.operation_parameter_contracts import operation_parameter_contracts
 
 
 class _Api:
@@ -46,6 +47,10 @@ class _Api:
         self.calls.append(("graph_approval", (run_id, payload)))
         return {"run_id": run_id, "status": "human_approved_graph_plan_follow_up_not_execution_or_evidence_acceptance"}
 
+    def operation_parameter_contracts(self) -> dict[str, object]:
+        self.calls.append(("operation_contracts", {}))
+        return operation_parameter_contracts()
+
 
 class McpServerTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -57,7 +62,10 @@ class McpServerTests(unittest.TestCase):
         self.assertEqual(initialized["result"]["protocolVersion"], MCP_PROTOCOL_VERSION)  # type: ignore[index]
         listed = self.server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         tools = listed["result"]["tools"]  # type: ignore[index]
-        self.assertEqual([tool["name"] for tool in tools], ["cosmatter_create_mission", "cosmatter_draft_plan", "cosmatter_approve_plan", "cosmatter_execute_approved_search", "cosmatter_execute_approved_local_corpus_search", "cosmatter_project_accepted_evidence_graph", "cosmatter_draft_graph_plan", "cosmatter_approve_graph_plan"])
+        self.assertEqual([tool["name"] for tool in tools], ["cosmatter_create_mission", "cosmatter_draft_plan", "cosmatter_approve_plan", "cosmatter_execute_approved_search", "cosmatter_execute_approved_local_corpus_search", "cosmatter_project_accepted_evidence_graph", "cosmatter_draft_graph_plan", "cosmatter_approve_graph_plan", "cosmatter_get_operation_parameter_contracts"])
+        contract = self.server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "cosmatter_get_operation_parameter_contracts", "arguments": {}}})
+        self.assertFalse(contract["result"]["isError"])  # type: ignore[index]
+        self.assertEqual(contract["result"]["structuredContent"]["operations"]["sciverse_read_content"]["properties"]["limit"]["maximum"], 4000)  # type: ignore[index]
 
     def test_create_and_approved_search_dispatch(self) -> None:
         created = self.server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "cosmatter_create_mission", "arguments": {"question": "q", "material": "BiFeO3", "property": "phase stability", "scope": "thin films"}}})

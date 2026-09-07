@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .config import Settings
+from .operation_parameter_contracts import SCIVERSE_CONTENT_LIMIT_DEFAULT, validate_sciverse_content_parameters
 
 try:
     # Load the optional SDK during service startup.  Deferring this import to
@@ -72,14 +73,11 @@ class SciverseAdapter:
             raise SciverseRequestError("Sciverse semantic_search response did not contain hits")
         return SciverseResponse(payload=payload, status_code=200, request_id=_request_id(payload))
 
-    def read_content(self, document_id: str, *, offset: int = 0, limit: int = 2_000) -> SciverseContentResponse:
+    def read_content(self, document_id: str, *, offset: int = 0, limit: int = SCIVERSE_CONTENT_LIMIT_DEFAULT) -> SciverseContentResponse:
         """Read one explicitly requested, bounded SDK content window."""
         if not isinstance(document_id, str) or not document_id.strip() or len(document_id.strip()) > 255:
             raise ValueError("document_id must be a bounded nonempty string")
-        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
-            raise ValueError("offset must be a nonnegative integer")
-        if not isinstance(limit, int) or isinstance(limit, bool) or not 200 <= limit <= 4_000:
-            raise ValueError("limit must be between 200 and 4000")
+        validate_sciverse_content_parameters(offset, limit)
         payload = self._run("read_content", doc_id=document_id.strip(), offset=offset, limit=limit)
         text, more, next_offset = payload.get("text"), payload.get("more"), payload.get("next_offset")
         if not isinstance(text, str) or not text or len(text) > limit:

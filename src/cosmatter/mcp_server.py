@@ -20,6 +20,7 @@ _TOOL_ARGUMENT_RULES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "cosmatter_project_accepted_evidence_graph": (frozenset({"run_id"}), frozenset({"run_id"})),
     "cosmatter_draft_graph_plan": (frozenset({"run_id", "node_ids", "intent"}), frozenset({"run_id", "node_ids", "intent"})),
     "cosmatter_approve_graph_plan": (frozenset({"run_id", "plan_id", "reviewer", "rationale"}), frozenset({"run_id", "plan_id", "reviewer", "rationale"})),
+    "cosmatter_get_operation_parameter_contracts": (frozenset(), frozenset()),
 }
 
 
@@ -37,6 +38,7 @@ def _tools() -> list[dict[str, object]]:
         {"name": "cosmatter_project_accepted_evidence_graph", "description": "Build and return a versioned mission-scoped graph from already accepted evidence only. It excludes quotations, private paths, provider payloads, and unreviewed cards; it is not a scientific conclusion.", "inputSchema": {"type": "object", "additionalProperties": False, "required": ["run_id"], "properties": {"run_id": {"type": "string"}}}},
         {"name": "cosmatter_draft_graph_plan", "description": "Record a bounded, untrusted graph-inspection draft for selected existing graph nodes. It cannot query a provider, modify the graph, execute an action, or accept evidence; a human must review any follow-up.", "inputSchema": {"type": "object", "additionalProperties": False, "required": ["run_id", "node_ids", "intent"], "properties": {"run_id": {"type": "string"}, "node_ids": {"type": "array", "minItems": 1, "maxItems": 25, "items": {"type": "string"}}, "intent": {"type": "string", "minLength": 1, "maxLength": 500}}}},
         {"name": "cosmatter_approve_graph_plan", "description": "Record a human acknowledgement for an existing graph-plan draft. This is not an execution grant and cannot alter graph data or accept evidence.", "inputSchema": {"type": "object", "additionalProperties": False, "required": ["run_id", "plan_id", "reviewer", "rationale"], "properties": {"run_id": {"type": "string"}, "plan_id": {"type": "string"}, "reviewer": {"type": "string", "minLength": 1, "maxLength": 200}, "rationale": {"type": "string", "minLength": 1, "maxLength": 1000}}}},
+        {"name": "cosmatter_get_operation_parameter_contracts", "description": "Return static shared CLI/MCP/UI parameter bounds. This performs no provider call and grants no execution authority.", "inputSchema": {"type": "object", "additionalProperties": False, "properties": {}}},
     ]
 
 
@@ -89,6 +91,8 @@ class CosMatterMcpServer:
                 payload = self._api.draft_graph_plan(_required_string(arguments, "run_id"), {key: value for key, value in arguments.items() if key != "run_id"})
             elif tool_name == "cosmatter_approve_graph_plan":
                 payload = self._api.approve_graph_plan(_required_string(arguments, "run_id"), {key: value for key, value in arguments.items() if key != "run_id"})
+            elif tool_name == "cosmatter_get_operation_parameter_contracts":
+                payload = self._api.operation_parameter_contracts()
             else:
                 return _error(request_id, -32602, "unknown CosMatter tool")
         except (LocalApiError, ValueError) as error:

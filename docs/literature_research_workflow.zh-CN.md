@@ -185,6 +185,8 @@ cd CosMatter
 
 对已筛选候选执行 `sciverse-read-context` 时，成功会更新 `content_access_confirmations.json` 的内容哈希、回执 ID 与 UTC 确认时间；上游配置或请求失败只写固定原因码，不保存错误正文、输出路径或原始响应。随后重建阅读路线，才能把相应候选显示为 `confirmed` 或 `failed_or_expired`。
 
+正文窗口的 offset/limit 由版本化静态参数契约统一管理；CLI、SDK、回执与 Source Map 使用同一边界，本地 API 能力快照和 MCP 只能读取该 schema。参数契约本身不执行全文调用、不选择文献，也不授予写盘权限。
+
 确认后的本地上下文还可进入私有待审池：
 
 ```powershell

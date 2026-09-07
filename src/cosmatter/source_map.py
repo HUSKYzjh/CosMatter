@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .operation_parameter_contracts import SCIVERSE_CONTENT_LIMIT_MAX, SCIVERSE_CONTENT_LIMIT_MIN
+
 
 SOURCE_MAP_SCHEMA_VERSION = "1.0"
 HUMAN_SOURCE_MAP_TRUST_STATUS = "human_reviewed_parser_selection"
@@ -115,7 +117,7 @@ def source_map_from_sciverse_context_review(
         raise SourceMapError("Sciverse Source Map receipt identity is invalid")
     if not isinstance(content_offset, int) or isinstance(content_offset, bool) or content_offset < 0:
         raise SourceMapError("Sciverse Source Map offset is invalid")
-    if not isinstance(content_limit, int) or isinstance(content_limit, bool) or not 200 <= content_limit <= 4_000:
+    if not isinstance(content_limit, int) or isinstance(content_limit, bool) or not SCIVERSE_CONTENT_LIMIT_MIN <= content_limit <= SCIVERSE_CONTENT_LIMIT_MAX:
         raise SourceMapError("Sciverse Source Map limit is invalid")
     result = {
         "schema_version": "1.2",
@@ -278,7 +280,7 @@ def _validate_source_map(payload: object) -> None:
             or payload["content_offset"] < 0
             or not isinstance(payload.get("content_limit"), int)
             or isinstance(payload["content_limit"], bool)
-            or not 200 <= payload["content_limit"] <= 4_000
+            or not SCIVERSE_CONTENT_LIMIT_MIN <= payload["content_limit"] <= SCIVERSE_CONTENT_LIMIT_MAX
         ):
             raise SourceMapError("Sciverse source map identity or content binding is invalid")
     else:

@@ -38,6 +38,7 @@ from .candidate_screening import CandidateScreeningError, candidate_screening_fr
 from .provider_receipts import ProviderReceiptError, append_provider_receipt, mineru_task_receipt, sciverse_search_receipt
 from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
+from .operation_parameter_contracts import operation_parameter_contracts
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
 from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError, MinerUTask
 from .private_storage import PrivateStorageError, read_markdown, safe_document_id, write_markdown, write_pdf
@@ -137,7 +138,12 @@ class LocalMissionApi:
                 "crossref": True,
                 "crossref_polite_contact": bool(status["crossref_polite_contact_configured"]),
             },
+            "operation_contracts": operation_parameter_contracts(),
         }
+
+    def operation_parameter_contracts(self) -> dict[str, object]:
+        """Return static parameter discovery without authorizing execution."""
+        return operation_parameter_contracts()
 
     def plugin_catalogue(self) -> dict[str, object]:
         """Expose static, non-executable capability contracts to local adapters."""

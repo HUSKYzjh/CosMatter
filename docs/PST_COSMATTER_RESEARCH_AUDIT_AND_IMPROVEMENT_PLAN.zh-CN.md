@@ -118,8 +118,9 @@ OCBA/MOCBA 分配独立复算预算
 - 两个真实试点重建后，每条 12 项路线均为 `confirmed=3, provider_advertised=9`；算法路线仍保留 1 条反例，物理路线仍保留 2 条反例。未实际读取的候选不再显示为 confirmed。
 - 新增 `prepare-sciverse-context-review`：只有文献 ID、当前候选指纹、读取回执、offset、内容 SHA-256 和字符数全部一致时，才会把运行目录外的私有上下文切成最多 48 个、每段最多 500 字符的待审片段。6/6 个真实确认上下文已唯一匹配并生成 6 个私有审阅池，共 104 个候选片段。
 - 新增 Sciverse 选段适配器：人工模板不复制原文，只保存候选段 ID 与摘录哈希；记录时重新校验任务、候选指纹、回执、内容哈希和精确选段。两个真实试点无覆盖冲突地记录 6 个委托 Source Map，全部保留 `not_scientific_evidence` 信任状态，正式材料事实模板会拒绝它们。
+- 新增 `cosmatter.operation-parameter-contracts/v1`：Sciverse offset/limit 的 CLI 解析、SDK、回执和 Source Map 校验均引用同一范围；MCP 和前端只读发现同一 schema。`limit=8192` 现在在 CLI 参数解析期拒绝，不再等待提供商调用。
 - 两个试点在新增补全工件和 UI 导出后再次通过运行关系审计；敏感工件审计仍为 `finding_category_count=0`。
-- `sciverse-read-context --help` 已显示 `limit=200–4000` 与非负 offset。CLI/MCP/UI 共用参数 schema 和全部候选 DOI 覆盖仍未完成，不能据此关闭全部 P0/P1。
+- `sciverse-read-context --help` 已显示 `limit=200–4000` 与非负 offset，CLI/MCP/UI 的静态参数发现契约已同源。全部候选 DOI 分批覆盖仍未完成，不能据此关闭全部 P0/P1。
 
 ## 5. 后续改进计划
 
@@ -161,6 +162,8 @@ OCBA/MOCBA 分配独立复算预算
 3. 增加“候选重复待对账”队列：只有 DOI 一致或人工确认后才合并；标题相同只能提示，不能自动认定同文献。
 
 验收：越界参数在 provider 调用前被一致拒绝；CLI/MCP/UI 三处范围测试同源；运行统计可重建失败次数，同时敏感工件审计仍为零发现。
+
+进度：第 1 项已完成。静态 schema 是参数发现与预校验，不新增 MCP/浏览器全文读取或写盘权限；CLI 对负 offset、limit 199/4001/8192 均在解析期拒绝，SDK、回执与 Source Map 复用同一常量边界。第 2–3 项仍待完成。
 
 ### P2：MRMT 计划型实现
 

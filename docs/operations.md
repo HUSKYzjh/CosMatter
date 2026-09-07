@@ -167,6 +167,8 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 
 仅为受控链路试点时，可用 `create-automated-trial-sciverse-source-map-selection --segment-id SEGMENT_ID` 创建明确标记的委托选择，并在记录命令追加 `--allow-delegated-automated-trial`。此路径会写入 `delegated_automated_trial_source_map_not_scientific_evidence`，正式材料事实、EvidenceCard 和报告门禁不会接受它。任一候选指纹、回执、内容哈希、段落哈希或文献标识变化都会拒绝；同一文献已有 Source Map 时不会覆盖。
 
+CLI、MCP 和前端从 `cosmatter.operation-parameter-contracts/v1` 读取相同的 Sciverse 窗口范围。CLI 会在读取任务、筛选门禁和提供商调用之前拒绝负 offset 或 200–4000 以外的 limit；本地 API `/api/status` 与 MCP 工具 `cosmatter_get_operation_parameter_contracts` 只返回静态 schema。该发现接口不是全文读取接口，不包含密钥、路径、文献 ID 或执行授权。
+
 ## 4. 录入可定位证据并生成交付物
 
 证据草稿由已获授权的内容提取流程产生，至少含有 `claim`、`stance`、材料、性质、

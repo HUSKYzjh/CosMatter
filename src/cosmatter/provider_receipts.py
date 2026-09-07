@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import new_id, utc_now
+from .operation_parameter_contracts import validate_sciverse_content_parameters
 
 
 RECEIPT_SCHEMA_VERSION = "1.0"
@@ -90,8 +91,10 @@ def sciverse_content_receipt(
 ) -> dict[str, Any]:
     if not isinstance(document_id, str) or not document_id.strip() or len(document_id) > 255:
         raise ProviderReceiptError("content receipt document_id is invalid")
-    if not isinstance(offset, int) or offset < 0 or not isinstance(limit, int) or not 200 <= limit <= 4_000:
-        raise ProviderReceiptError("content receipt range is invalid")
+    try:
+        validate_sciverse_content_parameters(offset, limit)
+    except ValueError as error:
+        raise ProviderReceiptError("content receipt range is invalid") from error
     if not isinstance(content, str) or not content or len(content) > limit or not isinstance(more, bool):
         raise ProviderReceiptError("content receipt body metadata is invalid")
     if next_offset is not None and (not isinstance(next_offset, int) or next_offset < 0):
@@ -232,7 +235,11 @@ def _validate_receipt(receipt: object) -> None:
         for field in ("document_id_sha256", "content_sha256"):
             if not _is_sha256(receipt.get(field)):
                 raise ProviderReceiptError("content receipt digest is invalid")
-        if not isinstance(receipt.get("offset"), int) or receipt["offset"] < 0 or not isinstance(receipt.get("limit"), int) or not 200 <= receipt["limit"] <= 4_000 or not isinstance(receipt.get("content_char_count"), int) or not 1 <= receipt["content_char_count"] <= receipt["limit"] or not isinstance(receipt.get("more"), bool):
+        try:
+            validate_sciverse_content_parameters(receipt.get("offset"), receipt.get("limit"))
+        except ValueError as error:
+            raise ProviderReceiptError("content receipt range is invalid") from error
+        if not isinstance(receipt.get("content_char_count"), int) or not 1 <= receipt["content_char_count"] <= receipt["limit"] or not isinstance(receipt.get("more"), bool):
             raise ProviderReceiptError("content receipt metadata is invalid")
         if receipt.get("next_offset") is not None and (not isinstance(receipt["next_offset"], int) or receipt["next_offset"] < 0):
             raise ProviderReceiptError("content receipt continuation is invalid")

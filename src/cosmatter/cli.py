@@ -33,6 +33,7 @@ from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_prov
 from .facilities import DiscrepancyMatrix, DiscrepancyRow, FacilityGateError, condition_differential, write_condition_matrix
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
 from .content_access import ContentAccessError, load_content_access, record_sciverse_content_access, record_sciverse_content_failure
+from .operation_parameter_contracts import SCIVERSE_CONTENT_LIMIT_DEFAULT, SCIVERSE_CONTENT_LIMIT_MAX, SCIVERSE_CONTENT_LIMIT_MIN, parse_sciverse_limit, parse_sciverse_offset
 from .planning import PlanApprovalError, approved_flight_plan_from_payload, load_approved_flight_plan, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .gap_analysis import GapAnalysisError, candidates_from_discrepancies, load_gap_candidates, write_gap_candidates
@@ -3745,8 +3746,8 @@ def build_parser() -> argparse.ArgumentParser:
     content = commands.add_parser("sciverse-read-context", help="fetch one screened candidate's bounded Sciverse context into an explicit local review file")
     content.add_argument("--run-id", required=True)
     content.add_argument("--document-id", required=True)
-    content.add_argument("--offset", type=int, default=0, help="non-negative character offset")
-    content.add_argument("--limit", type=int, default=2000, metavar="200-4000", help="bounded character count accepted by Sciverse (default: 2000)")
+    content.add_argument("--offset", type=parse_sciverse_offset, default=0, help="non-negative character offset")
+    content.add_argument("--limit", type=parse_sciverse_limit, default=SCIVERSE_CONTENT_LIMIT_DEFAULT, metavar=f"{SCIVERSE_CONTENT_LIMIT_MIN}-{SCIVERSE_CONTENT_LIMIT_MAX}", help=f"bounded character count accepted by Sciverse (default: {SCIVERSE_CONTENT_LIMIT_DEFAULT})")
     content.add_argument("--output", required=True, help="new local .txt/.md review file outside the run directory; content is never stored in run artifacts")
     content.add_argument("--allow-delegated-automated-trial", action="store_true", help="permit separately recorded delegated automated trial screening; preserves a non-human content-access trust status")
     content.set_defaults(handler=command_sciverse_read_context)

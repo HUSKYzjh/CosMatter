@@ -72,6 +72,8 @@ python -m venv .venv
 
 已确认的本地 Sciverse 上下文可用 `prepare-sciverse-context-review` 生成运行目录外的私有待审池。该步骤会复核回执、文献、offset、内容哈希和字符数，不调用网络；输出仍不是 Source Map 或证据。随后可创建不含原文的人工选段模板，并用 `record-sciverse-context-source-map` 将经哈希复核的精确短段落写成 Source Map；受委托自动试点必须显式加开关，且其 Source Map 不能进入正式材料事实链。
 
+Sciverse 正文窗口参数由 `cosmatter.operation-parameter-contracts/v1` 单一契约定义：offset 不小于 0，limit 为 200–4000，默认 2000。CLI 在参数解析期应用该范围；本地 API 能力快照与 MCP 的 `cosmatter_get_operation_parameter_contracts` 只读返回同一契约，不执行提供商调用，也不授予浏览器或 Agent 全文写盘权限。
+
 该入口依次执行 Python 测试、前端类型检查与测试、DSH 发布/回放/配方门禁、七个本地 DSH 包测试和 `npm pack --dry-run`，最后检查 Git 空白错误。它不读取 `.env`，不调用任何提供商。如需指定解释器，可传入 `-Python C:\Python314\python.exe`；仅检查 Python 套件时可运行 `.\scripts\test-all.ps1`。完整通过时，最后单独输出 `OK - CosMatter full local acceptance passed.`。
 
 若需保存验收收据，请显式指定一个新 JSON 文件：

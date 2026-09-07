@@ -24,9 +24,10 @@ describe("local API request boundary", () => {
   });
 
   it("fails closed unless the capability snapshot has the fixed boolean-only surface", () => {
-    const status = { api_mode: "loopback_only", providers: { deepseek: true, sciverse: true, mineru: false, openalex: true, crossref: true, crossref_polite_contact: false } };
+    const status = { api_mode: "loopback_only", providers: { deepseek: true, sciverse: true, mineru: false, openalex: true, crossref: true, crossref_polite_contact: false }, operation_contracts: { schema_version: "cosmatter.operation-parameter-contracts/v1", trust_status: "static_parameter_contracts_not_execution_authorization", operations: { sciverse_read_content: { type: "object", additionalProperties: false, required: ["offset", "limit"], properties: { offset: { type: "integer", minimum: 0, default: 0 }, limit: { type: "integer", minimum: 200, maximum: 4000, default: 2000 } } } } } };
     expect(isLocalApiStatus(status)).toBe(true);
     expect(isLocalApiStatus({ ...status, providers: { ...status.providers, token: true } })).toBe(false);
     expect(isLocalApiStatus({ ...status, providers: { ...status.providers, sciverse: "configured" } })).toBe(false);
+    expect(isLocalApiStatus({ ...status, operation_contracts: { ...status.operation_contracts, operations: { sciverse_read_content: { ...status.operation_contracts.operations.sciverse_read_content, properties: { ...status.operation_contracts.operations.sciverse_read_content.properties, limit: { type: "integer", minimum: 1, maximum: 8192, default: 8192 } } } } } })).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .content_access import ContentAccessError, content_access_states
+from .operation_parameter_contracts import SCIVERSE_CONTENT_LIMIT_MAX, SCIVERSE_CONTENT_LIMIT_MIN
 
 
 SCIVERSE_CONTEXT_REVIEW_POOL_SCHEMA_VERSION = "1.0"
@@ -393,7 +394,7 @@ def _validate_pool(payload: object) -> None:
             raise SciverseContextReviewError("Sciverse context review pool hashes are invalid")
     if payload.get("confirmed_at") is not None and (not isinstance(payload["confirmed_at"], str) or not payload["confirmed_at"].endswith("Z")):
         raise SciverseContextReviewError("Sciverse context review confirmation time is invalid")
-    if not isinstance(payload.get("offset"), int) or payload["offset"] < 0 or not isinstance(payload.get("limit"), int) or not 200 <= payload["limit"] <= 4_000:
+    if not isinstance(payload.get("offset"), int) or payload["offset"] < 0 or not isinstance(payload.get("limit"), int) or not SCIVERSE_CONTENT_LIMIT_MIN <= payload["limit"] <= SCIVERSE_CONTENT_LIMIT_MAX:
         raise SciverseContextReviewError("Sciverse context review range is invalid")
     segments = payload.get("candidate_segments")
     if not isinstance(segments, list) or not 1 <= len(segments) <= _MAX_CANDIDATES:
@@ -431,7 +432,7 @@ def _validate_source_map_review(payload: object, *, allow_blank: bool, delegated
     for field in ("candidate_fingerprint", "content_sha256"):
         if len(payload[field]) != 64 or any(char not in "0123456789abcdef" for char in payload[field]):
             raise SciverseContextReviewError("Sciverse Source Map review hashes are invalid")
-    if not isinstance(payload.get("offset"), int) or payload["offset"] < 0 or not isinstance(payload.get("limit"), int) or not 200 <= payload["limit"] <= 4_000:
+    if not isinstance(payload.get("offset"), int) or payload["offset"] < 0 or not isinstance(payload.get("limit"), int) or not SCIVERSE_CONTENT_LIMIT_MIN <= payload["limit"] <= SCIVERSE_CONTENT_LIMIT_MAX:
         raise SciverseContextReviewError("Sciverse Source Map review range is invalid")
     rows = payload.get("segments")
     if not isinstance(rows, list) or not 1 <= len(rows) <= _MAX_CANDIDATES:

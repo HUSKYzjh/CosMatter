@@ -74,6 +74,8 @@ class GovernanceDocumentationTests(unittest.TestCase):
             "不是人工审核结果",
             "6 个委托 Source Map",
             "正式材料事实模板会拒绝它们",
+            "cosmatter.operation-parameter-contracts/v1",
+            "CLI/MCP/UI 的静态参数发现契约已同源",
             "敏感工件发现类别",
         ):
             self.assertIn(required, audit)

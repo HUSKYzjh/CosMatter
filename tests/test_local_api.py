@@ -108,6 +108,7 @@ class LocalMissionApiTests(unittest.TestCase):
         created = self._mission()
         self.assertEqual(status["api_mode"], "loopback_only")
         self.assertTrue(status["providers"]["deepseek"])
+        self.assertEqual(status["operation_contracts"]["operations"]["sciverse_read_content"]["properties"]["limit"]["maximum"], 4000)
         self.assertEqual(created["run_id"], "live_001")
         self.assertTrue((self.runs / "live_001" / "mission.json").is_file())
         self.assertNotIn("test", json.dumps({"status": status, "created": created}))

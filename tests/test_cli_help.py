@@ -15,6 +15,18 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("200-4000", output.getvalue())
         self.assertIn("non-negative character offset", output.getvalue())
 
+    def test_sciverse_context_rejects_out_of_range_values_during_argument_parsing(self) -> None:
+        for flag, value in (("--offset", "-1"), ("--limit", "8192")):
+            error = io.StringIO()
+            with contextlib.redirect_stderr(error), self.assertRaises(SystemExit) as raised:
+                main([
+                    "sciverse-read-context", "--run-id", "bounded_parse",
+                    "--document-id", "doc_1", "--output", "review.txt",
+                    flag, value,
+                ])
+            self.assertEqual(raised.exception.code, 2)
+            self.assertIn(flag, error.getvalue())
+
     def test_metadata_enrichment_help_exposes_bounded_scope(self) -> None:
         output = io.StringIO()
         with self.assertRaises(SystemExit) as raised, contextlib.redirect_stdout(output):

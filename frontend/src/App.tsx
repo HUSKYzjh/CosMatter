@@ -1710,6 +1710,7 @@ export function App() {
       if (requestEpoch !== localApiStatusRequestEpoch || launchPreview()) return;
       if (!isLocalApiStatus(result)) throw new Error("invalid local API capability snapshot");
       const enabled = Object.entries(result.providers).filter(([, value]) => value).map(([name]) => name).join(", ");
+      const contentLimit = result.operation_contracts.operations.sciverse_read_content.properties.limit;
       setApiProviders(result.providers);
       setRetrievalSources((current) => {
         if (!retrievalSourcesInitialized) {
@@ -1720,7 +1721,7 @@ export function App() {
       });
       setApiCapabilityHealth("ready");
       setApiSummary(enabled
-        ? text(`本地 API 能力快照已更新：${enabled}。所有执行仍需单独批准。`, `Local API capability snapshot updated: ${enabled}. Each execution still needs separate approval.`)
+        ? text(`本地 API 能力快照已更新：${enabled}。Sciverse 上下文窗口 ${contentLimit.minimum}–${contentLimit.maximum} 字符；所有执行仍需单独批准。`, `Local API capability snapshot updated: ${enabled}. Sciverse context window: ${contentLimit.minimum}-${contentLimit.maximum} characters; each execution still needs separate approval.`)
         : text("本地 API 可连接，但未配置服务商。", "The local API is reachable, but no provider is configured."));
     } catch (error) {
       if (requestEpoch !== localApiStatusRequestEpoch || launchPreview()) return;
