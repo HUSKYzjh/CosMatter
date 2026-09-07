@@ -165,6 +165,23 @@ def candidate_fingerprint(candidate_payload: object) -> str:
     return _candidate_fingerprint(candidate_payload)
 
 
+def selected_document_ids(artifact: object, candidate_payload: object) -> frozenset[str]:
+    """Return current full-text selections without upgrading their trust status.
+
+    Human and explicitly delegated trial screenings may both guide a bounded
+    reading route.  The caller must still treat the result as routing metadata,
+    never as accepted scientific evidence.
+    """
+    allowed_statuses = {_REVIEW_STATUS, _AUTOMATED_TRIAL_REVIEW_STATUS}
+    if not screening_matches_candidates(artifact, candidate_payload, allowed_statuses=allowed_statuses):
+        raise CandidateScreeningError("candidate screening is stale; rebuild it for the current retrieval candidate set")
+    return frozenset(
+        item["document_id"]
+        for item in artifact["decisions"]
+        if item["decision"] == "include_for_fulltext"
+    )
+
+
 def load_candidate_screening(path: Path, mission_id: str) -> dict[str, Any] | None:
     return _load_screening(path, mission_id, {_REVIEW_STATUS})
 

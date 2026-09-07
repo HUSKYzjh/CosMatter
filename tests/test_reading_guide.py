@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from cosmatter.candidate_screening import candidate_screening_from_automated_trial, write_automated_trial_candidate_screening
 from cosmatter.cli import main
 from cosmatter.models import AccessPolicy, EvidenceCard, FlightPlan, MissionBrief, Provenance, ReviewStatus, Stance
 from cosmatter.reading_guide import ReadingGuideError, build_reading_guide
@@ -57,6 +58,48 @@ class ReadingGuideTests(unittest.TestCase):
         with self.assertRaises(ReadingGuideError):
             build_reading_guide(self.mission, self.plan, {"candidates": [candidate("bad_doc", "unapproved", accessible=True, score=1.0)]})
 
+    def test_prioritizes_screened_candidates_and_retains_counterevidence_track(self) -> None:
+        candidates = [
+            candidate(f"primary_{index:02d}", "primary", accessible=True, score=1.0 - index / 100)
+            for index in range(15)
+        ]
+        candidates.append(candidate("counter_low_score", "counter", accessible=True, score=0.01))
+        payload = {"candidates": candidates}
+        selected = {"primary_12", "primary_13", "primary_14"}
+        screening = candidate_screening_from_automated_trial(
+            self.mission.mission_id,
+            payload,
+            {
+                "decisions": [
+                    {
+                        "document_id": item["document_id"],
+                        "decision": "include_for_fulltext" if item["document_id"] in selected else "needs_metadata_review",
+                        "reason_codes": ["material_match"] if item["document_id"] in selected else ["not_enough_metadata"],
+                    }
+                    for item in candidates
+                ]
+            },
+        )
+
+        guide = build_reading_guide(self.mission, self.plan, payload, screening=screening)
+
+        routed_ids = [item["document_id"] for item in guide["items"]]
+        self.assertTrue(selected.issubset(routed_ids))
+        self.assertEqual(set(routed_ids[:3]), selected)
+        self.assertIn("counterevidence", {item["track"] for item in guide["items"]})
+
+    def test_rejects_stale_screening(self) -> None:
+        original = {"candidates": [candidate("primary_doc", "primary", accessible=True, score=0.7)]}
+        screening = candidate_screening_from_automated_trial(
+            self.mission.mission_id,
+            original,
+            {"decisions": [{"document_id": "primary_doc", "decision": "include_for_fulltext", "reason_codes": ["material_match"]}]},
+        )
+        changed = {"candidates": original["candidates"] + [candidate("counter_doc", "counter", accessible=True, score=0.6)]}
+
+        with self.assertRaisesRegex(ReadingGuideError, "stale"):
+            build_reading_guide(self.mission, self.plan, changed, screening=screening)
+
     def test_cli_writes_guide_and_export_projects_it(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runs_dir = Path(directory)
@@ -78,6 +121,45 @@ class ReadingGuideTests(unittest.TestCase):
         self.assertEqual(guide["trust_status"], "derived_from_approved_artifacts")
         self.assertEqual(bundle["research_guide"]["items"][0]["document_id"], "primary_doc")
         self.assertIn("有界阅读路线已生成", [entry["action"] for entry in bundle["timeline"]])
+
+    def test_cli_consumes_current_trial_screening(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            run_dir = runs_dir / "guide_screened_cli"
+            run_dir.mkdir()
+            candidates = [
+                candidate(f"primary_{index:02d}", "primary", accessible=True, score=1.0 - index / 100)
+                for index in range(15)
+            ]
+            candidates.append(candidate("counter_low_score", "counter", accessible=True, score=0.01))
+            payload = {"candidates": candidates}
+            selected = {"primary_12", "primary_13", "primary_14"}
+            screening = candidate_screening_from_automated_trial(
+                self.mission.mission_id,
+                payload,
+                {
+                    "decisions": [
+                        {
+                            "document_id": item["document_id"],
+                            "decision": "include_for_fulltext" if item["document_id"] in selected else "needs_metadata_review",
+                            "reason_codes": ["material_match"] if item["document_id"] in selected else ["not_enough_metadata"],
+                        }
+                        for item in candidates
+                    ]
+                },
+            )
+            (run_dir / "mission.json").write_text(json.dumps(self.mission.to_dict()), encoding="utf-8")
+            (run_dir / "flight_plan.json").write_text(json.dumps(self.plan.to_dict()), encoding="utf-8")
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps(payload), encoding="utf-8")
+            write_automated_trial_candidate_screening(run_dir, screening)
+
+            with patch("cosmatter.cli._runs_dir", return_value=runs_dir), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["build-reading-guide", "--run-id", "guide_screened_cli"]), 0)
+            guide = json.loads((run_dir / "reading_guide.json").read_text(encoding="utf-8"))
+
+        routed_ids = {item["document_id"] for item in guide["items"]}
+        self.assertTrue(selected.issubset(routed_ids))
+        self.assertIn("counterevidence", {item["track"] for item in guide["items"]})
 
 
 if __name__ == "__main__":

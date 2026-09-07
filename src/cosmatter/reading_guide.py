@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .candidate_screening import CandidateScreeningError, selected_document_ids
 from .models import EvidenceCard, FlightPlan, MissionBrief, ReviewStatus
 from .verification import VerificationDecision
 
@@ -43,6 +44,7 @@ def build_reading_guide(
     candidate_payload: object,
     cards: tuple[EvidenceCard, ...] = (),
     decisions: tuple[VerificationDecision, ...] = (),
+    screening: object | None = None,
 ) -> dict[str, Any]:
     """Create a stable study route from approved retrieval provenance.
 
@@ -52,6 +54,10 @@ def build_reading_guide(
     if plan.mission_id != mission.mission_id:
         raise ReadingGuideError("approved plan does not belong to mission")
     candidates = _candidates_from_payload(candidate_payload)
+    try:
+        selected_documents = selected_document_ids(screening, candidate_payload) if screening is not None else frozenset()
+    except CandidateScreeningError as error:
+        raise ReadingGuideError(str(error)) from error
     accepted_by_document = _accepted_evidence_by_document(mission.mission_id, cards, decisions)
     primary_queries = set(plan.queries)
     counter_queries = set(plan.counter_queries)
@@ -84,22 +90,26 @@ def build_reading_guide(
                 "content_status": "authorized" if accessible else "metadata_only",
                 "evidence_ids": evidence_ids,
                 "_score": candidate["score"],
+                "_selected": document_id in selected_documents,
             }
         )
     if not normalized:
         raise ReadingGuideError("candidate history contains no usable candidates")
-    role_rank = {"verified_evidence": 0, "primary_candidate": 1, "counterevidence_candidate": 2}
+    role_rank = {"verified_evidence": 0, "primary_candidate": 1, "counterevidence_candidate": 1}
     normalized.sort(
         key=lambda item: (
             role_rank[item["role"]],
+            0 if item["_selected"] else 1,
             0 if item["content_status"] == "authorized" else 1,
             -(item["_score"] if item["_score"] is not None else -1.0),
             item["document_id"],
         )
     )
+    routed = _bounded_balanced_route(normalized)
     items = []
-    for index, item in enumerate(normalized[:_MAX_GUIDE_ITEMS], start=1):
+    for index, item in enumerate(routed, start=1):
         item.pop("_score")
+        item.pop("_selected")
         items.append({"order": index, **item})
     return {
         "schema_version": GUIDE_SCHEMA_VERSION,
@@ -108,10 +118,35 @@ def build_reading_guide(
         "items": items,
         "caveats": [
             "The route orders bounded candidates; it is not a scientific conclusion.",
+            "Candidate-screening selections affect routing only and are not accepted scientific evidence.",
             "Metadata-only candidates must not be used for evidence extraction.",
             "Counterevidence items are deliberately retained and are not treated as disproved claims.",
         ],
     }
+
+
+def _bounded_balanced_route(normalized: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep high-priority items while preventing one retrieval track from starvation."""
+    routed = list(normalized[:_MAX_GUIDE_ITEMS])
+    available_tracks = {item["track"] for item in normalized}
+    for required_track in ("primary", "counterevidence"):
+        if required_track not in available_tracks or any(item["track"] == required_track for item in routed):
+            continue
+        replacement = next(
+            (
+                item
+                for item in reversed(routed)
+                if item["role"] != "verified_evidence" and not item["_selected"]
+            ),
+            None,
+        )
+        if replacement is None:
+            replacement = next((item for item in reversed(routed) if item["role"] != "verified_evidence"), None)
+        if replacement is None:
+            continue
+        routed[routed.index(replacement)] = next(item for item in normalized if item["track"] == required_track)
+    routed.sort(key=normalized.index)
+    return routed
 
 
 def write_reading_guide(run_dir: Path, guide: dict[str, Any]) -> Path:

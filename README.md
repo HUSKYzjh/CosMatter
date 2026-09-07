@@ -29,7 +29,7 @@
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\python.exe -m cosmatter check-config
+.\cosmatter.ps1 check-config
 .\.venv\Scripts\python.exe -m cosmatter create-mission `
   --question "为什么两篇论文对 BiFeO3 应变相变有不同结论？" `
   --material "BiFeO3" `
@@ -57,6 +57,8 @@ python -m venv .venv
 ```powershell
 .\scripts\acceptance.ps1
 ```
+
+安装完成后，新开的 PowerShell 只需进入仓库根目录并使用 `.\cosmatter.ps1 <command>`；该启动器固定使用仓库 `.venv`，避免系统 Python 找不到 `cosmatter`。上面的长写法仍然等价。启动器不会读取或输出任何凭据；配置仍由 Python 进程按下述规则加载。
 
 该入口依次执行 Python 测试、前端类型检查与测试、DSH 发布/回放/配方门禁、七个本地 DSH 包测试和 `npm pack --dry-run`，最后检查 Git 空白错误。它不读取 `.env`，不调用任何提供商。如需指定解释器，可传入 `-Python C:\Python314\python.exe`；仅检查 Python 套件时可运行 `.\scripts\test-all.ps1`。完整通过时，最后单独输出 `OK - CosMatter full local acceptance passed.`。
 

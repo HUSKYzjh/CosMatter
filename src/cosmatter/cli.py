@@ -37,7 +37,7 @@ from .planning import PlanApprovalError, approved_flight_plan_from_payload, load
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .gap_analysis import GapAnalysisError, candidates_from_discrepancies, load_gap_candidates, write_gap_candidates
 from .gap_drafting import GapDraftingError, research_gap_drafting_prompts, write_untrusted_research_gap_draft
-from .candidate_screening import CandidateScreeningError, candidate_screening_from_automated_trial, candidate_screening_from_review, candidate_screening_template, require_document_screened_for_fulltext, write_automated_trial_candidate_screening, write_candidate_screening, write_candidate_screening_template
+from .candidate_screening import CandidateScreeningError, candidate_screening_from_automated_trial, candidate_screening_from_review, candidate_screening_template, load_automated_trial_candidate_screening, load_candidate_screening, require_document_screened_for_fulltext, write_automated_trial_candidate_screening, write_candidate_screening, write_candidate_screening_template
 from .workflow_readiness import WorkflowReadinessError, workflow_readiness, write_workflow_readiness
 from .runtime_invariants import RuntimeInvariantError, audit_runtime_invariants, write_runtime_invariant_audit
 from .decision_memory import DecisionMemoryError, load_decision_memory_index, rebuild_decision_memory_index, write_decision_memory_entry
@@ -480,9 +480,14 @@ def command_build_reading_guide(args: argparse.Namespace) -> int:
         decisions = _verification_decisions_from_payloads(
             _load_array_if_present(run_dir / "verification_decisions.json", "verification decision artifacts")
         )
-        guide = build_reading_guide(mission, plan, candidate_history, cards, decisions)
+        screening = load_candidate_screening(run_dir / "candidate_screening.json", mission.mission_id)
+        if screening is None:
+            screening = load_automated_trial_candidate_screening(
+                run_dir / "automated_trial_candidate_screening.json", mission.mission_id
+            )
+        guide = build_reading_guide(mission, plan, candidate_history, cards, decisions, screening)
         guide_path = write_reading_guide(run_dir, guide)
-    except (UiExportError, PlanApprovalError, ReadingGuideError) as error:
+    except (UiExportError, PlanApprovalError, CandidateScreeningError, ReadingGuideError) as error:
         _json_print({"error": str(error), "run_id": args.run_id})
         return 2
     recorder = FlightRecorder(_runs_dir(), args.run_id)
@@ -490,7 +495,11 @@ def command_build_reading_guide(args: argparse.Namespace) -> int:
         event_type="reading_guide_built",
         actor="research_guide",
         state=MissionState.SELECT,
-        payload={"guide_item_count": len(guide["items"]), "trust_status": guide["trust_status"]},
+        payload={
+            "guide_item_count": len(guide["items"]),
+            "counterevidence_item_count": sum(item["track"] == "counterevidence" for item in guide["items"]),
+            "trust_status": guide["trust_status"],
+        },
     )
     _json_print({"run_id": args.run_id, "guide_path": str(guide_path), "item_count": len(guide["items"]), "trust_status": guide["trust_status"]})
     return 0
@@ -3406,8 +3415,8 @@ def build_parser() -> argparse.ArgumentParser:
     content = commands.add_parser("sciverse-read-context", help="fetch one screened candidate's bounded Sciverse context into an explicit local review file")
     content.add_argument("--run-id", required=True)
     content.add_argument("--document-id", required=True)
-    content.add_argument("--offset", type=int, default=0)
-    content.add_argument("--limit", type=int, default=2000)
+    content.add_argument("--offset", type=int, default=0, help="non-negative character offset")
+    content.add_argument("--limit", type=int, default=2000, metavar="200-4000", help="bounded character count accepted by Sciverse (default: 2000)")
     content.add_argument("--output", required=True, help="new local .txt/.md review file outside the run directory; content is never stored in run artifacts")
     content.add_argument("--allow-delegated-automated-trial", action="store_true", help="permit separately recorded delegated automated trial screening; preserves a non-human content-access trust status")
     content.set_defaults(handler=command_sciverse_read_context)
