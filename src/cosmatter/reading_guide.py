@@ -12,12 +12,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .candidate_screening import CandidateScreeningError, selected_document_ids
-from .models import EvidenceCard, FlightPlan, MissionBrief, ReviewStatus
+from .candidate_screening import CandidateScreeningError, selected_document_ids, selected_document_reason_codes
+from .metadata_enrichment import MetadataEnrichmentError, resolved_dois_for_candidates
+from .models import EvidenceCard, FlightPlan, MissionBrief, ReviewStatus, normalized_doi_or_none
 from .verification import VerificationDecision
 
 
-GUIDE_SCHEMA_VERSION = "1.0"
+GUIDE_SCHEMA_VERSION = "1.1"
+_LEGACY_GUIDE_SCHEMA_VERSION = "1.0"
 _MAX_GUIDE_ITEMS = 12
 _ITEM_FIELDS = {
     "order",
@@ -30,8 +32,16 @@ _ITEM_FIELDS = {
     "role",
     "content_status",
     "evidence_ids",
+    "doi",
+    "routing_signals",
 }
+_LEGACY_ITEM_FIELDS = _ITEM_FIELDS - {"doi", "routing_signals"}
 _GUIDE_FIELDS = {"schema_version", "mission_id", "trust_status", "items", "caveats"}
+_ROUTING_SIGNALS = {
+    "accepted_evidence", "screened_for_fulltext", "material_match", "property_match", "scope_match",
+    "method_match", "primary_evidence", "counterevidence", "counterevidence_track",
+    "provider_advertised_content", "normalized_doi_resolved",
+}
 
 
 class ReadingGuideError(ValueError):
@@ -45,6 +55,7 @@ def build_reading_guide(
     cards: tuple[EvidenceCard, ...] = (),
     decisions: tuple[VerificationDecision, ...] = (),
     screening: object | None = None,
+    metadata_enrichment: object | None = None,
 ) -> dict[str, Any]:
     """Create a stable study route from approved retrieval provenance.
 
@@ -56,7 +67,12 @@ def build_reading_guide(
     candidates = _candidates_from_payload(candidate_payload)
     try:
         selected_documents = selected_document_ids(screening, candidate_payload) if screening is not None else frozenset()
+        screening_reasons = selected_document_reason_codes(screening, candidate_payload) if screening is not None else {}
     except CandidateScreeningError as error:
+        raise ReadingGuideError(str(error)) from error
+    try:
+        enriched_dois = resolved_dois_for_candidates(metadata_enrichment, mission.mission_id, candidate_payload)
+    except MetadataEnrichmentError as error:
         raise ReadingGuideError(str(error)) from error
     accepted_by_document = _accepted_evidence_by_document(mission.mission_id, cards, decisions)
     primary_queries = set(plan.queries)
@@ -77,7 +93,20 @@ def build_reading_guide(
             raise ReadingGuideError("candidate history contains a query outside the approved FlightPlan")
         evidence_ids = accepted_by_document.get(document_id, [])
         accessible = candidate["is_content_accessible"]
+        doi = candidate["doi"] or enriched_dois.get(document_id)
         role = "verified_evidence" if evidence_ids else ("primary_candidate" if track == "primary" else "counterevidence_candidate")
+        routing_signals: list[str] = []
+        if evidence_ids:
+            routing_signals.append("accepted_evidence")
+        if document_id in selected_documents:
+            routing_signals.append("screened_for_fulltext")
+            routing_signals.extend(screening_reasons.get(document_id, ()))
+        if track == "counterevidence":
+            routing_signals.append("counterevidence_track")
+        if accessible:
+            routing_signals.append("provider_advertised_content")
+        if doi is not None:
+            routing_signals.append("normalized_doi_resolved")
         normalized.append(
             {
                 "document_id": document_id,
@@ -89,6 +118,8 @@ def build_reading_guide(
                 "role": role,
                 "content_status": "authorized" if accessible else "metadata_only",
                 "evidence_ids": evidence_ids,
+                "doi": doi,
+                "routing_signals": list(dict.fromkeys(routing_signals)),
                 "_score": candidate["score"],
                 "_selected": document_id in selected_documents,
             }
@@ -166,6 +197,8 @@ def load_reading_guide(path: Path, mission_id: str) -> dict[str, Any] | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise ReadingGuideError("reading_guide.json is invalid JSON") from error
+    if isinstance(payload, dict) and payload.get("schema_version") == _LEGACY_GUIDE_SCHEMA_VERSION:
+        payload = _upgrade_legacy_guide(payload)
     _validate_reading_guide(payload)
     if payload["mission_id"] != mission_id:
         raise ReadingGuideError("reading guide does not belong to mission")
@@ -201,6 +234,7 @@ def _candidates_from_payload(payload: object) -> list[dict[str, Any]]:
                 "locator_hint": locator_hint,
                 "score": float(score) if score is not None else None,
                 "is_content_accessible": raw.get("is_content_accessible") is True,
+                "doi": normalized_doi_or_none(raw.get("doi")),
             }
         )
     return candidates
@@ -249,6 +283,11 @@ def _validate_reading_guide(payload: object) -> None:
             raise ReadingGuideError("reading guide item roles are invalid")
         if item["content_status"] not in {"authorized", "metadata_only"}:
             raise ReadingGuideError("reading guide item content status is invalid")
+        if item["doi"] is not None and normalized_doi_or_none(item["doi"]) != item["doi"]:
+            raise ReadingGuideError("reading guide item DOI is invalid")
+        signals = item["routing_signals"]
+        if not isinstance(signals, list) or len(signals) != len(set(signals)) or any(signal not in _ROUTING_SIGNALS for signal in signals):
+            raise ReadingGuideError("reading guide routing signals are invalid")
         if item["publication_year"] is not None and (not isinstance(item["publication_year"], int) or not 1000 <= item["publication_year"] <= 3000):
             raise ReadingGuideError("reading guide item year is invalid")
         if item["locator_hint"] is not None and not isinstance(item["locator_hint"], str):
@@ -257,3 +296,22 @@ def _validate_reading_guide(payload: object) -> None:
             raise ReadingGuideError("reading guide evidence IDs are invalid")
     if not all(isinstance(caveat, str) and caveat.strip() for caveat in caveats):
         raise ReadingGuideError("reading guide caveats are invalid")
+
+
+def _upgrade_legacy_guide(payload: dict[str, Any]) -> dict[str, Any]:
+    """Project a previously written v1.0 route into the v1.1 safe contract."""
+    if set(payload) != _GUIDE_FIELDS or not isinstance(payload.get("items"), list):
+        raise ReadingGuideError("legacy reading guide fields are invalid")
+    upgraded_items = []
+    for item in payload["items"]:
+        if not isinstance(item, dict) or set(item) != _LEGACY_ITEM_FIELDS:
+            raise ReadingGuideError("legacy reading guide item fields are invalid")
+        signals = []
+        if item.get("role") == "verified_evidence":
+            signals.append("accepted_evidence")
+        if item.get("track") == "counterevidence":
+            signals.append("counterevidence_track")
+        if item.get("content_status") == "authorized":
+            signals.append("provider_advertised_content")
+        upgraded_items.append({**item, "doi": None, "routing_signals": signals})
+    return {**payload, "schema_version": GUIDE_SCHEMA_VERSION, "items": upgraded_items}

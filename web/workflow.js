@@ -56,8 +56,9 @@ function renderReadingGuide(guide) {
     const header = document.createElement("header"); const order = document.createElement("span"); order.className = "route-order"; order.textContent = String(item.order || "?").padStart(2, "0"); const badge = document.createElement("span"); badge.className = "route-badge"; badge.textContent = roleLabel[item.role] || "候选"; header.append(order, badge);
     const title = document.createElement("h3"); title.textContent = wfText(item.title);
     const meta = document.createElement("p"); meta.className = "route-meta"; meta.textContent = `${wfText(item.source)} · ${item.publication_year || "年份未知"} · ${item.content_status === "authorized" ? "内容访问已授权" : "仅元数据"}`;
+    const signals = document.createElement("p"); signals.className = "route-linked"; signals.textContent = Array.isArray(item.routing_signals) && item.routing_signals.length ? `入选信号：${item.routing_signals.join("、")}` : "入选信号：旧版路线未记录";
     const linked = document.createElement("p"); linked.className = "route-linked"; linked.textContent = Array.isArray(item.evidence_ids) && item.evidence_ids.length ? `已关联证据：${item.evidence_ids.join("、")}` : "尚无已接受证据关联";
-    card.append(header, title, meta, linked); return card;
+    card.append(header, title, meta, signals, linked); return card;
   }));
   caveat.textContent = Array.isArray(guide.caveats) && guide.caveats.length ? guide.caveats.join(" ") : "阅读路线仅组织已批准工件，不代表论文内容已被证实。";
 }

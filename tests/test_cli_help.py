@@ -15,6 +15,15 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("200-4000", output.getvalue())
         self.assertIn("non-negative character offset", output.getvalue())
 
+    def test_metadata_enrichment_help_exposes_bounded_scope(self) -> None:
+        output = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, contextlib.redirect_stdout(output):
+            main(["enrich-screened-metadata", "--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("1-10", output.getvalue())
+        self.assertIn("1-12", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

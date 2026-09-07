@@ -64,6 +64,8 @@ class WebAssetTests(unittest.TestCase):
         self.assertIn('id="paper-structure"', paper_html)
         self.assertIn('id="paper-view-mode"', paper_html)
         self.assertIn("function renderPaper(bundle)", paper_script)
+        self.assertIn("routing_signals", paper_script)
+        self.assertIn("规范化 DOI", paper_script)
         self.assertIn("function renderReviewedSourceMap(bundle, item)", paper_script)
         self.assertIn("function renderPaperStructure(bundle, item)", paper_script)
         self.assertIn("function applyPaperViewMode()", paper_script)

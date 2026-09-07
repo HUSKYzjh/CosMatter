@@ -79,7 +79,7 @@ class MetadataSearchAdapter:
         if self.settings.crossref_mailto:
             params["mailto"] = self.settings.crossref_mailto
         user_agent = f"CosMatter/0.1 (mailto:{self.settings.crossref_mailto})" if self.settings.crossref_mailto else "CosMatter/0.1 (materials-literature-agent)"
-        payload = self._request_json(self.settings.crossref_base_url, "/works", params, {"Accept": "application/vnd.crossref-api-message+json", "User-Agent": user_agent}, "Crossref")
+        payload = self._request_json(self.settings.crossref_base_url, "/works", params, {"Accept": "application/json", "User-Agent": user_agent}, "Crossref")
         message = payload.get("message") if isinstance(payload, dict) else None
         records = message.get("items") if isinstance(message, dict) else None
         if not isinstance(records, list):

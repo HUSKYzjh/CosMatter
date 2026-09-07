@@ -44,7 +44,7 @@ class CrossrefAdapter:
         return self._get(f"/works/{quote(normalized, safe='')}" + (f"?{query}" if query else ""))
 
     def _get(self, path: str) -> CrossrefWork:
-        headers = {"Accept": "application/vnd.crossref-api-message+json"}
+        headers = {"Accept": "application/json"}
         if self.settings.crossref_mailto:
             headers["User-Agent"] = f"CosMatter/0.1 (mailto:{self.settings.crossref_mailto})"
         else:

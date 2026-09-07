@@ -182,6 +182,16 @@ def selected_document_ids(artifact: object, candidate_payload: object) -> frozen
     )
 
 
+def selected_document_reason_codes(artifact: object, candidate_payload: object) -> dict[str, tuple[str, ...]]:
+    """Return allowlisted reason codes for current full-text selections only."""
+    selected = selected_document_ids(artifact, candidate_payload)
+    return {
+        item["document_id"]: tuple(item["reason_codes"])
+        for item in artifact["decisions"]
+        if item["document_id"] in selected
+    }
+
+
 def load_candidate_screening(path: Path, mission_id: str) -> dict[str, Any] | None:
     return _load_screening(path, mission_id, {_REVIEW_STATUS})
 

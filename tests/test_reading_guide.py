@@ -9,11 +9,11 @@ from unittest.mock import patch
 from cosmatter.candidate_screening import candidate_screening_from_automated_trial, write_automated_trial_candidate_screening
 from cosmatter.cli import main
 from cosmatter.models import AccessPolicy, EvidenceCard, FlightPlan, MissionBrief, Provenance, ReviewStatus, Stance
-from cosmatter.reading_guide import ReadingGuideError, build_reading_guide
+from cosmatter.reading_guide import ReadingGuideError, build_reading_guide, load_reading_guide
 from cosmatter.verification import VerificationDecision
 
 
-def candidate(document_id: str, query: str, *, accessible: bool, score: float) -> dict[str, object]:
+def candidate(document_id: str, query: str, *, accessible: bool, score: float, doi: str | None = None) -> dict[str, object]:
     return {
         "document_id": document_id,
         "title": f"Synthetic {document_id}",
@@ -23,6 +23,7 @@ def candidate(document_id: str, query: str, *, accessible: bool, score: float) -
         "locator_hint": "page:1",
         "score": score,
         "is_content_accessible": accessible,
+        "doi": doi,
     }
 
 
@@ -87,6 +88,8 @@ class ReadingGuideTests(unittest.TestCase):
         self.assertTrue(selected.issubset(routed_ids))
         self.assertEqual(set(routed_ids[:3]), selected)
         self.assertIn("counterevidence", {item["track"] for item in guide["items"]})
+        selected_item = next(item for item in guide["items"] if item["document_id"] == "primary_12")
+        self.assertEqual(selected_item["routing_signals"][:2], ["screened_for_fulltext", "material_match"])
 
     def test_rejects_stale_screening(self) -> None:
         original = {"candidates": [candidate("primary_doc", "primary", accessible=True, score=0.7)]}
@@ -99,6 +102,26 @@ class ReadingGuideTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ReadingGuideError, "stale"):
             build_reading_guide(self.mission, self.plan, changed, screening=screening)
+
+    def test_load_upgrades_legacy_route_without_inventing_screening_reasons(self) -> None:
+        guide = build_reading_guide(
+            self.mission,
+            self.plan,
+            {"candidates": [candidate("primary_doc", "primary", accessible=True, score=0.7)]},
+        )
+        legacy = {**guide, "schema_version": "1.0"}
+        legacy["items"] = [
+            {key: value for key, value in item.items() if key not in {"doi", "routing_signals"}}
+            for item in guide["items"]
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reading_guide.json"
+            path.write_text(json.dumps(legacy), encoding="utf-8")
+            loaded = load_reading_guide(path, self.mission.mission_id)
+
+        self.assertEqual(loaded["schema_version"], "1.1")
+        self.assertEqual(loaded["items"][0]["routing_signals"], ["provider_advertised_content"])
+        self.assertIsNone(loaded["items"][0]["doi"])
 
     def test_cli_writes_guide_and_export_projects_it(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

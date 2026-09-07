@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from cosmatter.config import Settings
 from cosmatter.metadata_search import MetadataSearchAdapter
@@ -27,6 +28,12 @@ class MetadataSearchTests(unittest.TestCase):
         self.assertEqual(candidates[0].publication_year, 2023)
         self.assertEqual(candidates[0].source, "Crossref")
         self.assertNotIn("hidden", str(candidates[0].to_dict()))
+
+    def test_crossref_requests_standard_json_media_type(self) -> None:
+        adapter = MetadataSearchAdapter(self.settings)
+        with patch.object(adapter, "_request_json", return_value={"message": {"items": []}}) as request:
+            adapter.search_crossref("BiFeO3", top_k=3)
+        self.assertEqual(request.call_args.args[3]["Accept"], "application/json")
 
 
 if __name__ == "__main__":

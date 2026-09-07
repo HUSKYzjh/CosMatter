@@ -34,6 +34,7 @@ class CrossrefAdapterTests(unittest.TestCase):
         request = mocked.call_args.args[0]
         self.assertIn("/works/10.1000%2Froot?mailto=team%40example.org", request.full_url)
         self.assertIn("mailto:team@example.org", request.get_header("User-agent"))
+        self.assertEqual(request.get_header("Accept"), "application/json")
         self.assertEqual(work.doi, "10.1000/root")
         self.assertEqual(work.referenced_dois, ("10.1000/a",))
         self.assertTrue(work.reference_field_present)

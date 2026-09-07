@@ -131,6 +131,15 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 .\.venv\Scripts\python.exe -m cosmatter build-reading-guide --run-id bfo_live_001
 ```
 
+完成候选筛选后，可先对已纳入候选执行 Crossref/OpenAlex 精确元数据补全，再重建路线：
+
+```powershell
+.\cosmatter.ps1 enrich-screened-metadata --run-id bfo_live_001
+.\cosmatter.ps1 build-reading-guide --run-id bfo_live_001
+```
+
+补全每次最多处理 12 条候选，只接受标题精确规范化匹配和相容年份；冲突 DOI 不会写成已解析。工件与阅读路线均不保存查询响应、摘要或全文。
+
 ## 4. 录入可定位证据并生成交付物
 
 证据草稿由已获授权的内容提取流程产生，至少含有 `claim`、`stance`、材料、性质、

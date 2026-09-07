@@ -60,6 +60,16 @@ python -m venv .venv
 
 安装完成后，新开的 PowerShell 只需进入仓库根目录并使用 `.\cosmatter.ps1 <command>`；该启动器固定使用仓库 `.venv`，避免系统 Python 找不到 `cosmatter`。上面的长写法仍然等价。启动器不会读取或输出任何凭据；配置仍由 Python 进程按下述规则加载。
 
+候选筛选完成后，可对最多 12 条已纳入候选做冲突安全的 DOI 补全，再重建阅读路线：
+
+```powershell
+.\cosmatter.ps1 enrich-screened-metadata --run-id YOUR_RUN
+.\cosmatter.ps1 build-reading-guide --run-id YOUR_RUN
+.\cosmatter.ps1 export-ui --run-id YOUR_RUN
+```
+
+补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。阅读路线显示规范化 DOI 与允许列表内的入选信号，但筛选和元数据仍不等于科学证据。
+
 该入口依次执行 Python 测试、前端类型检查与测试、DSH 发布/回放/配方门禁、七个本地 DSH 包测试和 `npm pack --dry-run`，最后检查 Git 空白错误。它不读取 `.env`，不调用任何提供商。如需指定解释器，可传入 `-Python C:\Python314\python.exe`；仅检查 Python 套件时可运行 `.\scripts\test-all.ps1`。完整通过时，最后单独输出 `OK - CosMatter full local acceptance passed.`。
 
 若需保存验收收据，请显式指定一个新 JSON 文件：

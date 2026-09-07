@@ -37,7 +37,9 @@ from .planning import PlanApprovalError, approved_flight_plan_from_payload, load
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .gap_analysis import GapAnalysisError, candidates_from_discrepancies, load_gap_candidates, write_gap_candidates
 from .gap_drafting import GapDraftingError, research_gap_drafting_prompts, write_untrusted_research_gap_draft
-from .candidate_screening import CandidateScreeningError, candidate_screening_from_automated_trial, candidate_screening_from_review, candidate_screening_template, load_automated_trial_candidate_screening, load_candidate_screening, require_document_screened_for_fulltext, write_automated_trial_candidate_screening, write_candidate_screening, write_candidate_screening_template
+from .candidate_screening import CandidateScreeningError, candidate_screening_from_automated_trial, candidate_screening_from_review, candidate_screening_template, load_automated_trial_candidate_screening, load_candidate_screening, require_document_screened_for_fulltext, selected_document_ids, write_automated_trial_candidate_screening, write_candidate_screening, write_candidate_screening_template
+from .metadata_enrichment import MetadataEnrichmentError, build_metadata_enrichment, load_metadata_enrichment, write_metadata_enrichment
+from .metadata_search import MetadataSearchAdapter, MetadataSearchConfigurationError, MetadataSearchRequestError
 from .workflow_readiness import WorkflowReadinessError, workflow_readiness, write_workflow_readiness
 from .runtime_invariants import RuntimeInvariantError, audit_runtime_invariants, write_runtime_invariant_audit
 from .decision_memory import DecisionMemoryError, load_decision_memory_index, rebuild_decision_memory_index, write_decision_memory_entry
@@ -485,9 +487,14 @@ def command_build_reading_guide(args: argparse.Namespace) -> int:
             screening = load_automated_trial_candidate_screening(
                 run_dir / "automated_trial_candidate_screening.json", mission.mission_id
             )
-        guide = build_reading_guide(mission, plan, candidate_history, cards, decisions, screening)
+        metadata_enrichment = load_metadata_enrichment(
+            run_dir / "candidate_metadata_enrichment.json", mission.mission_id, candidate_history
+        )
+        guide = build_reading_guide(
+            mission, plan, candidate_history, cards, decisions, screening, metadata_enrichment
+        )
         guide_path = write_reading_guide(run_dir, guide)
-    except (UiExportError, PlanApprovalError, CandidateScreeningError, ReadingGuideError) as error:
+    except (UiExportError, PlanApprovalError, CandidateScreeningError, MetadataEnrichmentError, ReadingGuideError) as error:
         _json_print({"error": str(error), "run_id": args.run_id})
         return 2
     recorder = FlightRecorder(_runs_dir(), args.run_id)
@@ -546,6 +553,87 @@ def command_record_candidate_screening(args: argparse.Namespace) -> int:
         payload={"candidate_count": artifact["candidate_count"], "decision_counts": counts},
     )
     _json_print({"run_id": args.run_id, "candidate_count": artifact["candidate_count"], "decision_counts": counts, "screening_path": str(path)})
+    return 0
+
+
+def command_enrich_screened_metadata(args: argparse.Namespace) -> int:
+    """Resolve DOI metadata for a bounded screened subset without fuzzy merging."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        if not 1 <= args.top_k <= 10 or not 1 <= args.max_documents <= 12:
+            raise MetadataEnrichmentError("top_k must be 1 to 10 and max_documents must be 1 to 12")
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        require_active_run(run_dir, mission.mission_id)
+        candidate_history = _load_object(run_dir / "retrieval_candidates.json", "candidate history")
+        screening = load_candidate_screening(run_dir / "candidate_screening.json", mission.mission_id)
+        screening_kind = "human"
+        if screening is None and args.allow_delegated_automated_trial:
+            screening = load_automated_trial_candidate_screening(
+                run_dir / "automated_trial_candidate_screening.json", mission.mission_id
+            )
+            screening_kind = "delegated_automated_trial"
+        if screening is None:
+            raise CandidateScreeningError(
+                "metadata enrichment requires current human screening or explicit delegated automated trial opt-in"
+            )
+        selected = selected_document_ids(screening, candidate_history)
+        if not selected:
+            raise CandidateScreeningError("metadata enrichment requires at least one full-text selection")
+        candidates = {
+            item["document_id"]: item
+            for item in candidate_history.get("candidates", [])
+            if isinstance(item, dict) and isinstance(item.get("document_id"), str)
+        }
+        requested_ids = tuple(document_id for document_id in candidates if document_id in selected)[: args.max_documents]
+        providers = tuple(dict.fromkeys(args.provider or ("crossref", "openalex")))
+        adapter = MetadataSearchAdapter(Settings.load())
+        provider_results: dict[str, dict[str, tuple[PaperCandidate, ...] | None]] = {}
+        for document_id in requested_ids:
+            title = candidates[document_id].get("title")
+            if not isinstance(title, str) or not title.strip():
+                raise MetadataEnrichmentError("selected candidate title is invalid")
+            current: dict[str, tuple[PaperCandidate, ...] | None] = {}
+            for provider in providers:
+                try:
+                    if provider == "crossref":
+                        current["Crossref"] = adapter.search_crossref(title, top_k=args.top_k)
+                    else:
+                        current["OpenAlex"] = adapter.search_openalex(title, top_k=args.top_k)
+                except (MetadataSearchConfigurationError, MetadataSearchRequestError):
+                    current["Crossref" if provider == "crossref" else "OpenAlex"] = None
+            provider_results[document_id] = current
+        artifact = build_metadata_enrichment(
+            mission.mission_id, candidate_history, requested_ids, provider_results
+        )
+        artifact_path = write_metadata_enrichment(run_dir, artifact)
+    except (CandidateScreeningError, MetadataEnrichmentError, RunControlError, UiExportError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    summary = artifact["summary"]
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="candidate_metadata_enriched",
+        actor="search_selection",
+        state=MissionState.SELECT,
+        payload={
+            "screening_kind": screening_kind,
+            "selected_candidate_count": len(selected),
+            "processed_document_count": len(requested_ids),
+            "resolved_count": summary["resolved_count"],
+            "conflict_count": summary["conflict_count"],
+            "provider_call_failure_count": summary["provider_call_failure_count"],
+            "trust_status": artifact["trust_status"],
+        },
+    )
+    _json_print(
+        {
+            "run_id": args.run_id,
+            "artifact_path": str(artifact_path),
+            "selected_candidate_count": len(selected),
+            "processed_document_count": len(requested_ids),
+            "truncated": len(requested_ids) < len(selected),
+            "summary": summary,
+        }
+    )
     return 0
 
 
@@ -3412,6 +3500,13 @@ def build_parser() -> argparse.ArgumentParser:
     execute_plan_query.add_argument("--query-index", type=int, required=True)
     execute_plan_query.add_argument("--counter", action="store_true", help="use the approved counterevidence query list")
     execute_plan_query.set_defaults(handler=command_execute_plan_query)
+    enrich_metadata = commands.add_parser("enrich-screened-metadata", help="resolve DOI metadata for a bounded screened candidate subset using exact title/year matching")
+    enrich_metadata.add_argument("--run-id", required=True)
+    enrich_metadata.add_argument("--provider", action="append", choices=("crossref", "openalex"), help="metadata provider; repeat to use both (default: both)")
+    enrich_metadata.add_argument("--top-k", type=int, default=5, metavar="1-10", help="bounded results inspected per provider and title (default: 5)")
+    enrich_metadata.add_argument("--max-documents", type=int, default=12, metavar="1-12", help="maximum screened candidates processed in this invocation (default: 12)")
+    enrich_metadata.add_argument("--allow-delegated-automated-trial", action="store_true", help="use separately recorded delegated trial screening when no human screening exists")
+    enrich_metadata.set_defaults(handler=command_enrich_screened_metadata)
     content = commands.add_parser("sciverse-read-context", help="fetch one screened candidate's bounded Sciverse context into an explicit local review file")
     content.add_argument("--run-id", required=True)
     content.add_argument("--document-id", required=True)
