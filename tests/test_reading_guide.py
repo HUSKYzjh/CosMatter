@@ -15,10 +15,10 @@ from cosmatter.reading_guide import ReadingGuideError, build_reading_guide, load
 from cosmatter.verification import VerificationDecision
 
 
-def candidate(document_id: str, query: str, *, accessible: bool, score: float, doi: str | None = None) -> dict[str, object]:
+def candidate(document_id: str, query: str, *, accessible: bool, score: float, doi: str | None = None, title: str | None = None) -> dict[str, object]:
     return {
         "document_id": document_id,
-        "title": f"Synthetic {document_id}",
+        "title": title or f"Synthetic {document_id}",
         "query": query,
         "source": "Sciverse",
         "publication_year": 2025,
@@ -144,7 +144,7 @@ class ReadingGuideTests(unittest.TestCase):
         legacy = {**guide, "schema_version": "1.0"}
         legacy["items"] = [
             {
-                **{key: value for key, value in item.items() if key not in {"doi", "routing_signals"}},
+                **{key: value for key, value in item.items() if key not in {"doi", "routing_signals", "research_track", "route_eligibility", "facet_signals"}},
                 "content_status": "authorized",
             }
             for item in guide["items"]
@@ -154,10 +154,69 @@ class ReadingGuideTests(unittest.TestCase):
             path.write_text(json.dumps(legacy), encoding="utf-8")
             loaded = load_reading_guide(path, self.mission.mission_id)
 
-        self.assertEqual(loaded["schema_version"], "1.2")
+        self.assertEqual(loaded["schema_version"], "1.3")
         self.assertEqual(loaded["items"][0]["routing_signals"], ["provider_advertised_content"])
         self.assertEqual(loaded["items"][0]["content_status"], "provider_advertised")
         self.assertIsNone(loaded["items"][0]["doi"])
+        self.assertEqual(loaded["items"][0]["research_track"], "unclassified_legacy")
+        self.assertEqual(loaded["route_policy"]["classification_status"], "legacy_unclassified")
+
+    def test_balances_three_metadata_tracks_and_routes_surrogates_as_counterevidence_only(self) -> None:
+        mission = MissionBrief(
+            "Can a configuration search optimize (Pb_x Sr_1-x)TiO3 when dielectric data can only be obtained by molecular dynamics and no property surrogate exists?",
+            "(Pb_x Sr_1-x)TiO3",
+            "dielectric and piezoelectric response",
+            "8x8x8 random A-site configurations; no surrogate model",
+            mission_id="mission_pst_route",
+        )
+        plan = FlightPlan(mission.mission_id, ("conditions",), ("primary",), ("counter",))
+        candidates = [
+            *[candidate(f"exact_{index}", "primary", accessible=False, score=1 - index / 100, title=f"Pb0.5Sr0.5TiO3 dielectric response study {index}") for index in range(5)],
+            *[candidate(f"algorithm_{index}", "primary", accessible=False, score=.9 - index / 100, title=f"Replica exchange configuration search for binary occupations {index}") for index in range(4)],
+            *[candidate(f"analogue_{index}", "primary", accessible=False, score=.8 - index / 100, title=f"Cation ordering in ferroelectric perovskite oxides {index}") for index in range(4)],
+            candidate("surrogate", "primary", accessible=False, score=.99, title="Bayesian optimization with a Gaussian process surrogate for dielectric materials"),
+            candidate("counter", "counter", accessible=False, score=.1, title="Short-range order counterexample in solid solutions"),
+        ]
+
+        guide = build_reading_guide(mission, plan, {"candidates": candidates})
+        policy = guide["route_policy"]
+
+        self.assertEqual(policy["schema_version"], "cosmatter.research-route-policy/v1")
+        self.assertEqual(policy["classification_status"], "current_candidate_pool")
+        self.assertGreaterEqual(policy["selected_track_counts"]["exact_material"], 4)
+        self.assertGreaterEqual(policy["selected_track_counts"]["mechanism_analogue"], 3)
+        self.assertGreaterEqual(policy["selected_track_counts"]["algorithm"], 4)
+        self.assertGreaterEqual(policy["selected_counterevidence_count"], 1)
+        surrogate = next(item for item in guide["items"] if item["document_id"] == "surrogate")
+        self.assertEqual(surrogate["route_eligibility"], "counterevidence_only")
+        self.assertIn("mission_forbids_property_surrogate", surrogate["facet_signals"])
+        serialized = json.dumps(guide)
+        self.assertNotIn('"query"', serialized)
+        self.assertNotIn('"score"', serialized)
+
+    def test_load_upgrades_v12_as_legacy_unclassified_and_rejects_policy_tampering(self) -> None:
+        guide = build_reading_guide(
+            self.mission,
+            self.plan,
+            {"candidates": [candidate("primary_doc", "primary", accessible=False, score=0.7)]},
+        )
+        v12 = {key: value for key, value in guide.items() if key != "route_policy"}
+        v12["schema_version"] = "1.2"
+        v12["items"] = [
+            {key: value for key, value in item.items() if key not in {"research_track", "route_eligibility", "facet_signals"}}
+            for item in guide["items"]
+        ]
+        tampered = json.loads(json.dumps(guide))
+        tampered["route_policy"]["selected_track_counts"]["algorithm"] += 1
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reading_guide.json"
+            path.write_text(json.dumps(v12), encoding="utf-8")
+            loaded = load_reading_guide(path, self.mission.mission_id)
+            self.assertEqual(loaded["items"][0]["research_track"], "unclassified_legacy")
+            self.assertEqual(loaded["route_policy"]["classification_status"], "legacy_unclassified")
+            path.write_text(json.dumps(tampered), encoding="utf-8")
+            with self.assertRaisesRegex(ReadingGuideError, "inconsistent"):
+                load_reading_guide(path, self.mission.mission_id)
 
     def test_cli_writes_guide_and_export_projects_it(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -179,6 +238,8 @@ class ReadingGuideTests(unittest.TestCase):
 
         self.assertEqual(guide["trust_status"], "derived_from_approved_artifacts")
         self.assertEqual(bundle["research_guide"]["items"][0]["document_id"], "primary_doc")
+        self.assertIn('"research_track_counts"', output.getvalue())
+        self.assertIn('"route_classification_status": "current_candidate_pool"', output.getvalue())
         self.assertIn("有界阅读路线已生成", [entry["action"] for entry in bundle["timeline"]])
 
     def test_cli_consumes_current_trial_screening(self) -> None:

@@ -32,6 +32,28 @@ class UiLiteratureGraphProjectionTests(unittest.TestCase):
         self.assertNotIn("never send", serialised)
         self.assertNotIn("score", serialised)
 
+    def test_candidate_projection_keeps_bounded_reading_guide_items_in_the_graph_window(self) -> None:
+        payload = {
+            "candidates": [
+                {
+                    "document_id": f"paper_{index}",
+                    "title": f"Bounded paper title {index}",
+                    "source": "fixture",
+                    "publication_year": 2024,
+                    "is_content_accessible": False,
+                }
+                for index in range(60)
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "retrieval_candidates.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            candidates = _retrieval_candidate_projection(path, ("paper_59", "paper_58"))
+
+        self.assertEqual(len(candidates), 48)
+        self.assertEqual([item["document_id"] for item in candidates[:2]], ["paper_59", "paper_58"])
+        self.assertNotIn("_source_order", json.dumps(candidates))
+
     def test_graph_distinguishes_candidates_evidence_and_bibliographic_edges(self) -> None:
         mission = MissionBrief("question", "BiFeO3", "phase stability", "films", mission_id="mission_graph")
         evidence = [{

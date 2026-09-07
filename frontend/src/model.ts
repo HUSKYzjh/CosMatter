@@ -152,6 +152,29 @@ export interface LiteratureGraphNode {
 }
 export interface LiteratureGraphEdge { sourceId: string; targetId: string; edgeType: string; relationSource: string; trustStatus: string; }
 export interface LiteratureGraph { trustStatus: string; nodes: LiteratureGraphNode[]; edges: LiteratureGraphEdge[]; }
+export type ResearchTrack = "exact_material" | "mechanism_analogue" | "algorithm" | "unclassified_legacy";
+export type RouteEligibility = "primary_allowed" | "counterevidence_only";
+export interface ResearchGuideItem {
+  order: number;
+  documentId: string;
+  title: string;
+  researchTrack: ResearchTrack;
+  routeEligibility: RouteEligibility;
+  facetSignals: string[];
+}
+export interface ResearchRoutePolicy {
+  classificationStatus: "current_candidate_pool" | "legacy_unclassified";
+  trackMinimums: Record<Exclude<ResearchTrack, "unclassified_legacy">, number>;
+  availableTrackCounts: Record<Exclude<ResearchTrack, "unclassified_legacy">, number>;
+  selectedTrackCounts: Record<Exclude<ResearchTrack, "unclassified_legacy">, number>;
+  availableCounterevidenceCount: number;
+  selectedCounterevidenceCount: number;
+}
+export interface ResearchGuide {
+  trustStatus: "derived_from_approved_artifacts";
+  items: ResearchGuideItem[];
+  routePolicy: ResearchRoutePolicy;
+}
 export interface EvaluationSummary {
   evidenceQuality: { evidenceCount: number; predictedContradictionCount: number; citationPrecision: number; conditionCompleteness: number; contradictionPrecision: number } | null;
   retrieval: { k: number; retrievedCount: number; goldRelevantCount: number; precisionAtK: number; recallAtK: number; ndcgAtK: number } | null;
@@ -211,6 +234,7 @@ export interface ImportedBundle {
   candidateDuplicateReconciliation: CandidateDuplicateReconciliation | null;
   relationReconciliation: RelationReconciliation | null;
   conditionNormalization: ConditionNormalization | null;
+  researchGuide: ResearchGuide | null;
   literatureGraph: LiteratureGraph;
   report: { summary: string; limitations: string[]; nextSteps: string[] } | null;
 }
@@ -636,6 +660,65 @@ function literatureGraph(value: unknown): LiteratureGraph {
   }).slice(0, 144);
   return { trustStatus: typeof raw.trust_status === "string" ? raw.trust_status.slice(0, 160) : "unclassified", nodes, edges };
 }
+
+function researchGuide(value: unknown, missionId: string): ResearchGuide | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject;
+  const exactKeys = (candidate: JsonObject, expected: readonly string[]) => Object.keys(candidate).length === expected.length && expected.every((key) => Object.prototype.hasOwnProperty.call(candidate, key));
+  const guideFields = ["schema_version", "mission_id", "trust_status", "items", "caveats", "route_policy"] as const;
+  if (!exactKeys(raw, guideFields) || raw.schema_version !== "1.3" || raw.mission_id !== missionId || raw.trust_status !== "derived_from_approved_artifacts" || !Array.isArray(raw.items) || raw.items.length < 1 || raw.items.length > 12 || !Array.isArray(raw.caveats) || !raw.caveats.every((item) => typeof item === "string" && Boolean(item.trim()))) return null;
+
+  const tracks = ["exact_material", "mechanism_analogue", "algorithm"] as const;
+  const researchTracks = new Set<ResearchTrack>([...tracks, "unclassified_legacy"]);
+  const eligibilities = new Set<RouteEligibility>(["primary_allowed", "counterevidence_only"]);
+  const facetSignalValues = new Set(["exact_material_title", "material_family_title", "configuration_search_method", "molecular_dynamics_method", "property_surrogate_method", "mission_forbids_property_surrogate", "approved_counterevidence_query"]);
+  const routingSignalValues = new Set(["accepted_evidence", "screened_for_fulltext", "material_match", "property_match", "scope_match", "method_match", "primary_evidence", "counterevidence", "counterevidence_track", "provider_advertised_content", "content_read_confirmed", "content_read_failed_or_expired", "normalized_doi_resolved"]);
+  const itemFields = ["order", "document_id", "title", "publication_year", "source", "locator_hint", "track", "role", "content_status", "evidence_ids", "doi", "routing_signals", "research_track", "route_eligibility", "facet_signals"] as const;
+  const items: ResearchGuideItem[] = [];
+  const documentIds = new Set<string>();
+  for (const [index, entry] of raw.items.entries()) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const item = entry as JsonObject;
+    const documentId = boundedText(item.document_id, 300);
+    const title = boundedText(item.title, 500);
+    const sourceName = boundedText(item.source, 160);
+    const researchTrack = item.research_track as ResearchTrack;
+    const routeEligibility = item.route_eligibility as RouteEligibility;
+    const facetSignals = item.facet_signals;
+    const routingSignals = item.routing_signals;
+    if (!exactKeys(item, itemFields) || item.order !== index + 1 || !documentId || documentIds.has(documentId) || !title || !sourceName || !researchTracks.has(researchTrack) || !eligibilities.has(routeEligibility)) return null;
+    if (item.track !== "primary" && item.track !== "counterevidence" || !["verified_evidence", "primary_candidate", "counterevidence_candidate"].includes(item.role as string) || !["provider_advertised", "confirmed", "failed_or_expired", "metadata_only"].includes(item.content_status as string)) return null;
+    if (item.publication_year !== null && (typeof item.publication_year !== "number" || !Number.isSafeInteger(item.publication_year) || item.publication_year < 1000 || item.publication_year > 3000) || item.locator_hint !== null && typeof item.locator_hint !== "string" || item.doi !== null && typeof item.doi !== "string") return null;
+    if (!Array.isArray(item.evidence_ids) || !item.evidence_ids.every((id) => typeof id === "string" && Boolean(id.trim()) && id.length <= 200) || !Array.isArray(facetSignals) || new Set(facetSignals).size !== facetSignals.length || !facetSignals.every((signal) => typeof signal === "string" && facetSignalValues.has(signal)) || !Array.isArray(routingSignals) || new Set(routingSignals).size !== routingSignals.length || !routingSignals.every((signal) => typeof signal === "string" && routingSignalValues.has(signal))) return null;
+    if (researchTrack === "unclassified_legacy" && facetSignals.length) return null;
+    documentIds.add(documentId);
+    items.push({ order: index + 1, documentId, title, researchTrack, routeEligibility, facetSignals: [...facetSignals] as string[] });
+  }
+
+  if (raw.route_policy === null || typeof raw.route_policy !== "object" || Array.isArray(raw.route_policy)) return null;
+  const policy = raw.route_policy as JsonObject;
+  const policyFields = ["schema_version", "trust_status", "classification_status", "track_minimums", "counterevidence_minimum", "available_track_counts", "selected_track_counts", "available_counterevidence_count", "selected_counterevidence_count"] as const;
+  const classificationStatus = policy.classification_status;
+  const countRecord = (value: unknown): Record<(typeof tracks)[number], number> | null => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+    const candidate = value as JsonObject;
+    if (!exactKeys(candidate, tracks) || !tracks.every((track) => typeof candidate[track] === "number" && Number.isSafeInteger(candidate[track]) && (candidate[track] as number) >= 0)) return null;
+    return { exact_material: candidate.exact_material as number, mechanism_analogue: candidate.mechanism_analogue as number, algorithm: candidate.algorithm as number };
+  };
+  const trackMinimums = countRecord(policy.track_minimums);
+  const availableTrackCounts = countRecord(policy.available_track_counts);
+  const selectedTrackCounts = countRecord(policy.selected_track_counts);
+  const availableCounter = policy.available_counterevidence_count;
+  const selectedCounter = policy.selected_counterevidence_count;
+  if (!exactKeys(policy, policyFields) || policy.schema_version !== "cosmatter.research-route-policy/v1" || policy.trust_status !== "deterministic_metadata_routing_not_relevance_judgment" || classificationStatus !== "current_candidate_pool" && classificationStatus !== "legacy_unclassified" || !trackMinimums || trackMinimums.exact_material !== 4 || trackMinimums.mechanism_analogue !== 3 || trackMinimums.algorithm !== 4 || !availableTrackCounts || !selectedTrackCounts || policy.counterevidence_minimum !== 1 || typeof availableCounter !== "number" || !Number.isSafeInteger(availableCounter) || availableCounter < 0 || typeof selectedCounter !== "number" || !Number.isSafeInteger(selectedCounter) || selectedCounter < 0 || selectedCounter > availableCounter) return null;
+  const actualSelected = Object.fromEntries(tracks.map((track) => [track, items.filter((item) => item.researchTrack === track).length])) as Record<(typeof tracks)[number], number>;
+  if (tracks.some((track) => selectedTrackCounts[track] !== actualSelected[track] || availableTrackCounts[track] < selectedTrackCounts[track]) || selectedCounter !== items.filter((item) => item.routeEligibility === "counterevidence_only").length || (classificationStatus === "legacy_unclassified") !== items.every((item) => item.researchTrack === "unclassified_legacy")) return null;
+  return {
+    trustStatus: "derived_from_approved_artifacts",
+    items,
+    routePolicy: { classificationStatus, trackMinimums, availableTrackCounts, selectedTrackCounts, availableCounterevidenceCount: availableCounter, selectedCounterevidenceCount: selectedCounter },
+  };
+}
 function simulationCampaign(value: unknown): SimulationCampaignProjection | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as JsonObject;
@@ -766,7 +849,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     simulationEvidenceStatus,
     auditSummary: auditSummary(root.audit_summary),
     timeline: Array.isArray(root.timeline) ? root.timeline.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).station_type === "string" && typeof (entry as JsonObject).action === "string" ? [{ stationType: (entry as JsonObject).station_type as string, action: (entry as JsonObject).action as string, state: typeof (entry as JsonObject).state === "string" ? (entry as JsonObject).state as string : "unknown", occurredAt: typeof (entry as JsonObject).occurred_at === "string" ? (entry as JsonObject).occurred_at as string : "" }] : []) : [],
-    literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), candidateDuplicateQueue: parsedCandidateDuplicateQueue, candidateDuplicateReconciliation: parsedCandidateDuplicateReconciliation, relationReconciliation: linkedRelationReconciliation, conditionNormalization: linkedConditionNormalization, literatureGraph: literatureGraph(root.literature_graph),
+    literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), candidateDuplicateQueue: parsedCandidateDuplicateQueue, candidateDuplicateReconciliation: parsedCandidateDuplicateReconciliation, relationReconciliation: linkedRelationReconciliation, conditionNormalization: linkedConditionNormalization, researchGuide: researchGuide(root.research_guide, mission.missionId), literatureGraph: literatureGraph(root.literature_graph),
     report: root.mission_report && typeof root.mission_report === "object" && !Array.isArray(root.mission_report) && typeof (root.mission_report as JsonObject).summary === "string" ? { summary: (root.mission_report as JsonObject).summary as string, limitations: textList((root.mission_report as JsonObject).limitations), nextSteps: textList((root.mission_report as JsonObject).next_steps) } : null,
   };
 }

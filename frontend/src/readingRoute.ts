@@ -1,5 +1,5 @@
 import { documentIdForReviewablePaper } from "./evidenceLinking";
-import type { LiteratureGraphNode } from "./model";
+import type { LiteratureGraphNode, ResearchGuide, ResearchTrack, RouteEligibility } from "./model";
 import type { PaperWorkflowState } from "./paperWorkflowState";
 
 export type ReadingRouteAction = "recover-pdf" | "register-source-map" | "review-evidence" | "audit-provenance" | "verify-evidence" | "select-pdf" | "screen-paper" | "load-screening" | "wait-for-parse";
@@ -20,6 +20,9 @@ export interface ReadingRouteEntry {
   workflowState: PaperWorkflowState;
   action: ReadingRouteAction;
   titleAnchorMatch: TaskTitleAnchorMatch;
+  researchTrack: ResearchTrack | null;
+  routeEligibility: RouteEligibility | null;
+  routeSource: "backend-guide" | "local-fallback";
 }
 
 const ROUTE_ACTION: Record<PaperWorkflowState, ReadingRouteAction> = {
@@ -143,19 +146,23 @@ function taskTitleAnchorMatch(title: string, anchors: ReadingRouteTaskAnchors): 
 /**
  * A deterministic local reading queue. It is a navigation aid only: entries
  * are derived from the visible reviewable-paper projection and recorded
- * workflow state. Task-title anchors only break ties between equal workflow
- * actions; they are not a model/provider score or a scientific relevance claim.
+ * workflow state. A validated backend guide controls ordering within equal
+ * workflow actions; task-title anchors are only a legacy fallback. Neither is
+ * a model/provider score or a scientific relevance claim.
  */
 export function readingRoute(
   nodes: readonly LiteratureGraphNode[],
   paperStates: Readonly<Record<string, PaperWorkflowState>>,
   limit = 6,
   taskAnchors: ReadingRouteTaskAnchors = {},
+  guide: ResearchGuide | null = null,
 ): ReadingRouteEntry[] {
+  const guideByDocument = new Map((guide?.items ?? []).map((item) => [item.documentId, item]));
   return nodes.flatMap((node, sourceOrder) => {
     const documentId = documentIdForReviewablePaper(node);
     const workflowState = paperStates[node.nodeId] ?? "untracked";
     if (!documentId || workflowState === "excluded") return [];
+    const guideItem = guideByDocument.get(documentId);
     return [{
       nodeId: node.nodeId,
       documentId,
@@ -163,9 +170,14 @@ export function readingRoute(
       workflowState,
       action: ROUTE_ACTION[workflowState],
       titleAnchorMatch: taskTitleAnchorMatch(node.label, taskAnchors),
+      researchTrack: guideItem?.researchTrack ?? null,
+      routeEligibility: guideItem?.routeEligibility ?? null,
+      routeSource: guideItem ? "backend-guide" as const : "local-fallback" as const,
+      guideOrder: guideItem?.order ?? Number.MAX_SAFE_INTEGER,
       sourceOrder,
     }];
   }).sort((left, right) => PRIORITY[left.action] - PRIORITY[right.action]
+      || left.guideOrder - right.guideOrder
       || TITLE_ANCHOR_PRIORITY[left.titleAnchorMatch] - TITLE_ANCHOR_PRIORITY[right.titleAnchorMatch]
       || left.sourceOrder - right.sourceOrder)
     .slice(0, Math.max(0, limit))
@@ -177,5 +189,8 @@ export function readingRoute(
       workflowState: entry.workflowState,
       action: entry.action,
       titleAnchorMatch: entry.titleAnchorMatch,
+      researchTrack: entry.researchTrack,
+      routeEligibility: entry.routeEligibility,
+      routeSource: entry.routeSource,
     }));
 }

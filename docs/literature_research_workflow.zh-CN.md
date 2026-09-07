@@ -181,7 +181,7 @@ cd CosMatter
 .\cosmatter.ps1 build-reading-guide --run-id bfo_001
 ```
 
-**输出：** 完整的人工筛选工件、可选的 `candidate_metadata_enrichment.json` 和 schema 1.2 阅读路线。默认补全仅查询已纳入候选；显式使用 `--all-candidates` 可把范围扩为当前全部候选，但单次仍最多 12 条，重复执行会从当前候选指纹下的下一未处理项继续。已有 DOI 不再外发标题；累计工件不允许后续批次覆盖旧记录，并返回剩余数与完成状态。解析只接受规范化标题精确一致且年份相容的 DOI；近似标题不自动匹配，多 DOI 命中写为冲突。阅读路线会显示 DOI 与材料/性质/方法/反例/全文筛选等允许列表信号，但这些元数据仍不是事实证据。正文状态分为 `provider_advertised`（上游声明可读）、`confirmed`（当前候选指纹下已成功读取并留下哈希回执）和 `failed_or_expired`（读取失败或确认因候选变化过期）；没有可读声明时为 `metadata_only`。只有状态为 `include_for_fulltext` 且来源确有授权访问边界的文献，才能进入全文解析和 Source Map。元数据检索结果、本地 Zotero 搜索结果或人工手写文献 ID 均不能绕过此门禁。
+**输出：** 完整的人工筛选工件、可选的 `candidate_metadata_enrichment.json` 和 schema 1.3 阅读路线。默认补全仅查询已纳入候选；显式使用 `--all-candidates` 可把范围扩为当前全部候选，但单次仍最多 12 条，重复执行会从当前候选指纹下的下一未处理项继续。已有 DOI 不再外发标题；累计工件不允许后续批次覆盖旧记录，并返回剩余数与完成状态。解析只接受规范化标题精确一致且年份相容的 DOI；近似标题不自动匹配，多 DOI 命中写为冲突。阅读路线会显示 DOI 与材料/性质/方法/反例/全文筛选等允许列表信号，并按 `exact_material`、`mechanism_analogue`、`algorithm` 三轨的 4/3/4 目标配额组织最多 12 项；有反证候选时目标至少保留 1 项。任务明确禁止性质预测代理时，代理模型论文标为 `counterevidence_only`。这些规则只依据已批准任务、查询来源与题名，是元数据导航启发式，不是相关性判断、性质预测或科学结论。正文状态分为 `provider_advertised`（上游声明可读）、`confirmed`（当前候选指纹下已成功读取并留下哈希回执）和 `failed_or_expired`（读取失败或确认因候选变化过期）；没有可读声明时为 `metadata_only`。只有状态为 `include_for_fulltext` 且来源确有授权访问边界的文献，才能进入全文解析和 Source Map。元数据检索结果、本地 Zotero 搜索结果或人工手写文献 ID 均不能绕过此门禁。
 
 对全部当前候选还应建立候选重复待对账队列：
 

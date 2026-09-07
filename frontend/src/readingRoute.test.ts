@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readingRoute } from "./readingRoute";
-import type { LiteratureGraphNode } from "./model";
+import type { LiteratureGraphNode, ResearchGuide } from "./model";
 
 const node = (id: string, title: string, trustStatus = "candidate_metadata_not_scientific_evidence"): LiteratureGraphNode => ({ nodeId: `paper:${id}`, kind: "candidate_paper", label: title, trustStatus });
 
@@ -116,6 +116,36 @@ describe("readingRoute", () => {
       ["failed", "recover-pdf", "none"],
       ["relevant", "screen-paper", "material"],
       ["unanchored", "screen-paper", "none"],
+    ]);
+  });
+
+  it("uses the validated backend three-track guide within equal workflow actions", () => {
+    const guide: ResearchGuide = {
+      trustStatus: "derived_from_approved_artifacts",
+      items: [
+        { order: 1, documentId: "algorithm", title: "Algorithm", researchTrack: "algorithm", routeEligibility: "primary_allowed", facetSignals: ["configuration_search_method"] },
+        { order: 2, documentId: "analogue", title: "Analogue", researchTrack: "mechanism_analogue", routeEligibility: "counterevidence_only", facetSignals: ["approved_counterevidence_query"] },
+        { order: 3, documentId: "exact", title: "Exact", researchTrack: "exact_material", routeEligibility: "primary_allowed", facetSignals: ["exact_material_title"] },
+      ],
+      routePolicy: {
+        classificationStatus: "current_candidate_pool",
+        trackMinimums: { exact_material: 4, mechanism_analogue: 3, algorithm: 4 },
+        availableTrackCounts: { exact_material: 1, mechanism_analogue: 1, algorithm: 1 },
+        selectedTrackCounts: { exact_material: 1, mechanism_analogue: 1, algorithm: 1 },
+        availableCounterevidenceCount: 1,
+        selectedCounterevidenceCount: 1,
+      },
+    };
+    const route = readingRoute([
+      node("exact", "BiFeO3 exact material"),
+      node("algorithm", "Unrelated configuration search"),
+      node("analogue", "Analogue"),
+    ], {}, 6, { material: "BiFeO3" }, guide);
+
+    expect(route.map((entry) => [entry.documentId, entry.researchTrack, entry.routeEligibility, entry.routeSource])).toEqual([
+      ["algorithm", "algorithm", "primary_allowed", "backend-guide"],
+      ["analogue", "mechanism_analogue", "counterevidence_only", "backend-guide"],
+      ["exact", "exact_material", "primary_allowed", "backend-guide"],
     ]);
   });
 });

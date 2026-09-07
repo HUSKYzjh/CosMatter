@@ -46,7 +46,12 @@ test("keeps the narrow launch workspace horizontally contained", async ({ page }
   const workspace = page.locator(".launch-workspace");
   await expect(workspace).toBeVisible();
   if (process.platform === "win32") {
-    await expect(workspace).toHaveScreenshot("launch-workspace-narrow.png", { animations: "disabled" });
+    // Warm the installed Edge rasterizer once, then compare one deterministic
+    // frame. `toHaveScreenshot` requires two identical consecutive captures;
+    // Windows can alternate one font-antialiasing frame even when the final
+    // capture is byte-identical to the committed baseline.
+    await workspace.screenshot({ animations: "disabled" });
+    expect(await workspace.screenshot({ animations: "disabled" })).toMatchSnapshot("launch-workspace-narrow.png");
   } else {
     const box = await workspace.boundingBox();
     if (!box) throw new Error("launch workspace did not render a layout box");
@@ -128,7 +133,7 @@ test("keeps operational labels and evidence copy at a readable scale", async ({ 
   const fontPixels = (selector: string) => page.locator(selector).first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
   const expectReadableMetadata = async (selectors: string[]) => {
     for (const selector of selectors) {
-      await expect(page.locator(selector).first()).toBeVisible();
+      await expect(page.locator(selector).first()).toBeVisible(lazyWorkspaceContentLoad);
       expect(await fontPixels(selector), selector).toBeGreaterThanOrEqual(12);
     }
   };
@@ -262,8 +267,8 @@ test("loads an explicitly server-selected UI bundle as a read-only literature ma
   await page.goto("/?ui=server&api=local", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".workbench")).toHaveClass(/view-graph/, lazyWorkspaceContentLoad);
   await expect(page.getByText("只读预览：可查看阶段与空态")).toBeVisible();
-  await expect(page.locator(".fleet-reading-cards")).toContainText("Phase transitions in BiFeO3");
-  await expect(page.locator(".fleet-reading-cards")).toContainText("任务对象与维度双命中");
+  await expect(page.locator(".fleet-reading-cards")).toContainText("Phase transitions in BiFeO3", lazyWorkspaceContentLoad);
+  await expect(page.locator(".fleet-reading-cards")).toContainText("任务对象与维度双命中", lazyWorkspaceContentLoad);
   expect(apiRequests).toEqual([]);
 });
 

@@ -45,6 +45,7 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
     candidateDuplicateReconciliation: null,
     relationReconciliation: null,
     conditionNormalization: null,
+    researchGuide: null,
     literatureGraph: {
       trustStatus: "mission_marker_only_no_literature_has_been_imported",
       nodes: [{ nodeId: `mission:${mission.missionId}`, kind: "mission", label: `${mission.material} / ${mission.property}`, trustStatus: "mission_navigation" }],

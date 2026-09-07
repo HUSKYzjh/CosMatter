@@ -131,6 +131,8 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 .\.venv\Scripts\python.exe -m cosmatter build-reading-guide --run-id bfo_live_001
 ```
 
+当前 schema 1.3 路线输出 `cosmatter.research-route-policy/v1` 聚合：`exact_material`、`mechanism_analogue`、`algorithm` 的可用/入选计数，以及 `counterevidence_only` 计数。目标配额为 4/3/4 和至少 1 条可用反证；已接受证据与已筛选文献不会为满足配额而被静默丢弃。任务明确规定“无性质代理”时，代理预测论文只能进入反证角色。该分轨只依据任务文本、批准查询轨和候选题名，不是相关性判断；真正的 Precision@K / nDCG 必须由独立冻结人工标题集计算。
+
 完成候选筛选后，可先对已纳入候选执行 Crossref/OpenAlex 精确元数据补全，再重建路线：
 
 ```powershell

@@ -513,10 +513,21 @@ def command_build_reading_guide(args: argparse.Namespace) -> int:
         payload={
             "guide_item_count": len(guide["items"]),
             "counterevidence_item_count": sum(item["track"] == "counterevidence" for item in guide["items"]),
+            "research_track_counts": guide["route_policy"]["selected_track_counts"],
+            "counterevidence_only_item_count": guide["route_policy"]["selected_counterevidence_count"],
+            "route_classification_status": guide["route_policy"]["classification_status"],
             "trust_status": guide["trust_status"],
         },
     )
-    _json_print({"run_id": args.run_id, "guide_path": str(guide_path), "item_count": len(guide["items"]), "trust_status": guide["trust_status"]})
+    _json_print({
+        "run_id": args.run_id,
+        "guide_path": str(guide_path),
+        "item_count": len(guide["items"]),
+        "research_track_counts": guide["route_policy"]["selected_track_counts"],
+        "counterevidence_only_item_count": guide["route_policy"]["selected_counterevidence_count"],
+        "route_classification_status": guide["route_policy"]["classification_status"],
+        "trust_status": guide["trust_status"],
+    })
     return 0
 
 

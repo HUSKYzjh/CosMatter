@@ -12,6 +12,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .candidate_route_facets import (
+    COUNTEREVIDENCE_MINIMUM,
+    FACET_SIGNALS,
+    RESEARCH_TRACKS,
+    ROUTE_ELIGIBILITIES,
+    TRACK_MINIMUMS,
+    classify_candidate_route,
+)
 from .candidate_screening import CandidateScreeningError, selected_document_ids, selected_document_reason_codes
 from .content_access import ContentAccessError, content_access_states
 from .metadata_enrichment import MetadataEnrichmentError, resolved_dois_for_candidates
@@ -19,7 +27,8 @@ from .models import EvidenceCard, FlightPlan, MissionBrief, ReviewStatus, normal
 from .verification import VerificationDecision
 
 
-GUIDE_SCHEMA_VERSION = "1.2"
+GUIDE_SCHEMA_VERSION = "1.3"
+_V12_GUIDE_SCHEMA_VERSION = "1.2"
 _V11_GUIDE_SCHEMA_VERSION = "1.1"
 _LEGACY_GUIDE_SCHEMA_VERSION = "1.0"
 _MAX_GUIDE_ITEMS = 12
@@ -36,9 +45,14 @@ _ITEM_FIELDS = {
     "evidence_ids",
     "doi",
     "routing_signals",
+    "research_track",
+    "route_eligibility",
+    "facet_signals",
 }
-_LEGACY_ITEM_FIELDS = _ITEM_FIELDS - {"doi", "routing_signals"}
-_GUIDE_FIELDS = {"schema_version", "mission_id", "trust_status", "items", "caveats"}
+_V12_ITEM_FIELDS = _ITEM_FIELDS - {"research_track", "route_eligibility", "facet_signals"}
+_LEGACY_ITEM_FIELDS = _V12_ITEM_FIELDS - {"doi", "routing_signals"}
+_GUIDE_FIELDS = {"schema_version", "mission_id", "trust_status", "items", "caveats", "route_policy"}
+_LEGACY_GUIDE_FIELDS = _GUIDE_FIELDS - {"route_policy"}
 _ROUTING_SIGNALS = {
     "accepted_evidence", "screened_for_fulltext", "material_match", "property_match", "scope_match",
     "method_match", "primary_evidence", "counterevidence", "counterevidence_track",
@@ -103,6 +117,11 @@ def build_reading_guide(
         accessible = candidate["is_content_accessible"]
         content_status = access_states.get(document_id, "provider_advertised" if accessible else "metadata_only")
         doi = candidate["doi"] or enriched_dois.get(document_id)
+        facets = classify_candidate_route(
+            mission,
+            candidate,
+            approved_counterevidence_query=track == "counterevidence",
+        )
         role = "verified_evidence" if evidence_ids else ("primary_candidate" if track == "primary" else "counterevidence_candidate")
         routing_signals: list[str] = []
         if evidence_ids:
@@ -133,6 +152,7 @@ def build_reading_guide(
                 "evidence_ids": evidence_ids,
                 "doi": doi,
                 "routing_signals": list(dict.fromkeys(routing_signals)),
+                **facets,
                 "_score": candidate["score"],
                 "_selected": document_id in selected_documents,
             }
@@ -140,16 +160,20 @@ def build_reading_guide(
     if not normalized:
         raise ReadingGuideError("candidate history contains no usable candidates")
     role_rank = {"verified_evidence": 0, "primary_candidate": 1, "counterevidence_candidate": 1}
+    research_track_rank = {"exact_material": 0, "algorithm": 1, "mechanism_analogue": 2}
     normalized.sort(
         key=lambda item: (
             role_rank[item["role"]],
             0 if item["_selected"] else 1,
+            0 if item["route_eligibility"] == "primary_allowed" else 1,
+            research_track_rank[item["research_track"]],
             {"confirmed": 0, "provider_advertised": 1, "metadata_only": 2, "failed_or_expired": 3}[item["content_status"]],
             -(item["_score"] if item["_score"] is not None else -1.0),
             item["document_id"],
         )
     )
-    routed = _bounded_balanced_route(normalized)
+    routed = _bounded_faceted_route(normalized)
+    route_policy = _route_policy(normalized, routed)
     items = []
     for index, item in enumerate(routed, start=1):
         item.pop("_score")
@@ -160,38 +184,77 @@ def build_reading_guide(
         "mission_id": mission.mission_id,
         "trust_status": "derived_from_approved_artifacts",
         "items": items,
+        "route_policy": route_policy,
         "caveats": [
             "The route orders bounded candidates; it is not a scientific conclusion.",
             "Candidate-screening selections affect routing only and are not accepted scientific evidence.",
             "Provider-advertised access is distinct from a confirmed content read; failed or expired routes remain visible.",
             "Metadata-only candidates must not be used for evidence extraction.",
             "Counterevidence items are deliberately retained and are not treated as disproved claims.",
+            "Research tracks and surrogate constraints are deterministic metadata-routing heuristics, not relevance judgments or property predictions.",
         ],
     }
 
 
-def _bounded_balanced_route(normalized: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep high-priority items while preventing one retrieval track from starvation."""
-    routed = list(normalized[:_MAX_GUIDE_ITEMS])
-    available_tracks = {item["track"] for item in normalized}
-    for required_track in ("primary", "counterevidence"):
-        if required_track not in available_tracks or any(item["track"] == required_track for item in routed):
-            continue
-        replacement = next(
-            (
-                item
-                for item in reversed(routed)
-                if item["role"] != "verified_evidence" and not item["_selected"]
-            ),
-            None,
-        )
+def _bounded_faceted_route(normalized: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Balance three research tracks while preserving accepted/selected work."""
+    routed: list[dict[str, Any]] = []
+
+    def add(item: dict[str, Any]) -> bool:
+        if len(routed) >= _MAX_GUIDE_ITEMS or item in routed:
+            return False
+        routed.append(item)
+        return True
+
+    for item in normalized:
+        if item["role"] == "verified_evidence" or item["_selected"]:
+            add(item)
+    for research_track in RESEARCH_TRACKS:
+        target = TRACK_MINIMUMS[research_track]
+        for item in normalized:
+            if sum(candidate["research_track"] == research_track for candidate in routed) >= target:
+                break
+            if item["research_track"] == research_track:
+                add(item)
+    counter_candidates = [item for item in normalized if item["route_eligibility"] == "counterevidence_only"]
+    if counter_candidates and not any(item["route_eligibility"] == "counterevidence_only" for item in routed):
+        if len(routed) < _MAX_GUIDE_ITEMS:
+            add(counter_candidates[0])
+            replacement = None
+        else:
+            route_counts = {track: sum(item["research_track"] == track for item in routed) for track in RESEARCH_TRACKS}
+            replacement = next((
+                item for item in reversed(routed)
+                if item["role"] != "verified_evidence"
+                and not item["_selected"]
+                and route_counts[item["research_track"]] > TRACK_MINIMUMS[item["research_track"]]
+            ), None)
         if replacement is None:
-            replacement = next((item for item in reversed(routed) if item["role"] != "verified_evidence"), None)
-        if replacement is None:
-            continue
-        routed[routed.index(replacement)] = next(item for item in normalized if item["track"] == required_track)
+            replacement = next((item for item in reversed(routed) if item["role"] != "verified_evidence" and not item["_selected"]), None) if len(routed) >= _MAX_GUIDE_ITEMS else None
+        if replacement is not None:
+            routed[routed.index(replacement)] = counter_candidates[0]
+    for item in normalized:
+        add(item)
     routed.sort(key=normalized.index)
     return routed
+
+
+def _route_policy(normalized: list[dict[str, Any]], routed: list[dict[str, Any]]) -> dict[str, Any]:
+    available = {track: sum(item["research_track"] == track for item in normalized) for track in RESEARCH_TRACKS}
+    selected = {track: sum(item["research_track"] == track for item in routed) for track in RESEARCH_TRACKS}
+    available_counter = sum(item["route_eligibility"] == "counterevidence_only" for item in normalized)
+    selected_counter = sum(item["route_eligibility"] == "counterevidence_only" for item in routed)
+    return {
+        "schema_version": "cosmatter.research-route-policy/v1",
+        "trust_status": "deterministic_metadata_routing_not_relevance_judgment",
+        "classification_status": "current_candidate_pool",
+        "track_minimums": dict(TRACK_MINIMUMS),
+        "counterevidence_minimum": COUNTEREVIDENCE_MINIMUM,
+        "available_track_counts": available,
+        "selected_track_counts": selected,
+        "available_counterevidence_count": available_counter,
+        "selected_counterevidence_count": selected_counter,
+    }
 
 
 def write_reading_guide(run_dir: Path, guide: dict[str, Any]) -> Path:
@@ -213,7 +276,7 @@ def load_reading_guide(path: Path, mission_id: str) -> dict[str, Any] | None:
         raise ReadingGuideError("reading_guide.json is invalid JSON") from error
     if isinstance(payload, dict) and payload.get("schema_version") == _LEGACY_GUIDE_SCHEMA_VERSION:
         payload = _upgrade_legacy_guide(payload)
-    elif isinstance(payload, dict) and payload.get("schema_version") == _V11_GUIDE_SCHEMA_VERSION:
+    elif isinstance(payload, dict) and payload.get("schema_version") in {_V11_GUIDE_SCHEMA_VERSION, _V12_GUIDE_SCHEMA_VERSION}:
         payload = _upgrade_v11_guide(payload)
     _validate_reading_guide(payload)
     if payload["mission_id"] != mission_id:
@@ -297,6 +360,13 @@ def _validate_reading_guide(payload: object) -> None:
         document_ids.add(item["document_id"])
         if item["track"] not in {"primary", "counterevidence"} or item["role"] not in {"verified_evidence", "primary_candidate", "counterevidence_candidate"}:
             raise ReadingGuideError("reading guide item roles are invalid")
+        if item["research_track"] not in {*RESEARCH_TRACKS, "unclassified_legacy"} or item["route_eligibility"] not in ROUTE_ELIGIBILITIES:
+            raise ReadingGuideError("reading guide research-route facet is invalid")
+        facet_signals = item["facet_signals"]
+        if not isinstance(facet_signals, list) or len(facet_signals) != len(set(facet_signals)) or any(signal not in FACET_SIGNALS for signal in facet_signals):
+            raise ReadingGuideError("reading guide facet signals are invalid")
+        if item["research_track"] == "unclassified_legacy" and facet_signals:
+            raise ReadingGuideError("legacy reading guide cannot invent facet signals")
         if item["content_status"] not in {"provider_advertised", "confirmed", "failed_or_expired", "metadata_only"}:
             raise ReadingGuideError("reading guide item content status is invalid")
         if item["doi"] is not None and normalized_doi_or_none(item["doi"]) != item["doi"]:
@@ -312,11 +382,43 @@ def _validate_reading_guide(payload: object) -> None:
             raise ReadingGuideError("reading guide evidence IDs are invalid")
     if not all(isinstance(caveat, str) and caveat.strip() for caveat in caveats):
         raise ReadingGuideError("reading guide caveats are invalid")
+    _validate_route_policy(payload.get("route_policy"), items)
+
+
+def _validate_route_policy(policy: object, items: list[dict[str, Any]]) -> None:
+    fields = {
+        "schema_version", "trust_status", "classification_status", "track_minimums",
+        "counterevidence_minimum", "available_track_counts", "selected_track_counts",
+        "available_counterevidence_count", "selected_counterevidence_count",
+    }
+    if not isinstance(policy, dict) or set(policy) != fields or policy.get("schema_version") != "cosmatter.research-route-policy/v1" or policy.get("trust_status") != "deterministic_metadata_routing_not_relevance_judgment" or policy.get("classification_status") not in {"current_candidate_pool", "legacy_unclassified"}:
+        raise ReadingGuideError("reading guide route policy is invalid")
+    if policy.get("track_minimums") != TRACK_MINIMUMS or policy.get("counterevidence_minimum") != COUNTEREVIDENCE_MINIMUM:
+        raise ReadingGuideError("reading guide route quotas are invalid")
+    for key in ("available_track_counts", "selected_track_counts"):
+        counts = policy.get(key)
+        if not isinstance(counts, dict) or set(counts) != set(RESEARCH_TRACKS) or any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counts.values()):
+            raise ReadingGuideError("reading guide route counts are invalid")
+    available_counter = policy.get("available_counterevidence_count")
+    selected_counter = policy.get("selected_counterevidence_count")
+    if not isinstance(available_counter, int) or isinstance(available_counter, bool) or available_counter < 0 or not isinstance(selected_counter, int) or isinstance(selected_counter, bool) or not 0 <= selected_counter <= available_counter:
+        raise ReadingGuideError("reading guide counterevidence counts are invalid")
+    if selected_counter != sum(item["route_eligibility"] == "counterevidence_only" for item in items):
+        raise ReadingGuideError("reading guide selected counterevidence count is inconsistent")
+    selected_counts = policy["selected_track_counts"]
+    current_counts = {track: sum(item["research_track"] == track for item in items) for track in RESEARCH_TRACKS}
+    if selected_counts != current_counts:
+        raise ReadingGuideError("reading guide selected research-track counts are inconsistent")
+    if any(policy["available_track_counts"][track] < selected_counts[track] for track in RESEARCH_TRACKS):
+        raise ReadingGuideError("reading guide available research-track counts are inconsistent")
+    legacy = policy["classification_status"] == "legacy_unclassified"
+    if legacy != all(item["research_track"] == "unclassified_legacy" for item in items):
+        raise ReadingGuideError("reading guide route classification status is inconsistent")
 
 
 def _upgrade_legacy_guide(payload: dict[str, Any]) -> dict[str, Any]:
     """Project a previously written v1.0 route into the current safe contract."""
-    if set(payload) != _GUIDE_FIELDS or not isinstance(payload.get("items"), list):
+    if set(payload) not in (_LEGACY_GUIDE_FIELDS, _GUIDE_FIELDS) or not isinstance(payload.get("items"), list):
         raise ReadingGuideError("legacy reading guide fields are invalid")
     upgraded_items = []
     for item in payload["items"]:
@@ -334,20 +436,41 @@ def _upgrade_legacy_guide(payload: dict[str, Any]) -> dict[str, Any]:
             "content_status": "provider_advertised" if item.get("content_status") == "authorized" else item.get("content_status"),
             "doi": None,
             "routing_signals": signals,
+            "research_track": "unclassified_legacy",
+            "route_eligibility": "counterevidence_only" if item.get("track") == "counterevidence" else "primary_allowed",
+            "facet_signals": [],
         })
-    return {**payload, "schema_version": GUIDE_SCHEMA_VERSION, "items": upgraded_items}
+    return {**payload, "schema_version": GUIDE_SCHEMA_VERSION, "items": upgraded_items, "route_policy": _legacy_route_policy(upgraded_items)}
 
 
 def _upgrade_v11_guide(payload: dict[str, Any]) -> dict[str, Any]:
     """Rename the ambiguous v1.1 authorized state without inventing confirmation."""
-    if set(payload) != _GUIDE_FIELDS or not isinstance(payload.get("items"), list):
+    if set(payload) not in (_LEGACY_GUIDE_FIELDS, _GUIDE_FIELDS) or not isinstance(payload.get("items"), list):
         raise ReadingGuideError("reading guide v1.1 fields are invalid")
     upgraded_items = []
     for item in payload["items"]:
-        if not isinstance(item, dict) or set(item) != _ITEM_FIELDS:
+        if not isinstance(item, dict) or set(item) != _V12_ITEM_FIELDS:
             raise ReadingGuideError("reading guide v1.1 item fields are invalid")
         upgraded_items.append({
             **item,
             "content_status": "provider_advertised" if item.get("content_status") == "authorized" else item.get("content_status"),
+            "research_track": "unclassified_legacy",
+            "route_eligibility": "counterevidence_only" if item.get("track") == "counterevidence" else "primary_allowed",
+            "facet_signals": [],
         })
-    return {**payload, "schema_version": GUIDE_SCHEMA_VERSION, "items": upgraded_items}
+    return {**payload, "schema_version": GUIDE_SCHEMA_VERSION, "items": upgraded_items, "route_policy": _legacy_route_policy(upgraded_items)}
+
+
+def _legacy_route_policy(items: list[dict[str, Any]]) -> dict[str, Any]:
+    counter_count = sum(item["route_eligibility"] == "counterevidence_only" for item in items)
+    return {
+        "schema_version": "cosmatter.research-route-policy/v1",
+        "trust_status": "deterministic_metadata_routing_not_relevance_judgment",
+        "classification_status": "legacy_unclassified",
+        "track_minimums": dict(TRACK_MINIMUMS),
+        "counterevidence_minimum": COUNTEREVIDENCE_MINIMUM,
+        "available_track_counts": {track: 0 for track in RESEARCH_TRACKS},
+        "selected_track_counts": {track: 0 for track in RESEARCH_TRACKS},
+        "available_counterevidence_count": counter_count,
+        "selected_counterevidence_count": counter_count,
+    }

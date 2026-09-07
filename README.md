@@ -68,7 +68,7 @@ python -m venv .venv
 .\cosmatter.ps1 export-ui --run-id YOUR_RUN
 ```
 
-补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。阅读路线显示规范化 DOI、允许列表内的入选信号，以及 `provider_advertised` / `confirmed` / `failed_or_expired` / `metadata_only` 正文状态；只有与当前候选指纹绑定的成功读取才显示为 `confirmed`。筛选、元数据和访问状态仍不等于科学证据。
+补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。schema 1.3 阅读路线把当前候选按 `exact_material`、`mechanism_analogue`、`algorithm` 三个元数据轨道组织，目标配额为 4/3/4，并在可用时至少保留 1 条 `counterevidence_only`；当任务明确禁止性质代理模型时，代理模型论文只能作为反证候选。路线还显示规范化 DOI、允许列表内的入选信号，以及 `provider_advertised` / `confirmed` / `failed_or_expired` / `metadata_only` 正文状态；只有与当前候选指纹绑定的成功读取才显示为 `confirmed`。这些轨道是确定性题名/任务边界启发式，不是相关性判断或性质预测；筛选、元数据和访问状态仍不等于科学证据。
 
 候选身份另有一个不改写检索历史的对账层。先建立 `cosmatter.candidate-duplicate-queue/v1`；完全一致的规范化 DOI 可自动建立 canonical/alias，只有题名相同、DOI 不完整或 DOI 冲突时只能进入人工待对账队列：
 

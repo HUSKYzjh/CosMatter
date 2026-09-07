@@ -523,7 +523,7 @@ def _paper_structure_projection(structure: dict[str, Any] | None) -> dict[str, A
     entities = [{key: entity[key] for key in ("entity_id", "label", "kind", "segment_id")} for entity in structure["entities"]]
     relations = [{key: relation[key] for key in ("source_entity_id", "target_entity_id", "relation_type", "segment_id")} for relation in structure["relations"]]
     return {"document_id": structure["document_id"], "trust_status": structure["trust_status"], "entities": entities, "relations": relations}
-def _retrieval_candidate_projection(path: Path) -> list[dict[str, Any]]:
+def _retrieval_candidate_projection(path: Path, prioritized_document_ids: tuple[str, ...] = ()) -> list[dict[str, Any]]:
     """Release public-looking candidate metadata, never query text or scores."""
     if not path.exists():
         return []
@@ -556,11 +556,15 @@ def _retrieval_candidate_projection(path: Path) -> list[dict[str, Any]]:
             "source": source.strip(),
             "publication_year": year,
             "is_content_accessible": item.get("is_content_accessible") is True,
+            "_source_order": len(result),
         })
         seen.add(document_id)
-        if len(result) == _MAX_LITERATURE_GRAPH_CANDIDATES:
-            break
-    return result
+    priority = {document_id: index for index, document_id in enumerate(prioritized_document_ids)}
+    result.sort(key=lambda item: (0, priority[item["document_id"]]) if item["document_id"] in priority else (1, item["_source_order"]))
+    projected = result[:_MAX_LITERATURE_GRAPH_CANDIDATES]
+    for item in projected:
+        item.pop("_source_order")
+    return projected
 
 
 def _citation_expansion_projection(path: Path, mission_id: str) -> dict[str, Any] | None:
@@ -1273,7 +1277,12 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     crossref_relations = _crossref_relation_expansion_projection(run_dir / "crossref_relation_expansion.json", mission.mission_id)
     citation_expansion = _citation_expansion_projection(run_dir / "citation_expansion.json", mission.mission_id)
     candidate_history_path = run_dir / "retrieval_candidates.json"
-    retrieval_candidates = _retrieval_candidate_projection(candidate_history_path)
+    try:
+        research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
+    except ReadingGuideError as error:
+        raise UiExportError(str(error)) from error
+    prioritized_documents = tuple(item["document_id"] for item in research_guide["items"]) if research_guide is not None else ()
+    retrieval_candidates = _retrieval_candidate_projection(candidate_history_path, prioritized_documents)
     try:
         if candidate_history_path.exists():
             candidate_history = _load_object(candidate_history_path, "candidate history")
@@ -1321,7 +1330,6 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         simulation_evidence, simulation_evidence_delivery_status = None, "not_supplied"
         candidate_duplicate_reconciliation = None
     try:
-        research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         all_source_maps = iter_source_maps(run_dir, mission.mission_id)
         # Automated-trial maps are valid private workflow artifacts, but they
         # are not human-reviewed evidence.  Keep them out of every browser

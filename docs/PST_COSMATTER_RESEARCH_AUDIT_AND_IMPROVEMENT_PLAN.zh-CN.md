@@ -113,9 +113,11 @@ OCBA/MOCBA 分配独立复算预算
 - 两个真实试点重建后，算法路线和物理路线均达到已筛选候选 `3/3` 入路；算法路线为 `primary=11, counterevidence=1`，物理路线为 `primary=10, counterevidence=2`。
 - 新增冲突安全的已筛选候选元数据补全。冻结夹具中已知 DOI 补全率为 100%，近似标题/错年份不匹配，多 DOI 命中安全保留为冲突；两个真实 PST 试点共 6/6 条已筛选候选解析出唯一 DOI。
 - 真实补全首次发现 Crossref 对 vendor `Accept` 返回 HTTP 406；改用标准 `application/json` 后，Crossref/OpenAlex 12 次调用失败计数由 6 降为 0。运行工件只保留解析状态、规范化 DOI、来源和计数。
-- 阅读路线先升级到 schema 1.1 投影 DOI/入选信号，现进一步升级到 schema 1.2 投影正文访问三态；旧版 1.0/1.1 路线可只读升级，且不会凭空生成筛选理由或读取确认。
+- 阅读路线先升级到 schema 1.1 投影 DOI/入选信号、schema 1.2 投影正文访问三态，现升级到 schema 1.3 投影三轨与仅反证资格；旧版 1.0/1.1/1.2 路线可只读升级为 `legacy_unclassified`，且不会凭空生成分轨信号、筛选理由或读取确认。
 - `content_access_confirmations.json` 升级到 schema 1.1：成功读取保存内容哈希、回执 ID 和 UTC 确认时间；失败只保存固定安全原因码。候选集指纹改变时，旧确认在路线中降为 `failed_or_expired`。
 - 两个真实试点重建后，每条 12 项路线均为 `confirmed=3, provider_advertised=9`；算法路线仍保留 1 条反例，物理路线仍保留 2 条反例。未实际读取的候选不再显示为 confirmed。
+- schema 1.3 三轨复验未掩盖候选池缺口：两个试点的“同体系/机制类比/算法”可用数分别为 `0/141/19` 与 `3/202/2`，最终 12 项路线分别为 `0/8/4` 与 `3/7/2`；两条路线均保留 2 条 `counterevidence_only`。这证明配额器可以保留稀缺轨道，却不能从缺失的检索候选中创造精确材料或算法文献。两个重建后的敏感工件审计均为 clean、发现数为 0；本文不记录运行标识、题名或文献标识。
+- 浏览器复验还发现 UI 图谱原先只取候选历史前 48 项，导致一个 12 项后端指南只有 5 项能映射到图谱，剩余舰位错误回退到本地题名锚点。导出现在先按后端指南次序保留全部指南文献，再以原顺序补足 48 项；两个试点复验均恢复为 `12/12` 指南—图谱映射，敏感审计继续为零发现。
 - 新增 `prepare-sciverse-context-review`：只有文献 ID、当前候选指纹、读取回执、offset、内容 SHA-256 和字符数全部一致时，才会把运行目录外的私有上下文切成最多 48 个、每段最多 500 字符的待审片段。6/6 个真实确认上下文已唯一匹配并生成 6 个私有审阅池，共 104 个候选片段。
 - 新增 Sciverse 选段适配器：人工模板不复制原文，只保存候选段 ID 与摘录哈希；记录时重新校验任务、候选指纹、回执、内容哈希和精确选段。两个真实试点无覆盖冲突地记录 6 个委托 Source Map，全部保留 `not_scientific_evidence` 信任状态，正式材料事实模板会拒绝它们。
 - 新增 `cosmatter.operation-parameter-contracts/v1`：Sciverse offset/limit 的 CLI 解析、SDK、回执和 Source Map 校验均引用同一范围；MCP 和前端只读发现同一 schema。越界 limit 现在在 CLI 参数解析期拒绝，不再等待提供商调用。
@@ -147,7 +149,14 @@ OCBA/MOCBA 分配独立复算预算
 
 验收：冻结人工集上，新分面重排相对当前排序的 nDCG@12 提升至少 0.15；未实际读取的候选不再显示 confirmed；试点状态不再被误写成正式 parse completed。
 
-进度：第 4 项已完成代码、兼容性和两个真实试点复验；第 1–3、5 项仍待完成。`provider_advertised` 仅表示上游声明，`confirmed` 必须有本次候选指纹绑定的成功回执与内容哈希，失败或候选集变化会投影为 `failed_or_expired`。
+进度：第 1、2、4 项已完成代码与冻结夹具回归，但第 1 项尚未通过真实覆盖验收。schema 1.3 使用 `cosmatter.research-route-policy/v1`，以 4/3/4 目标配额组织 `exact_material`、`mechanism_analogue`、`algorithm`；可用时至少保留一条 `counterevidence_only`，且任务明确禁止性质代理时代理模型论文不得进入主证据资格。Solid 前端严格校验策略计数，并在相同运行态动作内采用后端次序；无有效指南才回退本地题名锚点。真实复验中，一个候选池没有任何精确材料命中，另一个只有 2 条算法命中，因此下一步必须在 FlightPlan 查询生成阶段为每轨建立独立查询和“最低候选数不足即补检索”的安全回路；不得用机制类比项填充后声称配额达标。该分类不是相关性判断，不能用机械关键词命中替代第 3 项的独立人工 Precision@K / nDCG；第 3、5 项仍待完成。`provider_advertised` 仅表示上游声明，`confirmed` 必须有本次候选指纹绑定的成功回执与内容哈希，失败或候选集变化会投影为 `failed_or_expired`。
+
+三轨候选不足的下一轮改进顺序：
+
+1. FlightPlan 为三轨保存独立的批准查询索引和最低候选目标，不在阅读路线阶段猜测新查询；任何补检索仍需使用批准计划。
+2. `build-reading-guide` 只报告 `available`、`selected`、`shortfall`，短缺时显式显示 `exact_material_shortfall` 或 `algorithm_shortfall`，不得静默用机制类比填满。
+3. 对 PST 精确轨加入化学式/英文别名的冻结正反例标题集，先测分类召回，再区分“检索没找到”和“分类器漏判”。
+4. 在三轨各自达到候选最低数后，再由独立研究者标注相关等级，计算 Precision@12 与 nDCG@12；未完成该步骤前不宣称路线质量提升。
 
 ### P1：Sciverse 上下文到受控 Source Map
 
@@ -167,7 +176,7 @@ OCBA/MOCBA 分配独立复算预算
 
 进度：第 1–3 项已完成并通过真实本地试点。静态 schema 是参数发现与预校验，不新增 MCP/浏览器全文读取或写盘权限；CLI 对负 offset 及低于/高于边界的 limit 均在解析期拒绝，SDK、回执与 Source Map 复用同一常量边界。无内容账本只绑定既有安全 run，并通过 `cosmatter.operational-telemetry/v2` 投影到本地 API、前端和 DSH；严格消费者拒绝未知原因、零/负次数、重复类别和额外字段。两次真实拒绝均未改变 provider 收据，且敏感工件审计保持零发现。候选身份现由 `cosmatter.candidate-duplicate-queue/v1` 派生：两个真实 PST 试点共检出 3 组，全部为 title-only 待人工对账，自动 DOI 合并为 0，且未生成任何伪造的人工 reconciliation。UI 只读投影保留组状态和候选 ID，删除题名哈希、候选/队列绑定哈希；两次敏感审计均保持零发现。题名相同只能提示；仅完全一致的规范化 DOI 或完整人工决定才能建立别名，原始检索历史不改写。
 
-回归验收：Python 695 项、前端 97 个文件/335 项、七个 DSH 包与发布/回放门禁全部通过；Playwright 原有 23 项全量通过，并新增 1 项 390 px 候选重复面板场景单独通过。完整本地验收最终输出 `OK - CosMatter full local acceptance passed.`。
+回归验收：Python 703 项、前端 98 个文件/338 项、七个 DSH 包与发布/回放门禁全部通过；Playwright 24/24 通过。完整本地验收最终输出 `OK - CosMatter full local acceptance passed.`。
 
 ### P2：MRMT 计划型实现
 
