@@ -70,6 +70,8 @@ python -m venv .venv
 
 补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。阅读路线显示规范化 DOI、允许列表内的入选信号，以及 `provider_advertised` / `confirmed` / `failed_or_expired` / `metadata_only` 正文状态；只有与当前候选指纹绑定的成功读取才显示为 `confirmed`。筛选、元数据和访问状态仍不等于科学证据。
 
+如需可选地补全当前全部候选，而不仅是已纳入全文的候选，可显式追加 `--all-candidates`。每次仍最多处理 12 条，重复同一命令会按候选顺序跳过当前指纹下已记录项并继续；已有 DOI 的候选不会再次发送标题。累计工件只追加新文献记录，不会让后续批次覆盖既有解析或冲突，输出的 `remaining_document_count` 与 `complete` 可用于断点验收。
+
 已确认的本地 Sciverse 上下文可用 `prepare-sciverse-context-review` 生成运行目录外的私有待审池。该步骤会复核回执、文献、offset、内容哈希和字符数，不调用网络；输出仍不是 Source Map 或证据。随后可创建不含原文的人工选段模板，并用 `record-sciverse-context-source-map` 将经哈希复核的精确短段落写成 Source Map；受委托自动试点必须显式加开关，且其 Source Map 不能进入正式材料事实链。
 
 Sciverse 正文窗口参数由 `cosmatter.operation-parameter-contracts/v1` 单一契约定义：offset 不小于 0，limit 为 200–4000，默认 2000。CLI 在参数解析期应用该范围；本地 API 能力快照与 MCP 的 `cosmatter_get_operation_parameter_contracts` 只读返回同一契约，不执行提供商调用，也不授予浏览器或 Agent 全文写盘权限。

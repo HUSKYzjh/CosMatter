@@ -138,7 +138,7 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 .\cosmatter.ps1 build-reading-guide --run-id bfo_live_001
 ```
 
-补全每次最多处理 12 条候选，只接受标题精确规范化匹配和相容年份；冲突 DOI 不会写成已解析。工件与阅读路线均不保存查询响应、摘要或全文。
+补全每次最多处理 12 条候选，只接受标题精确规范化匹配和相容年份；冲突 DOI 不会写成已解析。工件与阅读路线均不保存查询响应、摘要或全文。默认范围仍是已纳入全文的候选；显式加 `--all-candidates` 后，可重复执行同一命令来覆盖全部当前候选。命令按当前候选顺序跳过已记录项、累计写入同一指纹绑定工件，并返回剩余数和完成状态；已有 DOI 不发起外部标题查询，旧记录不被新批次覆盖。
 
 对已经纳入全文筛选的候选，可将一次有界 Sciverse 读取写到运行目录外的新审阅文件，然后重建路线：
 

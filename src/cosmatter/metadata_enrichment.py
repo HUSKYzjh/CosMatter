@@ -21,6 +21,8 @@ SCHEMA_VERSION = "1.0"
 TRUST_STATUS = "provider_metadata_resolution_not_scientific_evidence"
 _PROVIDERS = {"Crossref", "OpenAlex"}
 _STATUSES = {"already_present", "resolved", "not_found", "conflict", "provider_failed"}
+_MAX_BATCH_DOCUMENTS = 12
+_MAX_AGGREGATE_DOCUMENTS = 5_000
 _ROOT_FIELDS = {
     "schema_version", "mission_id", "trust_status", "candidate_fingerprint",
     "requested_document_count", "records", "summary",
@@ -52,7 +54,7 @@ def build_metadata_enrichment(
     candidates = _candidate_index(candidate_payload)
     if (
         not isinstance(document_ids, tuple)
-        or not 1 <= len(document_ids) <= 12
+        or not 1 <= len(document_ids) <= _MAX_BATCH_DOCUMENTS
         or len(set(document_ids)) != len(document_ids)
         or any(document_id not in candidates for document_id in document_ids)
     ):
@@ -112,6 +114,57 @@ def build_metadata_enrichment(
         "trust_status": TRUST_STATUS,
         "candidate_fingerprint": candidate_fingerprint(candidate_payload),
         "requested_document_count": len(document_ids),
+        "records": records,
+        "summary": summary,
+    }
+    _validate(artifact)
+    return artifact
+
+
+def merge_metadata_enrichment(
+    existing: object | None,
+    batch: object,
+    mission_id: str,
+    candidate_payload: object,
+) -> dict[str, Any]:
+    """Merge one bounded provider batch into a current cumulative artifact.
+
+    Provider calls remain capped by :func:`build_metadata_enrichment`; only the
+    local aggregate may grow beyond one batch. Existing records are immutable,
+    so a retry cannot silently replace a prior DOI resolution or conflict.
+    """
+    _validate(batch)
+    fingerprint = candidate_fingerprint(candidate_payload)
+    if batch["mission_id"] != mission_id or batch["candidate_fingerprint"] != fingerprint:
+        raise MetadataEnrichmentError("metadata enrichment batch is stale or belongs to another mission")
+    if batch["requested_document_count"] > _MAX_BATCH_DOCUMENTS:
+        raise MetadataEnrichmentError("metadata enrichment batch exceeds the provider-call boundary")
+    if existing is None:
+        return dict(batch)
+    _validate(existing)
+    if existing["mission_id"] != mission_id or existing["candidate_fingerprint"] != fingerprint:
+        raise MetadataEnrichmentError("existing metadata enrichment is stale or belongs to another mission")
+    existing_ids = {record["document_id"] for record in existing["records"]}
+    batch_ids = {record["document_id"] for record in batch["records"]}
+    candidate_ids = set(_candidate_index(candidate_payload))
+    if not existing_ids.union(batch_ids).issubset(candidate_ids):
+        raise MetadataEnrichmentError("metadata enrichment contains a candidate outside the current set")
+    if existing_ids.intersection(batch_ids):
+        raise MetadataEnrichmentError("metadata enrichment batch would overwrite an existing candidate record")
+    records = [*existing["records"], *batch["records"]]
+    if len(records) > _MAX_AGGREGATE_DOCUMENTS:
+        raise MetadataEnrichmentError("metadata enrichment aggregate exceeds the bounded candidate limit")
+    summary = {f"{status}_count": sum(record["status"] == status for record in records) for status in _STATUSES}
+    summary["provider_call_failure_count"] = (
+        existing["summary"]["provider_call_failure_count"]
+        + batch["summary"]["provider_call_failure_count"]
+    )
+    artifact = {
+        "schema_version": SCHEMA_VERSION,
+        "mission_id": mission_id,
+        "trust_status": TRUST_STATUS,
+        "candidate_fingerprint": fingerprint,
+        "requested_document_count": len(records),
         "records": records,
         "summary": summary,
     }
@@ -211,7 +264,7 @@ def _validate(payload: object) -> None:
         not isinstance(fingerprint, str)
         or len(fingerprint) != 64
         or not isinstance(records, list)
-        or not 1 <= len(records) <= 12
+        or not 1 <= len(records) <= _MAX_AGGREGATE_DOCUMENTS
         or payload.get("requested_document_count") != len(records)
         or not isinstance(summary, dict)
         or set(summary) != _SUMMARY_FIELDS

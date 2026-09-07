@@ -35,6 +35,8 @@ class CliHelpTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 0)
         self.assertIn("1-10", output.getvalue())
         self.assertIn("1-12", output.getvalue())
+        self.assertIn("--all-candidates", output.getvalue())
+        self.assertIn("repeat the command to resume", output.getvalue())
 
     def test_sciverse_context_review_help_requires_exact_offset_and_private_paths(self) -> None:
         output = io.StringIO()
