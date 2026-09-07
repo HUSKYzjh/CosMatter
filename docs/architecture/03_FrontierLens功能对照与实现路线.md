@@ -18,6 +18,7 @@
 | 浏览器级端到端验收 | 本机 Edge 的 Playwright 场景、`frontend/e2e/launchpad.spec.ts` | 覆盖 390 px 窄屏截图与无横向溢出、BFO 键盘激活、空任务、含条件矩阵的脱敏导出工件、错误 JSON 拒绝与同一文件重选；不读取 `.env`、运行目录或私有全文。 |
 | 本机只读 UI 预览 | `preview-ui --solid --run-id <run_id>`、`start-solid-preview.ps1` | 仅绑定 `127.0.0.1` 并服务当前选择的 `/ui.json`；未显式启用 `--api` / `-Api` 时，所有 API 写入均被拒绝，且不代理模型、全文或第三方检索。 |
 | 跨源标识人工对账 | `reconcile-relations`、`RelationReconciliationPanel` | 只显示显式人工映射与匹配/冲突/未决状态；`1.1` 工件追加仅含登记时间、状态计数和摘要哈希的修订记录。旧 `1.0` 工件仍可读取，但明确不含修订摘要。 |
+| 候选重复待对账 | `build-candidate-duplicate-queue`、`CandidateDuplicateReconciliationPanel` | 完全同题名只形成提示；仅规范化 DOI 完全一致或完整人工决定才建立派生别名，原始检索历史不可变，对账不是科学证据。 |
 
 ## 有意差异
 

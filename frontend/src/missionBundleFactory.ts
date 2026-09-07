@@ -41,6 +41,8 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
     timeline: [],
     literatureRelations: null,
     crossrefRelations: null,
+    candidateDuplicateQueue: null,
+    candidateDuplicateReconciliation: null,
     relationReconciliation: null,
     conditionNormalization: null,
     literatureGraph: {

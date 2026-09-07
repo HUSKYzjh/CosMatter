@@ -82,6 +82,34 @@ export interface ResearchGapCandidate {
   counterevidenceBoundary?: GapCounterevidenceBoundary | null;
 }
 export interface RelationBundle { trustStatus: string; edgeCount: number; }
+export type CandidateDuplicateQueueState = "same_doi_merge_allowed" | "conflicting_doi_review_required" | "partial_doi_review_required" | "title_only_review_required";
+export interface CandidateDuplicateQueueGroup {
+  groupId: string;
+  documentIds: string[];
+  doiState: CandidateDuplicateQueueState;
+  canonicalDocumentId: string | null;
+  aliasDocumentIds: string[];
+}
+export interface CandidateDuplicateQueue {
+  trustStatus: "derived_exact_title_duplicate_queue_not_scientific_evidence";
+  groupCount: number;
+  groups: CandidateDuplicateQueueGroup[];
+  summary: Record<CandidateDuplicateQueueState, number>;
+}
+export type CandidateDuplicateResolutionState = "same_work" | "distinct_works" | "unresolved";
+export interface CandidateDuplicateResolution {
+  groupId: string;
+  resolution: CandidateDuplicateResolutionState;
+  basis: string;
+  canonicalDocumentId: string | null;
+  aliasDocumentIds: string[];
+}
+export interface CandidateDuplicateReconciliation {
+  trustStatus: "candidate_identity_alias_layer_not_scientific_evidence";
+  resolutions: CandidateDuplicateResolution[];
+  summary: { sameWork: number; distinctWorks: number; unresolved: number; automaticDoi: number; humanDecision: number };
+  revisionHistory: Array<{ revision: number; recordedAt: string; resolutionCounts: { sameWork: number; distinctWorks: number; unresolved: number; automaticDoi: number; humanDecision: number } }>;
+}
 export type RelationReconciliationStatus = "matched" | "conflict" | "unresolved";
 export interface RelationReconciliationMapping {
   openAlexWorkId: string;
@@ -179,6 +207,8 @@ export interface ImportedBundle {
   timeline: TimelineEntry[];
   literatureRelations: RelationBundle | null;
   crossrefRelations: RelationBundle | null;
+  candidateDuplicateQueue: CandidateDuplicateQueue | null;
+  candidateDuplicateReconciliation: CandidateDuplicateReconciliation | null;
   relationReconciliation: RelationReconciliation | null;
   conditionNormalization: ConditionNormalization | null;
   literatureGraph: LiteratureGraph;
@@ -436,6 +466,81 @@ function relation(value: unknown): RelationBundle | null {
   const raw = value as JsonObject;
   return { trustStatus: typeof raw.trust_status === "string" ? raw.trust_status : "unclassified", edgeCount: Array.isArray(raw.edges) ? raw.edges.length : 0 };
 }
+function candidateDuplicateQueue(value: unknown): CandidateDuplicateQueue | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject;
+  const states = new Set<CandidateDuplicateQueueState>(["same_doi_merge_allowed", "conflicting_doi_review_required", "partial_doi_review_required", "title_only_review_required"]);
+  const expected = ["trust_status", "group_count", "groups", "summary"];
+  if (Object.keys(raw).length !== expected.length || !expected.every((key) => Object.prototype.hasOwnProperty.call(raw, key)) || raw.trust_status !== "derived_exact_title_duplicate_queue_not_scientific_evidence" || !Number.isSafeInteger(raw.group_count) || (raw.group_count as number) < 0 || (raw.group_count as number) > 2500 || !Array.isArray(raw.groups) || raw.groups.length !== raw.group_count || !raw.summary || typeof raw.summary !== "object" || Array.isArray(raw.summary)) return null;
+  const seenGroups = new Set<string>(); const seenDocuments = new Set<string>(); const groups: CandidateDuplicateQueueGroup[] = [];
+  for (const entry of raw.groups) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const group = entry as JsonObject; const keys = ["group_id", "document_ids", "doi_state", "canonical_document_id", "alias_document_ids"];
+    const groupId = typeof group.group_id === "string" && /^candidate_duplicate_[a-f0-9]{24}$/.test(group.group_id) ? group.group_id : "";
+    const doiState = typeof group.doi_state === "string" && states.has(group.doi_state as CandidateDuplicateQueueState) ? group.doi_state as CandidateDuplicateQueueState : null;
+    const documentIds = Array.isArray(group.document_ids) && group.document_ids.length >= 2 && group.document_ids.length <= 5000 && group.document_ids.every((item) => typeof item === "string" && item.length > 0 && item.length <= 300) ? group.document_ids as string[] : [];
+    const aliasesValid = Array.isArray(group.alias_document_ids) && group.alias_document_ids.every((item) => typeof item === "string" && item.length > 0 && item.length <= 300);
+    const aliases = aliasesValid ? group.alias_document_ids as string[] : [];
+    const canonical = group.canonical_document_id === null ? null : typeof group.canonical_document_id === "string" && group.canonical_document_id.length <= 300 ? group.canonical_document_id : undefined;
+    const automatic = doiState === "same_doi_merge_allowed";
+    if (Object.keys(group).length !== keys.length || !keys.every((key) => Object.prototype.hasOwnProperty.call(group, key)) || !groupId || !doiState || !documentIds.length || new Set(documentIds).size !== documentIds.length || documentIds.some((item) => seenDocuments.has(item)) || !aliasesValid || new Set(aliases).size !== aliases.length || canonical === undefined || (automatic && (canonical === null || !documentIds.includes(canonical) || aliases.length !== documentIds.length - 1 || aliases.some((item, index) => item !== documentIds.filter((documentId) => documentId !== canonical)[index]))) || (!automatic && (canonical !== null || aliases.length > 0)) || seenGroups.has(groupId)) return null;
+    seenGroups.add(groupId); documentIds.forEach((item) => seenDocuments.add(item));
+    groups.push({ groupId, documentIds, doiState, canonicalDocumentId: canonical, aliasDocumentIds: aliases });
+  }
+  const summaryRaw = raw.summary as JsonObject;
+  const summaryKeys = [...states].map((state) => `${state}_count`);
+  if (Object.keys(summaryRaw).length !== summaryKeys.length || !summaryKeys.every((key) => Object.prototype.hasOwnProperty.call(summaryRaw, key))) return null;
+  const summary = Object.fromEntries([...states].map((state) => {
+    const count = summaryRaw[`${state}_count`];
+    return [state, typeof count === "number" && Number.isSafeInteger(count) && count >= 0 && count === groups.filter((group) => group.doiState === state).length ? count : -1];
+  })) as Record<CandidateDuplicateQueueState, number>;
+  if (Object.values(summary).some((count) => count < 0)) return null;
+  return { trustStatus: "derived_exact_title_duplicate_queue_not_scientific_evidence", groupCount: groups.length, groups, summary };
+}
+
+function candidateDuplicateCounts(value: unknown, expectedTotal: number): CandidateDuplicateReconciliation["summary"] | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject; const keys = ["same_work_count", "distinct_works_count", "unresolved_count", "automatic_doi_count", "human_decision_count"];
+  if (Object.keys(raw).length !== keys.length || !keys.every((key) => Object.prototype.hasOwnProperty.call(raw, key)) || keys.some((key) => typeof raw[key] !== "number" || !Number.isSafeInteger(raw[key]) || (raw[key] as number) < 0)) return null;
+  const sameWork = raw.same_work_count as number; const distinctWorks = raw.distinct_works_count as number; const unresolved = raw.unresolved_count as number; const automaticDoi = raw.automatic_doi_count as number; const humanDecision = raw.human_decision_count as number;
+  if (sameWork + distinctWorks + unresolved !== expectedTotal || automaticDoi + humanDecision !== expectedTotal || automaticDoi > sameWork) return null;
+  return { sameWork, distinctWorks, unresolved, automaticDoi, humanDecision };
+}
+
+function candidateDuplicateReconciliation(value: unknown, queue: CandidateDuplicateQueue | null): CandidateDuplicateReconciliation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !queue) return null;
+  const raw = value as JsonObject; const keys = ["trust_status", "resolutions", "summary", "revision_history"];
+  if (Object.keys(raw).length !== keys.length || !keys.every((key) => Object.prototype.hasOwnProperty.call(raw, key)) || raw.trust_status !== "candidate_identity_alias_layer_not_scientific_evidence" || !Array.isArray(raw.resolutions) || raw.resolutions.length !== queue.groupCount || !Array.isArray(raw.revision_history) || raw.revision_history.length < 1 || raw.revision_history.length > 48) return null;
+  const queueByGroup = new Map(queue.groups.map((group) => [group.groupId, group])); const seen = new Set<string>(); const resolutions: CandidateDuplicateResolution[] = [];
+  const sameReasons = new Set(["exact_normalized_doi", "human_bibliographic_confirmation", "preprint_published_version", "publisher_duplicate_record"]); const distinctReasons = new Set(["distinct_study_same_title", "different_versions_not_equivalent"]);
+  for (const entry of raw.resolutions) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const resolution = entry as JsonObject; const itemKeys = ["group_id", "resolution", "basis", "canonical_document_id", "alias_document_ids"];
+    const groupId = typeof resolution.group_id === "string" ? resolution.group_id : ""; const group = queueByGroup.get(groupId);
+    const state = resolution.resolution === "same_work" || resolution.resolution === "distinct_works" || resolution.resolution === "unresolved" ? resolution.resolution : null;
+    const basis = typeof resolution.basis === "string" ? resolution.basis : ""; const canonical = resolution.canonical_document_id === null ? null : typeof resolution.canonical_document_id === "string" ? resolution.canonical_document_id : undefined;
+    const aliasesValid = Array.isArray(resolution.alias_document_ids) && resolution.alias_document_ids.every((item) => typeof item === "string" && item.length > 0 && item.length <= 300);
+    const aliases = aliasesValid ? resolution.alias_document_ids as string[] : [];
+    const expectedAliases = canonical && group ? group.documentIds.filter((item) => item !== canonical) : [];
+    const validBasis = state === "same_work" && sameReasons.has(basis) || state === "distinct_works" && distinctReasons.has(basis) || state === "unresolved" && basis === "insufficient_metadata";
+    const exactDoiValid = group?.doiState === "same_doi_merge_allowed" ? state === "same_work" && basis === "exact_normalized_doi" && canonical === group.canonicalDocumentId && aliases.every((item, index) => item === group.aliasDocumentIds[index]) && aliases.length === group.aliasDocumentIds.length : basis !== "exact_normalized_doi";
+    if (Object.keys(resolution).length !== itemKeys.length || !itemKeys.every((key) => Object.prototype.hasOwnProperty.call(resolution, key)) || !group || seen.has(groupId) || !state || !validBasis || canonical === undefined || !aliasesValid || !exactDoiValid || (state === "same_work" && (canonical === null || !group.documentIds.includes(canonical) || aliases.length !== expectedAliases.length || aliases.some((item, index) => item !== expectedAliases[index]))) || (state !== "same_work" && (canonical !== null || aliases.length > 0))) return null;
+    seen.add(groupId); resolutions.push({ groupId, resolution: state, basis, canonicalDocumentId: canonical, aliasDocumentIds: aliases });
+  }
+  const summary = candidateDuplicateCounts(raw.summary, resolutions.length); if (!summary || summary.sameWork !== resolutions.filter((item) => item.resolution === "same_work").length || summary.distinctWorks !== resolutions.filter((item) => item.resolution === "distinct_works").length || summary.unresolved !== resolutions.filter((item) => item.resolution === "unresolved").length || summary.automaticDoi !== resolutions.filter((item) => item.basis === "exact_normalized_doi").length) return null;
+  const revisionHistory: CandidateDuplicateReconciliation["revisionHistory"] = [];
+  for (const entry of raw.revision_history) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const revision = entry as JsonObject; const revisionKeys = ["revision", "recorded_at", "resolution_counts"];
+    const recordedAt = typeof revision.recorded_at === "string" && /^\d{4}-\d{2}-\d{2}T/.test(revision.recorded_at) && Number.isFinite(Date.parse(revision.recorded_at)) ? revision.recorded_at : "";
+    const counts = candidateDuplicateCounts(revision.resolution_counts, resolutions.length);
+    if (Object.keys(revision).length !== revisionKeys.length || !revisionKeys.every((key) => Object.prototype.hasOwnProperty.call(revision, key)) || typeof revision.revision !== "number" || !Number.isSafeInteger(revision.revision) || revision.revision !== revisionHistory.length + 1 || !recordedAt || !counts) return null;
+    revisionHistory.push({ revision: revision.revision, recordedAt, resolutionCounts: counts });
+  }
+  const latest = revisionHistory.at(-1)?.resolutionCounts;
+  if (!latest || JSON.stringify(latest) !== JSON.stringify(summary)) return null;
+  return { trustStatus: "candidate_identity_alias_layer_not_scientific_evidence", resolutions, summary, revisionHistory };
+}
 function relationReconciliation(value: unknown): RelationReconciliation | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as JsonObject;
@@ -550,6 +655,7 @@ function simulationEvidence(value: unknown): SimulationEvidenceProjection | null
 }
 export function readBundle(value: unknown, source: ImportedBundle["source"] = "local-file"): ImportedBundle {
   const root = object(value, "UI JSON");
+  const delegatedTestBoundary = root.delegated_test_boundary === true;
   const parsedEvidenceMaturityRegistry = evidenceMaturityRegistry(root.evidence_maturity_registry);
   const maturityRegistryDeliveryStatus = root.evidence_maturity_registry_delivery_status === "rejected" ? "rejected" : root.evidence_maturity_registry_delivery_status === "accepted" ? "accepted" : "not_supplied";
   const rawMission = object(root.mission, "mission");
@@ -598,6 +704,8 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     const matches = evidenceCards.filter((card) => card.evidenceId === evidenceId);
     return matches.length === 1 ? matches[0] : null;
   };
+  const parsedCandidateDuplicateQueue = candidateDuplicateQueue(root.candidate_duplicate_queue);
+  const parsedCandidateDuplicateReconciliation = delegatedTestBoundary ? null : candidateDuplicateReconciliation(root.candidate_duplicate_reconciliation, parsedCandidateDuplicateQueue);
   const parsedRelationReconciliation = relationReconciliation(root.relation_reconciliation);
   const linkedRelationReconciliation = parsedRelationReconciliation && (() => {
     const sourceCard = cardForEvidenceId(parsedRelationReconciliation.sourceEvidenceId);
@@ -641,7 +749,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
   return {
     schemaVersion: typeof root.schema_version === "string" ? root.schema_version : "unknown",
     generatedAt: generatedAt(root.generated_at),
-    delegatedTestBoundary: root.delegated_test_boundary === true,
+    delegatedTestBoundary,
     mission, source,
     fleet: rawFleet ? { displayName: typeof rawFleet.display_name_zh === "string" ? rawFleet.display_name_zh : typeof rawFleet.display_name_en === "string" ? rawFleet.display_name_en : "Unclassified fleet", missionType: typeof rawFleet.mission_type === "string" ? rawFleet.mission_type : "unknown", releaseGate: typeof rawFleet.release_gate === "string" ? rawFleet.release_gate : "unknown" } : null,
     status: rawStatus ? { missionState: typeof rawStatus.mission_state === "string" ? rawStatus.mission_state : "unknown", retryCount: typeof rawStatus.retry_count === "number" ? rawStatus.retry_count : 0, retryBudget: typeof rawStatus.retry_budget === "number" ? rawStatus.retry_budget : 0, returnReason: typeof rawStatus.return_reason === "string" ? rawStatus.return_reason : null } : null,
@@ -658,7 +766,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     simulationEvidenceStatus,
     auditSummary: auditSummary(root.audit_summary),
     timeline: Array.isArray(root.timeline) ? root.timeline.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).station_type === "string" && typeof (entry as JsonObject).action === "string" ? [{ stationType: (entry as JsonObject).station_type as string, action: (entry as JsonObject).action as string, state: typeof (entry as JsonObject).state === "string" ? (entry as JsonObject).state as string : "unknown", occurredAt: typeof (entry as JsonObject).occurred_at === "string" ? (entry as JsonObject).occurred_at as string : "" }] : []) : [],
-    literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), relationReconciliation: linkedRelationReconciliation, conditionNormalization: linkedConditionNormalization, literatureGraph: literatureGraph(root.literature_graph),
+    literatureRelations: relation(root.literature_relations), crossrefRelations: relation(root.crossref_relations), candidateDuplicateQueue: parsedCandidateDuplicateQueue, candidateDuplicateReconciliation: parsedCandidateDuplicateReconciliation, relationReconciliation: linkedRelationReconciliation, conditionNormalization: linkedConditionNormalization, literatureGraph: literatureGraph(root.literature_graph),
     report: root.mission_report && typeof root.mission_report === "object" && !Array.isArray(root.mission_report) && typeof (root.mission_report as JsonObject).summary === "string" ? { summary: (root.mission_report as JsonObject).summary as string, limitations: textList((root.mission_report as JsonObject).limitations), nextSteps: textList((root.mission_report as JsonObject).next_steps) } : null,
   };
 }

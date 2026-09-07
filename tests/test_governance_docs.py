@@ -77,6 +77,8 @@ class GovernanceDocumentationTests(unittest.TestCase):
             "cosmatter.operation-parameter-contracts/v1",
             "cosmatter.validation-rejection/v1",
             "cosmatter.operational-telemetry/v2",
+            "cosmatter.candidate-duplicate-queue/v1",
+            "题名相同只能提示",
             "CLI/MCP/UI 的静态参数发现契约已同源",
             "全部候选 DOI 现可显式选择分批覆盖",
             "敏感工件发现类别",

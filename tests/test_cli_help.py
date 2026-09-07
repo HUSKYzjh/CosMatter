@@ -38,6 +38,18 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("--all-candidates", output.getvalue())
         self.assertIn("repeat the command to resume", output.getvalue())
 
+    def test_candidate_duplicate_help_keeps_title_matches_review_gated(self) -> None:
+        output = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, contextlib.redirect_stdout(output):
+            main(["--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        rendered = output.getvalue()
+        self.assertIn("build-candidate-duplicate-queue", rendered)
+        self.assertIn("only exact", rendered)
+        self.assertIn("shared DOI may create an automatic alias", rendered)
+        self.assertIn("record-candidate-duplicate-reconciliation", rendered)
+
     def test_sciverse_context_review_help_requires_exact_offset_and_private_paths(self) -> None:
         output = io.StringIO()
         with self.assertRaises(SystemExit) as raised, contextlib.redirect_stdout(output):

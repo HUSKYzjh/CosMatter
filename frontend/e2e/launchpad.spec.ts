@@ -695,3 +695,42 @@ test("renders cross-source reconciliation revisions in the map without calling a
   await expect(audit).toContainText("不代表任何指标已经生成");
   expect(apiRequests).toEqual([]);
 });
+
+test("renders title-only candidate duplicates as an unmerged review queue", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const apiRequests: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) apiRequests.push(request.url());
+  });
+  const importInput = await openEditableTaskDefinition(page);
+  await importInput.setInputFiles({
+    name: "candidate-duplicate-queue.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      schema_version: "1.0",
+      mission: { mission_id: "duplicate-demo", question: "Review duplicate candidate identities.", material: "BiFeO3", property_name: "phase stability", scope: "synthetic UI fixture" },
+      literature_graph: {
+        trust_status: "candidate_metadata_not_scientific_evidence",
+        nodes: [
+          { node_id: "paper:doc-a", kind: "candidate_paper", label: "Shared title", trust_status: "candidate_metadata_not_scientific_evidence" },
+          { node_id: "paper:doc-b", kind: "candidate_paper", label: "Shared title", trust_status: "candidate_metadata_not_scientific_evidence" },
+        ], edges: [],
+      },
+      candidate_duplicate_queue: {
+        trust_status: "derived_exact_title_duplicate_queue_not_scientific_evidence",
+        group_count: 1,
+        groups: [{ group_id: "candidate_duplicate_aaaaaaaaaaaaaaaaaaaaaaaa", document_ids: ["doc-a", "doc-b"], doi_state: "title_only_review_required", canonical_document_id: null, alias_document_ids: [] }],
+        summary: { conflicting_doi_review_required_count: 0, partial_doi_review_required_count: 0, same_doi_merge_allowed_count: 0, title_only_review_required_count: 1 },
+      },
+    })),
+  });
+  await page.getByRole("button", { name: "03 文献星图" }).click();
+  const panel = page.getByLabel("候选重复待对账");
+  await expect(panel).toBeVisible(lazyWorkspaceContentLoad);
+  await expect(panel).toContainText("题名相同不是同一篇文献");
+  await expect(panel).toContainText("仅题名相同，待人工对账");
+  await expect(panel).toContainText("未决，未合并");
+  expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(apiRequests).toEqual([]);
+});

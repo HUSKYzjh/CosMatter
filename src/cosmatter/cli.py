@@ -42,6 +42,7 @@ from .gap_analysis import GapAnalysisError, candidates_from_discrepancies, load_
 from .gap_drafting import GapDraftingError, research_gap_drafting_prompts, write_untrusted_research_gap_draft
 from .candidate_screening import CandidateScreeningError, candidate_screening_from_automated_trial, candidate_screening_from_review, candidate_screening_template, load_automated_trial_candidate_screening, load_candidate_screening, require_document_screened_for_fulltext, selected_document_ids, write_automated_trial_candidate_screening, write_candidate_screening, write_candidate_screening_template
 from .metadata_enrichment import MetadataEnrichmentError, build_metadata_enrichment, load_metadata_enrichment, merge_metadata_enrichment, write_metadata_enrichment
+from .candidate_duplicate_reconciliation import CandidateDuplicateReconciliationError, REVIEW_TRUST_STATUS as CANDIDATE_DUPLICATE_REVIEW_TRUST_STATUS, build_candidate_duplicate_queue, candidate_duplicate_reconciliation_from_review, candidate_duplicate_review_template, load_candidate_duplicate_queue, write_candidate_duplicate_queue, write_candidate_duplicate_reconciliation, write_candidate_duplicate_review_template
 from .metadata_search import MetadataSearchAdapter, MetadataSearchConfigurationError, MetadataSearchRequestError
 from .workflow_readiness import WorkflowReadinessError, workflow_readiness, write_workflow_readiness
 from .runtime_invariants import RuntimeInvariantError, audit_runtime_invariants, write_runtime_invariant_audit
@@ -673,6 +674,103 @@ def command_enrich_screened_metadata(args: argparse.Namespace) -> int:
             "summary": summary,
         }
     )
+    return 0
+
+
+def command_build_candidate_duplicate_queue(args: argparse.Namespace) -> int:
+    """Create a title-signal queue without merging title-only candidates."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        candidate_history = _load_object(run_dir / "retrieval_candidates.json", "candidate history")
+        enrichment = load_metadata_enrichment(
+            run_dir / "candidate_metadata_enrichment.json", mission.mission_id, candidate_history
+        )
+        queue = build_candidate_duplicate_queue(mission.mission_id, candidate_history, enrichment)
+        path = write_candidate_duplicate_queue(run_dir, queue)
+    except (UiExportError, CandidateScreeningError, MetadataEnrichmentError, CandidateDuplicateReconciliationError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    review_required_count = queue["group_count"] - queue["summary"]["same_doi_merge_allowed_count"]
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="candidate_duplicate_queue_built",
+        actor="search_selection",
+        state=MissionState.SELECT,
+        payload={
+            "duplicate_group_count": queue["group_count"],
+            "review_required_count": review_required_count,
+            "exact_doi_merge_allowed_count": queue["summary"]["same_doi_merge_allowed_count"],
+            "trust_status": queue["trust_status"],
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "queue_path": str(path),
+        "duplicate_group_count": queue["group_count"],
+        "review_required_count": review_required_count,
+        "exact_doi_merge_allowed_count": queue["summary"]["same_doi_merge_allowed_count"],
+    })
+    return 0
+
+
+def command_create_candidate_duplicate_review_template(args: argparse.Namespace) -> int:
+    """Export a blank, queue-bound identity review without copying titles."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        candidate_history = _load_object(run_dir / "retrieval_candidates.json", "candidate history")
+        enrichment = load_metadata_enrichment(
+            run_dir / "candidate_metadata_enrichment.json", mission.mission_id, candidate_history
+        )
+        queue = load_candidate_duplicate_queue(
+            run_dir / "candidate_duplicate_queue.json", mission.mission_id, candidate_history, enrichment
+        )
+        if queue is None:
+            raise CandidateDuplicateReconciliationError("candidate duplicate queue has not been built")
+        template = candidate_duplicate_review_template(queue)
+        path = write_candidate_duplicate_review_template(Path(args.output), template)
+    except (OSError, UiExportError, CandidateScreeningError, MetadataEnrichmentError, CandidateDuplicateReconciliationError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="candidate_duplicate_review_template_created",
+        actor="search_selection",
+        state=MissionState.SELECT,
+        payload={"review_slot_count": len(template["decisions"]), "trust_status": template["trust_status"]},
+    )
+    _json_print({"run_id": args.run_id, "review_slot_count": len(template["decisions"]), "output": str(path)})
+    return 0
+
+
+def command_record_candidate_duplicate_reconciliation(args: argparse.Namespace) -> int:
+    """Record complete human identity decisions plus exact-DOI aliases."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        candidate_history = _load_object(run_dir / "retrieval_candidates.json", "candidate history")
+        enrichment = load_metadata_enrichment(
+            run_dir / "candidate_metadata_enrichment.json", mission.mission_id, candidate_history
+        )
+        queue = load_candidate_duplicate_queue(
+            run_dir / "candidate_duplicate_queue.json", mission.mission_id, candidate_history, enrichment
+        )
+        if queue is None:
+            raise CandidateDuplicateReconciliationError("candidate duplicate queue has not been built")
+        selection = json.loads(Path(args.input).read_text(encoding="utf-8"))
+        if isinstance(selection, dict) and selection.get("trust_status") != CANDIDATE_DUPLICATE_REVIEW_TRUST_STATUS:
+            raise CandidateDuplicateReconciliationError("candidate duplicate review is not marked as human reviewed")
+        artifact = candidate_duplicate_reconciliation_from_review(queue, selection)
+        path = write_candidate_duplicate_reconciliation(run_dir, artifact)
+    except (OSError, json.JSONDecodeError, UiExportError, CandidateScreeningError, MetadataEnrichmentError, CandidateDuplicateReconciliationError, ValueError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="candidate_duplicates_reconciled",
+        actor="human_bibliographic_review",
+        state=MissionState.SELECT,
+        payload={"resolution_counts": artifact["summary"], "trust_status": artifact["trust_status"]},
+    )
+    _json_print({"run_id": args.run_id, "reconciliation_path": str(path), "summary": artifact["summary"]})
     return 0
 
 
@@ -3778,6 +3876,17 @@ def build_parser() -> argparse.ArgumentParser:
     enrich_metadata.add_argument("--all-candidates", action="store_true", help="explicitly send the next bounded batch of every current candidate title to the selected metadata providers; metadata only, not evidence or screening")
     enrich_metadata.add_argument("--allow-delegated-automated-trial", action="store_true", help="use separately recorded delegated trial screening when no human screening exists")
     enrich_metadata.set_defaults(handler=command_enrich_screened_metadata)
+    duplicate_queue = commands.add_parser("build-candidate-duplicate-queue", help="detect exact normalized-title groups; only exact shared DOI may create an automatic alias")
+    duplicate_queue.add_argument("--run-id", required=True)
+    duplicate_queue.set_defaults(handler=command_build_candidate_duplicate_queue)
+    duplicate_review = commands.add_parser("create-candidate-duplicate-review-template", help="export a blank hash-bound review for title duplicates that lack exact shared DOI")
+    duplicate_review.add_argument("--run-id", required=True)
+    duplicate_review.add_argument("--output", required=True, help="new local JSON template; contains candidate IDs and hashes but no titles")
+    duplicate_review.set_defaults(handler=command_create_candidate_duplicate_review_template)
+    duplicate_record = commands.add_parser("record-candidate-duplicate-reconciliation", help="record complete human duplicate decisions without rewriting retrieval history")
+    duplicate_record.add_argument("--run-id", required=True)
+    duplicate_record.add_argument("--input", required=True, help="completed queue-bound human review JSON")
+    duplicate_record.set_defaults(handler=command_record_candidate_duplicate_reconciliation)
     content = commands.add_parser("sciverse-read-context", help="fetch one screened candidate's bounded Sciverse context into an explicit local review file")
     content.add_argument("--run-id", required=True)
     content.add_argument("--document-id", required=True)

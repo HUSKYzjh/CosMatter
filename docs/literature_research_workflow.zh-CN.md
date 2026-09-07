@@ -183,6 +183,17 @@ cd CosMatter
 
 **输出：** 完整的人工筛选工件、可选的 `candidate_metadata_enrichment.json` 和 schema 1.2 阅读路线。默认补全仅查询已纳入候选；显式使用 `--all-candidates` 可把范围扩为当前全部候选，但单次仍最多 12 条，重复执行会从当前候选指纹下的下一未处理项继续。已有 DOI 不再外发标题；累计工件不允许后续批次覆盖旧记录，并返回剩余数与完成状态。解析只接受规范化标题精确一致且年份相容的 DOI；近似标题不自动匹配，多 DOI 命中写为冲突。阅读路线会显示 DOI 与材料/性质/方法/反例/全文筛选等允许列表信号，但这些元数据仍不是事实证据。正文状态分为 `provider_advertised`（上游声明可读）、`confirmed`（当前候选指纹下已成功读取并留下哈希回执）和 `failed_or_expired`（读取失败或确认因候选变化过期）；没有可读声明时为 `metadata_only`。只有状态为 `include_for_fulltext` 且来源确有授权访问边界的文献，才能进入全文解析和 Source Map。元数据检索结果、本地 Zotero 搜索结果或人工手写文献 ID 均不能绕过此门禁。
 
+对全部当前候选还应建立候选重复待对账队列：
+
+```powershell
+.\cosmatter.ps1 build-candidate-duplicate-queue --run-id bfo_001
+.\cosmatter.ps1 create-candidate-duplicate-review-template --run-id bfo_001 --output D:\private-review\candidate-duplicates.json
+# 完成人工身份审核后再记录；仅跑通流程不得伪造人工决定
+.\cosmatter.ps1 record-candidate-duplicate-reconciliation --run-id bfo_001 --input D:\private-review\candidate-duplicates.json
+```
+
+`cosmatter.candidate-duplicate-queue/v1` 仅把规范化后完全同题名的候选列为信号。只有所有组员 DOI 都存在且规范化结果完全一致，系统才可自动建立 canonical/alias；题名相同本身、部分 DOI 和冲突 DOI 都只提示，不能自动认定同文献。人工决定须覆盖每个待审组并使用固定理由码；队列、模板和对账均绑定候选指纹及队列哈希，候选或元数据补全变化后旧工件失效。原始检索记录保持不可变，对账结果不是事实证据。
+
 对已筛选候选执行 `sciverse-read-context` 时，成功会更新 `content_access_confirmations.json` 的内容哈希、回执 ID 与 UTC 确认时间；上游配置或请求失败只写固定原因码，不保存错误正文、输出路径或原始响应。随后重建阅读路线，才能把相应候选显示为 `confirmed` 或 `failed_or_expired`。
 
 正文窗口的 offset/limit 由版本化静态参数契约统一管理；CLI、SDK、回执与 Source Map 使用同一边界，本地 API 能力快照和 MCP 只能读取该 schema。参数契约本身不执行全文调用、不选择文献，也不授予写盘权限。

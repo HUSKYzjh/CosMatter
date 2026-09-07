@@ -38,6 +38,8 @@ from .reading_guide import ReadingGuideError, load_reading_guide
 from .source_map import HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map
 from .paper_structure import PaperStructureError, iter_paper_structures, load_paper_structure
 from .relation_reconciliation import RelationReconciliationError, load_relation_reconciliation
+from .candidate_duplicate_reconciliation import CandidateDuplicateReconciliationError, load_candidate_duplicate_queue, load_candidate_duplicate_reconciliation
+from .metadata_enrichment import MetadataEnrichmentError, load_metadata_enrichment
 from .condition_normalization import ConditionNormalizationError, load_condition_normalization
 from .delegated_trial import has_delegated_test_review_boundary
 from .evidence_maturity_registry import EvidenceMaturityRegistryError, audit_evidence_maturity_registry_against_runs, load_evidence_maturity_registry, validate_evidence_maturity_registry_audit
@@ -474,6 +476,34 @@ def _relation_reconciliation_projection(reconciliation: dict[str, Any] | None) -
     if reconciliation is None: return None
     history = reconciliation.get("revision_history", [])
     return {"trust_status": reconciliation["trust_status"], "source": reconciliation["source"], "mappings": [{key: mapping[key] for key in ("openalex_work_id", "crossref_doi", "status", "basis")} for mapping in reconciliation["mappings"]], "revision_history": [{key: revision[key] for key in ("revision", "recorded_at", "mapping_count", "status_counts")} for revision in history]}
+
+
+def _candidate_duplicate_queue_projection(queue: dict[str, Any] | None) -> dict[str, Any] | None:
+    if queue is None:
+        return None
+    return {
+        "trust_status": queue["trust_status"],
+        "group_count": queue["group_count"],
+        "groups": [
+            {key: group[key] for key in ("group_id", "document_ids", "doi_state", "canonical_document_id", "alias_document_ids")}
+            for group in queue["groups"]
+        ],
+        "summary": queue["summary"],
+    }
+
+
+def _candidate_duplicate_reconciliation_projection(reconciliation: dict[str, Any] | None) -> dict[str, Any] | None:
+    if reconciliation is None:
+        return None
+    return {
+        "trust_status": reconciliation["trust_status"],
+        "resolutions": reconciliation["resolutions"],
+        "summary": reconciliation["summary"],
+        "revision_history": [
+            {key: revision[key] for key in ("revision", "recorded_at", "resolution_counts")}
+            for revision in reconciliation["revision_history"]
+        ],
+    }
 
 
 def _condition_normalization_projection(normalization: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1067,6 +1097,8 @@ def build_ui_bundle(
     citation_expansion: dict[str, Any] | None = None,
 
     relation_reconciliation: dict[str, Any] | None = None,
+    candidate_duplicate_queue: dict[str, Any] | None = None,
+    candidate_duplicate_reconciliation: dict[str, Any] | None = None,
     condition_normalization: dict[str, Any] | None = None,
     retrieval_candidates: list[dict[str, Any]] | None = None,
     research_gap_candidates: list[dict[str, Any]] | None = None,
@@ -1185,6 +1217,8 @@ def build_ui_bundle(
         "literature_relations": literature_relations,
         "crossref_relations": crossref_relations,
         "relation_reconciliation": _relation_reconciliation_projection(relation_reconciliation),
+        "candidate_duplicate_queue": _candidate_duplicate_queue_projection(candidate_duplicate_queue),
+        "candidate_duplicate_reconciliation": _candidate_duplicate_reconciliation_projection(candidate_duplicate_reconciliation),
         "condition_normalization": _condition_normalization_projection(condition_normalization),
         "literature_graph": _literature_graph_projection(
             mission,
@@ -1238,7 +1272,35 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     literature_relations = _relation_expansion_projection(run_dir / "relation_expansion.json", mission.mission_id)
     crossref_relations = _crossref_relation_expansion_projection(run_dir / "crossref_relation_expansion.json", mission.mission_id)
     citation_expansion = _citation_expansion_projection(run_dir / "citation_expansion.json", mission.mission_id)
-    retrieval_candidates = _retrieval_candidate_projection(run_dir / "retrieval_candidates.json")
+    candidate_history_path = run_dir / "retrieval_candidates.json"
+    retrieval_candidates = _retrieval_candidate_projection(candidate_history_path)
+    try:
+        if candidate_history_path.exists():
+            candidate_history = _load_object(candidate_history_path, "candidate history")
+            metadata_enrichment = load_metadata_enrichment(
+                run_dir / "candidate_metadata_enrichment.json", mission.mission_id, candidate_history
+            )
+            candidate_duplicate_queue = load_candidate_duplicate_queue(
+                run_dir / "candidate_duplicate_queue.json", mission.mission_id, candidate_history, metadata_enrichment
+            )
+            reconciliation_path = run_dir / "candidate_duplicate_reconciliation.json"
+            if reconciliation_path.exists() and candidate_duplicate_queue is None:
+                raise CandidateDuplicateReconciliationError("candidate duplicate reconciliation exists without its current queue")
+            candidate_duplicate_reconciliation = load_candidate_duplicate_reconciliation(
+                reconciliation_path, mission.mission_id, candidate_duplicate_queue
+            )
+        else:
+            identity_paths = (
+                run_dir / "candidate_metadata_enrichment.json",
+                run_dir / "candidate_duplicate_queue.json",
+                run_dir / "candidate_duplicate_reconciliation.json",
+            )
+            if any(path.exists() for path in identity_paths):
+                raise CandidateDuplicateReconciliationError("candidate identity artifact exists without candidate history")
+            candidate_duplicate_queue = None
+            candidate_duplicate_reconciliation = None
+    except (MetadataEnrichmentError, CandidateDuplicateReconciliationError) as error:
+        raise UiExportError(str(error)) from error
     maturity_registry, maturity_delivery_status = _evidence_maturity_registry_projection(run_dir, runs_dir, mission.mission_id)
     simulation_campaign, simulation_campaign_delivery_status = _simulation_campaign_projection(run_dir, mission.mission_id)
     simulation_evidence, simulation_evidence_delivery_status = _simulation_evidence_projection(run_dir, mission.mission_id)
@@ -1257,6 +1319,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         maturity_registry, maturity_delivery_status = None, "not_supplied"
         simulation_campaign, simulation_campaign_delivery_status = None, "not_supplied"
         simulation_evidence, simulation_evidence_delivery_status = None, "not_supplied"
+        candidate_duplicate_reconciliation = None
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
         all_source_maps = iter_source_maps(run_dir, mission.mission_id)
@@ -1326,6 +1389,8 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         crossref_relations=crossref_relations,
         citation_expansion=citation_expansion,
         relation_reconciliation=relation_reconciliation,
+        candidate_duplicate_queue=candidate_duplicate_queue,
+        candidate_duplicate_reconciliation=candidate_duplicate_reconciliation,
         condition_normalization=condition_normalization,
         retrieval_candidates=retrieval_candidates,
         research_gap_candidates=research_gap_candidates,

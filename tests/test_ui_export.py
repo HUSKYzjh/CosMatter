@@ -8,6 +8,14 @@ from unittest.mock import patch
 
 from cosmatter.audit import FlightRecorder
 from cosmatter.cli import main
+from cosmatter.candidate_duplicate_reconciliation import (
+    REVIEW_TRUST_STATUS as CANDIDATE_DUPLICATE_REVIEW_TRUST_STATUS,
+    build_candidate_duplicate_queue,
+    candidate_duplicate_reconciliation_from_review,
+    candidate_duplicate_review_template,
+    write_candidate_duplicate_queue,
+    write_candidate_duplicate_reconciliation,
+)
 from cosmatter.dispatch import MissionDispatcher
 from cosmatter.models import MissionBrief, MissionState
 from cosmatter.simulation_campaign import (
@@ -62,6 +70,78 @@ class UiExportTests(unittest.TestCase):
         self.assertNotIn("must never appear", serialised)
         self.assertNotIn("api_key", serialised)
         self.assertNotIn("authorization", serialised)
+
+    def test_export_projects_a_redacted_review_gated_candidate_duplicate_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            self._write_run(runs_dir, "duplicate_export")
+            run_dir = runs_dir / "duplicate_export"
+            candidates = {
+                "query": "private retrieval query must not enter the UI identity artifact",
+                "candidates": [
+                    {"document_id": "doc_a", "title": "Shared candidate title", "source": "Sciverse", "publication_year": 2024},
+                    {"document_id": "doc_b", "title": "Shared candidate title.", "source": "OpenAlex", "publication_year": 2025},
+                ],
+            }
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps(candidates), encoding="utf-8")
+            queue = build_candidate_duplicate_queue("mission_ui_export_001", candidates)
+            write_candidate_duplicate_queue(run_dir, queue)
+            review = candidate_duplicate_review_template(queue)
+            review["trust_status"] = CANDIDATE_DUPLICATE_REVIEW_TRUST_STATUS
+            review["decisions"][0].update({
+                "decision": "distinct_works", "canonical_document_id": None, "reason_code": "distinct_study_same_title",
+            })
+            write_candidate_duplicate_reconciliation(run_dir, candidate_duplicate_reconciliation_from_review(queue, review))
+            export_run_to_ui(runs_dir, "duplicate_export")
+            bundle = json.loads((run_dir / "ui.json").read_text(encoding="utf-8"))
+
+        projected = bundle["candidate_duplicate_queue"]
+        self.assertEqual(projected["group_count"], 1)
+        self.assertEqual(projected["groups"][0]["doi_state"], "title_only_review_required")
+        self.assertIsNone(projected["groups"][0]["canonical_document_id"])
+        self.assertEqual(bundle["candidate_duplicate_reconciliation"]["resolutions"][0]["resolution"], "distinct_works")
+        serialised_identity = json.dumps({
+            "queue": projected,
+            "reconciliation": bundle["candidate_duplicate_reconciliation"],
+        }).lower()
+        for forbidden in ("title_sha256", "candidate_fingerprint", "metadata_enrichment_sha256", "queue_sha256", "resolutions_sha256", "private retrieval query"):
+            self.assertNotIn(forbidden, serialised_identity)
+
+    def test_export_rejects_a_stale_candidate_duplicate_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            self._write_run(runs_dir, "stale_duplicate_export")
+            run_dir = runs_dir / "stale_duplicate_export"
+            candidates = {"candidates": [
+                {"document_id": "doc_a", "title": "Shared title", "source": "Sciverse"},
+                {"document_id": "doc_b", "title": "Shared title", "source": "OpenAlex"},
+            ]}
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps(candidates), encoding="utf-8")
+            queue = build_candidate_duplicate_queue("mission_ui_export_001", candidates)
+            queue["groups"][0]["group_id"] = "candidate_duplicate_" + "f" * 24
+            (run_dir / "candidate_duplicate_queue.json").write_text(json.dumps(queue), encoding="utf-8")
+
+            with self.assertRaisesRegex(UiExportError, "stale or has been modified"):
+                export_run_to_ui(runs_dir, "stale_duplicate_export")
+
+    def test_export_rejects_candidate_duplicate_reconciliation_without_its_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            self._write_run(runs_dir, "orphan_duplicate_reconciliation")
+            run_dir = runs_dir / "orphan_duplicate_reconciliation"
+            candidates = {"candidates": [
+                {"document_id": "doc_a", "title": "Shared title", "source": "Sciverse"},
+                {"document_id": "doc_b", "title": "Shared title", "source": "OpenAlex"},
+            ]}
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps(candidates), encoding="utf-8")
+            queue = build_candidate_duplicate_queue("mission_ui_export_001", candidates)
+            review = candidate_duplicate_review_template(queue)
+            review["trust_status"] = CANDIDATE_DUPLICATE_REVIEW_TRUST_STATUS
+            review["decisions"][0].update({"decision": "unresolved", "reason_code": "insufficient_metadata"})
+            write_candidate_duplicate_reconciliation(run_dir, candidate_duplicate_reconciliation_from_review(queue, review))
+
+            with self.assertRaisesRegex(UiExportError, "without its current queue"):
+                export_run_to_ui(runs_dir, "orphan_duplicate_reconciliation")
 
     def test_export_projects_only_safe_plan_only_campaign_status(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

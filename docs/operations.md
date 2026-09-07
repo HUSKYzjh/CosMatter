@@ -140,6 +140,16 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 
 补全每次最多处理 12 条候选，只接受标题精确规范化匹配和相容年份；冲突 DOI 不会写成已解析。工件与阅读路线均不保存查询响应、摘要或全文。默认范围仍是已纳入全文的候选；显式加 `--all-candidates` 后，可重复执行同一命令来覆盖全部当前候选。命令按当前候选顺序跳过已记录项、累计写入同一指纹绑定工件，并返回剩余数和完成状态；已有 DOI 不发起外部标题查询，旧记录不被新批次覆盖。
 
+候选去重必须经过独立对账层，不能靠题名直接折叠：
+
+```powershell
+.\cosmatter.ps1 build-candidate-duplicate-queue --run-id bfo_live_001
+.\cosmatter.ps1 create-candidate-duplicate-review-template --run-id bfo_live_001 --output D:\private-review\candidate-duplicates.json
+.\cosmatter.ps1 record-candidate-duplicate-reconciliation --run-id bfo_live_001 --input D:\private-review\candidate-duplicates.json
+```
+
+队列绑定当前候选指纹与可选元数据补全工件。只有全部候选都有同一个规范化 DOI 时可自动生成别名；同题名但 DOI 缺失、不完整或冲突均保留未合并状态，直到完整人工模板明确选择 `same_work`、`distinct_works` 或 `unresolved`。任一候选或补全工件变化都会使旧队列/对账失效，`export-ui` 安全拒绝过期或被修改的工件。对账只改变派生身份层，不改写 `retrieval_candidates.json`。
+
 对已经纳入全文筛选的候选，可将一次有界 Sciverse 读取写到运行目录外的新审阅文件，然后重建路线：
 
 ```powershell

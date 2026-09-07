@@ -71,7 +71,7 @@ function bundleImportReceipt(fileName: string, byteLength: number, imported: Imp
     importedAt: Date.now(),
     generatedAt: imported.generatedAt,
     schemaVersion: imported.schemaVersion.slice(0, 80),
-    visibleRecordCount: imported.stations.length + imported.facilities.length + imported.evidenceCards.length + imported.conditionMatrix.length + imported.researchGapCandidates.length + imported.literatureGraph.nodes.length,
+    visibleRecordCount: imported.stations.length + imported.facilities.length + imported.evidenceCards.length + imported.conditionMatrix.length + imported.researchGapCandidates.length + imported.literatureGraph.nodes.length + (imported.candidateDuplicateQueue?.groupCount ?? 0),
     withheldAcceptedEvidenceCount: imported.importDiagnostics.withheldAcceptedEvidenceCount,
     delegatedTestBoundary: imported.delegatedTestBoundary,
   };

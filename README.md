@@ -70,6 +70,18 @@ python -m venv .venv
 
 补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。阅读路线显示规范化 DOI、允许列表内的入选信号，以及 `provider_advertised` / `confirmed` / `failed_or_expired` / `metadata_only` 正文状态；只有与当前候选指纹绑定的成功读取才显示为 `confirmed`。筛选、元数据和访问状态仍不等于科学证据。
 
+候选身份另有一个不改写检索历史的对账层。先建立 `cosmatter.candidate-duplicate-queue/v1`；完全一致的规范化 DOI 可自动建立 canonical/alias，只有题名相同、DOI 不完整或 DOI 冲突时只能进入人工待对账队列：
+
+```powershell
+.\cosmatter.ps1 build-candidate-duplicate-queue --run-id YOUR_RUN
+.\cosmatter.ps1 create-candidate-duplicate-review-template --run-id YOUR_RUN --output D:\private-review\candidate-duplicates.json
+# 在私有环境完成全部待审组、改为 human_reviewed_candidate_duplicate_identity_decisions 后：
+.\cosmatter.ps1 record-candidate-duplicate-reconciliation --run-id YOUR_RUN --input D:\private-review\candidate-duplicates.json
+.\cosmatter.ps1 export-ui --run-id YOUR_RUN
+```
+
+人工决定只能是 `same_work`、`distinct_works` 或 `unresolved`，并须使用固定理由码。模板不复制题名；运行内对账只保存候选 ID、状态、哈希绑定与计数修订史。标题相同从不自动认定为同一文献，对账结果也不是科学证据。
+
 如需可选地补全当前全部候选，而不仅是已纳入全文的候选，可显式追加 `--all-candidates`。每次仍最多处理 12 条，重复同一命令会按候选顺序跳过当前指纹下已记录项并继续；已有 DOI 的候选不会再次发送标题。累计工件只追加新文献记录，不会让后续批次覆盖既有解析或冲突，输出的 `remaining_document_count` 与 `complete` 可用于断点验收。
 
 已确认的本地 Sciverse 上下文可用 `prepare-sciverse-context-review` 生成运行目录外的私有待审池。该步骤会复核回执、文献、offset、内容哈希和字符数，不调用网络；输出仍不是 Source Map 或证据。随后可创建不含原文的人工选段模板，并用 `record-sciverse-context-source-map` 将经哈希复核的精确短段落写成 Source Map；受委托自动试点必须显式加开关，且其 Source Map 不能进入正式材料事实链。
