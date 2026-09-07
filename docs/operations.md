@@ -150,6 +150,14 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 
 路线不会再用含混的 `authorized` 表示正文状态：`provider_advertised` 只是上游声明，`confirmed` 表示当前候选指纹下本次读取成功，`failed_or_expired` 表示安全失败或旧确认已经失效，`metadata_only` 表示没有全文声明。运行目录只保存哈希确认、回执 ID、UTC 确认时间或固定失败码；正文仍只写入用户指定的运行目录外新文件。
 
+将该本地上下文转换为仍位于运行目录外的私有待审片段池：
+
+```powershell
+.\cosmatter.ps1 prepare-sciverse-context-review --run-id bfo_live_001 --document-id DOCUMENT_ID --offset 0 --input D:\private-review\context.md --output D:\private-review\context-pool.json
+```
+
+只有候选指纹、成功确认、提供商回执、文献、offset、内容哈希和字符数完全一致才会生成池。该命令不调用网络；池最多 48 段、每段最多 500 字符，并明确标记为未审阅且不是 Source Map。当前仍须等待后续选段适配器，不能用该池绕过正式来源定位门禁。
+
 ## 4. 录入可定位证据并生成交付物
 
 证据草稿由已获授权的内容提取流程产生，至少含有 `claim`、`stance`、材料、性质、

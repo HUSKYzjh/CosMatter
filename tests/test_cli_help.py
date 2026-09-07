@@ -24,6 +24,16 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("1-10", output.getvalue())
         self.assertIn("1-12", output.getvalue())
 
+    def test_sciverse_context_review_help_requires_exact_offset_and_private_paths(self) -> None:
+        output = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, contextlib.redirect_stdout(output):
+            main(["prepare-sciverse-context-review", "--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("exact non-negative character offset", output.getvalue())
+        self.assertIn("outside the", output.getvalue())
+        self.assertIn("mission run", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

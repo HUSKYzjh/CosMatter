@@ -185,6 +185,17 @@ cd CosMatter
 
 对已筛选候选执行 `sciverse-read-context` 时，成功会更新 `content_access_confirmations.json` 的内容哈希、回执 ID 与 UTC 确认时间；上游配置或请求失败只写固定原因码，不保存错误正文、输出路径或原始响应。随后重建阅读路线，才能把相应候选显示为 `confirmed` 或 `failed_or_expired`。
 
+确认后的本地上下文还可进入私有待审池：
+
+```powershell
+.\cosmatter.ps1 prepare-sciverse-context-review `
+  --run-id bfo_001 --document-id DOCUMENT_ID --offset 0 `
+  --input D:\private-review\context.md `
+  --output D:\private-review\context-pool.json
+```
+
+命令会再次核对候选指纹、回执 ID、文献哈希、精确 offset、内容哈希和字符数，并把文本切成最多 48 个、每段最多 500 字符的候选。输入与池都必须位于运行目录外；运行事件只保存文献 ID、offset 和片段计数。该池仍是 `not_source_map`，不能直接进入事实或证据链。
+
 **受委托自动试点例外：** 当用户明确授权仅为跑通链路时，可使用 `record-automated-trial-screening --include-document-id <精确候选 ID>`，并在 `sciverse-read-context`、`mineru-submit-url` 和 `record-source-map` 上同时显式加 `--allow-delegated-automated-trial`。该路径将未选候选保留为 `needs_metadata_review`，工件一律标记为 `delegated_automated_trial_*_not_scientific_evidence`，与人工筛选文件分开存储；它**不能**进入正式材料事实、证据卡、融合、报告或提交包。
 
 自动试点的 Source Map 只能由 `create-automated-trial-source-map-selection` 从私有 MinerU 候选池的精确 `segment_id` 构建；随后 `record-automated-trial-fact-audit` 可记录逐条的 `directly_supported`、`qualified_by_source` 或 `not_supported` 判断。该审核绑定 Source Map 摘录哈希，但不是人工审核，也不产生正式 `material_facts`。

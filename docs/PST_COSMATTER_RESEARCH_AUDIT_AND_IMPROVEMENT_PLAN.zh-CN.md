@@ -113,8 +113,9 @@ OCBA/MOCBA 分配独立复算预算
 - 阅读路线先升级到 schema 1.1 投影 DOI/入选信号，现进一步升级到 schema 1.2 投影正文访问三态；旧版 1.0/1.1 路线可只读升级，且不会凭空生成筛选理由或读取确认。
 - `content_access_confirmations.json` 升级到 schema 1.1：成功读取保存内容哈希、回执 ID 和 UTC 确认时间；失败只保存固定安全原因码。候选集指纹改变时，旧确认在路线中降为 `failed_or_expired`。
 - 两个真实试点重建后，每条 12 项路线均为 `confirmed=3, provider_advertised=9`；算法路线仍保留 1 条反例，物理路线仍保留 2 条反例。未实际读取的候选不再显示为 confirmed。
+- 新增 `prepare-sciverse-context-review`：只有文献 ID、当前候选指纹、读取回执、offset、内容 SHA-256 和字符数全部一致时，才会把运行目录外的私有上下文切成最多 48 个、每段最多 500 字符的待审片段。6/6 个真实确认上下文已唯一匹配并生成 6 个私有审阅池，共 104 个候选片段。
 - 两个试点在新增补全工件和 UI 导出后再次通过运行关系审计；敏感工件审计仍为 `finding_category_count=0`。
-- `sciverse-read-context --help` 已显示 `limit=200–4000` 与非负 offset。CLI/MCP/UI 共用参数 schema、全部候选 DOI 覆盖和 Sciverse 上下文审阅池仍未完成，不能据此关闭全部 P0/P1。
+- `sciverse-read-context --help` 已显示 `limit=200–4000` 与非负 offset。CLI/MCP/UI 共用参数 schema、全部候选 DOI 覆盖，以及从 Sciverse 私有池到正式/委托 Source Map 的选段适配器仍未完成，不能据此关闭全部 P0/P1。
 
 ## 5. 后续改进计划
 
@@ -146,6 +147,8 @@ OCBA/MOCBA 分配独立复算预算
 新增 `prepare-sciverse-context-review`：只接收已确认的上下文回执，将私有内容切成有界候选段，并生成与 `document_id + offset + content_hash` 绑定的审阅池。自动试点只能建立 `delegated_automated_trial_source_map`；人工版本仍需显式选择和确认。
 
 验收：错配文献、offset、哈希、过期确认或运行 ID 时全部拒绝；运行目录不出现上下文正文和私有路径；委托 Source Map 不能进入正式事实或报告。
+
+进度：私有审阅池入口及错 offset、篡改文本、过期确认、路径隔离回归已完成，两个试点 6/6 个上下文已生成池并保持敏感审计零发现。下一步仍需实现池内精确段落选择到 Source Map 的哈希绑定适配器；当前私有池明确标为 `not_source_map`，不会解锁事实、EvidenceCard 或报告。
 
 ### P2：参数契约与拒绝遥测
 

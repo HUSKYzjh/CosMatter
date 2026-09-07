@@ -27,7 +27,7 @@ from .gap_evaluation import GapReviewEvaluationError, gap_evaluation_from_assess
 from .evidence_quality_evaluation import EvidenceQualityEvaluationError, evidence_quality_evaluation_from_assessments, evidence_quality_review_template, load_reviewed_evidence_quality_assessment, write_evidence_quality_evaluation, write_evidence_quality_review_template
 from .evidence_maturity_registry import EvidenceMaturityRegistryError, audit_evidence_maturity_registry_against_runs, load_evidence_maturity_registry, write_evidence_maturity_registry, write_evidence_maturity_registry_audit
 from .report_audit import ReportAuditError, audit_report_evidence, write_report_evidence_audit
-from .provider_receipts import ProviderReceiptError, append_provider_receipt, audit_candidate_receipt_links, audit_source_parse_receipt_links, mineru_output_receipt, mineru_task_receipt, sciverse_content_receipt, sciverse_search_receipt, write_candidate_receipt_audit, write_source_parse_receipt_audit
+from .provider_receipts import ProviderReceiptError, append_provider_receipt, audit_candidate_receipt_links, audit_source_parse_receipt_links, load_provider_receipts, mineru_output_receipt, mineru_task_receipt, sciverse_content_receipt, sciverse_search_receipt, write_candidate_receipt_audit, write_source_parse_receipt_audit
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, write_evidence_provenance_audit
 from .facilities import DiscrepancyMatrix, DiscrepancyRow, FacilityGateError, condition_differential, write_condition_matrix
@@ -105,6 +105,7 @@ from .aiida_mock_trial import AiidaMockTrialError, advance_mock_process, aiida_m
 from .ising_benchmark import IsingBenchmarkError, build_ising_benchmark_plan, propose_ising_followups, run_ising_benchmark, write_ising_followups, write_ising_plan, write_ising_result
 from .ising_summary import IsingSummaryError, ising_benchmark_summary, write_ising_benchmark_summary
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
+from .sciverse_context_review import SciverseContextReviewError, prepare_sciverse_context_review_pool
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _last_recorded_state, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
 
 
@@ -3080,6 +3081,60 @@ def command_create_gold_standard_template(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_prepare_sciverse_context_review(args: argparse.Namespace) -> int:
+    """Create a private candidate pool from one confirmed local Sciverse context file."""
+    run_dir = _run_dir(args.run_id)
+    input_path = Path(args.input)
+    output_path = Path(args.output)
+    try:
+        if _path_is_within(input_path, run_dir) or _path_is_within(output_path, run_dir):
+            raise SciverseContextReviewError("Sciverse context input and private review pool must remain outside the mission run")
+        mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+        candidates = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate history")
+        delegated_trial = bool(getattr(args, "allow_delegated_automated_trial", False))
+        require_document_screened_for_fulltext(
+            run_dir,
+            mission.mission_id,
+            candidates,
+            args.document_id,
+            allow_delegated_automated_trial=delegated_trial,
+        )
+        access = load_content_access(run_dir / "content_access_confirmations.json", mission.mission_id)
+        if access is None:
+            raise SciverseContextReviewError("Sciverse context review requires a content access confirmation")
+        pool = prepare_sciverse_context_review_pool(
+            mission_id=mission.mission_id,
+            candidate_payload=candidates,
+            content_access=access,
+            provider_receipts=load_provider_receipts(run_dir),
+            document_id=args.document_id,
+            offset=args.offset,
+            input_path=input_path,
+            output_path=output_path,
+        )
+    except (OSError, UiExportError, CandidateScreeningError, ContentAccessError, ProviderReceiptError, SciverseContextReviewError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="private_sciverse_context_review_pool_prepared",
+        actor="delegated_automated_trial_reviewer" if delegated_trial else "source_reviewer",
+        state=MissionState.EXTRACT,
+        payload={
+            "document_id": args.document_id,
+            "candidate_segment_count": len(pool["candidate_segments"]),
+            "offset": args.offset,
+            "trust_status": pool["trust_status"],
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "document_id": args.document_id,
+        "candidate_segment_count": len(pool["candidate_segments"]),
+        "trust_status": pool["trust_status"],
+    })
+    return 0
+
+
 def command_create_bfo_question_set_review_template(args: argparse.Namespace) -> int:
     """Create BFO question proposals with every human-review field blank."""
     try:
@@ -3539,6 +3594,14 @@ def build_parser() -> argparse.ArgumentParser:
     content.add_argument("--output", required=True, help="new local .txt/.md review file outside the run directory; content is never stored in run artifacts")
     content.add_argument("--allow-delegated-automated-trial", action="store_true", help="permit separately recorded delegated automated trial screening; preserves a non-human content-access trust status")
     content.set_defaults(handler=command_sciverse_read_context)
+    context_review = commands.add_parser("prepare-sciverse-context-review", help="build a private review pool from one confirmed Sciverse content window without storing text in the run")
+    context_review.add_argument("--run-id", required=True)
+    context_review.add_argument("--document-id", required=True)
+    context_review.add_argument("--offset", type=int, required=True, help="exact non-negative character offset used by the confirmed content read")
+    context_review.add_argument("--input", required=True, help="confirmed private .txt/.md context file outside the mission run")
+    context_review.add_argument("--output", required=True, help="new private .json review-pool path outside the mission run")
+    context_review.add_argument("--allow-delegated-automated-trial", action="store_true", help="use separately recorded delegated trial screening without creating formal evidence")
+    context_review.set_defaults(handler=command_prepare_sciverse_context_review)
     receipt_audit = commands.add_parser("audit-candidate-receipts", help="verify provider receipt links retained by retrieval candidates without reading provider payloads")
     receipt_audit.add_argument("--run-id", required=True)
     receipt_audit.set_defaults(handler=command_audit_candidate_receipts)
