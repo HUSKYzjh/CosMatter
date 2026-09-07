@@ -14,7 +14,8 @@
   - [x] 为已筛选候选增加 Crossref/OpenAlex 冲突安全 DOI 补全和结构化入选信号；两个真实 PST 试点共 6/6 条解析成功，Crossref HTTP 406 契约问题已修复。
   - [x] 将正文访问改为 `provider_advertised` / `confirmed` / `failed_or_expired` 三态（另有 `metadata_only`），并在两个真实试点验证各 3 条已确认读取；失败只留安全原因码。
   - [x] 增加 Sciverse 已确认上下文到私有有界审阅池的哈希绑定入口；两个真实试点 6/6 个上下文已生成 6 个池，共 104 个待审片段，运行目录敏感审计保持零发现。
-  - [ ] 按 [`PST CosMatter 试用审计与改进计划`](docs/PST_COSMATTER_RESEARCH_AUDIT_AND_IMPROVEMENT_PLAN.zh-CN.md) 继续完成全部候选的可选元数据覆盖、同源参数 schema，以及 Sciverse 私有池到正式/委托 Source Map 的选段适配器。
+  - [x] 增加 Sciverse 私有池到人工/委托 Source Map 的哈希绑定选段适配器；两个真实试点已记录 6 个明确标为非科学证据的委托 Source Map，正式材料事实门禁仍关闭，运行关系与敏感审计均通过。
+  - [ ] 按 [`PST CosMatter 试用审计与改进计划`](docs/PST_COSMATTER_RESEARCH_AUDIT_AND_IMPROVEMENT_PLAN.zh-CN.md) 继续完成全部候选的可选元数据覆盖，以及 CLI/MCP/UI 同源参数 schema。
   - [ ] 实现 MRMT 计划型核心，并在相同合成预算下与随机、固定基数 EDA、短程有序引导进行消融；真实性质排名保持 `property_prediction_count = 0`。
 
 ## UI / HTML 界面

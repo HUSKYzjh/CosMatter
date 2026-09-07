@@ -22,6 +22,11 @@ _INPUT_FIELDS = {"document_id", "segments"}
 _INPUT_SEGMENT_FIELDS = {"segment_id", "locator", "kind", "quote"}
 _MAP_FIELDS = {"schema_version", "mission_id", "trust_status", "document_id", "provider", "task_id_sha256", "segments"}
 _POOL_BOUND_MAP_FIELDS = _MAP_FIELDS | {"source_markdown_sha256"}
+_SCIVERSE_CONTEXT_MAP_FIELDS = {
+    "schema_version", "mission_id", "trust_status", "document_id", "provider",
+    "candidate_fingerprint", "receipt_id", "content_sha256", "content_offset",
+    "content_limit", "segments",
+}
 _MAP_SEGMENT_FIELDS = {"segment_id", "locator", "kind", "quote", "quote_sha256"}
 _KINDS = {"paragraph", "table", "formula", "figure_caption"}
 
@@ -83,6 +88,48 @@ def source_map_from_pool_review(
     )
     result["schema_version"] = "1.1"
     result["source_markdown_sha256"] = source_markdown_sha256
+    _validate_source_map(result)
+    return result
+
+
+def source_map_from_sciverse_context_review(
+    *,
+    mission_id: str,
+    document_id: str,
+    selection: object,
+    candidate_fingerprint: str,
+    receipt_id: str,
+    content_sha256: str,
+    content_offset: int,
+    content_limit: int,
+    trust_status: str = HUMAN_SOURCE_MAP_TRUST_STATUS,
+) -> dict[str, Any]:
+    """Create a Source Map from a current hash-bound Sciverse context review."""
+    if not isinstance(mission_id, str) or not mission_id.strip() or not isinstance(document_id, str) or not document_id.strip():
+        raise SourceMapError("mission_id and document_id must be nonempty")
+    if trust_status not in {HUMAN_SOURCE_MAP_TRUST_STATUS, AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS}:
+        raise SourceMapError("source map trust status is invalid")
+    if not _sha256(candidate_fingerprint) or not _sha256(content_sha256):
+        raise SourceMapError("Sciverse Source Map content binding is invalid")
+    if not isinstance(receipt_id, str) or not receipt_id.startswith("receipt_") or len(receipt_id) > 200:
+        raise SourceMapError("Sciverse Source Map receipt identity is invalid")
+    if not isinstance(content_offset, int) or isinstance(content_offset, bool) or content_offset < 0:
+        raise SourceMapError("Sciverse Source Map offset is invalid")
+    if not isinstance(content_limit, int) or isinstance(content_limit, bool) or not 200 <= content_limit <= 4_000:
+        raise SourceMapError("Sciverse Source Map limit is invalid")
+    result = {
+        "schema_version": "1.2",
+        "mission_id": mission_id.strip(),
+        "trust_status": trust_status,
+        "document_id": document_id.strip(),
+        "provider": "sciverse",
+        "candidate_fingerprint": candidate_fingerprint,
+        "receipt_id": receipt_id,
+        "content_sha256": content_sha256,
+        "content_offset": content_offset,
+        "content_limit": content_limit,
+        "segments": _segments_from_selection(selection, document_id),
+    }
     _validate_source_map(result)
     return result
 
@@ -205,19 +252,40 @@ def _validate_source_map(payload: object) -> None:
     if not isinstance(payload, dict):
         raise SourceMapError("source map has unsupported or missing fields")
     schema_version = payload.get("schema_version")
-    expected_fields = _MAP_FIELDS if schema_version == SOURCE_MAP_SCHEMA_VERSION else _POOL_BOUND_MAP_FIELDS if schema_version == "1.1" else None
+    expected_fields = (
+        _MAP_FIELDS if schema_version == SOURCE_MAP_SCHEMA_VERSION
+        else _POOL_BOUND_MAP_FIELDS if schema_version == "1.1"
+        else _SCIVERSE_CONTEXT_MAP_FIELDS if schema_version == "1.2"
+        else None
+    )
     if expected_fields is None or set(payload) != expected_fields:
         raise SourceMapError("source map has unsupported or missing fields")
     if payload.get("trust_status") not in {HUMAN_SOURCE_MAP_TRUST_STATUS, AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS}:
         raise SourceMapError("source map schema or trust status is invalid")
     if schema_version == "1.1":
         fingerprint = payload.get("source_markdown_sha256")
-        if not isinstance(fingerprint, str) or len(fingerprint) != 64 or any(char not in "0123456789abcdef" for char in fingerprint):
+        if not _sha256(fingerprint):
             raise SourceMapError("source map private review-pool fingerprint is invalid")
-    if payload.get("provider") != "mineru" or not all(isinstance(payload.get(key), str) and payload[key].strip() for key in ("mission_id", "document_id", "task_id_sha256")):
-        raise SourceMapError("source map identity is invalid")
-    if len(payload["task_id_sha256"]) != 64 or any(character not in "0123456789abcdef" for character in payload["task_id_sha256"]):
-        raise SourceMapError("source map task fingerprint is invalid")
+    if schema_version == "1.2":
+        if (
+            payload.get("provider") != "sciverse"
+            or not all(isinstance(payload.get(key), str) and payload[key].strip() for key in ("mission_id", "document_id", "receipt_id"))
+            or not payload["receipt_id"].startswith("receipt_")
+            or not _sha256(payload.get("candidate_fingerprint"))
+            or not _sha256(payload.get("content_sha256"))
+            or not isinstance(payload.get("content_offset"), int)
+            or isinstance(payload["content_offset"], bool)
+            or payload["content_offset"] < 0
+            or not isinstance(payload.get("content_limit"), int)
+            or isinstance(payload["content_limit"], bool)
+            or not 200 <= payload["content_limit"] <= 4_000
+        ):
+            raise SourceMapError("Sciverse source map identity or content binding is invalid")
+    else:
+        if payload.get("provider") != "mineru" or not all(isinstance(payload.get(key), str) and payload[key].strip() for key in ("mission_id", "document_id", "task_id_sha256")):
+            raise SourceMapError("source map identity is invalid")
+        if not _sha256(payload["task_id_sha256"]):
+            raise SourceMapError("source map task fingerprint is invalid")
     segments = payload.get("segments")
     if not isinstance(segments, list) or not 1 <= len(segments) <= _MAX_SEGMENTS:
         raise SourceMapError("source map segments are invalid")
@@ -232,3 +300,7 @@ def _validate_source_map(payload: object) -> None:
         if hashlib.sha256(segment["quote"].encode("utf-8")).hexdigest() != segment["quote_sha256"]:
             raise SourceMapError("source map quote fingerprint does not match")
         identifiers.add(segment["segment_id"])
+
+
+def _sha256(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)

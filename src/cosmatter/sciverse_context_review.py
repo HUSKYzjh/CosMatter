@@ -16,7 +16,12 @@ from .content_access import ContentAccessError, content_access_states
 
 
 SCIVERSE_CONTEXT_REVIEW_POOL_SCHEMA_VERSION = "1.0"
+SCIVERSE_SOURCE_MAP_REVIEW_SCHEMA_VERSION = "1.0"
 _TRUST_STATUS = "private_unreviewed_sciverse_context_candidate_pool_not_source_map"
+_BLANK_REVIEW_STATUS = "blank_human_sciverse_source_map_pool_selection_template"
+_HUMAN_REVIEW_STATUS = "human_reviewed_sciverse_source_map_pool_selection"
+_BLANK_TRIAL_STATUS = "blank_delegated_automated_trial_sciverse_source_map_pool_selection_template"
+_TRIAL_REVIEW_STATUS = "delegated_automated_trial_sciverse_source_map_pool_selection"
 _MAX_INPUT_BYTES = 32_000
 _MAX_CANDIDATES = 48
 _MAX_QUOTE_CHARS = 500
@@ -91,6 +96,151 @@ def load_sciverse_context_review_pool(path: Path) -> dict[str, Any]:
         raise SciverseContextReviewError("private Sciverse context review pool cannot be read") from error
     _validate_pool(payload)
     return payload
+
+
+def require_current_sciverse_context_review_pool(
+    pool: object,
+    *,
+    mission_id: str,
+    candidate_payload: object,
+    content_access: object,
+    provider_receipts: object,
+    document_id: str,
+) -> dict[str, Any]:
+    """Rebind a private pool to the current candidates and successful receipt."""
+    _validate_pool(pool)
+    if not isinstance(pool, dict) or pool.get("mission_id") != mission_id or pool.get("document_id") != document_id:
+        raise SciverseContextReviewError("Sciverse context review pool belongs to a different mission or document")
+    confirmation, receipt = _confirmed_receipt(
+        mission_id=mission_id,
+        candidate_payload=candidate_payload,
+        content_access=content_access,
+        provider_receipts=provider_receipts,
+        document_id=document_id,
+        offset=pool["offset"],
+    )
+    expected = {
+        "candidate_fingerprint": content_access["candidate_fingerprint"],
+        "receipt_id": receipt["receipt_id"],
+        "content_sha256": confirmation["content_sha256"],
+        "confirmed_at": confirmation["confirmed_at"],
+        "limit": receipt["limit"],
+    }
+    if any(pool.get(field) != value for field, value in expected.items()):
+        raise SciverseContextReviewError("Sciverse context review pool no longer matches its confirmed content binding")
+    return pool
+
+
+def sciverse_source_map_review_template(pool: object, *, delegated_automated_trial: bool = False) -> dict[str, Any]:
+    """Create a quote-free, hash-bound selection template for one private pool."""
+    _validate_pool(pool)
+    return {
+        "schema_version": SCIVERSE_SOURCE_MAP_REVIEW_SCHEMA_VERSION,
+        "mission_id": pool["mission_id"],
+        "candidate_fingerprint": pool["candidate_fingerprint"],
+        "document_id": pool["document_id"],
+        "trust_status": _BLANK_TRIAL_STATUS if delegated_automated_trial else _BLANK_REVIEW_STATUS,
+        "receipt_id": pool["receipt_id"],
+        "content_sha256": pool["content_sha256"],
+        "offset": pool["offset"],
+        "limit": pool["limit"],
+        "segments": [
+            {
+                "segment_id": item["segment_id"],
+                "quote_sha256": hashlib.sha256(item["quote"].encode("utf-8")).hexdigest(),
+                "selected": False,
+                "reason": "",
+            }
+            for item in pool["candidate_segments"]
+        ],
+    }
+
+
+def write_sciverse_source_map_review(path: Path, review: object, *, allow_blank: bool, delegated_automated_trial: bool = False) -> Path:
+    """Write a new quote-free template or completed private selection."""
+    _validate_source_map_review(review, allow_blank=allow_blank, delegated_automated_trial=delegated_automated_trial)
+    if path.suffix.casefold() != ".json":
+        raise SciverseContextReviewError("Sciverse Source Map review must use a .json filename")
+    if path.exists():
+        raise SciverseContextReviewError("Sciverse Source Map review already exists and will not be overwritten")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(review, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError as error:
+        raise SciverseContextReviewError("Sciverse Source Map review cannot be written") from error
+    return path
+
+
+def sciverse_source_map_selection_from_review(
+    *,
+    pool: object,
+    review: object,
+    delegated_automated_trial: bool = False,
+) -> dict[str, Any]:
+    """Resolve exact selected IDs back to private excerpts after all hashes match."""
+    _validate_pool(pool)
+    _validate_source_map_review(review, allow_blank=False, delegated_automated_trial=delegated_automated_trial)
+    if not isinstance(pool, dict) or not isinstance(review, dict):
+        raise SciverseContextReviewError("Sciverse Source Map pool or review is invalid")
+    binding_fields = (
+        "mission_id", "candidate_fingerprint", "document_id", "receipt_id",
+        "content_sha256", "offset", "limit",
+    )
+    if any(review[field] != pool[field] for field in binding_fields):
+        raise SciverseContextReviewError("Sciverse Source Map review does not match its private pool")
+    candidates = {item["segment_id"]: item for item in pool["candidate_segments"]}
+    if len(review["segments"]) != len(candidates) or {item["segment_id"] for item in review["segments"]} != set(candidates):
+        raise SciverseContextReviewError("Sciverse Source Map review must retain every pool candidate identifier")
+    selected = [item for item in review["segments"] if item["selected"]]
+    if not 1 <= len(selected) <= 12:
+        raise SciverseContextReviewError("Sciverse Source Map review must select 1 to 12 segments")
+    for item in review["segments"]:
+        candidate = candidates.get(item["segment_id"])
+        expected_hash = hashlib.sha256(candidate["quote"].encode("utf-8")).hexdigest() if candidate else None
+        if item["quote_sha256"] != expected_hash:
+            raise SciverseContextReviewError("Sciverse Source Map candidate quote hash does not match")
+        if item["selected"] and not item["reason"].strip():
+            raise SciverseContextReviewError("selected Sciverse Source Map segments require a review reason")
+    return {
+        "document_id": pool["document_id"],
+        "segments": [
+            {
+                "segment_id": candidates[item["segment_id"]]["segment_id"],
+                "locator": candidates[item["segment_id"]]["locator"],
+                "kind": candidates[item["segment_id"]]["kind"],
+                "quote": candidates[item["segment_id"]]["quote"],
+            }
+            for item in selected
+        ],
+    }
+
+
+def sciverse_automated_trial_selection(pool: object, segment_ids: object) -> dict[str, Any]:
+    """Create an explicit non-scientific selection for a delegated route test."""
+    _validate_pool(pool)
+    if (
+        not isinstance(segment_ids, list)
+        or not 1 <= len(segment_ids) <= 12
+        or any(not isinstance(item, str) or not item for item in segment_ids)
+        or len(set(segment_ids)) != len(segment_ids)
+    ):
+        raise SciverseContextReviewError(
+            "automated trial Sciverse Source Map selection requires one to twelve unique segment IDs"
+        )
+    review = sciverse_source_map_review_template(pool, delegated_automated_trial=True)
+    known_ids = {item["segment_id"] for item in review["segments"]}
+    if any(identifier not in known_ids for identifier in segment_ids):
+        raise SciverseContextReviewError(
+            "automated trial Sciverse Source Map selection contains an unknown pool segment"
+        )
+    selected = set(segment_ids)
+    for item in review["segments"]:
+        if item["segment_id"] in selected:
+            item["selected"] = True
+            item["reason"] = "selected_for_delegated_pipeline_validation_not_scientific_support"
+    review["trust_status"] = _TRIAL_REVIEW_STATUS
+    _validate_source_map_review(review, allow_blank=False, delegated_automated_trial=True)
+    return review
 
 
 def _confirmed_receipt(
@@ -257,3 +407,47 @@ def _validate_pool(payload: object) -> None:
         if item["segment_id"] in seen or item["kind"] != "paragraph" or len(item["quote"]) > _MAX_QUOTE_CHARS or not item["locator"].startswith("sciverse_char:"):
             raise SciverseContextReviewError("Sciverse context review segment boundary is invalid")
         seen.add(item["segment_id"])
+
+
+def _validate_source_map_review(payload: object, *, allow_blank: bool, delegated_automated_trial: bool) -> None:
+    fields = {
+        "schema_version", "mission_id", "candidate_fingerprint", "document_id",
+        "trust_status", "receipt_id", "content_sha256", "offset", "limit", "segments",
+    }
+    segment_fields = {"segment_id", "quote_sha256", "selected", "reason"}
+    if not isinstance(payload, dict) or set(payload) != fields:
+        raise SciverseContextReviewError("Sciverse Source Map review fields are invalid")
+    expected_status = (
+        _BLANK_TRIAL_STATUS if allow_blank and delegated_automated_trial
+        else _TRIAL_REVIEW_STATUS if delegated_automated_trial
+        else _BLANK_REVIEW_STATUS if allow_blank
+        else _HUMAN_REVIEW_STATUS
+    )
+    if payload.get("schema_version") != SCIVERSE_SOURCE_MAP_REVIEW_SCHEMA_VERSION or payload.get("trust_status") != expected_status:
+        raise SciverseContextReviewError("Sciverse Source Map review schema or trust status is invalid")
+    for field in ("mission_id", "candidate_fingerprint", "document_id", "receipt_id", "content_sha256"):
+        if not isinstance(payload.get(field), str) or not payload[field].strip():
+            raise SciverseContextReviewError("Sciverse Source Map review identity is invalid")
+    for field in ("candidate_fingerprint", "content_sha256"):
+        if len(payload[field]) != 64 or any(char not in "0123456789abcdef" for char in payload[field]):
+            raise SciverseContextReviewError("Sciverse Source Map review hashes are invalid")
+    if not isinstance(payload.get("offset"), int) or payload["offset"] < 0 or not isinstance(payload.get("limit"), int) or not 200 <= payload["limit"] <= 4_000:
+        raise SciverseContextReviewError("Sciverse Source Map review range is invalid")
+    rows = payload.get("segments")
+    if not isinstance(rows, list) or not 1 <= len(rows) <= _MAX_CANDIDATES:
+        raise SciverseContextReviewError("Sciverse Source Map review segments are invalid")
+    seen: set[str] = set()
+    for item in rows:
+        if not isinstance(item, dict) or set(item) != segment_fields:
+            raise SciverseContextReviewError("Sciverse Source Map review segment fields are invalid")
+        segment_id = item.get("segment_id")
+        digest = item.get("quote_sha256")
+        if not isinstance(segment_id, str) or not segment_id or segment_id in seen:
+            raise SciverseContextReviewError("Sciverse Source Map review segment identity is invalid")
+        if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            raise SciverseContextReviewError("Sciverse Source Map review quote hash is invalid")
+        if not isinstance(item.get("selected"), bool) or not isinstance(item.get("reason"), str) or len(item["reason"]) > 500:
+            raise SciverseContextReviewError("Sciverse Source Map review decision is invalid")
+        if allow_blank and (item["selected"] or item["reason"]):
+            raise SciverseContextReviewError("blank Sciverse Source Map review cannot contain decisions")
+        seen.add(segment_id)

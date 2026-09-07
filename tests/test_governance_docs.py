@@ -71,7 +71,9 @@ class GovernanceDocumentationTests(unittest.TestCase):
             "provider_advertised → confirmed → failed/expired",
             "prepare-sciverse-context-review",
             "property_prediction_count = 0",
-            "不是人工 Source Map",
+            "不是人工审核结果",
+            "6 个委托 Source Map",
+            "正式材料事实模板会拒绝它们",
             "敏感工件发现类别",
         ):
             self.assertIn(required, audit)

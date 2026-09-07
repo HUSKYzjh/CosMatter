@@ -73,7 +73,7 @@ from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError
 from .mineru_local_review import MinerULocalReviewError, load_mineru_markdown_review_pool, prepare_mineru_markdown_review_pool, source_map_pool_review_template, source_map_selection_from_pool_review, write_source_map_pool_review_selection, write_source_map_pool_review_template
 from .mcp_server import serve_stdio
 from .source_parse import SourceParseArtifactError, load_source_parse_tasks, migrate_legacy_source_parse_task_ids, private_task_id_for_document, record_source_parse_task, task_for_document, update_source_parse_task
-from .source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_pool_review, source_map_from_review, write_source_map_for_document
+from .source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_pool_review, source_map_from_review, source_map_from_sciverse_context_review, write_source_map_for_document
 from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexRequestError
 from .relation_expansion import RelationExpansionError, build_relation_expansion, write_relation_expansion
@@ -105,7 +105,7 @@ from .aiida_mock_trial import AiidaMockTrialError, advance_mock_process, aiida_m
 from .ising_benchmark import IsingBenchmarkError, build_ising_benchmark_plan, propose_ising_followups, run_ising_benchmark, write_ising_followups, write_ising_plan, write_ising_result
 from .ising_summary import IsingSummaryError, ising_benchmark_summary, write_ising_benchmark_summary
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
-from .sciverse_context_review import SciverseContextReviewError, prepare_sciverse_context_review_pool
+from .sciverse_context_review import SciverseContextReviewError, load_sciverse_context_review_pool, prepare_sciverse_context_review_pool, require_current_sciverse_context_review_pool, sciverse_automated_trial_selection, sciverse_source_map_review_template, sciverse_source_map_selection_from_review, write_sciverse_source_map_review
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _last_recorded_state, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
 
 
@@ -3135,6 +3135,162 @@ def command_prepare_sciverse_context_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def _current_sciverse_context_review(
+    args: argparse.Namespace,
+    *,
+    delegated_automated_trial: bool,
+) -> tuple[Path, MissionBrief, dict[str, object], dict[str, object]]:
+    """Load and revalidate a private Sciverse pool against current run state."""
+    run_dir = _run_dir(args.run_id)
+    pool_path = Path(args.review_pool)
+    if _path_is_within(pool_path, run_dir):
+        raise SciverseContextReviewError("private Sciverse review pool must remain outside the mission run")
+    mission = _mission_from_payload(_load_object(run_dir / "mission.json", "mission artifact"))
+    candidates = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate history")
+    require_document_screened_for_fulltext(
+        run_dir,
+        mission.mission_id,
+        candidates,
+        args.document_id,
+        allow_delegated_automated_trial=delegated_automated_trial,
+    )
+    access = load_content_access(run_dir / "content_access_confirmations.json", mission.mission_id)
+    if access is None:
+        raise SciverseContextReviewError("Sciverse Source Map review requires a content access confirmation")
+    pool = load_sciverse_context_review_pool(pool_path)
+    require_current_sciverse_context_review_pool(
+        pool,
+        mission_id=mission.mission_id,
+        candidate_payload=candidates,
+        content_access=access,
+        provider_receipts=load_provider_receipts(run_dir),
+        document_id=args.document_id,
+    )
+    return run_dir, mission, candidates, pool
+
+
+def command_create_sciverse_source_map_review_template(args: argparse.Namespace) -> int:
+    """Create a quote-free human selection template for one current private pool."""
+    output_path = Path(args.output)
+    try:
+        run_dir, _, _, pool = _current_sciverse_context_review(args, delegated_automated_trial=False)
+        if _path_is_within(output_path, run_dir):
+            raise SciverseContextReviewError("private Sciverse review template must remain outside the mission run")
+        template = sciverse_source_map_review_template(pool)
+        write_sciverse_source_map_review(output_path, template, allow_blank=True)
+    except (OSError, UiExportError, CandidateScreeningError, ContentAccessError, ProviderReceiptError, SciverseContextReviewError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="private_sciverse_source_map_review_template_created",
+        actor="source_reviewer",
+        state=MissionState.EXTRACT,
+        payload={
+            "document_id": args.document_id,
+            "candidate_segment_count": len(template["segments"]),
+            "trust_status": template["trust_status"],
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "document_id": args.document_id,
+        "candidate_segment_count": len(template["segments"]),
+        "trust_status": template["trust_status"],
+    })
+    return 0
+
+
+def command_create_automated_trial_sciverse_source_map_selection(args: argparse.Namespace) -> int:
+    """Create a quote-free, explicitly non-scientific delegated trial selection."""
+    output_path = Path(args.output)
+    try:
+        run_dir, _, _, pool = _current_sciverse_context_review(args, delegated_automated_trial=True)
+        if _path_is_within(output_path, run_dir):
+            raise SciverseContextReviewError("private Sciverse trial selection must remain outside the mission run")
+        selection = sciverse_automated_trial_selection(pool, args.segment_id)
+        write_sciverse_source_map_review(
+            output_path,
+            selection,
+            allow_blank=False,
+            delegated_automated_trial=True,
+        )
+    except (OSError, UiExportError, CandidateScreeningError, ContentAccessError, ProviderReceiptError, SciverseContextReviewError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    selected_count = sum(item["selected"] for item in selection["segments"])
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="delegated_automated_trial_sciverse_source_map_selection_created",
+        actor="delegated_automated_trial_reviewer",
+        state=MissionState.EXTRACT,
+        payload={
+            "document_id": args.document_id,
+            "selected_segment_count": selected_count,
+            "trust_status": selection["trust_status"],
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "document_id": args.document_id,
+        "selected_segment_count": selected_count,
+        "trust_status": selection["trust_status"],
+    })
+    return 0
+
+
+def command_record_sciverse_context_source_map(args: argparse.Namespace) -> int:
+    """Resolve a current private Sciverse selection into a bounded Source Map."""
+    input_path = Path(args.input)
+    delegated_trial = bool(getattr(args, "allow_delegated_automated_trial", False))
+    try:
+        run_dir, mission, _, pool = _current_sciverse_context_review(
+            args,
+            delegated_automated_trial=delegated_trial,
+        )
+        if _path_is_within(input_path, run_dir):
+            raise SciverseContextReviewError("private Sciverse reviewed selection must remain outside the mission run")
+        if load_source_map_for_document(run_dir, mission.mission_id, args.document_id) is not None:
+            raise SourceMapError("a Source Map already exists for this document and will not be overwritten")
+        review = json.loads(input_path.read_text(encoding="utf-8"))
+        resolved = sciverse_source_map_selection_from_review(
+            pool=pool,
+            review=review,
+            delegated_automated_trial=delegated_trial,
+        )
+        source_map = source_map_from_sciverse_context_review(
+            mission_id=mission.mission_id,
+            document_id=args.document_id,
+            selection=resolved,
+            candidate_fingerprint=pool["candidate_fingerprint"],
+            receipt_id=pool["receipt_id"],
+            content_sha256=pool["content_sha256"],
+            content_offset=pool["offset"],
+            content_limit=pool["limit"],
+            trust_status=(AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS if delegated_trial else HUMAN_SOURCE_MAP_TRUST_STATUS),
+        )
+        source_map_path = write_source_map_for_document(run_dir, source_map)
+    except (OSError, json.JSONDecodeError, UiExportError, CandidateScreeningError, ContentAccessError, ProviderReceiptError, SciverseContextReviewError, SourceMapError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type=("delegated_automated_trial_sciverse_source_map_recorded" if delegated_trial else "human_reviewed_sciverse_source_map_recorded"),
+        actor="delegated_automated_trial_reviewer" if delegated_trial else "source_reviewer",
+        state=MissionState.EXTRACT,
+        payload={
+            "document_id": args.document_id,
+            "segment_count": len(source_map["segments"]),
+            "trust_status": source_map["trust_status"],
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "document_id": args.document_id,
+        "segment_count": len(source_map["segments"]),
+        "source_map_path": str(source_map_path),
+        "trust_status": source_map["trust_status"],
+    })
+    return 0
+
+
 def command_create_bfo_question_set_review_template(args: argparse.Namespace) -> int:
     """Create BFO question proposals with every human-review field blank."""
     try:
@@ -3602,6 +3758,26 @@ def build_parser() -> argparse.ArgumentParser:
     context_review.add_argument("--output", required=True, help="new private .json review-pool path outside the mission run")
     context_review.add_argument("--allow-delegated-automated-trial", action="store_true", help="use separately recorded delegated trial screening without creating formal evidence")
     context_review.set_defaults(handler=command_prepare_sciverse_context_review)
+    sciverse_map_template = commands.add_parser("create-sciverse-source-map-review-template", help="create a quote-free human review template bound to one private Sciverse context pool")
+    sciverse_map_template.add_argument("--run-id", required=True)
+    sciverse_map_template.add_argument("--document-id", required=True)
+    sciverse_map_template.add_argument("--review-pool", required=True, help="current private Sciverse context review pool outside the mission run")
+    sciverse_map_template.add_argument("--output", required=True, help="new quote-free human review JSON outside the mission run")
+    sciverse_map_template.set_defaults(handler=command_create_sciverse_source_map_review_template)
+    sciverse_trial_selection = commands.add_parser("create-automated-trial-sciverse-source-map-selection", help="select private Sciverse pool segment IDs for an explicitly non-scientific delegated route test")
+    sciverse_trial_selection.add_argument("--run-id", required=True)
+    sciverse_trial_selection.add_argument("--document-id", required=True)
+    sciverse_trial_selection.add_argument("--review-pool", required=True, help="current private Sciverse context review pool outside the mission run")
+    sciverse_trial_selection.add_argument("--segment-id", action="append", required=True, help="pool segment identifier; repeat for up to 12 selections")
+    sciverse_trial_selection.add_argument("--output", required=True, help="new quote-free delegated selection JSON outside the mission run")
+    sciverse_trial_selection.set_defaults(handler=command_create_automated_trial_sciverse_source_map_selection)
+    sciverse_source_map = commands.add_parser("record-sciverse-context-source-map", help="record bounded excerpts resolved from a current private Sciverse review pool")
+    sciverse_source_map.add_argument("--run-id", required=True)
+    sciverse_source_map.add_argument("--document-id", required=True)
+    sciverse_source_map.add_argument("--review-pool", required=True, help="current private Sciverse context review pool outside the mission run")
+    sciverse_source_map.add_argument("--input", required=True, help="completed quote-free review JSON outside the mission run")
+    sciverse_source_map.add_argument("--allow-delegated-automated-trial", action="store_true", help="accept only an explicitly marked delegated trial selection and retain non-scientific trust")
+    sciverse_source_map.set_defaults(handler=command_record_sciverse_context_source_map)
     receipt_audit = commands.add_parser("audit-candidate-receipts", help="verify provider receipt links retained by retrieval candidates without reading provider payloads")
     receipt_audit.add_argument("--run-id", required=True)
     receipt_audit.set_defaults(handler=command_audit_candidate_receipts)

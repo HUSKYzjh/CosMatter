@@ -194,11 +194,11 @@ cd CosMatter
   --output D:\private-review\context-pool.json
 ```
 
-命令会再次核对候选指纹、回执 ID、文献哈希、精确 offset、内容哈希和字符数，并把文本切成最多 48 个、每段最多 500 字符的候选。输入与池都必须位于运行目录外；运行事件只保存文献 ID、offset 和片段计数。该池仍是 `not_source_map`，不能直接进入事实或证据链。
+命令会再次核对候选指纹、回执 ID、文献哈希、精确 offset、内容哈希和字符数，并把文本切成最多 48 个、每段最多 500 字符的候选。输入与池都必须位于运行目录外；运行事件只保存文献 ID、offset 和片段计数。该池仍是 `not_source_map`，不能直接进入事实或证据链。人工路径先用 `create-sciverse-source-map-review-template` 创建不含原文的模板，选择 1–12 个精确段 ID 并填写理由，再以 `record-sciverse-context-source-map` 解析回原短摘录；记录前会重新校验全部绑定，已有同文献 Source Map 时拒绝覆盖。
 
 **受委托自动试点例外：** 当用户明确授权仅为跑通链路时，可使用 `record-automated-trial-screening --include-document-id <精确候选 ID>`，并在 `sciverse-read-context`、`mineru-submit-url` 和 `record-source-map` 上同时显式加 `--allow-delegated-automated-trial`。该路径将未选候选保留为 `needs_metadata_review`，工件一律标记为 `delegated_automated_trial_*_not_scientific_evidence`，与人工筛选文件分开存储；它**不能**进入正式材料事实、证据卡、融合、报告或提交包。
 
-自动试点的 Source Map 只能由 `create-automated-trial-source-map-selection` 从私有 MinerU 候选池的精确 `segment_id` 构建；随后 `record-automated-trial-fact-audit` 可记录逐条的 `directly_supported`、`qualified_by_source` 或 `not_supported` 判断。该审核绑定 Source Map 摘录哈希，但不是人工审核，也不产生正式 `material_facts`。
+自动试点的 Source Map 只能从私有候选池的精确 `segment_id` 构建：MinerU 使用 `create-automated-trial-source-map-selection`，Sciverse 使用 `create-automated-trial-sciverse-source-map-selection`，后者再由带显式开关的 `record-sciverse-context-source-map` 记录。随后 `record-automated-trial-fact-audit` 可记录逐条的 `directly_supported`、`qualified_by_source` 或 `not_supported` 判断。该审核绑定 Source Map 摘录哈希，但不是人工审核，也不产生正式 `material_facts`。
 
 **实现取舍：** 此处借鉴了 [Sciverse Frontier Lens 的数据支持审计](https://github.com/Shannon4Science/sciverse-frontier-lens/blob/main/docs/DATA_SUPPORT_AUDIT.md)：模型输出只能是绑定来源的派生工件，不能新增证据实体或关系；上游失败保留为有类型的失败，不以模型猜测补齐。CosMatter 未接入该项目的代码、图谱或本地明文配置；本项目仍以 `.env`、私有全文区和上述人工门禁为边界。
 

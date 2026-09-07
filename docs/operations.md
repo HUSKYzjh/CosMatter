@@ -156,7 +156,16 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 .\cosmatter.ps1 prepare-sciverse-context-review --run-id bfo_live_001 --document-id DOCUMENT_ID --offset 0 --input D:\private-review\context.md --output D:\private-review\context-pool.json
 ```
 
-只有候选指纹、成功确认、提供商回执、文献、offset、内容哈希和字符数完全一致才会生成池。该命令不调用网络；池最多 48 段、每段最多 500 字符，并明确标记为未审阅且不是 Source Map。当前仍须等待后续选段适配器，不能用该池绕过正式来源定位门禁。
+只有候选指纹、成功确认、提供商回执、文献、offset、内容哈希和字符数完全一致才会生成池。该命令不调用网络；池最多 48 段、每段最多 500 字符，并明确标记为未审阅且不是 Source Map。必须再经过下面的哈希绑定选段步骤，不能用该池绕过正式来源定位门禁。
+
+创建不含原文的人工选段模板，人工在私有环境中选择 1–12 个 `segment_id`、填写理由并将信任状态改为 `human_reviewed_sciverse_source_map_pool_selection`，然后记录 Source Map：
+
+```powershell
+.\cosmatter.ps1 create-sciverse-source-map-review-template --run-id bfo_live_001 --document-id DOCUMENT_ID --review-pool D:\private-review\context-pool.json --output D:\private-review\context-selection.json
+.\cosmatter.ps1 record-sciverse-context-source-map --run-id bfo_live_001 --document-id DOCUMENT_ID --review-pool D:\private-review\context-pool.json --input D:\private-review\context-selection.json
+```
+
+仅为受控链路试点时，可用 `create-automated-trial-sciverse-source-map-selection --segment-id SEGMENT_ID` 创建明确标记的委托选择，并在记录命令追加 `--allow-delegated-automated-trial`。此路径会写入 `delegated_automated_trial_source_map_not_scientific_evidence`，正式材料事实、EvidenceCard 和报告门禁不会接受它。任一候选指纹、回执、内容哈希、段落哈希或文献标识变化都会拒绝；同一文献已有 Source Map 时不会覆盖。
 
 ## 4. 录入可定位证据并生成交付物
 

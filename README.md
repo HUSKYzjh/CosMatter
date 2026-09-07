@@ -70,7 +70,7 @@ python -m venv .venv
 
 补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。阅读路线显示规范化 DOI、允许列表内的入选信号，以及 `provider_advertised` / `confirmed` / `failed_or_expired` / `metadata_only` 正文状态；只有与当前候选指纹绑定的成功读取才显示为 `confirmed`。筛选、元数据和访问状态仍不等于科学证据。
 
-已确认的本地 Sciverse 上下文可用 `prepare-sciverse-context-review` 生成运行目录外的私有待审池。该步骤会复核回执、文献、offset、内容哈希和字符数，不调用网络；输出仍不是 Source Map 或证据。
+已确认的本地 Sciverse 上下文可用 `prepare-sciverse-context-review` 生成运行目录外的私有待审池。该步骤会复核回执、文献、offset、内容哈希和字符数，不调用网络；输出仍不是 Source Map 或证据。随后可创建不含原文的人工选段模板，并用 `record-sciverse-context-source-map` 将经哈希复核的精确短段落写成 Source Map；受委托自动试点必须显式加开关，且其 Source Map 不能进入正式材料事实链。
 
 该入口依次执行 Python 测试、前端类型检查与测试、DSH 发布/回放/配方门禁、七个本地 DSH 包测试和 `npm pack --dry-run`，最后检查 Git 空白错误。它不读取 `.env`，不调用任何提供商。如需指定解释器，可传入 `-Python C:\Python314\python.exe`；仅检查 Python 套件时可运行 `.\scripts\test-all.ps1`。完整通过时，最后单独输出 `OK - CosMatter full local acceptance passed.`。
 
