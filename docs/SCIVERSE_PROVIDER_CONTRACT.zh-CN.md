@@ -23,8 +23,9 @@ SDK 自行处理 token、请求 ID、分页和官方请求格式；CosMatter 只
 - DOI、摘要、搜索片段或开放链接都不能替代该声明；
 - HTTP 200 只说明检索成功，不能证明该 `doc_id` 有完整正文访问权。
 
-这解释了当前试点：三次检索均成功，但 44 个候选均被上游显式标为不可访问，故
-系统没有自动调用 `/content` 或 MinerU。
+`true` 仍然只投影为阅读路线中的 `provider_advertised`，不是读取成功证明。当前两个
+PST 试点的上游候选均声明可读，但只对每个试点 3 条已筛选候选执行了实际读取；因此
+重建后的路线分别显示 `confirmed=3, provider_advertised=9`，不会把其余候选误标为已读取。
 
 ## 人工确认读取
 
@@ -33,10 +34,14 @@ SDK 自行处理 token、请求 ID、分页和官方请求格式；CosMatter 只
 `sciverse-read-context`，读取一个有界窗口到运行目录外的新 `.txt`/`.md` 审阅文件。
 
 命令成功后仅在运行目录内写入 `content_access_confirmations.json`：任务 ID、当前
-候选集指纹、文献 ID、回执 ID 和正文 SHA-256。该确认不保存正文、URL、token 或
-请求 ID，也不构成科学证据；但它可作为当前未变更候选集的受控全文访问证明，使
-该候选在后续人工确认来源和三项 MinerU 授权均满足时进入解析。候选历史一旦变化，
-确认自动失效。
+候选集指纹、文献 ID、回执 ID、正文 SHA-256 和 UTC 确认时间。该确认不保存正文、
+URL、token 或原始请求 ID，也不构成科学证据；但它可作为当前未变更候选集的受控
+全文访问证明，使阅读路线显示 `confirmed`。候选历史一旦变化，旧确认会投影为
+`failed_or_expired`。
+
+若 SDK 配置检查或 `/content` 请求失败，同一工件只记录 `configuration_error` 或
+`provider_request_failed` 固定原因码，并清除该文献的旧成功确认；错误文本、路径和
+原始响应都不写入工件。再次成功读取会反向清除失败状态。
 
 ## 配置与验证
 

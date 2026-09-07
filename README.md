@@ -68,7 +68,7 @@ python -m venv .venv
 .\cosmatter.ps1 export-ui --run-id YOUR_RUN
 ```
 
-补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。阅读路线显示规范化 DOI 与允许列表内的入选信号，但筛选和元数据仍不等于科学证据。
+补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。阅读路线显示规范化 DOI、允许列表内的入选信号，以及 `provider_advertised` / `confirmed` / `failed_or_expired` / `metadata_only` 正文状态；只有与当前候选指纹绑定的成功读取才显示为 `confirmed`。筛选、元数据和访问状态仍不等于科学证据。
 
 该入口依次执行 Python 测试、前端类型检查与测试、DSH 发布/回放/配方门禁、七个本地 DSH 包测试和 `npm pack --dry-run`，最后检查 Git 空白错误。它不读取 `.env`，不调用任何提供商。如需指定解释器，可传入 `-Python C:\Python314\python.exe`；仅检查 Python 套件时可运行 `.\scripts\test-all.ps1`。完整通过时，最后单独输出 `OK - CosMatter full local acceptance passed.`。
 
@@ -104,6 +104,6 @@ UI JSON 的字段、安全边界和扩展顺序见 [UI JSON 契约](docs/archite
 
 ## 当前边界
 
-`SciverseAdapter` 使用官方 `sciverse` Python SDK 的有界 `semantic_search` 与 `read_content` 调用。候选仅在上游明确声明全文可访问，或人工筛选后由显式本地读取命令写入哈希确认时，才可进入受控解析。详见 [SciVerse 提供方契约](docs/SCIVERSE_PROVIDER_CONTRACT.zh-CN.md)。当前仓库仍处于证据优先基础设施阶段：不会把没有原文定位的文本当作科学事实，也不会在首版执行任意代码或提交外部计算。
+`SciverseAdapter` 使用官方 `sciverse` Python SDK 的有界 `semantic_search` 与 `read_content` 调用。上游可访问声明与本次成功读取被明确分开；成功只保存内容哈希、回执 ID 和 UTC 确认时间，失败只保存安全原因码。候选仍须通过筛选和 Source Map 才能进入证据链。详见 [SciVerse 提供方契约](docs/SCIVERSE_PROVIDER_CONTRACT.zh-CN.md)。当前仓库仍处于证据优先基础设施阶段：不会把没有原文定位的文本当作科学事实，也不会在首版执行任意代码或提交外部计算。
 
 后续架构、舰队专用设施、数据治理与 GitHub 发布边界见 [项目结构与后续路线图](docs/architecture/00_项目结构与后续路线图.md)。

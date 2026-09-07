@@ -181,7 +181,9 @@ cd CosMatter
 .\cosmatter.ps1 build-reading-guide --run-id bfo_001
 ```
 
-**输出：** 完整的人工筛选工件、可选的 `candidate_metadata_enrichment.json` 和 schema 1.1 阅读路线。补全仅查询已纳入候选，按规范化标题精确一致且年份相容接受 DOI；近似标题不自动匹配，多 DOI 命中写为冲突。阅读路线会显示 DOI 与材料/性质/方法/反例/全文筛选等允许列表信号，但这些元数据仍不是事实证据。只有状态为 `include_for_fulltext` 且来源确有授权访问边界的文献，才能进入全文解析和 Source Map。元数据检索结果、本地 Zotero 搜索结果或人工手写文献 ID 均不能绕过此门禁。
+**输出：** 完整的人工筛选工件、可选的 `candidate_metadata_enrichment.json` 和 schema 1.2 阅读路线。补全仅查询已纳入候选，按规范化标题精确一致且年份相容接受 DOI；近似标题不自动匹配，多 DOI 命中写为冲突。阅读路线会显示 DOI 与材料/性质/方法/反例/全文筛选等允许列表信号，但这些元数据仍不是事实证据。正文状态分为 `provider_advertised`（上游声明可读）、`confirmed`（当前候选指纹下已成功读取并留下哈希回执）和 `failed_or_expired`（读取失败或确认因候选变化过期）；没有可读声明时为 `metadata_only`。只有状态为 `include_for_fulltext` 且来源确有授权访问边界的文献，才能进入全文解析和 Source Map。元数据检索结果、本地 Zotero 搜索结果或人工手写文献 ID 均不能绕过此门禁。
+
+对已筛选候选执行 `sciverse-read-context` 时，成功会更新 `content_access_confirmations.json` 的内容哈希、回执 ID 与 UTC 确认时间；上游配置或请求失败只写固定原因码，不保存错误正文、输出路径或原始响应。随后重建阅读路线，才能把相应候选显示为 `confirmed` 或 `failed_or_expired`。
 
 **受委托自动试点例外：** 当用户明确授权仅为跑通链路时，可使用 `record-automated-trial-screening --include-document-id <精确候选 ID>`，并在 `sciverse-read-context`、`mineru-submit-url` 和 `record-source-map` 上同时显式加 `--allow-delegated-automated-trial`。该路径将未选候选保留为 `needs_metadata_review`，工件一律标记为 `delegated_automated_trial_*_not_scientific_evidence`，与人工筛选文件分开存储；它**不能**进入正式材料事实、证据卡、融合、报告或提交包。
 

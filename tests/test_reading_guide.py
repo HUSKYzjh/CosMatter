@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from cosmatter.candidate_screening import candidate_screening_from_automated_trial, write_automated_trial_candidate_screening
 from cosmatter.cli import main
+from cosmatter.content_access import load_content_access, record_sciverse_content_access, record_sciverse_content_failure
 from cosmatter.models import AccessPolicy, EvidenceCard, FlightPlan, MissionBrief, Provenance, ReviewStatus, Stance
+from cosmatter.provider_receipts import sciverse_content_receipt
 from cosmatter.reading_guide import ReadingGuideError, build_reading_guide, load_reading_guide
 from cosmatter.verification import VerificationDecision
 
@@ -103,6 +105,36 @@ class ReadingGuideTests(unittest.TestCase):
         with self.assertRaisesRegex(ReadingGuideError, "stale"):
             build_reading_guide(self.mission, self.plan, changed, screening=screening)
 
+    def test_projects_confirmed_and_failed_content_reads_into_the_route(self) -> None:
+        payload = {
+            "candidates": [
+                candidate("confirmed_doc", "primary", accessible=True, score=0.9),
+                candidate("failed_doc", "counter", accessible=True, score=0.8),
+            ]
+        }
+        receipt = sciverse_content_receipt(
+            document_id="confirmed_doc", offset=0, limit=200, content="bounded",
+            next_offset=None, more=False, status_code=200, request_id=None,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            record_sciverse_content_access(
+                run, mission_id=self.mission.mission_id, candidate_payload=payload,
+                document_id="confirmed_doc", receipt=receipt,
+            )
+            record_sciverse_content_failure(
+                run, mission_id=self.mission.mission_id, candidate_payload=payload,
+                document_id="failed_doc", reason_code="provider_request_failed",
+            )
+            access = load_content_access(run / "content_access_confirmations.json", self.mission.mission_id)
+
+        guide = build_reading_guide(self.mission, self.plan, payload, content_access=access)
+        by_id = {item["document_id"]: item for item in guide["items"]}
+        self.assertEqual(by_id["confirmed_doc"]["content_status"], "confirmed")
+        self.assertIn("content_read_confirmed", by_id["confirmed_doc"]["routing_signals"])
+        self.assertEqual(by_id["failed_doc"]["content_status"], "failed_or_expired")
+        self.assertIn("content_read_failed_or_expired", by_id["failed_doc"]["routing_signals"])
+
     def test_load_upgrades_legacy_route_without_inventing_screening_reasons(self) -> None:
         guide = build_reading_guide(
             self.mission,
@@ -111,7 +143,10 @@ class ReadingGuideTests(unittest.TestCase):
         )
         legacy = {**guide, "schema_version": "1.0"}
         legacy["items"] = [
-            {key: value for key, value in item.items() if key not in {"doi", "routing_signals"}}
+            {
+                **{key: value for key, value in item.items() if key not in {"doi", "routing_signals"}},
+                "content_status": "authorized",
+            }
             for item in guide["items"]
         ]
         with tempfile.TemporaryDirectory() as directory:
@@ -119,8 +154,9 @@ class ReadingGuideTests(unittest.TestCase):
             path.write_text(json.dumps(legacy), encoding="utf-8")
             loaded = load_reading_guide(path, self.mission.mission_id)
 
-        self.assertEqual(loaded["schema_version"], "1.1")
+        self.assertEqual(loaded["schema_version"], "1.2")
         self.assertEqual(loaded["items"][0]["routing_signals"], ["provider_advertised_content"])
+        self.assertEqual(loaded["items"][0]["content_status"], "provider_advertised")
         self.assertIsNone(loaded["items"][0]["doi"])
 
     def test_cli_writes_guide_and_export_projects_it(self) -> None:

@@ -32,7 +32,7 @@ from .counterevidence import CounterevidenceGateError, require_executed_countere
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, write_evidence_provenance_audit
 from .facilities import DiscrepancyMatrix, DiscrepancyRow, FacilityGateError, condition_differential, write_condition_matrix
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
-from .content_access import ContentAccessError, record_sciverse_content_access
+from .content_access import ContentAccessError, load_content_access, record_sciverse_content_access, record_sciverse_content_failure
 from .planning import PlanApprovalError, approved_flight_plan_from_payload, load_approved_flight_plan, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .gap_analysis import GapAnalysisError, candidates_from_discrepancies, load_gap_candidates, write_gap_candidates
@@ -490,11 +490,14 @@ def command_build_reading_guide(args: argparse.Namespace) -> int:
         metadata_enrichment = load_metadata_enrichment(
             run_dir / "candidate_metadata_enrichment.json", mission.mission_id, candidate_history
         )
+        content_access = load_content_access(
+            run_dir / "content_access_confirmations.json", mission.mission_id
+        )
         guide = build_reading_guide(
-            mission, plan, candidate_history, cards, decisions, screening, metadata_enrichment
+            mission, plan, candidate_history, cards, decisions, screening, metadata_enrichment, content_access
         )
         guide_path = write_reading_guide(run_dir, guide)
-    except (UiExportError, PlanApprovalError, CandidateScreeningError, MetadataEnrichmentError, ReadingGuideError) as error:
+    except (UiExportError, PlanApprovalError, CandidateScreeningError, ContentAccessError, MetadataEnrichmentError, ReadingGuideError) as error:
         _json_print({"error": str(error), "run_id": args.run_id})
         return 2
     recorder = FlightRecorder(_runs_dir(), args.run_id)
@@ -2630,7 +2633,28 @@ def command_sciverse_read_context(args: argparse.Namespace) -> int:
         run_path = run_dir.resolve()
         if output_path.exists() or output_path.suffix.casefold() not in {".txt", ".md"} or not output_path.parent.is_dir() or output_path.is_relative_to(run_path):
             raise ValueError("review output must be a new .txt or .md file outside the run directory with an existing parent")
-        response = SciverseAdapter(Settings.load()).read_content(args.document_id, offset=args.offset, limit=args.limit)
+        try:
+            response = SciverseAdapter(Settings.load()).read_content(args.document_id, offset=args.offset, limit=args.limit)
+        except SciverseConfigurationError:
+            record_sciverse_content_failure(
+                run_dir,
+                mission_id=mission.mission_id,
+                candidate_payload=candidate_history,
+                document_id=args.document_id,
+                reason_code="configuration_error",
+                delegated_automated_trial=delegated_trial,
+            )
+            raise
+        except SciverseRequestError:
+            record_sciverse_content_failure(
+                run_dir,
+                mission_id=mission.mission_id,
+                candidate_payload=candidate_history,
+                document_id=args.document_id,
+                reason_code="provider_request_failed",
+                delegated_automated_trial=delegated_trial,
+            )
+            raise
         receipt = sciverse_content_receipt(document_id=args.document_id, offset=args.offset, limit=args.limit, content=response.text, next_offset=response.next_offset, more=response.more, status_code=response.status_code, request_id=response.request_id)
         append_provider_receipt(run_dir, receipt)
         confirmation_path = record_sciverse_content_access(

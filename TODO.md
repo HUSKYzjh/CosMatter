@@ -12,7 +12,8 @@
 - [ ] 实现 [`(Pb_xSr_{1-x})TiO3` 固溶体 A 位构型的 MD-only 黑箱优化计划](docs/PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md)：先完成固定组分编码、计划 schema、哈希去重、预算账本与合成目标测试；真实 MD 仅在执行适配器、势场许可、资源上限和协议另行批准后启动。
   - [x] 增加根目录新终端启动器，并在两个真实 PST 试点完成 selected-first/反例配额阅读路线复验：均为已筛选候选 3/3 入路且同时包含 primary/counterevidence。
   - [x] 为已筛选候选增加 Crossref/OpenAlex 冲突安全 DOI 补全和结构化入选信号；两个真实 PST 试点共 6/6 条解析成功，Crossref HTTP 406 契约问题已修复。
-  - [ ] 按 [`PST CosMatter 试用审计与改进计划`](docs/PST_COSMATTER_RESEARCH_AUDIT_AND_IMPROVEMENT_PLAN.zh-CN.md) 继续完成全部候选的可选元数据覆盖、三态全文确认、同源参数 schema 和 Sciverse 上下文审阅池。
+  - [x] 将正文访问改为 `provider_advertised` / `confirmed` / `failed_or_expired` 三态（另有 `metadata_only`），并在两个真实试点验证各 3 条已确认读取；失败只留安全原因码。
+  - [ ] 按 [`PST CosMatter 试用审计与改进计划`](docs/PST_COSMATTER_RESEARCH_AUDIT_AND_IMPROVEMENT_PLAN.zh-CN.md) 继续完成全部候选的可选元数据覆盖、同源参数 schema 和 Sciverse 上下文审阅池。
   - [ ] 实现 MRMT 计划型核心，并在相同合成预算下与随机、固定基数 EDA、短程有序引导进行消融；真实性质排名保持 `property_prediction_count = 0`。
 
 ## UI / HTML 界面

@@ -5,7 +5,7 @@ const NETWORK_MAX_BYTES = 1024 * 1024;
 const networkDemo = {
   schema_version: NETWORK_SCHEMA,
   mission: { material: "BiFeO3", property_name: "phase stability" },
-  research_guide: { items: [{ order: 1, document_id: "doc_demo", title: "Synthetic strain study", publication_year: 2025, source: "synthetic fixture", locator_hint: "page:1", track: "primary", role: "primary_candidate", content_status: "authorized", evidence_ids: ["evidence_demo_001"] }] },
+  research_guide: { items: [{ order: 1, document_id: "doc_demo", title: "Synthetic strain study", publication_year: 2025, source: "synthetic fixture", locator_hint: "page:1", track: "primary", role: "primary_candidate", content_status: "provider_advertised", evidence_ids: ["evidence_demo_001"] }] },
   evidence_cards: [{ evidence_id: "evidence_demo_001", claim: "合成示例：条件必须被记录。", stance: "support", review_status: "accepted", provenance: { document_id: "doc_demo", locator: "page:1" } }],
   condition_matrix: [{ condition_cluster: "外延薄膜 · 压缩应变", supporting_evidence_ids: ["evidence_demo_001"], contradicting_evidence_ids: [], differing_fields: ["thickness"], unknowns: ["oxygen vacancy"] }],
 };
@@ -42,7 +42,7 @@ function makeGraph(bundle) {
     const paperId = `paper:${netText(card.provenance.document_id)}`;
     if (!byId.has(paperId)) {
       const paperPoint = position(byId.size, Math.max(approved.length, 1), 220);
-      addNode({ id: paperId, kind: "paper", label: netText(card.provenance.document_id), x: paperPoint.x, y: paperPoint.y, data: { document_id: card.provenance.document_id, title: card.provenance.document_id, source: "evidence provenance", content_status: "authorized", track: "unclassified", role: "evidence_source", evidence_ids: [card.evidence_id] } });
+      addNode({ id: paperId, kind: "paper", label: netText(card.provenance.document_id), x: paperPoint.x, y: paperPoint.y, data: { document_id: card.provenance.document_id, title: card.provenance.document_id, source: "evidence provenance", content_status: "confirmed", track: "unclassified", role: "evidence_source", evidence_ids: [card.evidence_id] } });
       edges.push({ from: mission.id, to: paperId, kind: "retrieval_candidate", label: "证据出处论文" });
     }
     edges.push({ from: paperId, to: evidence.id, kind: "source_provenance", label: "document_id + locator" });
@@ -67,7 +67,7 @@ function makeGraph(bundle) {
     const sourceDocumentId = netText(relations.source.document_id);
     const sourcePaperId = `paper:${sourceDocumentId}`;
     if (!byId.has(sourcePaperId)) {
-      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, x: 500, y: 220, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "authorized", track: "unclassified", role: "relation_source", evidence_ids: [relations.source.evidence_id] } });
+      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, x: 500, y: 220, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "confirmed", track: "unclassified", role: "relation_source", evidence_ids: [relations.source.evidence_id] } });
     }
     netArray(relations.edges).slice(0, 24).forEach((relation, index) => {
       if (!relation || !["citation_reference", "algorithmic_related"].includes(relation.edge_type)) return;
@@ -82,7 +82,7 @@ function makeGraph(bundle) {
     const sourceDocumentId = netText(crossrefRelations.source.document_id);
     const sourcePaperId = `paper:${sourceDocumentId}`;
     if (!byId.has(sourcePaperId)) {
-      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, x: 500, y: 220, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "authorized", track: "unclassified", role: "relation_source", evidence_ids: [crossrefRelations.source.evidence_id] } });
+      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, x: 500, y: 220, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "confirmed", track: "unclassified", role: "relation_source", evidence_ids: [crossrefRelations.source.evidence_id] } });
     }
     netArray(crossrefRelations.edges).slice(0, 12).forEach((relation, index) => {
       if (!relation || relation.edge_type !== "crossref_reference") return;

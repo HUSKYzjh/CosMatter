@@ -140,6 +140,16 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 
 补全每次最多处理 12 条候选，只接受标题精确规范化匹配和相容年份；冲突 DOI 不会写成已解析。工件与阅读路线均不保存查询响应、摘要或全文。
 
+对已经纳入全文筛选的候选，可将一次有界 Sciverse 读取写到运行目录外的新审阅文件，然后重建路线：
+
+```powershell
+.\cosmatter.ps1 sciverse-read-context --run-id bfo_live_001 --document-id DOCUMENT_ID --offset 0 --limit 4000 --output D:\private-review\context.md
+.\cosmatter.ps1 build-reading-guide --run-id bfo_live_001
+.\cosmatter.ps1 export-ui --run-id bfo_live_001
+```
+
+路线不会再用含混的 `authorized` 表示正文状态：`provider_advertised` 只是上游声明，`confirmed` 表示当前候选指纹下本次读取成功，`failed_or_expired` 表示安全失败或旧确认已经失效，`metadata_only` 表示没有全文声明。运行目录只保存哈希确认、回执 ID、UTC 确认时间或固定失败码；正文仍只写入用户指定的运行目录外新文件。
+
 ## 4. 录入可定位证据并生成交付物
 
 证据草稿由已获授权的内容提取流程产生，至少含有 `claim`、`stance`、材料、性质、

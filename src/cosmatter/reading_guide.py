@@ -3,7 +3,7 @@
 This is deliberately not an LLM summary.  It only orders candidate metadata
 already recovered through an approved FlightPlan and marks candidates linked to
 accepted evidence.  Query strings, abstracts, full text, raw scores, review
-reasons, and upstream API payloads never enter the guide artifact.
+free-text review reasons, and upstream API payloads never enter the guide artifact.
 """
 
 from __future__ import annotations
@@ -13,12 +13,14 @@ from pathlib import Path
 from typing import Any
 
 from .candidate_screening import CandidateScreeningError, selected_document_ids, selected_document_reason_codes
+from .content_access import ContentAccessError, content_access_states
 from .metadata_enrichment import MetadataEnrichmentError, resolved_dois_for_candidates
 from .models import EvidenceCard, FlightPlan, MissionBrief, ReviewStatus, normalized_doi_or_none
 from .verification import VerificationDecision
 
 
-GUIDE_SCHEMA_VERSION = "1.1"
+GUIDE_SCHEMA_VERSION = "1.2"
+_V11_GUIDE_SCHEMA_VERSION = "1.1"
 _LEGACY_GUIDE_SCHEMA_VERSION = "1.0"
 _MAX_GUIDE_ITEMS = 12
 _ITEM_FIELDS = {
@@ -40,7 +42,8 @@ _GUIDE_FIELDS = {"schema_version", "mission_id", "trust_status", "items", "cavea
 _ROUTING_SIGNALS = {
     "accepted_evidence", "screened_for_fulltext", "material_match", "property_match", "scope_match",
     "method_match", "primary_evidence", "counterevidence", "counterevidence_track",
-    "provider_advertised_content", "normalized_doi_resolved",
+    "provider_advertised_content", "content_read_confirmed", "content_read_failed_or_expired",
+    "normalized_doi_resolved",
 }
 
 
@@ -56,6 +59,7 @@ def build_reading_guide(
     decisions: tuple[VerificationDecision, ...] = (),
     screening: object | None = None,
     metadata_enrichment: object | None = None,
+    content_access: object | None = None,
 ) -> dict[str, Any]:
     """Create a stable study route from approved retrieval provenance.
 
@@ -73,6 +77,10 @@ def build_reading_guide(
     try:
         enriched_dois = resolved_dois_for_candidates(metadata_enrichment, mission.mission_id, candidate_payload)
     except MetadataEnrichmentError as error:
+        raise ReadingGuideError(str(error)) from error
+    try:
+        access_states = content_access_states(content_access, mission.mission_id, candidate_payload)
+    except ContentAccessError as error:
         raise ReadingGuideError(str(error)) from error
     accepted_by_document = _accepted_evidence_by_document(mission.mission_id, cards, decisions)
     primary_queries = set(plan.queries)
@@ -93,6 +101,7 @@ def build_reading_guide(
             raise ReadingGuideError("candidate history contains a query outside the approved FlightPlan")
         evidence_ids = accepted_by_document.get(document_id, [])
         accessible = candidate["is_content_accessible"]
+        content_status = access_states.get(document_id, "provider_advertised" if accessible else "metadata_only")
         doi = candidate["doi"] or enriched_dois.get(document_id)
         role = "verified_evidence" if evidence_ids else ("primary_candidate" if track == "primary" else "counterevidence_candidate")
         routing_signals: list[str] = []
@@ -103,8 +112,12 @@ def build_reading_guide(
             routing_signals.extend(screening_reasons.get(document_id, ()))
         if track == "counterevidence":
             routing_signals.append("counterevidence_track")
-        if accessible:
+        if content_status == "provider_advertised":
             routing_signals.append("provider_advertised_content")
+        elif content_status == "confirmed":
+            routing_signals.append("content_read_confirmed")
+        elif content_status == "failed_or_expired":
+            routing_signals.append("content_read_failed_or_expired")
         if doi is not None:
             routing_signals.append("normalized_doi_resolved")
         normalized.append(
@@ -116,7 +129,7 @@ def build_reading_guide(
                 "locator_hint": candidate["locator_hint"],
                 "track": track,
                 "role": role,
-                "content_status": "authorized" if accessible else "metadata_only",
+                "content_status": content_status,
                 "evidence_ids": evidence_ids,
                 "doi": doi,
                 "routing_signals": list(dict.fromkeys(routing_signals)),
@@ -131,7 +144,7 @@ def build_reading_guide(
         key=lambda item: (
             role_rank[item["role"]],
             0 if item["_selected"] else 1,
-            0 if item["content_status"] == "authorized" else 1,
+            {"confirmed": 0, "provider_advertised": 1, "metadata_only": 2, "failed_or_expired": 3}[item["content_status"]],
             -(item["_score"] if item["_score"] is not None else -1.0),
             item["document_id"],
         )
@@ -150,6 +163,7 @@ def build_reading_guide(
         "caveats": [
             "The route orders bounded candidates; it is not a scientific conclusion.",
             "Candidate-screening selections affect routing only and are not accepted scientific evidence.",
+            "Provider-advertised access is distinct from a confirmed content read; failed or expired routes remain visible.",
             "Metadata-only candidates must not be used for evidence extraction.",
             "Counterevidence items are deliberately retained and are not treated as disproved claims.",
         ],
@@ -199,6 +213,8 @@ def load_reading_guide(path: Path, mission_id: str) -> dict[str, Any] | None:
         raise ReadingGuideError("reading_guide.json is invalid JSON") from error
     if isinstance(payload, dict) and payload.get("schema_version") == _LEGACY_GUIDE_SCHEMA_VERSION:
         payload = _upgrade_legacy_guide(payload)
+    elif isinstance(payload, dict) and payload.get("schema_version") == _V11_GUIDE_SCHEMA_VERSION:
+        payload = _upgrade_v11_guide(payload)
     _validate_reading_guide(payload)
     if payload["mission_id"] != mission_id:
         raise ReadingGuideError("reading guide does not belong to mission")
@@ -281,7 +297,7 @@ def _validate_reading_guide(payload: object) -> None:
         document_ids.add(item["document_id"])
         if item["track"] not in {"primary", "counterevidence"} or item["role"] not in {"verified_evidence", "primary_candidate", "counterevidence_candidate"}:
             raise ReadingGuideError("reading guide item roles are invalid")
-        if item["content_status"] not in {"authorized", "metadata_only"}:
+        if item["content_status"] not in {"provider_advertised", "confirmed", "failed_or_expired", "metadata_only"}:
             raise ReadingGuideError("reading guide item content status is invalid")
         if item["doi"] is not None and normalized_doi_or_none(item["doi"]) != item["doi"]:
             raise ReadingGuideError("reading guide item DOI is invalid")
@@ -299,7 +315,7 @@ def _validate_reading_guide(payload: object) -> None:
 
 
 def _upgrade_legacy_guide(payload: dict[str, Any]) -> dict[str, Any]:
-    """Project a previously written v1.0 route into the v1.1 safe contract."""
+    """Project a previously written v1.0 route into the current safe contract."""
     if set(payload) != _GUIDE_FIELDS or not isinstance(payload.get("items"), list):
         raise ReadingGuideError("legacy reading guide fields are invalid")
     upgraded_items = []
@@ -313,5 +329,25 @@ def _upgrade_legacy_guide(payload: dict[str, Any]) -> dict[str, Any]:
             signals.append("counterevidence_track")
         if item.get("content_status") == "authorized":
             signals.append("provider_advertised_content")
-        upgraded_items.append({**item, "doi": None, "routing_signals": signals})
+        upgraded_items.append({
+            **item,
+            "content_status": "provider_advertised" if item.get("content_status") == "authorized" else item.get("content_status"),
+            "doi": None,
+            "routing_signals": signals,
+        })
+    return {**payload, "schema_version": GUIDE_SCHEMA_VERSION, "items": upgraded_items}
+
+
+def _upgrade_v11_guide(payload: dict[str, Any]) -> dict[str, Any]:
+    """Rename the ambiguous v1.1 authorized state without inventing confirmation."""
+    if set(payload) != _GUIDE_FIELDS or not isinstance(payload.get("items"), list):
+        raise ReadingGuideError("reading guide v1.1 fields are invalid")
+    upgraded_items = []
+    for item in payload["items"]:
+        if not isinstance(item, dict) or set(item) != _ITEM_FIELDS:
+            raise ReadingGuideError("reading guide v1.1 item fields are invalid")
+        upgraded_items.append({
+            **item,
+            "content_status": "provider_advertised" if item.get("content_status") == "authorized" else item.get("content_status"),
+        })
     return {**payload, "schema_version": GUIDE_SCHEMA_VERSION, "items": upgraded_items}

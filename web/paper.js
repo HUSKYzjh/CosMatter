@@ -4,7 +4,7 @@ const PAPER_SCHEMA_VERSION = "1.0";
 const PAPER_MAX_BUNDLE_BYTES = 1024 * 1024;
 const paperDemo = {
   schema_version: PAPER_SCHEMA_VERSION,
-  research_guide: { items: [{ order: 1, document_id: "synthetic_demo", title: "Synthetic thin-film route", publication_year: 2025, source: "synthetic fixture", locator_hint: "page:1", track: "primary", role: "verified_evidence", content_status: "authorized", evidence_ids: ["evidence_synthetic_001"], doi: "10.1000/synthetic.demo", routing_signals: ["accepted_evidence", "normalized_doi_resolved"] }] },
+  research_guide: { items: [{ order: 1, document_id: "synthetic_demo", title: "Synthetic thin-film route", publication_year: 2025, source: "synthetic fixture", locator_hint: "page:1", track: "primary", role: "verified_evidence", content_status: "provider_advertised", evidence_ids: ["evidence_synthetic_001"], doi: "10.1000/synthetic.demo", routing_signals: ["accepted_evidence", "normalized_doi_resolved"] }] },
   evidence_cards: [{ evidence_id: "evidence_synthetic_001", claim: "合成示例：应变比较需要记录衬底、厚度和表征条件。", stance: "context", review_status: "accepted", conditions: { sample_form: "film", thickness_nm: 30, method: "synthetic demonstration" }, quote: "Synthetic demonstration only; no paper text is included.", provenance: { document_id: "synthetic_demo", locator: "demo fixture", source: "CosMatter example", access_policy: "local_only" } }],
 };
 
@@ -33,15 +33,16 @@ function renderPaper(bundle) {
   const overview = document.querySelector("#paper-overview"); const provenance = document.querySelector("#paper-provenance"); const evidenceTarget = document.querySelector("#paper-evidence-list");
   if (!item) { overview.replaceChildren(Object.assign(document.createElement("p"), { className: "notice", textContent: "阅读路线中没有候选。" })); provenance.replaceChildren(); evidenceTarget.replaceChildren(); return; }
   const roleLabel = { verified_evidence: "已核验证据", primary_candidate: "主检索候选", counterevidence_candidate: "反例候选" };
-  const signalLabel = { accepted_evidence: "已有核验证据", screened_for_fulltext: "已筛选进入全文", material_match: "材料匹配", property_match: "性质匹配", scope_match: "范围匹配", method_match: "方法匹配", primary_evidence: "原始证据", counterevidence: "反例角色", counterevidence_track: "反例检索", provider_advertised_content: "上游声明可读", normalized_doi_resolved: "DOI 已解析" };
+  const contentLabel = { provider_advertised: "上游声明可读", confirmed: "本次读取已确认", failed_or_expired: "读取失败或确认已过期", metadata_only: "仅元数据" };
+  const signalLabel = { accepted_evidence: "已有核验证据", screened_for_fulltext: "已筛选进入全文", material_match: "材料匹配", property_match: "性质匹配", scope_match: "范围匹配", method_match: "方法匹配", primary_evidence: "原始证据", counterevidence: "反例角色", counterevidence_track: "反例检索", provider_advertised_content: "上游声明可读", content_read_confirmed: "本次读取已确认", content_read_failed_or_expired: "读取失败或确认已过期", normalized_doi_resolved: "DOI 已解析" };
   const title = document.createElement("h2"); title.textContent = paperText(item.title);
   const labels = document.createElement("div"); labels.className = "paper-tags";
-  [roleLabel[item.role] || "候选", item.track === "counterevidence" ? "反例检索轨道" : "主检索轨道", item.content_status === "authorized" ? "内容访问已授权" : "仅元数据"].forEach((label) => { const tag = document.createElement("span"); tag.textContent = label; labels.append(tag); });
+  [roleLabel[item.role] || "候选", item.track === "counterevidence" ? "反例检索轨道" : "主检索轨道", contentLabel[item.content_status] || "访问状态未知"].forEach((label) => { const tag = document.createElement("span"); tag.textContent = label; labels.append(tag); });
   const metadata = document.createElement("dl"); metadata.className = "inspector-list";
   [["来源", paperText(item.source)], ["发表年份", item.publication_year || "未记录"], ["规范化 DOI", paperText(item.doi, "未解析")], ["入选信号", paperArray(item.routing_signals).map((signal) => signalLabel[signal] || paperText(signal)).join("、") || "仅按有界排序进入"], ["证据关联", paperArray(item.evidence_ids).join("、") || "尚无"]].forEach(([key, value]) => { const row = document.createElement("div"); const dt = document.createElement("dt"); const dd = document.createElement("dd"); dt.textContent = key; dd.textContent = value; row.append(dt, dd); metadata.append(row); });
   overview.replaceChildren(title, labels, metadata);
   const provenanceList = document.createElement("dl"); provenanceList.className = "inspector-list";
-  [["document_id", paperText(item.document_id)], ["候选定位", paperText(item.locator_hint, "未记录")], ["内容状态", item.content_status === "authorized" ? "可进入授权提取流程" : "不可用于证据提取"]].forEach(([key, value]) => { const row = document.createElement("div"); const dt = document.createElement("dt"); const dd = document.createElement("dd"); dt.textContent = key; dd.textContent = value; row.append(dt, dd); provenanceList.append(row); });
+  [["document_id", paperText(item.document_id)], ["候选定位", paperText(item.locator_hint, "未记录")], ["内容状态", contentLabel[item.content_status] || "访问状态未知"]].forEach(([key, value]) => { const row = document.createElement("div"); const dt = document.createElement("dt"); const dd = document.createElement("dd"); dt.textContent = key; dd.textContent = value; row.append(dt, dd); provenanceList.append(row); });
   provenance.replaceChildren(provenanceList);
   renderReviewedSourceMap(bundle, item);
   renderPaperStructure(bundle, item);

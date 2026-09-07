@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cosmatter.cli import main
-from cosmatter.sciverse import SciverseContentResponse, SciverseResponse
+from cosmatter.sciverse import SciverseContentResponse, SciverseRequestError, SciverseResponse
 from cosmatter.candidate_screening import candidate_screening_from_review, write_candidate_screening
 from cosmatter.ingestion import require_eligible_candidate
 from cosmatter.models import MissionBrief
@@ -115,6 +115,47 @@ class CliRetrievalTests(unittest.TestCase):
             self.assertEqual(status, 2)
             adapter.return_value.read_content.assert_not_called()
             self.assertFalse((run / "provider_receipts.jsonl").exists())
+
+    def test_sciverse_context_failure_records_only_a_safe_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runs = root / "runs"
+            run = runs / "context_failure"
+            run.mkdir(parents=True)
+            mission = MissionBrief("why", "BiFeO3", "phase stability", "films", mission_id="mission_failure")
+            (run / "mission.json").write_text(json.dumps(mission.to_dict()), encoding="utf-8")
+            history = {"candidates": [{"document_id": "doc_1", "title": "paper", "is_content_accessible": True}]}
+            (run / "retrieval_candidates.json").write_text(json.dumps(history), encoding="utf-8")
+            screening = candidate_screening_from_review(
+                mission.mission_id,
+                history,
+                {"decisions": [{"document_id": "doc_1", "decision": "include_for_fulltext", "reason_codes": ["material_match"]}]},
+            )
+            write_candidate_screening(run, screening)
+            review_path = root / "review.txt"
+            output = io.StringIO()
+            provider_error = "upstream-private-diagnostic"
+            with (
+                patch("cosmatter.cli._runs_dir", return_value=runs),
+                patch("cosmatter.cli.SciverseAdapter") as adapter,
+                contextlib.redirect_stdout(output),
+            ):
+                adapter.return_value.read_content.side_effect = SciverseRequestError(provider_error)
+                status = main([
+                    "sciverse-read-context", "--run-id", "context_failure", "--document-id", "doc_1",
+                    "--offset", "0", "--limit", "200", "--output", str(review_path),
+                ])
+            artifact_text = (run / "content_access_confirmations.json").read_text(encoding="utf-8")
+            artifact = json.loads(artifact_text)
+            review_created = review_path.exists()
+
+        self.assertEqual(status, 2)
+        self.assertFalse(review_created)
+        self.assertEqual(artifact["schema_version"], "1.1")
+        self.assertEqual(artifact["confirmations"], [])
+        self.assertEqual(artifact["failures"], [{"document_id": "doc_1", "provider": "sciverse", "reason_code": "provider_request_failed"}])
+        self.assertNotIn(provider_error, artifact_text)
+        self.assertNotIn(str(review_path), artifact_text)
 
 
 if __name__ == "__main__":

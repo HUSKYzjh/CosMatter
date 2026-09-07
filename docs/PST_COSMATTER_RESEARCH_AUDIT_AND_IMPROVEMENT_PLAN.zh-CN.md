@@ -110,9 +110,11 @@ OCBA/MOCBA 分配独立复算预算
 - 两个真实试点重建后，算法路线和物理路线均达到已筛选候选 `3/3` 入路；算法路线为 `primary=11, counterevidence=1`，物理路线为 `primary=10, counterevidence=2`。
 - 新增冲突安全的已筛选候选元数据补全。冻结夹具中已知 DOI 补全率为 100%，近似标题/错年份不匹配，多 DOI 命中安全保留为冲突；两个真实 PST 试点共 6/6 条已筛选候选解析出唯一 DOI。
 - 真实补全首次发现 Crossref 对 vendor `Accept` 返回 HTTP 406；改用标准 `application/json` 后，Crossref/OpenAlex 12 次调用失败计数由 6 降为 0。运行工件只保留解析状态、规范化 DOI、来源和计数。
-- 阅读路线升级到 schema 1.1，逐项投影规范化 DOI 和允许列表内的入选信号；旧版 1.0 路线可只读升级，且不会凭空生成筛选理由。
+- 阅读路线先升级到 schema 1.1 投影 DOI/入选信号，现进一步升级到 schema 1.2 投影正文访问三态；旧版 1.0/1.1 路线可只读升级，且不会凭空生成筛选理由或读取确认。
+- `content_access_confirmations.json` 升级到 schema 1.1：成功读取保存内容哈希、回执 ID 和 UTC 确认时间；失败只保存固定安全原因码。候选集指纹改变时，旧确认在路线中降为 `failed_or_expired`。
+- 两个真实试点重建后，每条 12 项路线均为 `confirmed=3, provider_advertised=9`；算法路线仍保留 1 条反例，物理路线仍保留 2 条反例。未实际读取的候选不再显示为 confirmed。
 - 两个试点在新增补全工件和 UI 导出后再次通过运行关系审计；敏感工件审计仍为 `finding_category_count=0`。
-- `sciverse-read-context --help` 已显示 `limit=200–4000` 与非负 offset。CLI/MCP/UI 共用参数 schema、全部候选 DOI 覆盖和全文三态仍未完成，不能据此关闭全部 P0/P1。
+- `sciverse-read-context --help` 已显示 `limit=200–4000` 与非负 offset。CLI/MCP/UI 共用参数 schema、全部候选 DOI 覆盖和 Sciverse 上下文审阅池仍未完成，不能据此关闭全部 P0/P1。
 
 ## 5. 后续改进计划
 
@@ -125,7 +127,7 @@ OCBA/MOCBA 分配独立复算预算
 
 验收：新终端单命令可运行；3/3 已筛选候选进入下一版路线；路线同时含 primary/counter；已知 DOI 的冻结夹具补全率 100%，冲突 DOI 安全失败。
 
-进度：入口、selected-first/双轨路线、已筛选候选 DOI 补全和结构化“为何入选”均已实现并完成真实复验。当前补全是筛选后的有界命令，尚未自动覆盖全部 367 条候选；CLI/MCP/UI 同源契约与全文三态属于下一批。
+进度：入口、selected-first/双轨路线、已筛选候选 DOI 补全、结构化“为何入选”和全文三态均已实现并完成真实复验。当前补全是筛选后的有界命令，尚未自动覆盖全部 367 条候选；CLI/MCP/UI 同源契约属于下一批。
 
 ### P1：检索质量、访问状态和试点轨道
 
@@ -136,6 +138,8 @@ OCBA/MOCBA 分配独立复算预算
 5. UI 同时显示“正式证据轨”和“自动试点轨”；后者可显示已经完成的筛选/读取计数，但不能解锁 EvidenceCard。
 
 验收：冻结人工集上，新分面重排相对当前排序的 nDCG@12 提升至少 0.15；未实际读取的候选不再显示 confirmed；试点状态不再被误写成正式 parse completed。
+
+进度：第 4 项已完成代码、兼容性和两个真实试点复验；第 1–3、5 项仍待完成。`provider_advertised` 仅表示上游声明，`confirmed` 必须有本次候选指纹绑定的成功回执与内容哈希，失败或候选集变化会投影为 `failed_or_expired`。
 
 ### P1：Sciverse 上下文到受控 Source Map
 
