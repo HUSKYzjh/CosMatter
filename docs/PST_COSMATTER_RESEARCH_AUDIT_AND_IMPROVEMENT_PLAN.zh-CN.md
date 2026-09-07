@@ -50,7 +50,7 @@ MissionBrief
 - 物理机制路线用宽泛的铁电/钙钛矿关键词匹配到 136/207、阅读路线匹配到 9/12，但人工浏览标题后，真正明确涉及 `(Pb_xSr_{1-x})TiO3` 的候选只有 3 条。
 - 这说明宽泛语义相关分数可以找到机制类比，却不能单独保证材料、目标性质、方法约束和“禁止代理模型”同时满足。
 
-本次还观察到 5 次本地拒绝：系统 Python 直接执行模块失败 2 次；3 个上下文请求因 `limit=8192` 超出允许的 `200–4000` 而被拒绝。全部安全失败关闭，未生成部分全文文件；改用项目 `.venv` 和 `limit=4000` 后成功。拒绝事件未进入运行 `events.jsonl`，因此当前只能从交互记录而非运行审计中统计。
+本次还观察到 5 次本地拒绝：系统 Python 直接执行模块失败 2 次；3 个上下文请求因 limit 超出允许的 `200–4000` 而被拒绝。全部安全失败关闭，未生成部分全文文件；改用项目 `.venv` 和合规 limit 后成功。审计当日这些拒绝尚未进入运行统计；后续实现已用无参数值账本补齐 Sciverse 窗口拒绝，系统 Python 入口错误仍不属于某个 run 的操作遥测。
 
 ## 3. 整理后的科学方案
 
@@ -118,7 +118,9 @@ OCBA/MOCBA 分配独立复算预算
 - 两个真实试点重建后，每条 12 项路线均为 `confirmed=3, provider_advertised=9`；算法路线仍保留 1 条反例，物理路线仍保留 2 条反例。未实际读取的候选不再显示为 confirmed。
 - 新增 `prepare-sciverse-context-review`：只有文献 ID、当前候选指纹、读取回执、offset、内容 SHA-256 和字符数全部一致时，才会把运行目录外的私有上下文切成最多 48 个、每段最多 500 字符的待审片段。6/6 个真实确认上下文已唯一匹配并生成 6 个私有审阅池，共 104 个候选片段。
 - 新增 Sciverse 选段适配器：人工模板不复制原文，只保存候选段 ID 与摘录哈希；记录时重新校验任务、候选指纹、回执、内容哈希和精确选段。两个真实试点无覆盖冲突地记录 6 个委托 Source Map，全部保留 `not_scientific_evidence` 信任状态，正式材料事实模板会拒绝它们。
-- 新增 `cosmatter.operation-parameter-contracts/v1`：Sciverse offset/limit 的 CLI 解析、SDK、回执和 Source Map 校验均引用同一范围；MCP 和前端只读发现同一 schema。`limit=8192` 现在在 CLI 参数解析期拒绝，不再等待提供商调用。
+- 新增 `cosmatter.operation-parameter-contracts/v1`：Sciverse offset/limit 的 CLI 解析、SDK、回执和 Source Map 校验均引用同一范围；MCP 和前端只读发现同一 schema。越界 limit 现在在 CLI 参数解析期拒绝，不再等待提供商调用。
+- 新增 `cosmatter.validation-rejection/v1` 与 `cosmatter.operational-telemetry/v2`：只向既有运行追加固定命令类别、原因码和时间，API/UI/DSH 仅按类别汇总次数；参数值、路径、查询、文献标识与正文均不进入账本，拒绝也不会触发自动重试。
+- 在一个既有私有 PST 运行上完成两次安全拒绝复验（高于 limit 上界、负 offset）：两次 CLI 均以退出码 2 结束且账本各增 1 条，provider 收据数量与 SHA-256 均保持不变；本地 API 重建出 2 个类别/2 次拒绝，随后敏感工件审计仍为 `finding_category_count=0`。本文不记录该运行标识、参数值、文献标识或路径。
 - 两个试点在新增补全工件和 UI 导出后再次通过运行关系审计；敏感工件审计仍为 `finding_category_count=0`。
 - `sciverse-read-context --help` 已显示 `limit=200–4000` 与非负 offset，CLI/MCP/UI 的静态参数发现契约已同源。全部候选 DOI 现可显式选择分批覆盖，但检索分轨、人工评测和自动/正式轨 UI 区分仍未完成，不能据此关闭全部 P0/P1。
 
@@ -163,7 +165,7 @@ OCBA/MOCBA 分配独立复算预算
 
 验收：越界参数在 provider 调用前被一致拒绝；CLI/MCP/UI 三处范围测试同源；运行统计可重建失败次数，同时敏感工件审计仍为零发现。
 
-进度：第 1 项已完成。静态 schema 是参数发现与预校验，不新增 MCP/浏览器全文读取或写盘权限；CLI 对负 offset、limit 199/4001/8192 均在解析期拒绝，SDK、回执与 Source Map 复用同一常量边界。第 2–3 项仍待完成。
+进度：第 1–2 项已完成并通过真实本地试点。静态 schema 是参数发现与预校验，不新增 MCP/浏览器全文读取或写盘权限；CLI 对负 offset 及低于/高于边界的 limit 均在解析期拒绝，SDK、回执与 Source Map 复用同一常量边界。无内容账本只绑定既有安全 run，并通过 `cosmatter.operational-telemetry/v2` 投影到本地 API、前端和 DSH；严格消费者拒绝未知原因、零/负次数、重复类别和额外字段。两次真实拒绝均未改变 provider 收据，且敏感工件审计保持零发现。第 3 项候选重复待对账队列仍待完成。
 
 ### P2：MRMT 计划型实现
 

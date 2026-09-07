@@ -76,6 +76,8 @@ python -m venv .venv
 
 Sciverse 正文窗口参数由 `cosmatter.operation-parameter-contracts/v1` 单一契约定义：offset 不小于 0，limit 为 200–4000，默认 2000。CLI 在参数解析期应用该范围；本地 API 能力快照与 MCP 的 `cosmatter_get_operation_parameter_contracts` 只读返回同一契约，不执行提供商调用，也不授予浏览器或 Agent 全文写盘权限。
 
+参数解析期的 Sciverse 窗口拒绝会以 `cosmatter.validation-rejection/v1` 追加到既有运行的本地安全账本，并由 `cosmatter.operational-telemetry/v2` 按命令类别和固定原因码汇总。账本不记录参数值、路径、查询、文献标识或正文；前端与 DSH 只读投影只显示类别、次数及是否需要注意，不据此自动重试。
+
 该入口依次执行 Python 测试、前端类型检查与测试、DSH 发布/回放/配方门禁、七个本地 DSH 包测试和 `npm pack --dry-run`，最后检查 Git 空白错误。它不读取 `.env`，不调用任何提供商。如需指定解释器，可传入 `-Python C:\Python314\python.exe`；仅检查 Python 套件时可运行 `.\scripts\test-all.ps1`。完整通过时，最后单独输出 `OK - CosMatter full local acceptance passed.`。
 
 若需保存验收收据，请显式指定一个新 JSON 文件：

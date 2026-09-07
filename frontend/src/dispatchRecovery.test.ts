@@ -4,8 +4,8 @@ import { dispatchRecoveryItems } from "./dispatchRecovery";
 import type { OperationalTelemetry } from "./localApi";
 
 const telemetry = (dispatch_operations: OperationalTelemetry["dispatch_operations"]): OperationalTelemetry => ({
-  schema_version: "cosmatter.operational-telemetry/v1", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback",
-  provider_operations: [], dispatch_operations, cost_latency_status: "not_recorded", cost_latency: [],
+  schema_version: "cosmatter.operational-telemetry/v2", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback",
+  provider_operations: [], dispatch_operations, validation_rejections: [], cost_latency_status: "not_recorded", cost_latency: [],
 });
 
 it("requires controlled status checks for every non-terminal external dispatch", () => {

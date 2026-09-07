@@ -7,6 +7,7 @@ from cosmatter.external_dispatch import EXTERNAL_DISPATCH_OPERATIONS, begin_exte
 from cosmatter.models import MissionBrief
 from cosmatter.operational_telemetry import OperationalTelemetryError, operational_telemetry, validate_operational_telemetry
 from cosmatter.provider_receipts import append_provider_receipt, sciverse_search_receipt
+from cosmatter.validation_rejections import record_cli_validation_rejection
 
 
 class OperationalTelemetryTests(unittest.TestCase):
@@ -75,6 +76,29 @@ class OperationalTelemetryTests(unittest.TestCase):
         telemetry["provider_operations"] = [{"provider": "sciverse", "operation": "unreviewed_operation", "request_count": 0, "successful_response_count": 0, "client_error_count": 0, "server_error_count": 0, "other_status_count": 0}]
         with self.assertRaises(OperationalTelemetryError):
             validate_operational_telemetry(telemetry, expected_mission_id=self.mission.mission_id)
+
+    def test_includes_only_aggregate_validation_rejection_classes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            (run / "mission.json").write_text(json.dumps(self.mission.to_dict()), encoding="utf-8")
+            argv = [
+                "sciverse-read-context", "--run-id", run.name,
+                "--document-id", "private-document", "--output", "private-output.txt",
+                "--limit", "8192",
+            ]
+            self.assertTrue(record_cli_validation_rejection(argv, run.parent))
+            telemetry = operational_telemetry(run, self.mission)
+
+        self.assertEqual(telemetry["schema_version"], "cosmatter.operational-telemetry/v2")
+        self.assertEqual(telemetry["validation_rejections"], [{
+            "command": "sciverse_read_context",
+            "reason_code": "limit_above_maximum",
+            "rejection_count": 1,
+        }])
+        rendered = json.dumps(telemetry)
+        self.assertNotIn("8192", rendered)
+        self.assertNotIn("private-document", rendered)
+        self.assertNotIn("private-output", rendered)
 
 
 if __name__ == "__main__":

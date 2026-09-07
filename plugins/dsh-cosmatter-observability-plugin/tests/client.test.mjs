@@ -35,10 +35,11 @@ const contract = {
   }),
 }
 const telemetry = {
-  schema_version: 'cosmatter.operational-telemetry/v1', run_id: 'run_001', mission_id: 'mission_abcdef12',
+  schema_version: 'cosmatter.operational-telemetry/v2', run_id: 'run_001', mission_id: 'mission_abcdef12',
   trust_status: 'loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence',
   provider_operations: [{ provider: 'sciverse', operation: 'agentic_search', request_count: 2, successful_response_count: 1, client_error_count: 1, server_error_count: 0, other_status_count: 0 }],
   dispatch_operations: [{ operation: 'metadata_query', dispatch_count: 2, completed_count: 1, incomplete_count: 0, unknown_outcome_count: 1 }],
+  validation_rejections: [{ command: 'sciverse_read_context', reason_code: 'limit_above_maximum', rejection_count: 1 }],
   cost_latency_status: 'not_recorded', cost_latency: [],
 }
 const dagSpecs = {
@@ -102,6 +103,12 @@ test('client reads only aggregate telemetry and rejects a mismatched count', asy
   const unsafe = structuredClone(telemetry); unsafe.provider_operations[0].request_count = 3
   const unsafeClient = new CosMatterObservabilityClient({}, async () => new Response(JSON.stringify(unsafe), { status: 200 }))
   await assert.rejects(() => unsafeClient.operationalTelemetry('run_001'), /provider operation telemetry is invalid/)
+  const rawRejection = structuredClone(telemetry); rawRejection.validation_rejections[0].reason_code = 'private raw value'
+  const rawRejectionClient = new CosMatterObservabilityClient({}, async () => new Response(JSON.stringify(rawRejection), { status: 200 }))
+  await assert.rejects(() => rawRejectionClient.operationalTelemetry('run_001'), /validation rejection telemetry is invalid/)
+  const mismatchedPair = structuredClone(telemetry); mismatchedPair.provider_operations[0] = { ...mismatchedPair.provider_operations[0], provider: 'mineru' }
+  const mismatchedPairClient = new CosMatterObservabilityClient({}, async () => new Response(JSON.stringify(mismatchedPair), { status: 200 }))
+  await assert.rejects(() => mismatchedPairClient.operationalTelemetry('run_001'), /provider operation telemetry is invalid/)
 })
 
 test('client reads a fixed DAG but rejects scheduler-like mutations', async () => {

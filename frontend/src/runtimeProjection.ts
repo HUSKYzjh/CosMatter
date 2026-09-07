@@ -1,6 +1,6 @@
 import type { OperationalTelemetry, StageContract, StageContractStage } from "./localApi";
 
-export type RuntimeProjectionAttention = "runtime_safety_attention" | "human_review_required" | "stage_blocked" | "external_dispatch_incomplete" | "external_dispatch_unknown" | "cost_latency_disclosure_invalid";
+export type RuntimeProjectionAttention = "runtime_safety_attention" | "human_review_required" | "stage_blocked" | "external_dispatch_incomplete" | "external_dispatch_unknown" | "local_validation_rejected" | "cost_latency_disclosure_invalid";
 export type RuntimeProjectionHealth = "disabled" | "loading" | "ready" | "unavailable";
 
 /** Do not render a missing runtime projection as a perpetual loading state. */
@@ -21,6 +21,7 @@ export function runtimeProjectionAttention(contract: StageContract | null, telem
   if (stage?.status === "blocked") result.push("stage_blocked");
   if (telemetry?.dispatch_operations.some((operation) => operation.incomplete_count > 0)) result.push("external_dispatch_incomplete");
   if (telemetry?.dispatch_operations.some((operation) => operation.unknown_outcome_count > 0)) result.push("external_dispatch_unknown");
+  if (telemetry?.validation_rejections.some((rejection) => rejection.rejection_count > 0)) result.push("local_validation_rejected");
   if (telemetry?.cost_latency_status === "invalid") result.push("cost_latency_disclosure_invalid");
   return result;
 }

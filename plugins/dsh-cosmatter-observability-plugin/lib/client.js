@@ -5,8 +5,10 @@ const stages = new Set(['intake', 'plan', 'retrieval', 'screening', 'parse', 'ex
 const states = new Set(['completed', 'ready', 'waiting_human_review', 'blocked']);
 const runtimeSafety = new Set(['verified', 'attention_required']);
 const costLatencyStatus = new Set(['not_recorded', 'recorded', 'invalid']);
-const receiptOperations = new Set(['agentic_search', 'content', 'source_parse_submit', 'source_parse_poll']);
-const dispatchOperations = new Set(['deepseek_plan_draft', 'metadata_query', 'mineru_submit', 'mineru_poll']);
+const providerOperationPairs = new Set(['sciverse:agentic_search', 'sciverse:content', 'mineru:source_parse_submit', 'mineru:source_parse_poll', 'mineru:source_parse_output_fetch']);
+const dispatchOperations = new Set(['deepseek_plan_draft', 'deepseek_graph_plan_draft', 'metadata_query', 'citation_expansion', 'mineru_submit', 'mineru_poll']);
+const validationRejectionCommands = new Set(['sciverse_read_context']);
+const validationRejectionReasons = new Set(['invalid_integer', 'offset_below_minimum', 'limit_below_minimum', 'limit_above_maximum']);
 const currencies = new Set(['CNY', 'USD', 'EUR', 'not_applicable']);
 const stageContracts = {
     intake: { requirements: ['mission_boundary_recorded'], humanGate: 'mission_definition', outputs: ['mission_brief'], recoveryRoute: 'mission_boundary_review' },
@@ -243,10 +245,10 @@ export function validateOperationalTelemetry(value, expectedRunId) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new Error('CosMatter operational telemetry response is invalid');
     const result = value;
-    const expected = new Set(['schema_version', 'run_id', 'mission_id', 'trust_status', 'provider_operations', 'dispatch_operations', 'cost_latency_status', 'cost_latency']);
+    const expected = new Set(['schema_version', 'run_id', 'mission_id', 'trust_status', 'provider_operations', 'dispatch_operations', 'validation_rejections', 'cost_latency_status', 'cost_latency']);
     if (Object.keys(result).length !== expected.size || Object.keys(result).some(key => !expected.has(key) || sensitiveKey.test(key)))
         throw new Error('CosMatter operational telemetry response contains forbidden fields');
-    if (result.schema_version !== 'cosmatter.operational-telemetry/v1' || result.run_id !== expectedRunId || typeof result.mission_id !== 'string' || !result.mission_id || result.trust_status !== 'loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence' || !Array.isArray(result.provider_operations) || !Array.isArray(result.dispatch_operations) || typeof result.cost_latency_status !== 'string' || !costLatencyStatus.has(result.cost_latency_status) || !Array.isArray(result.cost_latency))
+    if (result.schema_version !== 'cosmatter.operational-telemetry/v2' || result.run_id !== expectedRunId || typeof result.mission_id !== 'string' || !result.mission_id || result.trust_status !== 'loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence' || !Array.isArray(result.provider_operations) || !Array.isArray(result.dispatch_operations) || !Array.isArray(result.validation_rejections) || typeof result.cost_latency_status !== 'string' || !costLatencyStatus.has(result.cost_latency_status) || !Array.isArray(result.cost_latency))
         throw new Error('CosMatter operational telemetry response is invalid');
     const providerKeys = new Set();
     for (const raw of result.provider_operations) {
@@ -254,7 +256,7 @@ export function validateOperationalTelemetry(value, expectedRunId) {
             throw new Error('CosMatter provider operation telemetry is invalid');
         const item = raw;
         const fields = new Set(['provider', 'operation', 'request_count', 'successful_response_count', 'client_error_count', 'server_error_count', 'other_status_count']);
-        if (Object.keys(item).length !== fields.size || Object.keys(item).some(key => !fields.has(key) || sensitiveKey.test(key)) || (item.provider !== 'sciverse' && item.provider !== 'mineru') || typeof item.operation !== 'string' || !receiptOperations.has(item.operation))
+        if (Object.keys(item).length !== fields.size || Object.keys(item).some(key => !fields.has(key) || sensitiveKey.test(key)) || typeof item.provider !== 'string' || typeof item.operation !== 'string' || !providerOperationPairs.has(`${item.provider}:${item.operation}`))
             throw new Error('CosMatter provider operation telemetry is invalid');
         const values = ['request_count', 'successful_response_count', 'client_error_count', 'server_error_count', 'other_status_count'].map(key => item[key]);
         if (values.some(value => typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 10_000_000) || Number(values[0]) !== Number(values[1]) + Number(values[2]) + Number(values[3]) + Number(values[4]) || providerKeys.has(`${item.provider}:${item.operation}`))
@@ -273,6 +275,17 @@ export function validateOperationalTelemetry(value, expectedRunId) {
         if (values.some(value => typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 10_000_000) || Number(values[0]) !== Number(values[1]) + Number(values[2]) + Number(values[3]) || dispatchKeys.has(item.operation))
             throw new Error('CosMatter dispatch operation telemetry is invalid');
         dispatchKeys.add(item.operation);
+    }
+    const rejectionKeys = new Set();
+    for (const raw of result.validation_rejections) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+            throw new Error('CosMatter validation rejection telemetry is invalid');
+        const item = raw;
+        const fields = new Set(['command', 'reason_code', 'rejection_count']);
+        const key = `${item.command}:${item.reason_code}`;
+        if (Object.keys(item).length !== fields.size || Object.keys(item).some(field => !fields.has(field) || sensitiveKey.test(field)) || typeof item.command !== 'string' || !validationRejectionCommands.has(item.command) || typeof item.reason_code !== 'string' || !validationRejectionReasons.has(item.reason_code) || typeof item.rejection_count !== 'number' || !Number.isInteger(item.rejection_count) || item.rejection_count < 1 || item.rejection_count > 10_000 || rejectionKeys.has(key))
+            throw new Error('CosMatter validation rejection telemetry is invalid');
+        rejectionKeys.add(key);
     }
     if (result.cost_latency_status !== 'recorded' && result.cost_latency.length)
         throw new Error('CosMatter cost latency telemetry is invalid');

@@ -169,6 +169,8 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 
 CLI、MCP 和前端从 `cosmatter.operation-parameter-contracts/v1` 读取相同的 Sciverse 窗口范围。CLI 会在读取任务、筛选门禁和提供商调用之前拒绝负 offset 或 200–4000 以外的 limit；本地 API `/api/status` 与 MCP 工具 `cosmatter_get_operation_parameter_contracts` 只返回静态 schema。该发现接口不是全文读取接口，不包含密钥、路径、文献 ID 或执行授权。
 
+如果目标 run 已存在且包含 `mission.json`，参数解析期的 offset/limit 拒绝会追加一条 `cosmatter.validation-rejection/v1` 本地记录。每条记录仅含 run ID、固定命令类别、固定原因码与 UTC 时间；不保存被拒绝的数值、路径、查询或正文。`cosmatter.operational-telemetry/v2`、本地 API、前端与 observability 插件只按类别聚合次数，且不会因为出现拒绝而重放调用。不存在、越界或未初始化的 run 不会为此创建目录或账本。
+
 ## 4. 录入可定位证据并生成交付物
 
 证据草稿由已获授权的内容提取流程产生，至少含有 `claim`、`stance`、材料、性质、

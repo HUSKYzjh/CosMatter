@@ -19,6 +19,7 @@ from cosmatter.workflow_readiness import write_workflow_readiness
 from cosmatter.mineru import MinerUBatch, MinerURequestError, MinerUTask
 from cosmatter.sciverse import SciverseResponse
 from cosmatter.sciverse import SciverseRequestError
+from cosmatter.validation_rejections import record_cli_validation_rejection
 
 
 class _FakeDeepSeek:
@@ -171,8 +172,26 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertEqual(telemetry["run_id"], "operational_telemetry_001")
         self.assertEqual(telemetry["provider_operations"], [])
         self.assertEqual(telemetry["dispatch_operations"], [])
+        self.assertEqual(telemetry["validation_rejections"], [])
         self.assertEqual(telemetry["cost_latency_status"], "not_recorded")
         self.assertNotIn("Private telemetry question", json.dumps(telemetry))
+
+    def test_operational_telemetry_projects_only_validation_rejection_class_and_count(self):
+        self.api.create_mission({
+            "question": "Private rejected parameter question", "material": "BiFeO3", "property": "phase stability",
+            "scope": "private synthetic scope", "run_id": "validation_telemetry_001",
+        })
+        self.assertTrue(record_cli_validation_rejection([
+            "sciverse-read-context", "--run-id", "validation_telemetry_001",
+            "--document-id", "private-document", "--output", "private-output.txt", "--limit", "8192",
+        ], self.runs))
+        telemetry = self.api.operational_telemetry("validation_telemetry_001")
+        self.assertEqual(telemetry["validation_rejections"], [{
+            "command": "sciverse_read_context", "reason_code": "limit_above_maximum", "rejection_count": 1,
+        }])
+        rendered = json.dumps(telemetry)
+        for secret in ("8192", "private-document", "private-output", "Private rejected parameter question"):
+            self.assertNotIn(secret, rendered)
 
     def test_workflow_dag_is_declared_serial_and_nonexecuting(self):
         self.api.create_mission({

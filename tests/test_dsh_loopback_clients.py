@@ -112,7 +112,7 @@ console.log(JSON.stringify({{ mission, graph, workflow, stageContract, telemetry
                 self.assertEqual(payload["stageContract"]["stages"][1]["recovery_route"], "plan_review")
                 self.assertNotIn("How does strain", json.dumps(payload["stageContract"]))
                 self.assertNotIn("private source quote", json.dumps(payload["stageContract"]))
-                self.assertEqual(payload["telemetry"]["schema_version"], "cosmatter.operational-telemetry/v1")
+                self.assertEqual(payload["telemetry"]["schema_version"], "cosmatter.operational-telemetry/v2")
                 self.assertEqual(payload["telemetry"]["cost_latency_status"], "not_recorded")
                 self.assertNotIn("private source quote", json.dumps(payload["telemetry"]))
                 self.assertEqual(payload["dag"]["schema_version"], "cosmatter.workflow-dag/v1")

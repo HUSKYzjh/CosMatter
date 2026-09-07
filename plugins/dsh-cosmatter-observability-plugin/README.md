@@ -3,8 +3,10 @@
 `cosmatter_workflow_status` exposes a read-only, count-only view of one local
 CosMatter run. `cosmatter_stage_contract` adds the same run's fixed completion
 requirements, human gates, expected symbolic outputs, and non-executing
-recovery-route labels. `cosmatter_operational_telemetry` aggregates only local
-receipt/dispatch counts and may show an already human-reviewed cost/latency
+recovery-route labels. `cosmatter_operational_telemetry` uses the
+`cosmatter.operational-telemetry/v2` contract to aggregate only local
+receipt/dispatch counts and fixed validation-rejection classes; rejection
+parameters and source content are never returned. It may show an already human-reviewed cost/latency
 disclosure; it is never a provider bill or benchmark. `cosmatter_artifact_manifest` lists only already
 generated, fixed allowlist outputs with title, SHA-256, generation time, trust
 status, and a fixed download route. None of these tools executes a provider,

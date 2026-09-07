@@ -8,7 +8,7 @@ describe("live run identity fence", () => {
   const status = (): RunStatus => ({ run_id: "run_1", mission_id: demoBundle.mission.missionId, state: "INTAKE" });
   const contract = (): StageContract => ({ schema_version: "cosmatter.stage-contract/v1", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback", next_stage: null, runtime_safety: "verified", stages: [] });
   const dag = (): WorkflowDag => ({ schema_version: "cosmatter.workflow-dag/v1", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback", dag_id: "dag_1", max_concurrency: 1, scheduler_status: "declarative_only_no_execution_authorization", runtime_safety: "verified", eligible_stages: [], blocked_stage_count: 0, human_review_required: true, stages: [] });
-  const telemetry = (): OperationalTelemetry => ({ schema_version: "cosmatter.operational-telemetry/v1", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback", provider_operations: [], dispatch_operations: [], cost_latency_status: "not_recorded", cost_latency: [] });
+  const telemetry = (): OperationalTelemetry => ({ schema_version: "cosmatter.operational-telemetry/v2", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback", provider_operations: [], dispatch_operations: [], validation_rejections: [], cost_latency_status: "not_recorded", cost_latency: [] });
 
   it("requires the hydrated bundle mission to match the status for that exact run", () => {
     expect(liveBundleMatchesRun("run_1", status(), demoBundle)).toBe(true);

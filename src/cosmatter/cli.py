@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -34,6 +35,7 @@ from .facilities import DiscrepancyMatrix, DiscrepancyRow, FacilityGateError, co
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
 from .content_access import ContentAccessError, load_content_access, record_sciverse_content_access, record_sciverse_content_failure
 from .operation_parameter_contracts import SCIVERSE_CONTENT_LIMIT_DEFAULT, SCIVERSE_CONTENT_LIMIT_MAX, SCIVERSE_CONTENT_LIMIT_MIN, parse_sciverse_limit, parse_sciverse_offset
+from .validation_rejections import record_cli_validation_rejection
 from .planning import PlanApprovalError, approved_flight_plan_from_payload, load_approved_flight_plan, research_planning_prompts, write_approved_flight_plan, write_untrusted_plan_draft
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .gap_analysis import GapAnalysisError, candidates_from_discrepancies, load_gap_candidates, write_gap_candidates
@@ -3894,7 +3896,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    record_cli_validation_rejection(raw_argv, _runs_dir())
+    args = build_parser().parse_args(raw_argv)
     try:
         return args.handler(args)
     except AuditPathError as error:

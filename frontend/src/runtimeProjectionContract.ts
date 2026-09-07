@@ -18,6 +18,8 @@ const STAGE_SPECS = [
 const STATUSES = new Set(["completed", "ready", "waiting_human_review", "blocked"]);
 const dispatchOperationSet = new Set<string>(DISPATCH_OPERATIONS);
 const providerOperationSet = new Set(["sciverse:agentic_search", "sciverse:content", "mineru:source_parse_submit", "mineru:source_parse_poll", "mineru:source_parse_output_fetch"]);
+const validationRejectionCommands = new Set(["sciverse_read_context"]);
+const validationRejectionReasons = new Set(["invalid_integer", "offset_below_minimum", "limit_below_minimum", "limit_above_maximum"]);
 const exactKeys = (value: unknown, keys: readonly string[]) => Boolean(value && typeof value === "object" && !Array.isArray(value) && (() => { const actual = Object.keys(value as Record<string, unknown>); return actual.length === keys.length && actual.every((key) => keys.includes(key)); })());
 const sameStrings = (actual: unknown, expected: readonly string[]) => Array.isArray(actual) && actual.length === expected.length && actual.every((value, index) => typeof value === "string" && value === expected[index]);
 const boundedInteger = (value: unknown, maximum = 1_000_000) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= maximum;
@@ -40,9 +42,10 @@ function trustedStageContract(runId: string, contract: StageContract): boolean {
 }
 
 function trustedTelemetry(runId: string, telemetry: OperationalTelemetry): boolean {
-  if (!exactKeys(telemetry, ["schema_version", "run_id", "mission_id", "trust_status", "provider_operations", "dispatch_operations", "cost_latency_status", "cost_latency"])
-    || telemetry.schema_version !== "cosmatter.operational-telemetry/v1" || telemetry.run_id !== runId || !telemetry.mission_id || telemetry.trust_status !== TELEMETRY_TRUST
+  if (!exactKeys(telemetry, ["schema_version", "run_id", "mission_id", "trust_status", "provider_operations", "dispatch_operations", "validation_rejections", "cost_latency_status", "cost_latency"])
+    || telemetry.schema_version !== "cosmatter.operational-telemetry/v2" || telemetry.run_id !== runId || !telemetry.mission_id || telemetry.trust_status !== TELEMETRY_TRUST
     || !Array.isArray(telemetry.provider_operations) || telemetry.provider_operations.length > 20 || !Array.isArray(telemetry.dispatch_operations) || telemetry.dispatch_operations.length > DISPATCH_OPERATIONS.length
+    || !Array.isArray(telemetry.validation_rejections) || telemetry.validation_rejections.length > validationRejectionCommands.size * validationRejectionReasons.size
     || !["not_recorded", "recorded", "invalid"].includes(telemetry.cost_latency_status) || !Array.isArray(telemetry.cost_latency) || telemetry.cost_latency_status !== "recorded" && telemetry.cost_latency.length > 0) return false;
   const providers = new Set<string>();
   if (telemetry.provider_operations.some((raw) => {
@@ -59,6 +62,15 @@ function trustedTelemetry(runId: string, telemetry: OperationalTelemetry): boole
     if (typeof operation !== "string" || !dispatchOperationSet.has(operation) || dispatches.has(operation)) return true;
     dispatches.add(operation); const counts = [item.dispatch_count, item.completed_count, item.incomplete_count, item.unknown_outcome_count];
     return counts.some((value) => !boundedInteger(value, 10_000_000)) || counts[0] !== counts.slice(1).reduce<number>((total, value) => total + (value as number), 0);
+  })) return false;
+  const rejectionKeys = new Set<string>();
+  if (telemetry.validation_rejections.some((raw) => {
+    if (!exactKeys(raw, ["command", "reason_code", "rejection_count"])) return true;
+    const item = raw as unknown as Record<string, unknown>;
+    const key = `${item.command}:${item.reason_code}`;
+    if (typeof item.command !== "string" || !validationRejectionCommands.has(item.command) || typeof item.reason_code !== "string" || !validationRejectionReasons.has(item.reason_code) || rejectionKeys.has(key) || !boundedInteger(item.rejection_count, 10_000) || item.rejection_count === 0) return true;
+    rejectionKeys.add(key);
+    return false;
   })) return false;
   const costProviders = new Set<string>();
   return !telemetry.cost_latency.some((raw) => {

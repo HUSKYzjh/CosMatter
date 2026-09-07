@@ -96,7 +96,7 @@ def default_cosmatter_plugin_catalogue() -> tuple[CosMatterPluginDescriptor, ...
             "workflow.operational_telemetry", "运行级聚合遥测", "workflow", "cosmatter.operational_telemetry:operational_telemetry",
             ("receipt_count_derive", "dispatch_state_count_derive", "human_reviewed_cost_latency_projection"), "run_summary", "local_safe",
             input_schema="cosmatter.operational-telemetry-input/v1",
-            output_schema="cosmatter.operational-telemetry/v1",
+            output_schema="cosmatter.operational-telemetry/v2",
             execution_mode="read_only_projection",
         ),
         CosMatterPluginDescriptor(

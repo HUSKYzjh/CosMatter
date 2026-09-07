@@ -6,8 +6,10 @@ const stages = new Set(['intake', 'plan', 'retrieval', 'screening', 'parse', 'ex
 const states = new Set(['completed', 'ready', 'waiting_human_review', 'blocked'])
 const runtimeSafety = new Set(['verified', 'attention_required'])
 const costLatencyStatus = new Set(['not_recorded', 'recorded', 'invalid'])
-const receiptOperations = new Set(['agentic_search', 'content', 'source_parse_submit', 'source_parse_poll'])
-const dispatchOperations = new Set(['deepseek_plan_draft', 'metadata_query', 'mineru_submit', 'mineru_poll'])
+const providerOperationPairs = new Set(['sciverse:agentic_search', 'sciverse:content', 'mineru:source_parse_submit', 'mineru:source_parse_poll', 'mineru:source_parse_output_fetch'])
+const dispatchOperations = new Set(['deepseek_plan_draft', 'deepseek_graph_plan_draft', 'metadata_query', 'citation_expansion', 'mineru_submit', 'mineru_poll'])
+const validationRejectionCommands = new Set(['sciverse_read_context'])
+const validationRejectionReasons = new Set(['invalid_integer', 'offset_below_minimum', 'limit_below_minimum', 'limit_above_maximum'])
 const currencies = new Set(['CNY', 'USD', 'EUR', 'not_applicable'])
 const stageContracts: Record<string, { requirements: readonly string[]; humanGate: string; outputs: readonly string[]; recoveryRoute: string }> = {
   intake: { requirements: ['mission_boundary_recorded'], humanGate: 'mission_definition', outputs: ['mission_brief'], recoveryRoute: 'mission_boundary_review' },
@@ -41,8 +43,9 @@ export interface StageContractStage { stage: string; status: string; completion_
 export interface StageContract { schema_version: 'cosmatter.stage-contract/v1'; run_id: string; mission_id: string; trust_status: 'loopback_stage_contract_not_scientific_evidence_or_execution_authorization'; next_stage: string | null; runtime_safety: string; stages: StageContractStage[] }
 export interface ProviderOperationTelemetry { provider: string; operation: string; request_count: number; successful_response_count: number; client_error_count: number; server_error_count: number; other_status_count: number }
 export interface DispatchOperationTelemetry { operation: string; dispatch_count: number; completed_count: number; incomplete_count: number; unknown_outcome_count: number }
+export interface ValidationRejectionTelemetry { command: 'sciverse_read_context'; reason_code: 'invalid_integer' | 'offset_below_minimum' | 'limit_below_minimum' | 'limit_above_maximum'; rejection_count: number }
 export interface CostLatencyTelemetry { provider_id: string; request_count: number; successful_request_count: number; failed_request_count: number; currency: string; total_cost: number; median_latency_seconds: number; p95_latency_seconds: number }
-export interface OperationalTelemetry { schema_version: 'cosmatter.operational-telemetry/v1'; run_id: string; mission_id: string; trust_status: 'loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence'; provider_operations: ProviderOperationTelemetry[]; dispatch_operations: DispatchOperationTelemetry[]; cost_latency_status: string; cost_latency: CostLatencyTelemetry[] }
+export interface OperationalTelemetry { schema_version: 'cosmatter.operational-telemetry/v2'; run_id: string; mission_id: string; trust_status: 'loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence'; provider_operations: ProviderOperationTelemetry[]; dispatch_operations: DispatchOperationTelemetry[]; validation_rejections: ValidationRejectionTelemetry[]; cost_latency_status: string; cost_latency: CostLatencyTelemetry[] }
 export interface WorkflowDagStage { stage: string; depends_on: string[]; status: string; allowed_descriptors: string[]; data_classification: string; execution_class: string }
 export interface WorkflowDag { schema_version: 'cosmatter.workflow-dag/v1'; run_id: string; mission_id: string; trust_status: 'loopback_declared_dag_readiness_projection_not_execution_authorization'; dag_id: 'cosmatter_review_gated_linear_workflow'; max_concurrency: 1; scheduler_status: 'declarative_only_no_execution_authorization'; runtime_safety: string; eligible_stages: string[]; blocked_stage_count: number; human_review_required: boolean; stages: WorkflowDagStage[] }
 export interface ArtifactCard { artifact_id: string; title: string; media_type: string; sha256: string; generated_at: string; trust_status: string; download_path: string }
@@ -191,14 +194,14 @@ export function validateStageContract(value: unknown, expectedRunId: string): St
 export function validateOperationalTelemetry(value: unknown, expectedRunId: string): OperationalTelemetry {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('CosMatter operational telemetry response is invalid')
   const result = value as Record<string, unknown>
-  const expected = new Set(['schema_version', 'run_id', 'mission_id', 'trust_status', 'provider_operations', 'dispatch_operations', 'cost_latency_status', 'cost_latency'])
+  const expected = new Set(['schema_version', 'run_id', 'mission_id', 'trust_status', 'provider_operations', 'dispatch_operations', 'validation_rejections', 'cost_latency_status', 'cost_latency'])
   if (Object.keys(result).length !== expected.size || Object.keys(result).some(key => !expected.has(key) || sensitiveKey.test(key))) throw new Error('CosMatter operational telemetry response contains forbidden fields')
-  if (result.schema_version !== 'cosmatter.operational-telemetry/v1' || result.run_id !== expectedRunId || typeof result.mission_id !== 'string' || !result.mission_id || result.trust_status !== 'loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence' || !Array.isArray(result.provider_operations) || !Array.isArray(result.dispatch_operations) || typeof result.cost_latency_status !== 'string' || !costLatencyStatus.has(result.cost_latency_status) || !Array.isArray(result.cost_latency)) throw new Error('CosMatter operational telemetry response is invalid')
+  if (result.schema_version !== 'cosmatter.operational-telemetry/v2' || result.run_id !== expectedRunId || typeof result.mission_id !== 'string' || !result.mission_id || result.trust_status !== 'loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence' || !Array.isArray(result.provider_operations) || !Array.isArray(result.dispatch_operations) || !Array.isArray(result.validation_rejections) || typeof result.cost_latency_status !== 'string' || !costLatencyStatus.has(result.cost_latency_status) || !Array.isArray(result.cost_latency)) throw new Error('CosMatter operational telemetry response is invalid')
   const providerKeys = new Set<string>()
   for (const raw of result.provider_operations) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('CosMatter provider operation telemetry is invalid')
     const item = raw as Record<string, unknown>; const fields = new Set(['provider', 'operation', 'request_count', 'successful_response_count', 'client_error_count', 'server_error_count', 'other_status_count'])
-    if (Object.keys(item).length !== fields.size || Object.keys(item).some(key => !fields.has(key) || sensitiveKey.test(key)) || (item.provider !== 'sciverse' && item.provider !== 'mineru') || typeof item.operation !== 'string' || !receiptOperations.has(item.operation)) throw new Error('CosMatter provider operation telemetry is invalid')
+    if (Object.keys(item).length !== fields.size || Object.keys(item).some(key => !fields.has(key) || sensitiveKey.test(key)) || typeof item.provider !== 'string' || typeof item.operation !== 'string' || !providerOperationPairs.has(`${item.provider}:${item.operation}`)) throw new Error('CosMatter provider operation telemetry is invalid')
     const values = ['request_count', 'successful_response_count', 'client_error_count', 'server_error_count', 'other_status_count'].map(key => item[key])
     if (values.some(value => typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 10_000_000) || Number(values[0]) !== Number(values[1]) + Number(values[2]) + Number(values[3]) + Number(values[4]) || providerKeys.has(`${item.provider}:${item.operation}`)) throw new Error('CosMatter provider operation telemetry is invalid')
     providerKeys.add(`${item.provider}:${item.operation}`)
@@ -211,6 +214,13 @@ export function validateOperationalTelemetry(value: unknown, expectedRunId: stri
     const values = ['dispatch_count', 'completed_count', 'incomplete_count', 'unknown_outcome_count'].map(key => item[key])
     if (values.some(value => typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 10_000_000) || Number(values[0]) !== Number(values[1]) + Number(values[2]) + Number(values[3]) || dispatchKeys.has(item.operation)) throw new Error('CosMatter dispatch operation telemetry is invalid')
     dispatchKeys.add(item.operation)
+  }
+  const rejectionKeys = new Set<string>()
+  for (const raw of result.validation_rejections) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('CosMatter validation rejection telemetry is invalid')
+    const item = raw as Record<string, unknown>; const fields = new Set(['command', 'reason_code', 'rejection_count']); const key = `${item.command}:${item.reason_code}`
+    if (Object.keys(item).length !== fields.size || Object.keys(item).some(field => !fields.has(field) || sensitiveKey.test(field)) || typeof item.command !== 'string' || !validationRejectionCommands.has(item.command) || typeof item.reason_code !== 'string' || !validationRejectionReasons.has(item.reason_code) || typeof item.rejection_count !== 'number' || !Number.isInteger(item.rejection_count) || item.rejection_count < 1 || item.rejection_count > 10_000 || rejectionKeys.has(key)) throw new Error('CosMatter validation rejection telemetry is invalid')
+    rejectionKeys.add(key)
   }
   if (result.cost_latency_status !== 'recorded' && result.cost_latency.length) throw new Error('CosMatter cost latency telemetry is invalid')
   const costProviders = new Set<string>()

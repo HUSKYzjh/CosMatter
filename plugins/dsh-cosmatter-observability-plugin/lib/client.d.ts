@@ -46,6 +46,11 @@ export interface DispatchOperationTelemetry {
     incomplete_count: number;
     unknown_outcome_count: number;
 }
+export interface ValidationRejectionTelemetry {
+    command: 'sciverse_read_context';
+    reason_code: 'invalid_integer' | 'offset_below_minimum' | 'limit_below_minimum' | 'limit_above_maximum';
+    rejection_count: number;
+}
 export interface CostLatencyTelemetry {
     provider_id: string;
     request_count: number;
@@ -57,12 +62,13 @@ export interface CostLatencyTelemetry {
     p95_latency_seconds: number;
 }
 export interface OperationalTelemetry {
-    schema_version: 'cosmatter.operational-telemetry/v1';
+    schema_version: 'cosmatter.operational-telemetry/v2';
     run_id: string;
     mission_id: string;
     trust_status: 'loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence';
     provider_operations: ProviderOperationTelemetry[];
     dispatch_operations: DispatchOperationTelemetry[];
+    validation_rejections: ValidationRejectionTelemetry[];
     cost_latency_status: string;
     cost_latency: CostLatencyTelemetry[];
 }

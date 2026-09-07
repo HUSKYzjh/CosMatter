@@ -9,11 +9,11 @@ const contract = (): StageContract => ({
 
 it("selects the fixed next stage and reports only aggregate operational attention", () => {
   const telemetry: OperationalTelemetry = {
-    schema_version: "cosmatter.operational-telemetry/v1", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback", provider_operations: [],
-    dispatch_operations: [{ operation: "metadata_query", dispatch_count: 2, completed_count: 1, incomplete_count: 0, unknown_outcome_count: 1 }], cost_latency_status: "invalid", cost_latency: [],
+    schema_version: "cosmatter.operational-telemetry/v2", run_id: "run_1", mission_id: "mission_1", trust_status: "loopback", provider_operations: [],
+    dispatch_operations: [{ operation: "metadata_query", dispatch_count: 2, completed_count: 1, incomplete_count: 0, unknown_outcome_count: 1 }], validation_rejections: [{ command: "sciverse_read_context", reason_code: "limit_above_maximum", rejection_count: 2 }], cost_latency_status: "invalid", cost_latency: [],
   };
   expect(currentStage(contract())?.stage).toBe("screening");
-  expect(runtimeProjectionAttention(contract(), telemetry)).toEqual(["runtime_safety_attention", "human_review_required", "external_dispatch_unknown", "cost_latency_disclosure_invalid"]);
+  expect(runtimeProjectionAttention(contract(), telemetry)).toEqual(["runtime_safety_attention", "human_review_required", "external_dispatch_unknown", "local_validation_rejected", "cost_latency_disclosure_invalid"]);
 });
 
 it("does not mistake an unavailable runtime projection for a readable one", () => {

@@ -19,9 +19,16 @@ from .evaluation_operational_disclosure import EvaluationOperationalDisclosureEr
 from .external_dispatch import EXTERNAL_DISPATCH_OPERATIONS, ExternalDispatchError, load_external_dispatch_ledger
 from .models import MissionBrief
 from .provider_receipts import ProviderReceiptError, load_provider_receipts
+from .validation_rejections import (
+    VALIDATION_REJECTION_COMMANDS,
+    VALIDATION_REJECTION_REASON_CODES,
+    ValidationRejectionError,
+    load_validation_rejections,
+    summarize_validation_rejections,
+)
 
 
-OPERATIONAL_TELEMETRY_SCHEMA_VERSION = "cosmatter.operational-telemetry/v1"
+OPERATIONAL_TELEMETRY_SCHEMA_VERSION = "cosmatter.operational-telemetry/v2"
 OPERATIONAL_TELEMETRY_TRUST_STATUS = "loopback_aggregate_operational_telemetry_not_billing_or_scientific_evidence"
 _COST_LATENCY_STATUSES = {"not_recorded", "recorded", "invalid"}
 # Every ledger operation must remain observable in the count-only projection;
@@ -31,7 +38,7 @@ _PROVIDER_OPERATIONS = {
     "sciverse": {"agentic_search", "content"},
     "mineru": {"source_parse_submit", "source_parse_poll", "source_parse_output_fetch"},
 }
-_TELEMETRY_FIELDS = {"schema_version", "mission_id", "trust_status", "provider_operations", "dispatch_operations", "cost_latency_status", "cost_latency"}
+_TELEMETRY_FIELDS = {"schema_version", "mission_id", "trust_status", "provider_operations", "dispatch_operations", "validation_rejections", "cost_latency_status", "cost_latency"}
 
 
 class OperationalTelemetryError(ValueError):
@@ -43,7 +50,10 @@ def operational_telemetry(run_dir: Path, mission: MissionBrief) -> dict[str, Any
     try:
         receipts = load_provider_receipts(run_dir)
         ledger = load_external_dispatch_ledger(run_dir, mission.mission_id)
-    except (ProviderReceiptError, ExternalDispatchError) as error:
+        rejections = load_validation_rejections(
+            run_dir / "validation_rejections.jsonl", expected_run_id=run_dir.name
+        )
+    except (ProviderReceiptError, ExternalDispatchError, ValidationRejectionError) as error:
         raise OperationalTelemetryError("operational telemetry inputs are invalid") from error
     provider_operations = _provider_operations(receipts)
     dispatch_operations = _dispatch_operations(ledger["entries"])
@@ -54,6 +64,7 @@ def operational_telemetry(run_dir: Path, mission: MissionBrief) -> dict[str, Any
         "trust_status": OPERATIONAL_TELEMETRY_TRUST_STATUS,
         "provider_operations": provider_operations,
         "dispatch_operations": dispatch_operations,
+        "validation_rejections": summarize_validation_rejections(rejections),
         "cost_latency_status": cost_latency_status,
         "cost_latency": cost_latency,
     }
@@ -160,6 +171,21 @@ def validate_operational_telemetry(payload: object, *, expected_mission_id: str 
         counts = [item[name] for name in ("dispatch_count", "completed_count", "incomplete_count", "unknown_outcome_count")]
         if any(not isinstance(value, int) or value < 0 or value > 10_000_000 for value in counts) or counts[0] != sum(counts[1:]):
             raise OperationalTelemetryError("operational telemetry dispatch counts are invalid")
+    validation_rejections = payload.get("validation_rejections")
+    if not isinstance(validation_rejections, list) or len(validation_rejections) > len(VALIDATION_REJECTION_COMMANDS) * len(VALIDATION_REJECTION_REASON_CODES):
+        raise OperationalTelemetryError("operational telemetry validation rejections are invalid")
+    seen_rejections: set[tuple[str, str]] = set()
+    for item in validation_rejections:
+        fields = {"command", "reason_code", "rejection_count"}
+        if not isinstance(item, dict) or set(item) != fields:
+            raise OperationalTelemetryError("operational telemetry validation rejection is invalid")
+        key = (item.get("command"), item.get("reason_code"))
+        if key[0] not in VALIDATION_REJECTION_COMMANDS or key[1] not in VALIDATION_REJECTION_REASON_CODES or key in seen_rejections:
+            raise OperationalTelemetryError("operational telemetry validation rejection is invalid")
+        seen_rejections.add(key)
+        count = item.get("rejection_count")
+        if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= 10_000:
+            raise OperationalTelemetryError("operational telemetry validation rejection count is invalid")
     status = payload.get("cost_latency_status")
     cost_latency = payload.get("cost_latency")
     if status not in _COST_LATENCY_STATUSES or not isinstance(cost_latency, list) or (status != "recorded" and cost_latency):
