@@ -1978,3 +1978,74 @@ button.quiet-action:not(.cm-action):disabled,
 .launch-control-group button { font-size: max(.7rem, 12px); }
 .bfo-task-deck button span { font-size: max(.72rem, 12px); }
 .workbench button em { font-size: max(.78rem, 13px); }
+
+/* Research extension uses the shared action hierarchy and the same readable
+   density as the evidence-review surfaces that feed it. */
+.expansion-gate > .cm-action,
+.extension-next-action > .cm-action {
+  flex: 0 0 auto;
+}
+.expansion-gate > .cm-action {
+  padding: .34rem .54rem;
+  border-color: color-mix(in srgb, var(--action-accent) 58%, var(--line));
+  color: var(--action-accent);
+  background: color-mix(in srgb, var(--action-accent) 5%, var(--surface));
+  font-size: max(.7rem, 12px);
+}
+.comparison-readiness small,
+.extension-next-action small,
+.condition-comparison-board small,
+.gap-candidate header :is(span, small),
+.gap-evidence-fields dt,
+.audit-details dt { font-size: max(.7rem, 12px); line-height: 1.45; }
+.comparison-readiness strong,
+.extension-next-action strong { font-size: max(.92rem, 15px); line-height: 1.42; }
+.comparison-readiness p,
+.extension-next-action p,
+.condition-comparison-board p,
+.gap-evidence-fields dd,
+.audit-details dd { font-size: max(.78rem, 13px); line-height: 1.55; }
+.comparison-readiness dd { font-size: max(.78rem, 13px); }
+.condition-comparison-board h2 { font-size: max(1rem, 16px); }
+.condition-cluster-tabs button { min-height: 1.9rem; font-size: max(.7rem, 12px); }
+.condition-evidence-link strong,
+.gap-evidence-links button strong { font-size: max(.7rem, 12px); }
+.condition-evidence-link span,
+.condition-evidence-missing,
+.gap-evidence-links button span,
+.gap-evidence-links small { font-size: max(.72rem, 12px); line-height: 1.45; }
+.expansion-stage .gap-candidate h2 { font-size: max(.94rem, 15px); line-height: 1.42; }
+.gap-candidate footer > span { font-size: max(.72rem, 12px); line-height: 1.45; }
+.gap-candidate footer .gap-candidate-actions .cm-action {
+  min-height: 1.9rem;
+  padding: .34rem .54rem;
+  border-color: color-mix(in srgb, var(--action-accent) 58%, var(--line));
+  color: var(--action-accent);
+  background: color-mix(in srgb, var(--action-accent) 5%, var(--surface));
+  font-size: max(.7rem, 12px);
+}
+.gap-candidate footer .gap-candidate-actions .cm-action--quiet {
+  border-color: transparent;
+  color: var(--muted);
+  background: transparent;
+}
+.gap-candidate footer .gap-candidate-actions .cm-action:hover:not(:disabled),
+.gap-candidate footer .gap-candidate-actions .cm-action:focus-visible {
+  border-color: var(--action-accent);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--action-accent) 13%, var(--surface));
+  outline: 0;
+}
+.gap-candidate footer .gap-candidate-actions .cm-action.marked {
+  --action-accent: var(--signal-violet);
+  border-color: var(--signal-violet);
+  color: var(--surface);
+  background: var(--signal-violet);
+}
+@media (max-width: 560px) {
+  .expansion-gate > .cm-action,
+  .extension-next-action > .cm-action,
+  .gap-candidate-actions .cm-action { width: 100%; }
+  .gap-candidate footer { align-items: stretch; flex-direction: column; }
+  .gap-candidate-actions { justify-content: stretch; }
+}

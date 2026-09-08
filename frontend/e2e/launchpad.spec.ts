@@ -205,8 +205,11 @@ test("keeps operational labels and evidence copy at a readable scale", async ({ 
   await expectReadableMetadata([
     ".evidence-maturity-panel > header small",
     ".simulation-campaign-panel > header small",
+    ".expansion-gate small",
+    ".expansion-gate > .cm-action",
     ".stage-note",
   ]);
+  await expect(page.locator(".expansion-gate > .cm-action")).toHaveClass(/cm-action--secondary/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
