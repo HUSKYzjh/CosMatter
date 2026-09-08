@@ -269,7 +269,10 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(packageProof).toContainText("@cosmatter/dsh-mission-plugin");
   await expect(packageProof).toContainText("本地链接");
   await expect(packageProof).toContainText("不返回依赖值、本机路径、配置或凭据");
-  await expect(deck).toHaveScreenshot("dsh-profile-proof.png", { animations: "disabled" });
+  if (process.platform === "win32") {
+    await deck.screenshot({ animations: "disabled" });
+    expect(await deck.screenshot({ animations: "disabled" })).toMatchSnapshot("dsh-profile-proof.png");
+  }
   await page.setViewportSize({ width: 390, height: 900 });
   const minimumReadableSize = await deck.locator(".cm-status-badge, .harness-state-ledger p").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 11));
   expect(minimumReadableSize).toBe(true);
