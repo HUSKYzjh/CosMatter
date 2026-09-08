@@ -259,9 +259,9 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(deck).toContainText("尚无派发回执");
   await expect(deck).toContainText("任何一层都不能代替工具结果");
   const activationTrack = deck.locator(".harness-activation-track");
-  await expect(activationTrack).toContainText("01 / PROFILE");
+  await expect(activationTrack).toContainText("01 / INSTALL");
   await expect(activationTrack).toContainText("7/7 包已安装");
-  await expect(activationTrack).toContainText("02 / ADAPTER");
+  await expect(activationTrack).toContainText("02 / CONTRACT");
   await expect(activationTrack).toContainText("契约目录已连接");
   await expect(activationTrack).toContainText("03 / RUNTIME");
   await expect(activationTrack).toContainText("尚无执行回执");
@@ -269,7 +269,8 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(activationTrack.locator(":scope > i").first()).toHaveText("≠");
   const activationVerdict = deck.locator(".harness-activation-verdict");
   await expect(activationVerdict).toHaveClass(/state-ready/);
-  await expect(activationVerdict).toContainText("DSH 插件桥已就绪");
+  await expect(activationVerdict).toContainText("DSH 安装面与契约桥已就绪");
+  await expect(activationVerdict).toContainText("HTTP 未核验配置组合或启动");
   await expect(activationVerdict).toContainText("只有运行回执能证明实际派发");
   await expect(deck.locator(".harness-capability-metrics strong").first()).toHaveText("1");
   const packageProof = deck.locator(".harness-package-proof");

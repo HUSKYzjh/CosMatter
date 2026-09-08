@@ -52,8 +52,8 @@ export function HarnessCapabilityDeck(props: {
     const adapterReady = props.health === "ready";
     if (profileReady && adapterReady) return {
       state: "ready",
-      title: x("DSH 插件桥已就绪", "DSH plugin bridge ready"),
-      detail: x("七个包与本机契约目录均已核验；仍需逐任务授权，且只有运行回执能证明实际派发。", "All seven bundles and the local contract catalogue are verified. Mission-scoped authorization is still required, and only runtime receipts prove actual dispatch."),
+      title: x("DSH 安装面与契约桥已就绪", "DSH installation and contract bridge ready"),
+      detail: x("七个包的 profile 依赖与本机契约目录均已核验；HTTP 未核验配置组合或启动，且只有运行回执能证明实际派发。", "All seven profile dependencies and the local contract catalogue are verified. HTTP does not verify configuration composition or startup, and only runtime receipts prove actual dispatch."),
     };
     if (profileReady || adapterReady) return {
       state: "partial",
@@ -82,14 +82,14 @@ export function HarnessCapabilityDeck(props: {
     </header>
     <section class="harness-activation-track" aria-label={x("DSH 启用层次", "DSH activation layers")}>
       <div classList={{ ready: props.profileHealth === "ready" && props.profile?.installation_state === "installed", attention: props.profileHealth === "unavailable" || props.profile?.installation_state === "partial" }}>
-        <small>01 / PROFILE</small>
+        <small>01 / INSTALL</small>
         <strong>{props.profileHealth === "ready" && props.profile
           ? x(`${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count} 包已安装`, `${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count} bundles installed`)
           : x("依赖未核验", "Dependencies not checked")}</strong>
       </div>
       <i aria-hidden="true">≠</i>
       <div classList={{ ready: props.health === "ready", attention: props.health === "unavailable" }}>
-        <small>02 / ADAPTER</small>
+        <small>02 / CONTRACT</small>
         <strong>{props.health === "ready" ? x("契约目录已连接", "Contract catalogue connected") : props.health === "loading" ? x("正在连接目录", "Connecting catalogue") : x("目录未连接", "Catalogue disconnected")}</strong>
       </div>
       <i aria-hidden="true">≠</i>
@@ -130,7 +130,7 @@ export function HarnessCapabilityDeck(props: {
                   : x("未安装", "Not installed")}</StatusBadge>
           <p>{props.profileHealth === "disabled"
             ? x("只读预览不会读取本机 DSH profile；进入真实本地任务后才显示脱敏依赖快照。", "Read-only preview does not inspect the local DSH profile. A redacted dependency snapshot appears only in a live local mission.")
-            : x("该状态只来自固定 tui profile 的脱敏依赖名称；HTTP API 不启动 profile，也不读取插件配置或凭据。", "This status comes only from redacted dependency names in the fixed TUI profile. The HTTP API neither boots the profile nor reads plugin configuration or credentials.")}</p>
+            : x("安装证明只来自固定 tui profile 的脱敏依赖名称；配置组合未由 HTTP 核验。HTTP API 不启动 profile，也不读取插件配置或凭据。", "Installation proof comes only from redacted dependency names in the fixed TUI profile; configuration composition is not verified over HTTP. The HTTP API neither boots the profile nor reads plugin configuration or credentials.")}</p>
           <Show when={props.profileHealth !== "disabled" && props.profileHealth !== "loading" && (props.profileHealth === "unavailable" || props.profile?.installation_state !== "installed") && props.onRefreshProfile}><ActionButton size="sm" variant="secondary" onClick={() => props.onRefreshProfile?.()}>{x("重新检查 profile", "Recheck profile")}</ActionButton></Show>
         </section>
         <section>
