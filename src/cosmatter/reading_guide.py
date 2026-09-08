@@ -17,21 +17,22 @@ from .candidate_route_facets import (
     FACET_SIGNALS,
     RESEARCH_TRACKS,
     ROUTE_ELIGIBILITIES,
-    TRACK_MINIMUMS,
     classify_candidate_route,
 )
 from .candidate_screening import CandidateScreeningError, selected_document_ids, selected_document_reason_codes
 from .content_access import ContentAccessError, content_access_states
 from .metadata_enrichment import MetadataEnrichmentError, resolved_dois_for_candidates
 from .models import EvidenceCard, FlightPlan, MissionBrief, ReviewStatus, normalized_doi_or_none
+from .research_tracks import DEFAULT_TRACK_CANDIDATE_MINIMUMS, MAX_READING_ROUTE_ITEMS
 from .verification import VerificationDecision
 
 
-GUIDE_SCHEMA_VERSION = "1.3"
+GUIDE_SCHEMA_VERSION = "1.4"
+_V13_GUIDE_SCHEMA_VERSION = "1.3"
 _V12_GUIDE_SCHEMA_VERSION = "1.2"
 _V11_GUIDE_SCHEMA_VERSION = "1.1"
 _LEGACY_GUIDE_SCHEMA_VERSION = "1.0"
-_MAX_GUIDE_ITEMS = 12
+_MAX_GUIDE_ITEMS = MAX_READING_ROUTE_ITEMS
 _ITEM_FIELDS = {
     "order",
     "document_id",
@@ -172,8 +173,9 @@ def build_reading_guide(
             item["document_id"],
         )
     )
-    routed = _bounded_faceted_route(normalized)
-    route_policy = _route_policy(normalized, routed)
+    track_minimums = _effective_track_minimums(plan)
+    routed = _bounded_faceted_route(normalized, track_minimums)
+    route_policy = _route_policy(plan, normalized, routed, track_minimums)
     items = []
     for index, item in enumerate(routed, start=1):
         item.pop("_score")
@@ -192,13 +194,21 @@ def build_reading_guide(
             "Metadata-only candidates must not be used for evidence extraction.",
             "Counterevidence items are deliberately retained and are not treated as disproved claims.",
             "Research tracks and surrogate constraints are deterministic metadata-routing heuristics, not relevance judgments or property predictions.",
+            "Track shortfalls are explicit final-route diagnostics; available counts distinguish a pool shortage from a route-capacity shortage, and neither condition invents or automatically executes a new query.",
         ],
     }
 
 
-def _bounded_faceted_route(normalized: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _effective_track_minimums(plan: FlightPlan) -> dict[str, int]:
+    return dict(plan.track_candidate_minimums or DEFAULT_TRACK_CANDIDATE_MINIMUMS)
+
+
+def _bounded_faceted_route(normalized: list[dict[str, Any]], track_minimums: dict[str, int]) -> list[dict[str, Any]]:
     """Balance three research tracks while preserving accepted/selected work."""
     routed: list[dict[str, Any]] = []
+    preserved = [item for item in normalized if item["role"] == "verified_evidence" or item["_selected"]]
+    if len(preserved) > _MAX_GUIDE_ITEMS:
+        raise ReadingGuideError("accepted or selected candidates exceed the bounded reading route; revise the route explicitly")
 
     def add(item: dict[str, Any]) -> bool:
         if len(routed) >= _MAX_GUIDE_ITEMS or item in routed:
@@ -206,11 +216,10 @@ def _bounded_faceted_route(normalized: list[dict[str, Any]]) -> list[dict[str, A
         routed.append(item)
         return True
 
-    for item in normalized:
-        if item["role"] == "verified_evidence" or item["_selected"]:
-            add(item)
+    for item in preserved:
+        add(item)
     for research_track in RESEARCH_TRACKS:
-        target = TRACK_MINIMUMS[research_track]
+        target = track_minimums[research_track]
         for item in normalized:
             if sum(candidate["research_track"] == research_track for candidate in routed) >= target:
                 break
@@ -227,7 +236,7 @@ def _bounded_faceted_route(normalized: list[dict[str, Any]]) -> list[dict[str, A
                 item for item in reversed(routed)
                 if item["role"] != "verified_evidence"
                 and not item["_selected"]
-                and route_counts[item["research_track"]] > TRACK_MINIMUMS[item["research_track"]]
+                and route_counts[item["research_track"]] > track_minimums[item["research_track"]]
             ), None)
         if replacement is None:
             replacement = next((item for item in reversed(routed) if item["role"] != "verified_evidence" and not item["_selected"]), None) if len(routed) >= _MAX_GUIDE_ITEMS else None
@@ -239,19 +248,27 @@ def _bounded_faceted_route(normalized: list[dict[str, Any]]) -> list[dict[str, A
     return routed
 
 
-def _route_policy(normalized: list[dict[str, Any]], routed: list[dict[str, Any]]) -> dict[str, Any]:
+def _route_policy(plan: FlightPlan, normalized: list[dict[str, Any]], routed: list[dict[str, Any]], track_minimums: dict[str, int]) -> dict[str, Any]:
     available = {track: sum(item["research_track"] == track for item in normalized) for track in RESEARCH_TRACKS}
     selected = {track: sum(item["research_track"] == track for item in routed) for track in RESEARCH_TRACKS}
     available_counter = sum(item["route_eligibility"] == "counterevidence_only" for item in normalized)
     selected_counter = sum(item["route_eligibility"] == "counterevidence_only" for item in routed)
+    shortfalls = {track: max(track_minimums[track] - selected[track], 0) for track in RESEARCH_TRACKS}
+    approved_query_track_counts = {track: 0 for track in RESEARCH_TRACKS}
+    for assignment in plan.query_tracks:
+        approved_query_track_counts[assignment.research_track] += 1
     return {
-        "schema_version": "cosmatter.research-route-policy/v1",
+        "schema_version": "cosmatter.research-route-policy/v2",
         "trust_status": "deterministic_metadata_routing_not_relevance_judgment",
         "classification_status": "current_candidate_pool",
-        "track_minimums": dict(TRACK_MINIMUMS),
+        "query_track_planning_status": "approved_independent_tracks" if plan.query_tracks else "legacy_unclassified",
+        "approved_query_track_counts": approved_query_track_counts,
+        "track_minimums": track_minimums,
         "counterevidence_minimum": COUNTEREVIDENCE_MINIMUM,
         "available_track_counts": available,
         "selected_track_counts": selected,
+        "track_shortfall_counts": shortfalls,
+        "shortfall_reason_codes": [f"{track}_shortfall" for track in RESEARCH_TRACKS if shortfalls[track]],
         "available_counterevidence_count": available_counter,
         "selected_counterevidence_count": selected_counter,
     }
@@ -278,6 +295,8 @@ def load_reading_guide(path: Path, mission_id: str) -> dict[str, Any] | None:
         payload = _upgrade_legacy_guide(payload)
     elif isinstance(payload, dict) and payload.get("schema_version") in {_V11_GUIDE_SCHEMA_VERSION, _V12_GUIDE_SCHEMA_VERSION}:
         payload = _upgrade_v11_guide(payload)
+    elif isinstance(payload, dict) and payload.get("schema_version") == _V13_GUIDE_SCHEMA_VERSION:
+        payload = _upgrade_v13_guide(payload)
     _validate_reading_guide(payload)
     if payload["mission_id"] != mission_id:
         raise ReadingGuideError("reading guide does not belong to mission")
@@ -389,16 +408,27 @@ def _validate_route_policy(policy: object, items: list[dict[str, Any]]) -> None:
     fields = {
         "schema_version", "trust_status", "classification_status", "track_minimums",
         "counterevidence_minimum", "available_track_counts", "selected_track_counts",
-        "available_counterevidence_count", "selected_counterevidence_count",
+        "available_counterevidence_count", "selected_counterevidence_count", "query_track_planning_status",
+        "approved_query_track_counts", "track_shortfall_counts", "shortfall_reason_codes",
     }
-    if not isinstance(policy, dict) or set(policy) != fields or policy.get("schema_version") != "cosmatter.research-route-policy/v1" or policy.get("trust_status") != "deterministic_metadata_routing_not_relevance_judgment" or policy.get("classification_status") not in {"current_candidate_pool", "legacy_unclassified"}:
+    if not isinstance(policy, dict) or set(policy) != fields or policy.get("schema_version") != "cosmatter.research-route-policy/v2" or policy.get("trust_status") != "deterministic_metadata_routing_not_relevance_judgment" or policy.get("classification_status") not in {"current_candidate_pool", "legacy_unclassified"}:
         raise ReadingGuideError("reading guide route policy is invalid")
-    if policy.get("track_minimums") != TRACK_MINIMUMS or policy.get("counterevidence_minimum") != COUNTEREVIDENCE_MINIMUM:
+    if policy.get("counterevidence_minimum") != COUNTEREVIDENCE_MINIMUM:
         raise ReadingGuideError("reading guide route quotas are invalid")
-    for key in ("available_track_counts", "selected_track_counts"):
+    for key in ("track_minimums", "available_track_counts", "selected_track_counts", "approved_query_track_counts", "track_shortfall_counts"):
         counts = policy.get(key)
         if not isinstance(counts, dict) or set(counts) != set(RESEARCH_TRACKS) or any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counts.values()):
             raise ReadingGuideError("reading guide route counts are invalid")
+    if any(value < 1 for value in policy["track_minimums"].values()) or sum(policy["track_minimums"].values()) > _MAX_GUIDE_ITEMS:
+        raise ReadingGuideError("reading guide route quotas are invalid")
+    planning_status = policy.get("query_track_planning_status")
+    if planning_status not in {"approved_independent_tracks", "legacy_unclassified"}:
+        raise ReadingGuideError("reading guide query-track planning status is invalid")
+    query_counts = policy["approved_query_track_counts"]
+    if (planning_status == "approved_independent_tracks") != all(query_counts[track] >= 1 for track in RESEARCH_TRACKS):
+        raise ReadingGuideError("reading guide approved query-track counts are inconsistent")
+    if planning_status == "legacy_unclassified" and any(query_counts.values()):
+        raise ReadingGuideError("legacy query-track planning cannot invent approved assignments")
     available_counter = policy.get("available_counterevidence_count")
     selected_counter = policy.get("selected_counterevidence_count")
     if not isinstance(available_counter, int) or isinstance(available_counter, bool) or available_counter < 0 or not isinstance(selected_counter, int) or isinstance(selected_counter, bool) or not 0 <= selected_counter <= available_counter:
@@ -414,6 +444,15 @@ def _validate_route_policy(policy: object, items: list[dict[str, Any]]) -> None:
     legacy = policy["classification_status"] == "legacy_unclassified"
     if legacy != all(item["research_track"] == "unclassified_legacy" for item in items):
         raise ReadingGuideError("reading guide route classification status is inconsistent")
+    expected_shortfalls = {
+        track: 0 if legacy else max(policy["track_minimums"][track] - policy["selected_track_counts"][track], 0)
+        for track in RESEARCH_TRACKS
+    }
+    if policy["track_shortfall_counts"] != expected_shortfalls:
+        raise ReadingGuideError("reading guide track shortfalls are inconsistent")
+    expected_reasons = [f"{track}_shortfall" for track in RESEARCH_TRACKS if expected_shortfalls[track]]
+    if policy.get("shortfall_reason_codes") != expected_reasons:
+        raise ReadingGuideError("reading guide shortfall reason codes are inconsistent")
 
 
 def _upgrade_legacy_guide(payload: dict[str, Any]) -> dict[str, Any]:
@@ -461,16 +500,55 @@ def _upgrade_v11_guide(payload: dict[str, Any]) -> dict[str, Any]:
     return {**payload, "schema_version": GUIDE_SCHEMA_VERSION, "items": upgraded_items, "route_policy": _legacy_route_policy(upgraded_items)}
 
 
+def _upgrade_v13_guide(payload: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade the v1.3 candidate-pool policy without inventing query tracks."""
+    old_fields = {
+        "schema_version", "trust_status", "classification_status", "track_minimums",
+        "counterevidence_minimum", "available_track_counts", "selected_track_counts",
+        "available_counterevidence_count", "selected_counterevidence_count",
+    }
+    if set(payload) != _GUIDE_FIELDS or not isinstance(payload.get("items"), list):
+        raise ReadingGuideError("reading guide v1.3 fields are invalid")
+    policy = payload.get("route_policy")
+    if not isinstance(policy, dict) or set(policy) != old_fields or policy.get("schema_version") != "cosmatter.research-route-policy/v1":
+        raise ReadingGuideError("reading guide v1.3 route policy is invalid")
+    classification_status = policy.get("classification_status")
+    if classification_status not in {"current_candidate_pool", "legacy_unclassified"}:
+        raise ReadingGuideError("reading guide v1.3 classification status is invalid")
+    available = policy.get("available_track_counts")
+    minimums = policy.get("track_minimums")
+    if not isinstance(available, dict) or not isinstance(minimums, dict):
+        raise ReadingGuideError("reading guide v1.3 route counts are invalid")
+    legacy = classification_status == "legacy_unclassified"
+    shortfalls = {
+        track: 0 if legacy else max(int(minimums.get(track, 0)) - int(policy.get("selected_track_counts", {}).get(track, 0)), 0)
+        for track in RESEARCH_TRACKS
+    }
+    upgraded_policy = {
+        **policy,
+        "schema_version": "cosmatter.research-route-policy/v2",
+        "query_track_planning_status": "legacy_unclassified",
+        "approved_query_track_counts": {track: 0 for track in RESEARCH_TRACKS},
+        "track_shortfall_counts": shortfalls,
+        "shortfall_reason_codes": [f"{track}_shortfall" for track in RESEARCH_TRACKS if shortfalls[track]],
+    }
+    return {**payload, "schema_version": GUIDE_SCHEMA_VERSION, "route_policy": upgraded_policy}
+
+
 def _legacy_route_policy(items: list[dict[str, Any]]) -> dict[str, Any]:
     counter_count = sum(item["route_eligibility"] == "counterevidence_only" for item in items)
     return {
-        "schema_version": "cosmatter.research-route-policy/v1",
+        "schema_version": "cosmatter.research-route-policy/v2",
         "trust_status": "deterministic_metadata_routing_not_relevance_judgment",
         "classification_status": "legacy_unclassified",
-        "track_minimums": dict(TRACK_MINIMUMS),
+        "query_track_planning_status": "legacy_unclassified",
+        "approved_query_track_counts": {track: 0 for track in RESEARCH_TRACKS},
+        "track_minimums": dict(DEFAULT_TRACK_CANDIDATE_MINIMUMS),
         "counterevidence_minimum": COUNTEREVIDENCE_MINIMUM,
         "available_track_counts": {track: 0 for track in RESEARCH_TRACKS},
         "selected_track_counts": {track: 0 for track in RESEARCH_TRACKS},
+        "track_shortfall_counts": {track: 0 for track in RESEARCH_TRACKS},
+        "shortfall_reason_codes": [],
         "available_counterevidence_count": counter_count,
         "selected_counterevidence_count": counter_count,
     }

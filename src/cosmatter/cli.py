@@ -108,6 +108,14 @@ from .simulation_result_import import (
 from .aiida_mock_trial import AiidaMockTrialError, advance_mock_process, aiida_mock_trial_template, approve_aiida_mock_trial, new_mock_process, write_mock_process, write_mock_trial, write_mock_trial_template
 from .ising_benchmark import IsingBenchmarkError, build_ising_benchmark_plan, propose_ising_followups, run_ising_benchmark, write_ising_followups, write_ising_plan, write_ising_result
 from .ising_summary import IsingSummaryError, ising_benchmark_summary, write_ising_benchmark_summary
+from .pst_configuration_search import (
+    PstConfigurationSearchError,
+    build_pst_configuration_search_plan,
+    run_synthetic_mrmt_ablation,
+    validate_pst_configuration_search_plan,
+    write_pst_configuration_search_plan,
+    write_synthetic_mrmt_ablation,
+)
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .sciverse_context_review import SciverseContextReviewError, load_sciverse_context_review_pool, prepare_sciverse_context_review_pool, require_current_sciverse_context_review_pool, sciverse_automated_trial_selection, sciverse_source_map_review_template, sciverse_source_map_selection_from_review, write_sciverse_source_map_review
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _last_recorded_state, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
@@ -447,13 +455,17 @@ def command_approve_plan(args: argparse.Namespace) -> int:
         _json_print({"error": str(error), "run_id": args.run_id})
         return 2
     recorder = FlightRecorder(_runs_dir(), args.run_id)
+    query_track_counts = {
+        track: sum(assignment.research_track == track for assignment in plan.query_tracks)
+        for track in ("exact_material", "mechanism_analogue", "algorithm")
+    }
     recorder.record(
         event_type="flight_plan_approved",
         actor="human_plan_review",
         state=MissionState.PLAN,
-        payload={"plan_id": plan.artifact_id, "query_count": len(plan.queries), "counter_query_count": len(plan.counter_queries)},
+        payload={"plan_id": plan.artifact_id, "query_count": len(plan.queries), "counter_query_count": len(plan.counter_queries), "query_track_counts": query_track_counts, "query_track_planning_status": "approved_independent_tracks" if plan.query_tracks else "legacy_unclassified"},
     )
-    _json_print({"run_id": args.run_id, "plan_id": plan.artifact_id, "plan_path": str(plan_path)})
+    _json_print({"run_id": args.run_id, "plan_id": plan.artifact_id, "plan_path": str(plan_path), "query_track_counts": query_track_counts, "query_track_planning_status": "approved_independent_tracks" if plan.query_tracks else "legacy_unclassified"})
     return 0
 
 def command_draft_plan(args: argparse.Namespace) -> int:
@@ -514,6 +526,8 @@ def command_build_reading_guide(args: argparse.Namespace) -> int:
             "guide_item_count": len(guide["items"]),
             "counterevidence_item_count": sum(item["track"] == "counterevidence" for item in guide["items"]),
             "research_track_counts": guide["route_policy"]["selected_track_counts"],
+            "research_track_shortfalls": guide["route_policy"]["track_shortfall_counts"],
+            "query_track_planning_status": guide["route_policy"]["query_track_planning_status"],
             "counterevidence_only_item_count": guide["route_policy"]["selected_counterevidence_count"],
             "route_classification_status": guide["route_policy"]["classification_status"],
             "trust_status": guide["trust_status"],
@@ -524,6 +538,9 @@ def command_build_reading_guide(args: argparse.Namespace) -> int:
         "guide_path": str(guide_path),
         "item_count": len(guide["items"]),
         "research_track_counts": guide["route_policy"]["selected_track_counts"],
+        "research_track_shortfalls": guide["route_policy"]["track_shortfall_counts"],
+        "shortfall_reason_codes": guide["route_policy"]["shortfall_reason_codes"],
+        "query_track_planning_status": guide["route_policy"]["query_track_planning_status"],
         "counterevidence_only_item_count": guide["route_policy"]["selected_counterevidence_count"],
         "route_classification_status": guide["route_policy"]["classification_status"],
         "trust_status": guide["trust_status"],
@@ -1714,6 +1731,76 @@ def command_compare_human_retrieval_routes(args: argparse.Namespace) -> int:
         payload={"route_count": len(comparison["route_metrics"]), "k": comparison["k"], "baseline_route_id": comparison["baseline_route_id"]},
     )
     _json_print({"run_id": args.run_id, "comparison_path": str(path), "trust_status": comparison["trust_status"]})
+    return 0
+
+
+def command_create_pst_configuration_search_plan(args: argparse.Namespace) -> int:
+    """Persist a reviewed PST search plan without authorizing or running MD."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        payload = json.loads(Path(args.input).read_text(encoding="utf-8-sig"))
+        plan = build_pst_configuration_search_plan(payload)
+        path = write_pst_configuration_search_plan(run_dir / "pst_configuration_search_plan.json", plan)
+    except (OSError, json.JSONDecodeError, PstConfigurationSearchError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="pst_configuration_search_plan_created",
+        actor="pst_configuration_search",
+        state=MissionState.PLAN,
+        payload={
+            "a_site_count": plan["a_site_count"],
+            "chain_count": plan["chain_count"],
+            "max_evaluations": plan["evaluation_budget"]["max_evaluations"],
+            "execution_authorized": False,
+            "property_prediction_count": 0,
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "plan_path": str(path),
+        "trust_status": plan["trust_status"],
+        "execution_authorized": False,
+        "property_prediction_count": 0,
+    })
+    return 0
+
+
+def command_run_pst_synthetic_ablation(args: argparse.Namespace) -> int:
+    """Run the bounded synthetic algorithm regression; never run or emulate MD."""
+    run_dir = _run_dir(args.run_id)
+    try:
+        plan = _load_object(run_dir / "pst_configuration_search_plan.json", "PST configuration search plan")
+        validate_pst_configuration_search_plan(plan)
+        artifact = run_synthetic_mrmt_ablation(
+            n_pb=plan["composition"]["n_pb"],
+            evaluation_budget=args.evaluation_budget,
+            search_seeds=tuple(args.search_seed or (11, 29, 47)),
+        )
+        path = write_synthetic_mrmt_ablation(run_dir / "pst_mrmt_synthetic_ablation.json", artifact)
+    except (UiExportError, PstConfigurationSearchError) as error:
+        _json_print({"error": str(error), "run_id": args.run_id})
+        return 2
+    FlightRecorder(_runs_dir(), args.run_id).record(
+        event_type="pst_synthetic_mrmt_ablation_executed",
+        actor="pst_configuration_search",
+        state=MissionState.HUMAN_REVIEW,
+        payload={
+            "method_count": len(artifact["methods"]),
+            "search_seed_count": artifact["search_seed_count"],
+            "evaluation_budget_per_method_per_seed": artifact["evaluation_budget_per_method_per_seed"],
+            "mrmt_outperforms_uniform_random_every_seed": artifact["mrmt_outperforms_uniform_random_every_seed"],
+            "synthetic_only": True,
+            "property_prediction_count": 0,
+        },
+    )
+    _json_print({
+        "run_id": args.run_id,
+        "ablation_path": str(path),
+        "trust_status": artifact["trust_status"],
+        "mrmt_outperforms_uniform_random_every_seed": artifact["mrmt_outperforms_uniform_random_every_seed"],
+        "property_prediction_count": 0,
+    })
     return 0
 
 def command_create_ising_benchmark_plan(args: argparse.Namespace) -> int:
@@ -3729,6 +3816,15 @@ def build_parser() -> argparse.ArgumentParser:
     retrieval_compare.add_argument("--run-id", required=True)
     retrieval_compare.add_argument("--input", required=True, help="JSON containing baseline_route_id and aggregate human retrieval evaluation payloads; no labels or queries")
     retrieval_compare.set_defaults(handler=command_compare_human_retrieval_routes)
+    pst_plan = commands.add_parser("create-pst-configuration-search-plan", help="validate and persist a reviewed 8x8x8 fixed-composition PST search plan; MD execution remains disabled")
+    pst_plan.add_argument("--run-id", required=True)
+    pst_plan.add_argument("--input", required=True, help="reviewed plan JSON with frozen potential, objective, protocol, budgets, failure policy, and stopping rule")
+    pst_plan.set_defaults(handler=command_create_pst_configuration_search_plan)
+    pst_ablation = commands.add_parser("run-pst-synthetic-ablation", help="run a same-budget synthetic MRMT/random/EDA/short-range regression; it produces no material-property evidence")
+    pst_ablation.add_argument("--run-id", required=True)
+    pst_ablation.add_argument("--evaluation-budget", type=int, default=48, metavar="N>=16", help="unique synthetic evaluations per method and search seed (default: 48)")
+    pst_ablation.add_argument("--search-seed", type=int, action="append", help="nonnegative search seed; repeat at least three times (default: 11, 29, 47)")
+    pst_ablation.set_defaults(handler=command_run_pst_synthetic_ablation)
     ising_plan = commands.add_parser("create-ising-benchmark-plan", help="create a seeded bounded 2-D Ising Metropolis/Wolff/Swendsen-Wang comparison plan")
     ising_plan.add_argument("--run-id", required=True)
     ising_plan.add_argument("--lattice-size", type=int, default=32)

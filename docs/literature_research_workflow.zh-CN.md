@@ -123,11 +123,23 @@ cd CosMatter
     "Which epitaxial conditions differ between reported phases?"
   ],
   "queries": [
-    "BiFeO3 epitaxial strain phase stability"
+    "BiFeO3 epitaxial strain phase stability",
+    "ferroelectric perovskite strain phase mechanism",
+    "configuration search algorithm ferroelectric lattice"
   ],
   "counter_queries": [
     "BiFeO3 epitaxial phase contradictory thickness substrate"
-  ]
+  ],
+  "query_tracks": [
+    {"query_index": 0, "research_track": "exact_material"},
+    {"query_index": 1, "research_track": "mechanism_analogue"},
+    {"query_index": 2, "research_track": "algorithm"}
+  ],
+  "track_candidate_minimums": {
+    "exact_material": 4,
+    "mechanism_analogue": 3,
+    "algorithm": 4
+  }
 }
 ```
 
@@ -136,7 +148,7 @@ cd CosMatter
   --run-id bfo_001 --input .\reviewed_plan.json
 ```
 
-**输出：** 有界 `flight_plan.json`。它限制子问题、主检索式、反例检索式、检索轮数与候选上限；所有后续计划检索只接受其中的索引，防止模型绕过审批扩大任务。
+**输出：** 有界 `flight_plan.json`。它限制子问题、主检索式、反例检索式、检索轮数与候选上限；新版计划还把每个主查询索引唯一绑定到 `exact_material`、`mechanism_analogue` 或 `algorithm`，三轨均须非空，并冻结逐轨最低候选数。所有后续计划检索只接受其中的索引，防止模型绕过审批扩大任务。旧计划可只读加载，但不会被伪装为已批准的独立三轨计划。
 
 ### 步骤 2：多源检索、精确去重与阅读路线
 
@@ -181,7 +193,7 @@ cd CosMatter
 .\cosmatter.ps1 build-reading-guide --run-id bfo_001
 ```
 
-**输出：** 完整的人工筛选工件、可选的 `candidate_metadata_enrichment.json` 和 schema 1.3 阅读路线。默认补全仅查询已纳入候选；显式使用 `--all-candidates` 可把范围扩为当前全部候选，但单次仍最多 12 条，重复执行会从当前候选指纹下的下一未处理项继续。已有 DOI 不再外发标题；累计工件不允许后续批次覆盖旧记录，并返回剩余数与完成状态。解析只接受规范化标题精确一致且年份相容的 DOI；近似标题不自动匹配，多 DOI 命中写为冲突。阅读路线会显示 DOI 与材料/性质/方法/反例/全文筛选等允许列表信号，并按 `exact_material`、`mechanism_analogue`、`algorithm` 三轨的 4/3/4 目标配额组织最多 12 项；有反证候选时目标至少保留 1 项。任务明确禁止性质预测代理时，代理模型论文标为 `counterevidence_only`。这些规则只依据已批准任务、查询来源与题名，是元数据导航启发式，不是相关性判断、性质预测或科学结论。正文状态分为 `provider_advertised`（上游声明可读）、`confirmed`（当前候选指纹下已成功读取并留下哈希回执）和 `failed_or_expired`（读取失败或确认因候选变化过期）；没有可读声明时为 `metadata_only`。只有状态为 `include_for_fulltext` 且来源确有授权访问边界的文献，才能进入全文解析和 Source Map。元数据检索结果、本地 Zotero 搜索结果或人工手写文献 ID 均不能绕过此门禁。
+**输出：** 完整的人工筛选工件、可选的 `candidate_metadata_enrichment.json` 和 schema 1.4 阅读路线。默认补全仅查询已纳入候选；显式使用 `--all-candidates` 可把范围扩为当前全部候选，但单次仍最多 12 条，重复执行会从当前候选指纹下的下一未处理项继续。已有 DOI 不再外发标题；累计工件不允许后续批次覆盖旧记录，并返回剩余数和完成状态。解析只接受规范化标题精确一致且年份相容的 DOI；近似标题不自动匹配，多 DOI 命中写为冲突。阅读路线会显示 DOI 与材料/性质/方法/反例/全文筛选等允许列表信号，并按 FlightPlan 冻结的 `exact_material`、`mechanism_analogue`、`algorithm` 最低候选数组织最多 12 项；默认目标为 4/3/4，有反证候选时目标至少保留 1 项。每轨同时报告可用、入选和缺口；缺口只产生 `*_shortfall` 原因码，不会被其它轨道静默填满，也不会触发未批准查询或自动外部调用。任务明确禁止性质预测代理时，代理模型论文标为 `counterevidence_only`。这些规则只依据已批准任务、查询来源与题名，是元数据导航启发式，不是相关性判断、性质预测或科学结论。正文状态分为 `provider_advertised`（上游声明可读）、`confirmed`（当前候选指纹下已成功读取并留下哈希回执）和 `failed_or_expired`（读取失败或确认因候选变化过期）；没有可读声明时为 `metadata_only`。只有状态为 `include_for_fulltext` 且来源确有授权访问边界的文献，才能进入全文解析和 Source Map。元数据检索结果、本地 Zotero 搜索结果或人工手写文献 ID 均不能绕过此门禁。
 
 对全部当前候选还应建立候选重复待对账队列：
 

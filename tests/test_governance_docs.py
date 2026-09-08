@@ -78,7 +78,7 @@ class GovernanceDocumentationTests(unittest.TestCase):
             "cosmatter.validation-rejection/v1",
             "cosmatter.operational-telemetry/v2",
             "cosmatter.candidate-duplicate-queue/v1",
-            "cosmatter.research-route-policy/v1",
+            "cosmatter.research-route-policy/v2",
             "exact_material",
             "不是相关性判断",
             "题名相同只能提示",

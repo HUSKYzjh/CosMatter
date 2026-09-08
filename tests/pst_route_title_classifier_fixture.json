@@ -1,0 +1,16 @@
+{
+  "schema_version": "cosmatter.synthetic-pst-route-title-regression/v1",
+  "trust_status": "synthetic_classifier_regression_not_human_relevance_gold",
+  "cases": [
+    {"title": "A-site ordering in Pb1-xSrxTiO3 solid solutions", "expected_track": "exact_material", "expected_eligibility": "primary_allowed"},
+    {"title": "Dielectric response of lead strontium titanate perovskites", "expected_track": "exact_material", "expected_eligibility": "primary_allowed"},
+    {"title": "Phase behavior of (Pb,Sr)TiO3 ferroelectric ceramics", "expected_track": "exact_material", "expected_eligibility": "primary_allowed"},
+    {"title": "PST titanate solid solutions under epitaxial strain", "expected_track": "exact_material", "expected_eligibility": "primary_allowed"},
+    {"title": "Domain-wall response in SrTiO3 perovskites", "expected_track": "mechanism_analogue", "expected_eligibility": "primary_allowed"},
+    {"title": "Cation short-range order in binary ferroelectric solid solutions", "expected_track": "mechanism_analogue", "expected_eligibility": "primary_allowed"},
+    {"title": "Replica exchange Monte Carlo for fixed-composition configuration search", "expected_track": "algorithm", "expected_eligibility": "primary_allowed"},
+    {"title": "Evolutionary optimization of binary lattice occupations", "expected_track": "algorithm", "expected_eligibility": "primary_allowed"},
+    {"title": "Bayesian optimization with a Gaussian-process surrogate for dielectric materials", "expected_track": "algorithm", "expected_eligibility": "counterevidence_only"},
+    {"title": "Molecular dynamics simulation of ferroelectric switching", "expected_track": "mechanism_analogue", "expected_eligibility": "primary_allowed"}
+  ]
+}

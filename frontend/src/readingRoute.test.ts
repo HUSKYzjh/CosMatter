@@ -129,9 +129,13 @@ describe("readingRoute", () => {
       ],
       routePolicy: {
         classificationStatus: "current_candidate_pool",
+        queryTrackPlanningStatus: "approved_independent_tracks",
+        approvedQueryTrackCounts: { exact_material: 1, mechanism_analogue: 1, algorithm: 1 },
         trackMinimums: { exact_material: 4, mechanism_analogue: 3, algorithm: 4 },
         availableTrackCounts: { exact_material: 1, mechanism_analogue: 1, algorithm: 1 },
         selectedTrackCounts: { exact_material: 1, mechanism_analogue: 1, algorithm: 1 },
+        trackShortfallCounts: { exact_material: 3, mechanism_analogue: 2, algorithm: 3 },
+        shortfallReasonCodes: ["exact_material_shortfall", "mechanism_analogue_shortfall", "algorithm_shortfall"],
         availableCounterevidenceCount: 1,
         selectedCounterevidenceCount: 1,
       },

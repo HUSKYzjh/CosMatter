@@ -6,14 +6,16 @@ import json
 from pathlib import Path
 
 from .deepseek import DraftCompletion
-from .models import FlightPlan, MissionBrief
+from .models import ApprovedQueryTrack, FlightPlan, MissionBrief
+from .research_tracks import DEFAULT_TRACK_CANDIDATE_MINIMUMS, RESEARCH_TRACKS
 
 
 def research_planning_prompts(mission: MissionBrief) -> tuple[str, str]:
     """Build a metadata-only prompt that requests bounded search suggestions."""
     system_prompt = (
         "You are the CosMatter research-planning station. Produce an untrusted JSON draft with "
-        "subquestions, bounded search queries, and counterevidence queries. Do not claim any "
+        "subquestions, bounded search queries, counterevidence queries, and three proposed query-track "
+        "assignments (exact_material, mechanism_analogue, algorithm) that a human must review. Do not claim any "
         "scientific fact, invent citations, request full text, or write a final conclusion."
     )
     user_prompt = json.dumps(
@@ -24,6 +26,14 @@ def research_planning_prompts(mission: MissionBrief) -> tuple[str, str]:
             "scope": mission.scope,
             "source_policy": mission.source_policy.value,
             "limits": {"max_subquestions": 5, "max_queries": 8, "max_counterevidence_queries": 4},
+            "required_plan_fields": {
+                "query_tracks": [
+                    {"query_index": 0, "research_track": "exact_material"},
+                    {"query_index": 1, "research_track": "mechanism_analogue"},
+                    {"query_index": 2, "research_track": "algorithm"},
+                ],
+                "track_candidate_minimums": DEFAULT_TRACK_CANDIDATE_MINIMUMS,
+            },
         },
         ensure_ascii=False,
     )
@@ -47,7 +57,10 @@ class PlanApprovalError(ValueError):
     """Raised when a reviewed plan is not a bounded FlightPlan."""
 
 
-_PLAN_FIELDS = {"subquestions", "queries", "counter_queries", "max_rounds", "max_papers"}
+_PLAN_FIELDS = {
+    "subquestions", "queries", "counter_queries", "max_rounds", "max_papers",
+    "query_tracks", "track_candidate_minimums",
+}
 
 
 def approved_flight_plan_from_payload(mission: MissionBrief, payload: object) -> FlightPlan:
@@ -62,6 +75,7 @@ def approved_flight_plan_from_payload(mission: MissionBrief, payload: object) ->
         max_papers = int(payload.get("max_papers", 20))
         if not 1 <= max_rounds <= 3 or not 1 <= max_papers <= 20:
             raise PlanApprovalError("reviewed plan limits exceed the configured baseline")
+        query_tracks, track_candidate_minimums = _approved_query_tracks(payload, len(queries))
         return FlightPlan(
             mission_id=mission.mission_id,
             subquestions=subquestions,
@@ -69,6 +83,8 @@ def approved_flight_plan_from_payload(mission: MissionBrief, payload: object) ->
             counter_queries=counter_queries,
             max_rounds=max_rounds,
             max_papers=max_papers,
+            query_tracks=query_tracks,
+            track_candidate_minimums=track_candidate_minimums,
         )
     except (KeyError, TypeError, ValueError) as error:
         if isinstance(error, PlanApprovalError):
@@ -83,6 +99,29 @@ def _bounded_strings(value: object, name: str, maximum: int) -> tuple[str, ...]:
     if any(not item for item in items) or len(set(items)) != len(items):
         raise PlanApprovalError(f"{name} must contain unique nonempty strings")
     return items
+
+
+def _approved_query_tracks(payload: dict[str, object], query_count: int) -> tuple[tuple[ApprovedQueryTrack, ...], dict[str, int]]:
+    """Validate an optional vNext three-track block while retaining old plans."""
+    has_tracks = "query_tracks" in payload
+    has_minimums = "track_candidate_minimums" in payload
+    if has_tracks != has_minimums:
+        raise PlanApprovalError("query_tracks and track_candidate_minimums must be supplied together")
+    if not has_tracks:
+        return (), {}
+    raw_tracks = payload["query_tracks"]
+    raw_minimums = payload["track_candidate_minimums"]
+    if not isinstance(raw_tracks, list) or len(raw_tracks) != query_count:
+        raise PlanApprovalError("query_tracks must assign every primary query index exactly once")
+    assignments: list[ApprovedQueryTrack] = []
+    for raw in raw_tracks:
+        if not isinstance(raw, dict) or set(raw) != {"query_index", "research_track"}:
+            raise PlanApprovalError("query_tracks entries have unsupported or missing fields")
+        assignments.append(ApprovedQueryTrack(raw["query_index"], raw["research_track"]))
+    if not isinstance(raw_minimums, dict) or set(raw_minimums) != set(RESEARCH_TRACKS):
+        raise PlanApprovalError("track_candidate_minimums must cover every research track")
+    minimums = {track: raw_minimums[track] for track in RESEARCH_TRACKS}
+    return tuple(assignments), minimums
 
 
 def write_approved_flight_plan(run_dir: Path, plan: FlightPlan) -> Path:
@@ -106,6 +145,11 @@ def load_approved_flight_plan(run_dir: Path, mission_id: str) -> FlightPlan:
             counter_queries=tuple(str(item) for item in payload["counter_queries"]),
             max_rounds=int(payload.get("max_rounds", 3)),
             max_papers=int(payload.get("max_papers", 20)),
+            query_tracks=tuple(
+                ApprovedQueryTrack(item["query_index"], item["research_track"])
+                for item in payload.get("query_tracks", ())
+            ),
+            track_candidate_minimums=dict(payload.get("track_candidate_minimums", {})),
             artifact_id=str(payload.get("artifact_id", "plan_loaded")),
             created_at=str(payload.get("created_at", "loaded")),
         )

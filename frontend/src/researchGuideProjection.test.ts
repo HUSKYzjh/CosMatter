@@ -24,20 +24,24 @@ const item = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const policy = (overrides: Record<string, unknown> = {}) => ({
-  schema_version: "cosmatter.research-route-policy/v1",
+  schema_version: "cosmatter.research-route-policy/v2",
   trust_status: "deterministic_metadata_routing_not_relevance_judgment",
   classification_status: "current_candidate_pool",
+  query_track_planning_status: "approved_independent_tracks",
+  approved_query_track_counts: { exact_material: 1, mechanism_analogue: 1, algorithm: 1 },
   track_minimums: { exact_material: 4, mechanism_analogue: 3, algorithm: 4 },
   counterevidence_minimum: 1,
   available_track_counts: { exact_material: 0, mechanism_analogue: 0, algorithm: 1 },
   selected_track_counts: { exact_material: 0, mechanism_analogue: 0, algorithm: 1 },
+  track_shortfall_counts: { exact_material: 4, mechanism_analogue: 3, algorithm: 3 },
+  shortfall_reason_codes: ["exact_material_shortfall", "mechanism_analogue_shortfall", "algorithm_shortfall"],
   available_counterevidence_count: 0,
   selected_counterevidence_count: 0,
   ...overrides,
 });
 
 const guide = (overrides: Record<string, unknown> = {}) => ({
-  schema_version: "1.3",
+  schema_version: "1.4",
   mission_id: "mission-route",
   trust_status: "derived_from_approved_artifacts",
   items: [item()],
@@ -52,19 +56,21 @@ describe("research guide projection", () => {
     expect(bundle.researchGuide).toMatchObject({
       trustStatus: "derived_from_approved_artifacts",
       items: [{ documentId: "doc-algorithm", researchTrack: "algorithm", routeEligibility: "primary_allowed" }],
-      routePolicy: { classificationStatus: "current_candidate_pool", selectedCounterevidenceCount: 0 },
+      routePolicy: { classificationStatus: "current_candidate_pool", queryTrackPlanningStatus: "approved_independent_tracks", selectedCounterevidenceCount: 0, trackShortfallCounts: { exact_material: 4, mechanism_analogue: 3, algorithm: 3 } },
     });
-    expect(JSON.stringify(bundle.researchGuide)).not.toContain("query");
-    expect(JSON.stringify(bundle.researchGuide)).not.toContain("score");
+    expect(JSON.stringify(bundle.researchGuide)).not.toContain('"query":');
+    expect(JSON.stringify(bundle.researchGuide)).not.toContain('"score":');
   });
 
   it("fails closed when policy counts or fields are inconsistent", () => {
     const wrongCounts = readBundle({ mission, research_guide: guide({ route_policy: policy({ selected_track_counts: { exact_material: 1, mechanism_analogue: 0, algorithm: 0 } }) }) });
     const wrongQuota = readBundle({ mission, research_guide: guide({ route_policy: policy({ track_minimums: { exact_material: 0, mechanism_analogue: 0, algorithm: 0 } }) }) });
+    const wrongShortfall = readBundle({ mission, research_guide: guide({ route_policy: policy({ track_shortfall_counts: { exact_material: 0, mechanism_analogue: 0, algorithm: 0 } }) }) });
     const extraField = readBundle({ mission, research_guide: guide({ items: [item({ relevance_score: 0.99 })] }) });
     const wrongMission = readBundle({ mission, research_guide: guide({ mission_id: "other" }) });
     expect(wrongCounts.researchGuide).toBeNull();
     expect(wrongQuota.researchGuide).toBeNull();
+    expect(wrongShortfall.researchGuide).toBeNull();
     expect(extraField.researchGuide).toBeNull();
     expect(wrongMission.researchGuide).toBeNull();
   });

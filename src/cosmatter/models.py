@@ -15,6 +15,8 @@ import re
 from typing import Any
 from uuid import uuid4
 
+from .research_tracks import MAX_READING_ROUTE_ITEMS, RESEARCH_TRACKS
+
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
@@ -264,6 +266,20 @@ class MissionBrief:
 
 
 @dataclass(frozen=True)
+class ApprovedQueryTrack:
+    """Bind one approved primary-query index to one research track."""
+
+    query_index: int
+    research_track: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.query_index, int) or isinstance(self.query_index, bool) or self.query_index < 0:
+            raise ValueError("ApprovedQueryTrack query_index must be a nonnegative integer")
+        if self.research_track not in RESEARCH_TRACKS:
+            raise ValueError("ApprovedQueryTrack research_track is invalid")
+
+
+@dataclass(frozen=True)
 class FlightPlan:
     mission_id: str
     subquestions: tuple[str, ...]
@@ -271,6 +287,8 @@ class FlightPlan:
     counter_queries: tuple[str, ...]
     max_rounds: int = 3
     max_papers: int = 20
+    query_tracks: tuple[ApprovedQueryTrack, ...] = ()
+    track_candidate_minimums: dict[str, int] = field(default_factory=dict)
     artifact_id: str = field(default_factory=lambda: new_id("plan"))
     created_at: str = field(default_factory=utc_now)
 
@@ -279,6 +297,21 @@ class FlightPlan:
             raise ValueError("FlightPlan requires at least one subquestion and query")
         if self.max_rounds < 1 or self.max_papers < 1:
             raise ValueError("FlightPlan limits must be positive")
+        if bool(self.query_tracks) != bool(self.track_candidate_minimums):
+            raise ValueError("FlightPlan query tracks and candidate minimums must be supplied together")
+        if self.query_tracks:
+            indexes = tuple(item.query_index for item in self.query_tracks)
+            tracks = tuple(item.research_track for item in self.query_tracks)
+            if len(set(indexes)) != len(indexes) or set(indexes) != set(range(len(self.queries))):
+                raise ValueError("FlightPlan must assign every primary query index exactly once")
+            if set(tracks) != set(RESEARCH_TRACKS):
+                raise ValueError("FlightPlan must include an approved query for every research track")
+            if set(self.track_candidate_minimums) != set(RESEARCH_TRACKS):
+                raise ValueError("FlightPlan track candidate minimums must cover every research track")
+            if any(not isinstance(value, int) or isinstance(value, bool) or value < 1 for value in self.track_candidate_minimums.values()):
+                raise ValueError("FlightPlan track candidate minimums must be positive integers")
+            if sum(self.track_candidate_minimums.values()) > MAX_READING_ROUTE_ITEMS:
+                raise ValueError("FlightPlan track candidate minimums exceed the bounded reading route")
 
     def to_dict(self) -> dict[str, Any]:
         return to_primitive(self)

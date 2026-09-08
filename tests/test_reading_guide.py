@@ -9,7 +9,7 @@ from unittest.mock import patch
 from cosmatter.candidate_screening import candidate_screening_from_automated_trial, write_automated_trial_candidate_screening
 from cosmatter.cli import main
 from cosmatter.content_access import load_content_access, record_sciverse_content_access, record_sciverse_content_failure
-from cosmatter.models import AccessPolicy, EvidenceCard, FlightPlan, MissionBrief, Provenance, ReviewStatus, Stance
+from cosmatter.models import AccessPolicy, ApprovedQueryTrack, EvidenceCard, FlightPlan, MissionBrief, Provenance, ReviewStatus, Stance
 from cosmatter.provider_receipts import sciverse_content_receipt
 from cosmatter.reading_guide import ReadingGuideError, build_reading_guide, load_reading_guide
 from cosmatter.verification import VerificationDecision
@@ -154,7 +154,7 @@ class ReadingGuideTests(unittest.TestCase):
             path.write_text(json.dumps(legacy), encoding="utf-8")
             loaded = load_reading_guide(path, self.mission.mission_id)
 
-        self.assertEqual(loaded["schema_version"], "1.3")
+        self.assertEqual(loaded["schema_version"], "1.4")
         self.assertEqual(loaded["items"][0]["routing_signals"], ["provider_advertised_content"])
         self.assertEqual(loaded["items"][0]["content_status"], "provider_advertised")
         self.assertIsNone(loaded["items"][0]["doi"])
@@ -169,20 +169,33 @@ class ReadingGuideTests(unittest.TestCase):
             "8x8x8 random A-site configurations; no surrogate model",
             mission_id="mission_pst_route",
         )
-        plan = FlightPlan(mission.mission_id, ("conditions",), ("primary",), ("counter",))
+        plan = FlightPlan(
+            mission.mission_id,
+            ("conditions",),
+            ("exact", "analogue", "algorithm"),
+            ("counter",),
+            query_tracks=(
+                ApprovedQueryTrack(0, "exact_material"),
+                ApprovedQueryTrack(1, "mechanism_analogue"),
+                ApprovedQueryTrack(2, "algorithm"),
+            ),
+            track_candidate_minimums={"exact_material": 4, "mechanism_analogue": 3, "algorithm": 4},
+        )
         candidates = [
-            *[candidate(f"exact_{index}", "primary", accessible=False, score=1 - index / 100, title=f"Pb0.5Sr0.5TiO3 dielectric response study {index}") for index in range(5)],
-            *[candidate(f"algorithm_{index}", "primary", accessible=False, score=.9 - index / 100, title=f"Replica exchange configuration search for binary occupations {index}") for index in range(4)],
-            *[candidate(f"analogue_{index}", "primary", accessible=False, score=.8 - index / 100, title=f"Cation ordering in ferroelectric perovskite oxides {index}") for index in range(4)],
-            candidate("surrogate", "primary", accessible=False, score=.99, title="Bayesian optimization with a Gaussian process surrogate for dielectric materials"),
+            *[candidate(f"exact_{index}", "exact", accessible=False, score=1 - index / 100, title=f"Pb0.5Sr0.5TiO3 dielectric response study {index}") for index in range(5)],
+            *[candidate(f"algorithm_{index}", "algorithm", accessible=False, score=.9 - index / 100, title=f"Replica exchange configuration search for binary occupations {index}") for index in range(4)],
+            *[candidate(f"analogue_{index}", "analogue", accessible=False, score=.8 - index / 100, title=f"Cation ordering in ferroelectric perovskite oxides {index}") for index in range(4)],
+            candidate("surrogate", "algorithm", accessible=False, score=.99, title="Bayesian optimization with a Gaussian process surrogate for dielectric materials"),
             candidate("counter", "counter", accessible=False, score=.1, title="Short-range order counterexample in solid solutions"),
         ]
 
         guide = build_reading_guide(mission, plan, {"candidates": candidates})
         policy = guide["route_policy"]
 
-        self.assertEqual(policy["schema_version"], "cosmatter.research-route-policy/v1")
+        self.assertEqual(policy["schema_version"], "cosmatter.research-route-policy/v2")
         self.assertEqual(policy["classification_status"], "current_candidate_pool")
+        self.assertEqual(policy["query_track_planning_status"], "approved_independent_tracks")
+        self.assertEqual(policy["track_shortfall_counts"], {"exact_material": 0, "mechanism_analogue": 0, "algorithm": 0})
         self.assertGreaterEqual(policy["selected_track_counts"]["exact_material"], 4)
         self.assertGreaterEqual(policy["selected_track_counts"]["mechanism_analogue"], 3)
         self.assertGreaterEqual(policy["selected_track_counts"]["algorithm"], 4)
@@ -193,6 +206,58 @@ class ReadingGuideTests(unittest.TestCase):
         serialized = json.dumps(guide)
         self.assertNotIn('"query"', serialized)
         self.assertNotIn('"score"', serialized)
+
+    def test_reports_explicit_shortfalls_without_inventing_supplemental_queries(self) -> None:
+        mission = MissionBrief("PST configuration search", "(Pb_xSr_1-x)TiO3", "dielectric", "MD only", mission_id="mission_shortfall")
+        plan = FlightPlan(
+            mission.mission_id, ("bounded",), ("exact", "analogue", "algorithm"), ("counter",),
+            query_tracks=(ApprovedQueryTrack(0, "exact_material"), ApprovedQueryTrack(1, "mechanism_analogue"), ApprovedQueryTrack(2, "algorithm")),
+            track_candidate_minimums={"exact_material": 4, "mechanism_analogue": 3, "algorithm": 4},
+        )
+        guide = build_reading_guide(mission, plan, {"candidates": [
+            candidate("exact_one", "exact", accessible=False, score=.9, title="Pb0.5Sr0.5TiO3 dielectric response"),
+            candidate("analogue_one", "analogue", accessible=False, score=.8, title="Ferroelectric perovskite domain response"),
+            candidate("algorithm_one", "algorithm", accessible=False, score=.7, title="Replica exchange configuration search"),
+        ]})
+
+        policy = guide["route_policy"]
+        self.assertEqual(policy["track_shortfall_counts"], {"exact_material": 3, "mechanism_analogue": 2, "algorithm": 3})
+        self.assertEqual(policy["shortfall_reason_codes"], ["exact_material_shortfall", "mechanism_analogue_shortfall", "algorithm_shortfall"])
+        self.assertNotIn('"query":', json.dumps(guide))
+
+    def test_route_capacity_shortfall_uses_selected_counts_and_never_silently_drops_preserved_items(self) -> None:
+        mission = MissionBrief("PST configuration search", "(Pb_xSr_1-x)TiO3", "dielectric", "MD only", mission_id="mission_route_capacity")
+        plan = FlightPlan(
+            mission.mission_id, ("bounded",), ("exact", "analogue", "algorithm"), ("counter",),
+            query_tracks=(ApprovedQueryTrack(0, "exact_material"), ApprovedQueryTrack(1, "mechanism_analogue"), ApprovedQueryTrack(2, "algorithm")),
+            track_candidate_minimums={"exact_material": 4, "mechanism_analogue": 3, "algorithm": 4},
+        )
+        exact_candidates = [
+            candidate(f"accepted_{index}", "exact", accessible=True, score=1 - index / 100, title=f"Pb0.5Sr0.5TiO3 dielectric study {index}")
+            for index in range(13)
+        ]
+        other_candidates = [
+            *[candidate(f"analogue_{index}", "analogue", accessible=True, score=.5, title=f"Ferroelectric perovskite mechanism {index}") for index in range(3)],
+            *[candidate(f"algorithm_{index}", "algorithm", accessible=True, score=.4, title=f"Replica exchange configuration search {index}") for index in range(4)],
+        ]
+        cards = tuple(
+            EvidenceCard(
+                f"synthetic claim {index}", Stance.SUPPORT, "PST", "dielectric", {}, "synthetic quote",
+                Provenance(item["document_id"], "page:1", "fixture", access_policy=AccessPolicy.OA),
+                evidence_id=f"accepted_evidence_{index}",
+            )
+            for index, item in enumerate(exact_candidates)
+        )
+        decisions = tuple(VerificationDecision(mission.mission_id, card.evidence_id, ReviewStatus.ACCEPTED, "complete") for card in cards)
+
+        guide = build_reading_guide(mission, plan, {"candidates": [*exact_candidates[:12], *other_candidates]}, cards[:12], decisions[:12])
+        policy = guide["route_policy"]
+        self.assertEqual(policy["available_track_counts"], {"exact_material": 12, "mechanism_analogue": 3, "algorithm": 4})
+        self.assertEqual(policy["selected_track_counts"], {"exact_material": 12, "mechanism_analogue": 0, "algorithm": 0})
+        self.assertEqual(policy["track_shortfall_counts"], {"exact_material": 0, "mechanism_analogue": 3, "algorithm": 4})
+
+        with self.assertRaisesRegex(ReadingGuideError, "exceed the bounded reading route"):
+            build_reading_guide(mission, plan, {"candidates": [*exact_candidates, *other_candidates]}, cards, decisions)
 
     def test_load_upgrades_v12_as_legacy_unclassified_and_rejects_policy_tampering(self) -> None:
         guide = build_reading_guide(
@@ -217,6 +282,28 @@ class ReadingGuideTests(unittest.TestCase):
             path.write_text(json.dumps(tampered), encoding="utf-8")
             with self.assertRaisesRegex(ReadingGuideError, "inconsistent"):
                 load_reading_guide(path, self.mission.mission_id)
+
+    def test_load_upgrades_v13_shortfalls_without_inventing_approved_query_tracks(self) -> None:
+        guide = build_reading_guide(
+            self.mission,
+            self.plan,
+            {"candidates": [candidate("primary_doc", "primary", accessible=False, score=0.7)]},
+        )
+        v13 = json.loads(json.dumps(guide))
+        v13["schema_version"] = "1.3"
+        policy = v13["route_policy"]
+        policy["schema_version"] = "cosmatter.research-route-policy/v1"
+        for field in ("query_track_planning_status", "approved_query_track_counts", "track_shortfall_counts", "shortfall_reason_codes"):
+            policy.pop(field)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reading_guide.json"
+            path.write_text(json.dumps(v13), encoding="utf-8")
+            loaded = load_reading_guide(path, self.mission.mission_id)
+
+        self.assertEqual(loaded["schema_version"], "1.4")
+        self.assertEqual(loaded["route_policy"]["query_track_planning_status"], "legacy_unclassified")
+        self.assertEqual(loaded["route_policy"]["approved_query_track_counts"], {"exact_material": 0, "mechanism_analogue": 0, "algorithm": 0})
+        self.assertEqual(loaded["route_policy"]["track_shortfall_counts"], {"exact_material": 4, "mechanism_analogue": 2, "algorithm": 4})
 
     def test_cli_writes_guide_and_export_projects_it(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

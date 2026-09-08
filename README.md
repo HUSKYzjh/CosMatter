@@ -68,7 +68,7 @@ python -m venv .venv
 .\cosmatter.ps1 export-ui --run-id YOUR_RUN
 ```
 
-补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。schema 1.3 阅读路线把当前候选按 `exact_material`、`mechanism_analogue`、`algorithm` 三个元数据轨道组织，目标配额为 4/3/4，并在可用时至少保留 1 条 `counterevidence_only`；当任务明确禁止性质代理模型时，代理模型论文只能作为反证候选。路线还显示规范化 DOI、允许列表内的入选信号，以及 `provider_advertised` / `confirmed` / `failed_or_expired` / `metadata_only` 正文状态；只有与当前候选指纹绑定的成功读取才显示为 `confirmed`。这些轨道是确定性题名/任务边界启发式，不是相关性判断或性质预测；筛选、元数据和访问状态仍不等于科学证据。
+补全只接受规范化标题精确一致且年份相容的 Crossref/OpenAlex 记录；多个 DOI 命中会保留为 `conflict`，不会模糊合并或改写原始候选。schema 1.4 阅读路线把当前候选按 `exact_material`、`mechanism_analogue`、`algorithm` 三个元数据轨道组织；新版 FlightPlan 可把每个主查询索引唯一绑定到一轨并冻结逐轨最低候选数，默认目标为 4/3/4。路线在可用时至少保留 1 条 `counterevidence_only`，并显式报告逐轨 `shortfall`；它不会猜测或自动执行补充查询。当任务明确禁止性质代理模型时，代理模型论文只能作为反证候选。路线还显示规范化 DOI、允许列表内的入选信号，以及 `provider_advertised` / `confirmed` / `failed_or_expired` / `metadata_only` 正文状态；只有与当前候选指纹绑定的成功读取才显示为 `confirmed`。这些轨道是确定性题名/任务边界启发式，不是相关性判断或性质预测；筛选、元数据和访问状态仍不等于科学证据。
 
 候选身份另有一个不改写检索历史的对账层。先建立 `cosmatter.candidate-duplicate-queue/v1`；完全一致的规范化 DOI 可自动建立 canonical/alias，只有题名相同、DOI 不完整或 DOI 冲突时只能进入人工待对账队列：
 
@@ -89,6 +89,15 @@ python -m venv .venv
 Sciverse 正文窗口参数由 `cosmatter.operation-parameter-contracts/v1` 单一契约定义：offset 不小于 0，limit 为 200–4000，默认 2000。CLI 在参数解析期应用该范围；本地 API 能力快照与 MCP 的 `cosmatter_get_operation_parameter_contracts` 只读返回同一契约，不执行提供商调用，也不授予浏览器或 Agent 全文写盘权限。
 
 参数解析期的 Sciverse 窗口拒绝会以 `cosmatter.validation-rejection/v1` 追加到既有运行的本地安全账本，并由 `cosmatter.operational-telemetry/v2` 按命令类别和固定原因码汇总。账本不记录参数值、路径、查询、文献标识或正文；前端与 DSH 只读投影只显示类别、次数及是否需要注意，不据此自动重试。
+
+PST 的 MD-only 构型搜索目前只开放“计划 + 合成算法回归”两步。先用显式 reviewed JSON 冻结组分、势场/协议哈希、目标、预算、失败与停止规则，再运行不调用 MD、网络或外部模型的同预算消融：
+
+```powershell
+.\cosmatter.ps1 create-pst-configuration-search-plan --run-id YOUR_RUN --input D:\private-review\pst-search-plan.json
+.\cosmatter.ps1 run-pst-synthetic-ablation --run-id YOUR_RUN
+```
+
+计划工件始终为 `execution_authorized = false`；合成回归默认比较均匀随机、固定基数 EDA、短程有序引导和 MRMT，使用 3 个冻结搜索种子、每组 48 个唯一构型。所有方法的 `property_prediction_count = 0`，输出明确不是 PST 介电/压电证据。真实 MD 回执、晋级和 Pareto 验证尚未接入，不能由此命令启动。
 
 该入口依次执行 Python 测试、前端类型检查与测试、DSH 发布/回放/配方门禁、七个本地 DSH 包测试和 `npm pack --dry-run`，最后检查 Git 空白错误。它不读取 `.env`，不调用任何提供商。如需指定解释器，可传入 `-Python C:\Python314\python.exe`；仅检查 Python 套件时可运行 `.\scripts\test-all.ps1`。完整通过时，最后单独输出 `OK - CosMatter full local acceptance passed.`。
 

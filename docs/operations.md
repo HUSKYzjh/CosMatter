@@ -95,8 +95,22 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 ```json
 {
   "subquestions": ["Which conditions differ?"],
-  "queries": ["BiFeO3 epitaxial strain phase stability"],
-  "counter_queries": ["BiFeO3 epitaxial phase contradictory thickness substrate"]
+  "queries": [
+    "BiFeO3 epitaxial strain phase stability",
+    "ferroelectric perovskite strain phase mechanism",
+    "configuration search algorithm ferroelectric lattice"
+  ],
+  "counter_queries": ["BiFeO3 epitaxial phase contradictory thickness substrate"],
+  "query_tracks": [
+    {"query_index": 0, "research_track": "exact_material"},
+    {"query_index": 1, "research_track": "mechanism_analogue"},
+    {"query_index": 2, "research_track": "algorithm"}
+  ],
+  "track_candidate_minimums": {
+    "exact_material": 4,
+    "mechanism_analogue": 3,
+    "algorithm": 4
+  }
 }
 ```
 
@@ -107,7 +121,7 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
   --run-id bfo_live_001 --input .\reviewed_plan.json
 ```
 
-此步写入 `flight_plan.json`；它才是可执行计划。
+此步写入 `flight_plan.json`；它才是可执行计划。`query_tracks` 必须恰好覆盖每个主查询索引且三轨均非空，最低候选数总和不得超过 12。旧计划仍可加载，但会明确标为 `legacy_unclassified`，不能声称已经建立独立轨道。
 
 ## 3. 从批准计划执行有界检索
 
@@ -131,7 +145,7 @@ If no explicit accepted conflict exists, candidate generation fails instead of i
 .\.venv\Scripts\python.exe -m cosmatter build-reading-guide --run-id bfo_live_001
 ```
 
-当前 schema 1.3 路线输出 `cosmatter.research-route-policy/v1` 聚合：`exact_material`、`mechanism_analogue`、`algorithm` 的可用/入选计数，以及 `counterevidence_only` 计数。目标配额为 4/3/4 和至少 1 条可用反证；已接受证据与已筛选文献不会为满足配额而被静默丢弃。任务明确规定“无性质代理”时，代理预测论文只能进入反证角色。该分轨只依据任务文本、批准查询轨和候选题名，不是相关性判断；真正的 Precision@K / nDCG 必须由独立冻结人工标题集计算。
+当前 schema 1.4 路线输出 `cosmatter.research-route-policy/v2` 聚合：`exact_material`、`mechanism_analogue`、`algorithm` 的批准查询数、可用数、入选数和 `shortfall`，以及 `counterevidence_only` 计数。默认目标为 4/3/4 和至少 1 条可用反证；新版计划可在同一 12 项上限内冻结其它正整数目标。已接受证据与已筛选文献不会为满足配额而被静默丢弃。短缺只产生 `*_shortfall` 原因码与 UI 提示，不生成查询、不自动重试；补检索仍只能显式执行 FlightPlan 已批准索引。任务明确规定“无性质代理”时，代理预测论文只能进入反证角色。该分轨只依据任务文本、批准查询轨和候选题名，不是相关性判断；真正的 Precision@K / nDCG 必须由独立冻结人工标题集计算。
 
 完成候选筛选后，可先对已纳入候选执行 Crossref/OpenAlex 精确元数据补全，再重建路线：
 

@@ -537,13 +537,17 @@ class LocalMissionApi:
             write_approved_flight_plan(run_dir, plan)
         except PlanApprovalError as error:
             raise LocalApiError(str(error)) from error
+        query_track_counts = {
+            track: sum(assignment.research_track == track for assignment in plan.query_tracks)
+            for track in ("exact_material", "mechanism_analogue", "algorithm")
+        }
         FlightRecorder(self.runs_dir, run_id).record(
             event_type="flight_plan_approved",
             actor="human_plan_review",
             state=MissionState.PLAN,
-            payload={"plan_id": plan.artifact_id, "query_count": len(plan.queries), "counter_query_count": len(plan.counter_queries)},
+            payload={"plan_id": plan.artifact_id, "query_count": len(plan.queries), "counter_query_count": len(plan.counter_queries), "query_track_counts": query_track_counts, "query_track_planning_status": "approved_independent_tracks" if plan.query_tracks else "legacy_unclassified"},
         )
-        return {"run_id": run_id, "plan_id": plan.artifact_id, "queries": list(plan.queries), "counter_queries": list(plan.counter_queries)}
+        return {"run_id": run_id, "plan_id": plan.artifact_id, "queries": list(plan.queries), "counter_queries": list(plan.counter_queries), "query_track_counts": query_track_counts, "query_track_planning_status": "approved_independent_tracks" if plan.query_tracks else "legacy_unclassified"}
 
     def execute_plan_query(self, run_id: str, payload: object) -> dict[str, object]:
         """Run an approved query against explicitly selected metadata sources.

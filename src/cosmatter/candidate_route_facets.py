@@ -12,11 +12,11 @@ import unicodedata
 from typing import Any
 
 from .models import MissionBrief
+from .research_tracks import DEFAULT_TRACK_CANDIDATE_MINIMUMS, RESEARCH_TRACKS
 
 
-RESEARCH_TRACKS = ("exact_material", "mechanism_analogue", "algorithm")
 ROUTE_ELIGIBILITIES = ("primary_allowed", "counterevidence_only")
-TRACK_MINIMUMS = {"exact_material": 4, "mechanism_analogue": 3, "algorithm": 4}
+TRACK_MINIMUMS = DEFAULT_TRACK_CANDIDATE_MINIMUMS
 COUNTEREVIDENCE_MINIMUM = 1
 FACET_SIGNALS = {
     "exact_material_title",
@@ -31,6 +31,7 @@ FACET_SIGNALS = {
 _ALGORITHM_PATTERNS = (
     r"\b(?:global|combinatorial|configuration|configurational)\s+(?:search|optim(?:ization|isation))\b",
     r"\b(?:genetic|evolutionary|memetic)\s+algorithm\b",
+    r"\b(?:genetic|evolutionary|memetic)\s+optim(?:ization|isation)\b",
     r"\b(?:simulated annealing|basin hopping|particle swarm|cross entropy method)\b",
     r"\b(?:black[ -]?box|derivative[ -]?free)\s+optim(?:ization|isation)\b",
     r"\b(?:monte carlo|metropolis|wang[ -]?landau|parallel tempering|replica exchange)\b",

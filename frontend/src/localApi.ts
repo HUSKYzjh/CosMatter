@@ -37,7 +37,7 @@ export function isFacilityContractCatalogue(value: unknown): value is FacilityCo
 
 export interface LiveMission { run_id: string; mission_id: string; fleet_type: string; mission_type: string; state: string; }
 export interface DraftPlan { run_id: string; trust_status: "untrusted_draft"; content: string; }
-export interface ApprovedPlan { run_id: string; plan_id: string; queries: string[]; counter_queries: string[]; }
+export interface ApprovedPlan { run_id: string; plan_id: string; queries: string[]; counter_queries: string[]; query_track_counts?: { exact_material: number; mechanism_analogue: number; algorithm: number }; query_track_planning_status?: "approved_independent_tracks" | "legacy_unclassified"; }
 export interface SearchResult { run_id: string; candidate_count: number; sources: string[]; source_counts: Record<string, number>; }
 export type RetrievalSource = "sciverse" | "openalex" | "crossref";
 

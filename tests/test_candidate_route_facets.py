@@ -1,4 +1,6 @@
+import json
 import unittest
+from pathlib import Path
 
 from cosmatter.candidate_route_facets import classify_candidate_route
 from cosmatter.models import MissionBrief
@@ -50,6 +52,15 @@ class CandidateRouteFacetTests(unittest.TestCase):
 
         self.assertEqual(result["route_eligibility"], "counterevidence_only")
         self.assertIn("approved_counterevidence_query", result["facet_signals"])
+
+    def test_frozen_synthetic_pst_title_set_separates_tracks_without_claiming_relevance(self) -> None:
+        fixture = json.loads((Path(__file__).with_name("pst_route_title_classifier_fixture.json")).read_text(encoding="utf-8"))
+        self.assertEqual(fixture["trust_status"], "synthetic_classifier_regression_not_human_relevance_gold")
+        for case in fixture["cases"]:
+            with self.subTest(title=case["title"]):
+                result = classify_candidate_route(self.mission, {"title": case["title"]}, approved_counterevidence_query=False)
+                self.assertEqual(result["research_track"], case["expected_track"])
+                self.assertEqual(result["route_eligibility"], case["expected_eligibility"])
 
 
 if __name__ == "__main__":

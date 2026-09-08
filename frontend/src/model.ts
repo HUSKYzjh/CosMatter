@@ -164,9 +164,13 @@ export interface ResearchGuideItem {
 }
 export interface ResearchRoutePolicy {
   classificationStatus: "current_candidate_pool" | "legacy_unclassified";
+  queryTrackPlanningStatus: "approved_independent_tracks" | "legacy_unclassified";
+  approvedQueryTrackCounts: Record<Exclude<ResearchTrack, "unclassified_legacy">, number>;
   trackMinimums: Record<Exclude<ResearchTrack, "unclassified_legacy">, number>;
   availableTrackCounts: Record<Exclude<ResearchTrack, "unclassified_legacy">, number>;
   selectedTrackCounts: Record<Exclude<ResearchTrack, "unclassified_legacy">, number>;
+  trackShortfallCounts: Record<Exclude<ResearchTrack, "unclassified_legacy">, number>;
+  shortfallReasonCodes: string[];
   availableCounterevidenceCount: number;
   selectedCounterevidenceCount: number;
 }
@@ -666,7 +670,7 @@ function researchGuide(value: unknown, missionId: string): ResearchGuide | null 
   const raw = value as JsonObject;
   const exactKeys = (candidate: JsonObject, expected: readonly string[]) => Object.keys(candidate).length === expected.length && expected.every((key) => Object.prototype.hasOwnProperty.call(candidate, key));
   const guideFields = ["schema_version", "mission_id", "trust_status", "items", "caveats", "route_policy"] as const;
-  if (!exactKeys(raw, guideFields) || raw.schema_version !== "1.3" || raw.mission_id !== missionId || raw.trust_status !== "derived_from_approved_artifacts" || !Array.isArray(raw.items) || raw.items.length < 1 || raw.items.length > 12 || !Array.isArray(raw.caveats) || !raw.caveats.every((item) => typeof item === "string" && Boolean(item.trim()))) return null;
+  if (!exactKeys(raw, guideFields) || raw.schema_version !== "1.4" || raw.mission_id !== missionId || raw.trust_status !== "derived_from_approved_artifacts" || !Array.isArray(raw.items) || raw.items.length < 1 || raw.items.length > 12 || !Array.isArray(raw.caveats) || !raw.caveats.every((item) => typeof item === "string" && Boolean(item.trim()))) return null;
 
   const tracks = ["exact_material", "mechanism_analogue", "algorithm"] as const;
   const researchTracks = new Set<ResearchTrack>([...tracks, "unclassified_legacy"]);
@@ -697,8 +701,9 @@ function researchGuide(value: unknown, missionId: string): ResearchGuide | null 
 
   if (raw.route_policy === null || typeof raw.route_policy !== "object" || Array.isArray(raw.route_policy)) return null;
   const policy = raw.route_policy as JsonObject;
-  const policyFields = ["schema_version", "trust_status", "classification_status", "track_minimums", "counterevidence_minimum", "available_track_counts", "selected_track_counts", "available_counterevidence_count", "selected_counterevidence_count"] as const;
+  const policyFields = ["schema_version", "trust_status", "classification_status", "query_track_planning_status", "approved_query_track_counts", "track_minimums", "counterevidence_minimum", "available_track_counts", "selected_track_counts", "track_shortfall_counts", "shortfall_reason_codes", "available_counterevidence_count", "selected_counterevidence_count"] as const;
   const classificationStatus = policy.classification_status;
+  const queryTrackPlanningStatus = policy.query_track_planning_status;
   const countRecord = (value: unknown): Record<(typeof tracks)[number], number> | null => {
     if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
     const candidate = value as JsonObject;
@@ -706,17 +711,23 @@ function researchGuide(value: unknown, missionId: string): ResearchGuide | null 
     return { exact_material: candidate.exact_material as number, mechanism_analogue: candidate.mechanism_analogue as number, algorithm: candidate.algorithm as number };
   };
   const trackMinimums = countRecord(policy.track_minimums);
+  const approvedQueryTrackCounts = countRecord(policy.approved_query_track_counts);
   const availableTrackCounts = countRecord(policy.available_track_counts);
   const selectedTrackCounts = countRecord(policy.selected_track_counts);
+  const trackShortfallCounts = countRecord(policy.track_shortfall_counts);
+  const shortfallReasonCodes = Array.isArray(policy.shortfall_reason_codes) && policy.shortfall_reason_codes.every((item) => typeof item === "string") ? policy.shortfall_reason_codes as string[] : null;
   const availableCounter = policy.available_counterevidence_count;
   const selectedCounter = policy.selected_counterevidence_count;
-  if (!exactKeys(policy, policyFields) || policy.schema_version !== "cosmatter.research-route-policy/v1" || policy.trust_status !== "deterministic_metadata_routing_not_relevance_judgment" || classificationStatus !== "current_candidate_pool" && classificationStatus !== "legacy_unclassified" || !trackMinimums || trackMinimums.exact_material !== 4 || trackMinimums.mechanism_analogue !== 3 || trackMinimums.algorithm !== 4 || !availableTrackCounts || !selectedTrackCounts || policy.counterevidence_minimum !== 1 || typeof availableCounter !== "number" || !Number.isSafeInteger(availableCounter) || availableCounter < 0 || typeof selectedCounter !== "number" || !Number.isSafeInteger(selectedCounter) || selectedCounter < 0 || selectedCounter > availableCounter) return null;
+  if (!exactKeys(policy, policyFields) || policy.schema_version !== "cosmatter.research-route-policy/v2" || policy.trust_status !== "deterministic_metadata_routing_not_relevance_judgment" || classificationStatus !== "current_candidate_pool" && classificationStatus !== "legacy_unclassified" || queryTrackPlanningStatus !== "approved_independent_tracks" && queryTrackPlanningStatus !== "legacy_unclassified" || !trackMinimums || tracks.some((track) => trackMinimums[track] < 1) || Object.values(trackMinimums).reduce((sum, value) => sum + value, 0) > 12 || !approvedQueryTrackCounts || !availableTrackCounts || !selectedTrackCounts || !trackShortfallCounts || !shortfallReasonCodes || policy.counterevidence_minimum !== 1 || typeof availableCounter !== "number" || !Number.isSafeInteger(availableCounter) || availableCounter < 0 || typeof selectedCounter !== "number" || !Number.isSafeInteger(selectedCounter) || selectedCounter < 0 || selectedCounter > availableCounter) return null;
   const actualSelected = Object.fromEntries(tracks.map((track) => [track, items.filter((item) => item.researchTrack === track).length])) as Record<(typeof tracks)[number], number>;
-  if (tracks.some((track) => selectedTrackCounts[track] !== actualSelected[track] || availableTrackCounts[track] < selectedTrackCounts[track]) || selectedCounter !== items.filter((item) => item.routeEligibility === "counterevidence_only").length || (classificationStatus === "legacy_unclassified") !== items.every((item) => item.researchTrack === "unclassified_legacy")) return null;
+  const legacyClassification = classificationStatus === "legacy_unclassified";
+  const expectedShortfalls = Object.fromEntries(tracks.map((track) => [track, legacyClassification ? 0 : Math.max(trackMinimums[track] - selectedTrackCounts[track], 0)])) as Record<(typeof tracks)[number], number>;
+  const expectedReasons = tracks.filter((track) => expectedShortfalls[track] > 0).map((track) => `${track}_shortfall`);
+  if (tracks.some((track) => selectedTrackCounts[track] !== actualSelected[track] || availableTrackCounts[track] < selectedTrackCounts[track] || trackShortfallCounts[track] !== expectedShortfalls[track]) || shortfallReasonCodes.length !== expectedReasons.length || shortfallReasonCodes.some((reason, index) => reason !== expectedReasons[index]) || (queryTrackPlanningStatus === "approved_independent_tracks") !== tracks.every((track) => approvedQueryTrackCounts[track] >= 1) || queryTrackPlanningStatus === "legacy_unclassified" && tracks.some((track) => approvedQueryTrackCounts[track] !== 0) || selectedCounter !== items.filter((item) => item.routeEligibility === "counterevidence_only").length || legacyClassification !== items.every((item) => item.researchTrack === "unclassified_legacy")) return null;
   return {
     trustStatus: "derived_from_approved_artifacts",
     items,
-    routePolicy: { classificationStatus, trackMinimums, availableTrackCounts, selectedTrackCounts, availableCounterevidenceCount: availableCounter, selectedCounterevidenceCount: selectedCounter },
+    routePolicy: { classificationStatus, queryTrackPlanningStatus, approvedQueryTrackCounts, trackMinimums, availableTrackCounts, selectedTrackCounts, trackShortfallCounts, shortfallReasonCodes, availableCounterevidenceCount: availableCounter, selectedCounterevidenceCount: selectedCounter },
   };
 }
 function simulationCampaign(value: unknown): SimulationCampaignProjection | null {

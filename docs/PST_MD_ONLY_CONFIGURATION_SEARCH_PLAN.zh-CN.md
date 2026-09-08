@@ -74,6 +74,8 @@
 ```text
 schema_version
 trust_status = plan_only_no_md_execution_or_property_result
+execution_authorized = false
+property_prediction_count = 0
 material_system
 potential_id + potential_hash
 supercell = [8, 8, 8]
@@ -139,6 +141,8 @@ claim_boundary
 2. 再实现只读 MD 回执导入、预算账本、赛选和 Pareto 档案；合成数据阶段不得伪装成材料性质结果。
 3. 只有在 MD 执行适配器、资源上限、势场许可和运行协议另行获批后，才进入真实小规模基线试点。
 4. 小规模试点通过 L0–L3 后再扩大预算；每次扩大都生成新的批准计划，不沿用旧授权。
+
+当前实现已落地第 1 步：`create-pst-configuration-search-plan` 从显式 reviewed JSON 生成 `pst_configuration_search_plan.json`；`run-pst-synthetic-ablation` 在已有有效计划上运行无 MD、无网络、无材料性质含义的算法回归，生成 `pst_mrmt_synthetic_ablation.json`。默认冻结基线为 3 个搜索种子、每方法每种子 48 次唯一合成评估；所有排名只来自合成执行回执，`property_prediction_count` 固定为 0。第 2–4 步仍未实现或授权。
 
 ## 9. 物理引导主算法升级
 
