@@ -184,7 +184,7 @@ OCBA/MOCBA 分配独立复算预算
 
 进度：第 1–3 项已完成并通过真实本地试点。静态 schema 是参数发现与预校验，不新增 MCP/浏览器全文读取或写盘权限；CLI 对负 offset 及低于/高于边界的 limit 均在解析期拒绝，SDK、回执与 Source Map 复用同一常量边界。无内容账本只绑定既有安全 run，并通过 `cosmatter.operational-telemetry/v2` 投影到本地 API、前端和 DSH；严格消费者拒绝未知原因、零/负次数、重复类别和额外字段。两次真实拒绝均未改变 provider 收据，且敏感工件审计保持零发现。候选身份现由 `cosmatter.candidate-duplicate-queue/v1` 派生：两个真实 PST 试点共检出 3 组，全部为 title-only 待人工对账，自动 DOI 合并为 0，且未生成任何伪造的人工 reconciliation。UI 只读投影保留组状态和候选 ID，删除题名哈希、候选/队列绑定哈希；两次敏感审计均保持零发现。题名相同只能提示；仅完全一致的规范化 DOI 或完整人工决定才能建立别名，原始检索历史不改写。
 
-回归验收（2026-09-08）：Python 721 项、前端 98 个文件/338 项、七个 DSH 包与发布/回放门禁全部通过；Playwright 24/24 通过。完整本地验收最终输出 `OK - CosMatter full local acceptance passed.`。
+回归验收（2026-09-08）：Python 721 项、前端 98 个文件/340 项、七个 DSH 包与发布/回放门禁全部通过；Playwright 24/24 通过。完整本地验收最终输出 `OK - CosMatter full local acceptance passed.`。
 
 ### P2：MRMT 计划型实现
 
