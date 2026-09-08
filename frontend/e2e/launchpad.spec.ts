@@ -701,7 +701,7 @@ test("reviews a local question set without network activity or implicit approval
   }
   await expect(desk).toContainText("3/3");
   await expect(attestation).toBeEnabled();
-  await expect(desk.getByRole("button", { name: "导出本地审核草稿" })).toBeVisible();
+  await expect(desk.getByRole("button", { name: "导出本地审核草稿" })).toHaveClass(/cm-action--primary/);
   await attestation.check();
   await expect(desk.getByRole("button", { name: "导出可冻结审核 JSON" })).toBeVisible();
   await page.getByRole("button", { name: /^02 受控编排/ }).click();
@@ -716,9 +716,13 @@ test("reviews a local question set without network activity or implicit approval
   await desk.locator("input[type=file]").setInputFiles({ name: "invalid-review.json", mimeType: "application/json", buffer: Buffer.from("{not-json") });
   await expect(desk.getByRole("alert")).toContainText("没有导入任何内容");
   await expect(desk.locator(".question-review-item")).toHaveCount(3);
-  await desk.getByRole("button", { name: "清除本会话草稿" }).click();
+  const clearQuestionDraft = desk.getByRole("button", { name: "清除本会话草稿" });
+  await expect(clearQuestionDraft).toHaveClass(/cm-action--quiet/);
+  await clearQuestionDraft.click();
   await expect(desk.locator(".question-review-item")).toHaveCount(3);
-  await desk.getByRole("button", { name: "再次点击确认清除" }).click();
+  const confirmClearQuestionDraft = desk.getByRole("button", { name: "再次点击确认清除" });
+  await expect(confirmClearQuestionDraft).toHaveClass(/cm-action--danger/);
+  await confirmClearQuestionDraft.click();
   await expect(desk.locator(".question-review-item")).toHaveCount(0);
   expect(apiRequests).toEqual([]);
 });
@@ -785,7 +789,7 @@ test("reviews frozen-corpus relevance locally with exact bibliography binding an
   await items.nth(2).locator("select").selectOption("not_relevant");
   await expect(desk).toContainText("3/3");
   await expect(attestation).toBeEnabled();
-  await expect(desk.getByRole("button", { name: "导出本地相关性草稿" })).toBeVisible();
+  await expect(desk.getByRole("button", { name: "导出本地相关性草稿" })).toHaveClass(/cm-action--primary/);
   await attestation.check();
   await expect(desk.getByRole("button", { name: "导出可评测金标准" })).toBeVisible();
 
@@ -802,9 +806,13 @@ test("reviews frozen-corpus relevance locally with exact bibliography binding an
   await desk.locator("input[type=file]").first().setInputFiles({ name: "invalid-human-gold.json", mimeType: "application/json", buffer: Buffer.from("{not-json") });
   await expect(desk.getByRole("alert")).toContainText("当前草稿保持不变");
   await expect(desk.locator(".corpus-review-item")).toHaveCount(3);
-  await desk.getByRole("button", { name: "清除本会话草稿" }).click();
+  const clearCorpusDraft = desk.getByRole("button", { name: "清除本会话草稿" });
+  await expect(clearCorpusDraft).toHaveClass(/cm-action--quiet/);
+  await clearCorpusDraft.click();
   await expect(desk.locator(".corpus-review-item")).toHaveCount(3);
-  await desk.getByRole("button", { name: "再次点击确认清除" }).click();
+  const confirmClearCorpusDraft = desk.getByRole("button", { name: "再次点击确认清除" });
+  await expect(confirmClearCorpusDraft).toHaveClass(/cm-action--danger/);
+  await confirmClearCorpusDraft.click();
   await expect(desk.locator(".corpus-review-item")).toHaveCount(0);
   expect(apiRequests).toEqual([]);
 });

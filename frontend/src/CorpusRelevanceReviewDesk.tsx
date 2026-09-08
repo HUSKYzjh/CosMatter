@@ -10,6 +10,7 @@ import {
   type HumanGoldDraft,
   type RetrievalRelevance,
 } from "./corpusRelevanceReview";
+import { ActionButton } from "./uiPrimitives";
 
 const SESSION_DRAFT_KEY = "cosmatter.corpus-relevance-review-draft/v1";
 const PAGE_SIZE = 25;
@@ -248,7 +249,7 @@ export function CorpusRelevanceReviewDesk(props: { locale: "zh" | "en" }) {
       <section class="corpus-review-release">
         <div><small>{tr("评测前人工门禁", "HUMAN GATE BEFORE EVALUATION")}</small><strong>{readiness()!.readyForAttestation ? tr("标签完整；仍需独立审核声明", "Labels complete; independent-review attestation remains") : tr("相关性审核尚未完整", "Relevance review remains incomplete")}</strong><p>{readiness()!.counts.unreviewed ? tr(`仍有 ${readiness()!.counts.unreviewed} 篇待审核。`, `${readiness()!.counts.unreviewed} document(s) remain unreviewed.`) : readiness()!.counts.relevant < 1 ? tr("严格评测至少需要一篇标为“相关”。", "Strict evaluation requires at least one document labelled relevant.") : tr("完成声明后导出文件才会带有可评测信任状态。", "Only an attested export receives the evaluation-eligible trust status.")}</p></div>
         <label class="consent"><input type="checkbox" disabled={!readiness()!.readyForAttestation} checked={attested()} onChange={(event) => setAttested(event.currentTarget.checked)} />{tr("我确认这些相关性标签由独立研究者依据冻结语料逐篇审核；未读取到的全文不得推定为相关。", "I confirm that an independent researcher reviewed these relevance labels against the frozen corpus document by document; unread full text was not assumed relevant.")}</label>
-        <div class="corpus-review-actions"><button type="button" classList={{ "clear-armed": clearArmed() }} onClick={clearSession}>{clearArmed() ? tr("再次点击确认清除", "Click again to confirm clear") : tr("清除本会话草稿", "Clear session draft")}</button><button type="button" class="primary-action" onClick={exportReview}>{attested() && readiness()!.readyForAttestation ? tr("导出可评测金标准", "Export evaluation-eligible gold") : tr("导出本地相关性草稿", "Export local relevance draft")}</button></div>
+        <div class="corpus-review-actions"><ActionButton size="sm" variant={clearArmed() ? "danger" : "quiet"} classList={{ "clear-armed": clearArmed() }} onClick={clearSession}>{clearArmed() ? tr("再次点击确认清除", "Click again to confirm clear") : tr("清除本会话草稿", "Clear session draft")}</ActionButton><ActionButton variant="primary" onClick={exportReview}>{attested() && readiness()!.readyForAttestation ? tr("导出可评测金标准", "Export evaluation-eligible gold") : tr("导出本地相关性草稿", "Export local relevance draft")}</ActionButton></div>
       </section>
     </>}</Show>
   </details>;

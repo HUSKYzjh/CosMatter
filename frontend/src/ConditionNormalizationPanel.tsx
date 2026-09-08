@@ -1,6 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 
 import type { ConditionNormalization, EvidenceCard } from "./model";
+import { ActionButton } from "./uiPrimitives";
 
 const copy = (locale: "zh" | "en", zh: string, en: string) => locale === "zh" ? zh : en;
 
@@ -14,7 +15,7 @@ export function ConditionNormalizationPanel(props: { normalization: ConditionNor
     <Show when={props.normalization.mappings.length} fallback={<p class="condition-normalization-empty">{copy(props.locale, "当前没有人工字段映射；这不表示字段不存在，也不允许系统以名称相似性合并条件。", "There are no human field mappings yet. This neither proves a field is absent nor permits the system to merge conditions by name similarity.")}</p>}>
       <ol><For each={props.normalization.mappings}>{(mapping, index) => {
         const evidence = () => evidenceById().get(mapping.evidenceId);
-        return <li><small>{String(index() + 1).padStart(2, "0")} / {mapping.evidenceId}</small><code>{mapping.rawField}</code><i aria-hidden="true">→</i><strong>{mapping.canonicalField}</strong><em>{mapping.unit}</em><Show when={evidence() && props.onFocusEvidence}><button type="button" onClick={() => props.onFocusEvidence?.(evidence()!)}>{copy(props.locale, "定位 EvidenceCard", "focus EvidenceCard")}</button></Show></li>;
+        return <li><small>{String(index() + 1).padStart(2, "0")} / {mapping.evidenceId}</small><code>{mapping.rawField}</code><i aria-hidden="true">→</i><strong>{mapping.canonicalField}</strong><em>{mapping.unit}</em><Show when={evidence() && props.onFocusEvidence}><ActionButton size="sm" variant="quiet" onClick={() => props.onFocusEvidence?.(evidence()!)}>{copy(props.locale, "定位 EvidenceCard", "focus EvidenceCard")}</ActionButton></Show></li>;
       }}</For></ol>
     </Show>
   </section>;

@@ -10,6 +10,7 @@ import {
   type QuestionReviewDecision,
   type QuestionSetReviewDraft,
 } from "./questionSetReviewDraft";
+import { ActionButton } from "./uiPrimitives";
 
 const CHECK_LABELS: Record<QuestionReviewCheck, { zh: string; en: string }> = {
   answerable_by_literature: { zh: "可由文献回答", en: "Answerable by literature" },
@@ -159,7 +160,7 @@ export function QuestionSetReviewDesk(props: { locale: "zh" | "en" }) {
       <section class="question-review-release">
         <div><small>{tr("冻结前人工门禁", "HUMAN GATE BEFORE FREEZE")}</small><strong>{readiness()!.readyForAttestation ? tr("内容完整；仍需独立审核声明", "Content complete; independent-review attestation remains") : tr("审核尚未完整", "Review remains incomplete")}</strong><p>{readiness()!.invalidIncludedCount ? tr(`有 ${readiness()!.invalidIncludedCount} 条纳入问题未通过全部五项检查。`, `${readiness()!.invalidIncludedCount} included question(s) do not pass all five checks.`) : readiness()!.includedCount < 3 ? tr("至少需要纳入三条问题。", "At least three questions must be included.") : tr("所有问题均须有决定、五项明确判断和非空理由。", "Every question needs a decision, five explicit checks, and a non-empty reason.")}</p></div>
         <label class="consent"><input type="checkbox" disabled={!readiness()!.readyForAttestation} checked={attested()} onChange={(event) => setAttested(event.currentTarget.checked)} />{tr("我确认这是独立研究者逐题完成的审核；导出仅供后续 CLI 冻结验证，不代表评测结果。", "I confirm that an independent researcher reviewed every question. The export is only for subsequent CLI freeze validation and is not an evaluation result.")}</label>
-        <div class="question-review-actions"><button type="button" classList={{ "clear-armed": clearArmed() }} onClick={clearSession}>{clearArmed() ? tr("再次点击确认清除", "Click again to confirm clear") : tr("清除本会话草稿", "Clear session draft")}</button><button type="button" class="primary-action" onClick={exportReview}>{attested() && readiness()!.readyForAttestation ? tr("导出可冻结审核 JSON", "Export freeze-eligible review JSON") : tr("导出本地审核草稿", "Export local review draft")}</button></div>
+        <div class="question-review-actions"><ActionButton size="sm" variant={clearArmed() ? "danger" : "quiet"} classList={{ "clear-armed": clearArmed() }} onClick={clearSession}>{clearArmed() ? tr("再次点击确认清除", "Click again to confirm clear") : tr("清除本会话草稿", "Clear session draft")}</ActionButton><ActionButton variant="primary" onClick={exportReview}>{attested() && readiness()!.readyForAttestation ? tr("导出可冻结审核 JSON", "Export freeze-eligible review JSON") : tr("导出本地审核草稿", "Export local review draft")}</ActionButton></div>
       </section>
     </>}</Show>
   </details>;
