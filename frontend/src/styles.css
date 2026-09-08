@@ -642,6 +642,59 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .fleet-shuttle-list p { margin: 0; font-size: .7rem; }
 @media (max-width: 560px) { .fleet-communication-ledger li { grid-template-columns: 1fr; }.fleet-communication-ledger li code:last-child { text-align: left; }.fleet-ship-deck > div { grid-template-columns: 1fr; } }
 
+/* Shared controls and DSH capability bridge: compact primitives with explicit state. */
+.cm-action { --action-accent: var(--signal-blue); position: relative; display: inline-flex; align-items: center; justify-content: center; gap: .42rem; min-width: 0; border: 1px solid color-mix(in srgb, var(--action-accent) 58%, var(--line)); border-radius: 0; color: var(--action-accent); background: color-mix(in srgb, var(--action-accent) 5%, var(--surface)); font: 720 .64rem/1.2 Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; letter-spacing: .025em; text-decoration: none; cursor: pointer; transition: color .14s ease, background-color .14s ease, border-color .14s ease, box-shadow .14s ease, transform .08s ease; }
+.cm-action::after { position: absolute; right: -.08rem; bottom: -.08rem; width: .34rem; height: .34rem; border-right: 1px solid var(--action-accent); border-bottom: 1px solid var(--action-accent); content: ""; opacity: .75; }
+.cm-action:hover:not(:disabled), .cm-action:focus-visible { color: var(--ink); background: color-mix(in srgb, var(--action-accent) 13%, var(--surface)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--action-accent) 18%, transparent), 0 .28rem .7rem color-mix(in srgb, var(--ink) 8%, transparent); outline: 0; }
+.cm-action:active:not(:disabled) { transform: translateY(1px); }
+.cm-action:disabled { border-color: color-mix(in srgb, var(--line) 78%, transparent); color: color-mix(in srgb, var(--muted) 72%, transparent); background: color-mix(in srgb, var(--surface) 58%, transparent); cursor: not-allowed; opacity: .68; box-shadow: none; }
+.cm-action:disabled::after { border-color: var(--line); }
+.cm-action--primary { --action-accent: var(--signal-teal); color: color-mix(in srgb, var(--signal-teal) 72%, var(--ink)); background: color-mix(in srgb, var(--signal-teal) 12%, var(--surface)); }
+.cm-action--quiet { border-color: transparent; background: transparent; }
+.cm-action--danger { --action-accent: #b85454; }
+.cm-action--sm { min-height: 1.8rem; padding: .32rem .52rem; font-size: .58rem; }
+.cm-action--md { min-height: 2.15rem; padding: .48rem .72rem; }
+.cm-action--lg { min-height: 2.55rem; padding: .62rem .9rem; font-size: .7rem; }
+.cm-action--icon { width: 2.1rem; height: 2.1rem; padding: 0; }
+.cm-action__spinner { width: .68rem; height: .68rem; box-sizing: border-box; border: 1px solid color-mix(in srgb, currentColor 35%, transparent); border-top-color: currentColor; border-radius: 50%; animation: cm-spin .72s linear infinite; }
+@keyframes cm-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cm-action, .cm-action__spinner { transition: none; animation: none; } }
+
+.cm-status-badge { --badge-accent: var(--muted); display: inline-flex; align-items: center; gap: .36rem; width: max-content; max-width: 100%; padding: .23rem .42rem; border: 1px solid color-mix(in srgb, var(--badge-accent) 44%, var(--line)); color: color-mix(in srgb, var(--badge-accent) 82%, var(--ink)); background: color-mix(in srgb, var(--badge-accent) 7%, var(--surface)); font: 700 .54rem/1.2 ui-monospace, "Cascadia Mono", monospace; letter-spacing: .045em; }
+.cm-status-badge > i { flex: 0 0 auto; width: .38rem; height: .38rem; background: var(--badge-accent); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.cm-status-badge > i.pulse { box-shadow: 0 0 .56rem var(--badge-accent); animation: cm-signal 1.45s ease-in-out infinite; }
+.cm-status-badge--ready { --badge-accent: var(--signal-teal); }
+.cm-status-badge--active { --badge-accent: var(--signal-blue); }
+.cm-status-badge--attention { --badge-accent: var(--signal-amber); }
+@keyframes cm-signal { 50% { opacity: .46; transform: scale(.72); } }
+@media (prefers-reduced-motion: reduce) { .cm-status-badge > i.pulse { animation: none; } }
+
+.harness-capability-deck { position: relative; display: grid; gap: .55rem; max-width: 76rem; margin: .2rem 0 1rem; padding: .78rem .8rem .82rem 1rem; overflow: hidden; border-top: 1px solid color-mix(in srgb, var(--signal-blue) 52%, var(--line)); border-bottom: 1px solid color-mix(in srgb, var(--signal-blue) 30%, var(--line)); border-inline-start: 2px solid var(--signal-blue); background: linear-gradient(100deg, color-mix(in srgb, var(--signal-blue) 7%, transparent), transparent 68%); }
+.harness-capability-deck::before { position: absolute; right: -3.8rem; bottom: -4.8rem; width: 11rem; height: 8rem; border: 1px solid color-mix(in srgb, var(--signal-blue) 17%, transparent); border-radius: 50%; content: ""; pointer-events: none; transform: rotate(-12deg); }
+.harness-capability-deck > * { position: relative; z-index: 1; }
+.harness-capability-deck > header { display: flex; align-items: end; justify-content: space-between; gap: .55rem 1rem; }
+.harness-capability-deck header small, .harness-permission-list > small { color: var(--signal-blue); font: 700 .5rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .1em; }
+.harness-capability-deck h2 { margin: .15rem 0 0; font: 750 .86rem/1.25 Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
+.harness-capability-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.harness-capability-metrics > div { display: grid; gap: .08rem; min-width: 0; padding: .5rem .6rem; border-inline-start: 1px solid color-mix(in srgb, var(--line) 68%, transparent); }
+.harness-capability-metrics > div:first-child { border-inline-start: 0; }
+.harness-capability-metrics > div.active { background: linear-gradient(90deg, color-mix(in srgb, var(--signal-teal) 10%, transparent), transparent); }
+.harness-capability-metrics small { overflow: hidden; color: var(--muted); font: .46rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .07em; text-overflow: ellipsis; white-space: nowrap; }
+.harness-capability-metrics strong { font: 760 1.02rem/1 Bahnschrift, "Aptos Display", ui-sans-serif, system-ui, sans-serif; }
+.harness-capability-metrics span { color: var(--muted); font-size: .5rem; line-height: 1.35; }
+.harness-boundary-copy { display: flex; align-items: start; justify-content: space-between; gap: .5rem 1rem; }
+.harness-boundary-copy p, .harness-catalogue-message p { max-width: 59rem; margin: 0; color: var(--muted); font-size: .56rem; line-height: 1.48; }
+.harness-permission-list { display: grid; gap: .3rem; padding-top: .42rem; border-top: 1px dashed color-mix(in srgb, var(--signal-teal) 42%, var(--line)); }
+.harness-permission-list > div { display: flex; flex-wrap: wrap; gap: .28rem; }
+.harness-permission-list span { display: grid; grid-template-columns: auto auto; align-items: center; gap: .08rem .3rem; padding: .28rem .38rem; border: 1px solid color-mix(in srgb, var(--signal-teal) 38%, var(--line)); background: color-mix(in srgb, var(--signal-teal) 5%, transparent); }
+.harness-permission-list span > i { grid-row: 1 / 3; width: .35rem; height: .35rem; background: var(--signal-teal); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.harness-permission-list strong { font-size: .56rem; }
+.harness-permission-list code { color: var(--muted); font-size: .46rem; }
+.harness-catalogue-message { display: grid; justify-items: start; gap: .45rem; }
+.harness-capability-deck.state-unavailable { border-color: color-mix(in srgb, var(--signal-amber) 40%, var(--line)); border-inline-start-color: var(--signal-amber); background: linear-gradient(100deg, color-mix(in srgb, var(--signal-amber) 6%, transparent), transparent 68%); }
+@media (max-width: 720px) { .harness-capability-deck > header, .harness-boundary-copy { align-items: start; flex-direction: column; }.harness-capability-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.harness-capability-metrics > div:nth-child(3) { border-inline-start: 0; border-top: 1px solid color-mix(in srgb, var(--line) 68%, transparent); }.harness-capability-metrics > div:nth-child(4) { border-top: 1px solid color-mix(in srgb, var(--line) 68%, transparent); } }
+@media (max-width: 430px) { .harness-capability-deck { padding-left: .7rem; }.harness-capability-deck::before { display: none; }.harness-capability-metrics { grid-template-columns: 1fr; }.harness-capability-metrics > div { border-top: 1px solid color-mix(in srgb, var(--line) 68%, transparent); border-inline-start: 0; }.harness-capability-metrics > div:first-child { border-top: 0; } }
+
 /* Evidence convoy: every horizon step is a live audit handoff, not a generic progress card. */
 .evidence-convoy { position: relative; max-width: 76rem; margin: 1.05rem 0 .7rem; padding: .95rem 0 .8rem 1rem; overflow: hidden; border-top: 1px solid color-mix(in srgb, var(--signal-violet) 46%, var(--line)); border-bottom: 1px solid color-mix(in srgb, var(--signal-violet) 30%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--signal-violet) 5%, transparent), transparent 66%); }
 .evidence-convoy::before { position: absolute; top: .9rem; bottom: .8rem; left: 0; width: 2px; background: var(--signal-violet); box-shadow: 0 0 .7rem var(--signal-violet); content: ""; }

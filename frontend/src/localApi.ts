@@ -9,6 +9,26 @@ export interface OperationParameterContracts { schema_version: "cosmatter.operat
 export interface FacilityContractManifest { facility_type: string; fleet_types: string[]; input_schema: string[]; output_schema: string[]; allowed_descriptors: string[]; failure_modes: string[]; human_review_required: boolean; execution_boundary: "static_contract_only_not_execution_authorization"; }
 export interface FacilityContractCatalogue { schema_version: "cosmatter.facility-contract-catalogue/v1"; trust_status: "static_facility_contracts_not_execution_or_evidence_acceptance"; contracts: FacilityContractManifest[]; }
 export type FacilityCatalogueHealth = "disabled" | "loading" | "ready" | "unavailable";
+export interface HarnessPluginDescriptor {
+  plugin_id: string;
+  title: string;
+  domain: string;
+  entrypoint: string;
+  api_version: "2.0";
+  capabilities: string[];
+  data_classification: string;
+  automation_class: "local_safe" | "external_authorized" | "human_gate";
+  required_authorizations: string[];
+  requires_human_review: boolean;
+  contract: { input_schema: string; output_schema: string; execution_mode: string; lifecycle: string };
+  execution_boundary: string;
+}
+export interface HarnessPluginCatalogue {
+  catalogue_api_version: "2.0";
+  plugins: HarnessPluginDescriptor[];
+  trust_status: "static_catalogue_not_plugin_execution_or_evidence_acceptance";
+}
+export type HarnessCatalogueHealth = "disabled" | "loading" | "ready" | "unavailable";
 
 const stringList = (value: unknown, maximum: number): value is string[] => Array.isArray(value)
   && value.length > 0 && value.length <= maximum
@@ -32,6 +52,42 @@ export function isFacilityContractCatalogue(value: unknown): value is FacilityCo
       && stringList(contract.failure_modes, 8)
       && typeof contract.human_review_required === "boolean"
       && contract.execution_boundary === "static_contract_only_not_execution_authorization";
+  });
+}
+
+/** Validate the non-executing Harness contract catalogue before displaying it. */
+export function isHarnessPluginCatalogue(value: unknown): value is HarnessPluginCatalogue {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const catalogue = value as Record<string, unknown>;
+  if (catalogue.catalogue_api_version !== "2.0"
+    || catalogue.trust_status !== "static_catalogue_not_plugin_execution_or_evidence_acceptance"
+    || !Array.isArray(catalogue.plugins)
+    || catalogue.plugins.length < 1
+    || catalogue.plugins.length > 64) return false;
+  const pluginIds = new Set<string>();
+  return catalogue.plugins.every((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const plugin = item as Record<string, unknown>;
+    if (typeof plugin.plugin_id !== "string" || !plugin.plugin_id || plugin.plugin_id.length > 120 || pluginIds.has(plugin.plugin_id)) return false;
+    pluginIds.add(plugin.plugin_id);
+    const contract = plugin.contract;
+    if (!contract || typeof contract !== "object" || Array.isArray(contract)) return false;
+    const contractRecord = contract as Record<string, unknown>;
+    return typeof plugin.title === "string" && plugin.title.length > 0 && plugin.title.length <= 120
+      && typeof plugin.domain === "string" && plugin.domain.length > 0 && plugin.domain.length <= 80
+      && typeof plugin.entrypoint === "string" && plugin.entrypoint.length > 0 && plugin.entrypoint.length <= 240
+      && plugin.api_version === "2.0"
+      && stringList(plugin.capabilities, 16)
+      && typeof plugin.data_classification === "string" && plugin.data_classification.length > 0 && plugin.data_classification.length <= 80
+      && ["local_safe", "external_authorized", "human_gate"].includes(String(plugin.automation_class))
+      && Array.isArray(plugin.required_authorizations) && plugin.required_authorizations.length <= 12
+      && plugin.required_authorizations.every((authorization) => typeof authorization === "string" && authorization.length > 0 && authorization.length <= 120)
+      && typeof plugin.requires_human_review === "boolean"
+      && typeof contractRecord.input_schema === "string" && contractRecord.input_schema.length > 0 && contractRecord.input_schema.length <= 160
+      && typeof contractRecord.output_schema === "string" && contractRecord.output_schema.length > 0 && contractRecord.output_schema.length <= 160
+      && typeof contractRecord.execution_mode === "string" && contractRecord.execution_mode.length > 0 && contractRecord.execution_mode.length <= 80
+      && typeof contractRecord.lifecycle === "string" && contractRecord.lifecycle.length > 0 && contractRecord.lifecycle.length <= 240
+      && typeof plugin.execution_boundary === "string" && plugin.execution_boundary.length > 0 && plugin.execution_boundary.length <= 360;
   });
 }
 
@@ -90,6 +146,7 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = (init?.m
 function jsonPost<T>(path: string, payload: unknown): Promise<T> { return request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
 export function getLocalApiStatus(): Promise<LocalApiStatus> { return request<LocalApiStatus>("./api/status"); }
 export function getFacilityContractCatalogue(): Promise<FacilityContractCatalogue> { return request<FacilityContractCatalogue>("./api/facility-contracts"); }
+export function getHarnessPluginCatalogue(): Promise<HarnessPluginCatalogue> { return request<HarnessPluginCatalogue>("./api/plugins"); }
 export function createLiveMission(payload: { question: string; material: string; property: string; scope: string }): Promise<LiveMission> { return jsonPost<LiveMission>("./api/missions", payload); }
 export function draftAuthorizedPlan(runId: string, dshCallId: string): Promise<DraftPlan> { return jsonPost<DraftPlan>(`./api/runs/${encodeURIComponent(runId)}/authorized-draft-plan`, { authorizations: ["mission_scoped_egress_consent", "deepseek_request_consent"], actor: "browser_researcher", dsh_call_id: dshCallId }); }
 export function approveLivePlan(runId: string, plan: unknown): Promise<ApprovedPlan> { return jsonPost<ApprovedPlan>(`./api/runs/${encodeURIComponent(runId)}/approve-plan`, plan); }

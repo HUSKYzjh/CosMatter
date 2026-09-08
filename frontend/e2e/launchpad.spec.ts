@@ -176,6 +176,53 @@ test("keeps operational labels and evidence copy at a readable scale", async ({ 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test("shows the DSH contract bridge without presenting catalogue discovery as execution", async ({ page }) => {
+  await page.route("**/api/status", async (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      api_mode: "loopback_only",
+      providers: { deepseek: false, sciverse: false, mineru: false, openalex: false, crossref: false, crossref_polite_contact: false },
+      operation_contracts: operationContracts,
+    }),
+  }));
+  await page.route("**/api/plugins", async (route) => {
+    if (!route.request().url().endsWith("/api/plugins")) return route.fallback();
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        catalogue_api_version: "2.0",
+        trust_status: "static_catalogue_not_plugin_execution_or_evidence_acceptance",
+        plugins: [{
+          plugin_id: "literature.metadata_retrieval",
+          title: "书目元数据检索",
+          domain: "retrieval",
+          entrypoint: "cosmatter.metadata_search:MetadataSearch",
+          api_version: "2.0",
+          capabilities: ["metadata_search"],
+          data_classification: "public_metadata",
+          automation_class: "external_authorized",
+          required_authorizations: ["mission_scoped_egress_consent", "metadata_provider_consent"],
+          requires_human_review: false,
+          contract: { input_schema: "cosmatter.plugin-input/v1", output_schema: "cosmatter.plugin-output/v1", execution_mode: "provider_request", lifecycle: "authorize -> dispatch -> receipt" },
+          execution_boundary: "Descriptor only; catalogue discovery grants no execution authority.",
+        }],
+      }),
+    });
+  });
+  await page.setViewportSize({ width: 960, height: 900 });
+  await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /BFO-01/ }).click();
+  await page.getByRole("button", { name: "确认任务并进入编排" }).click();
+  const deck = page.locator(".harness-capability-deck");
+  await expect(deck).toHaveClass(/state-ready/, workspaceLoad);
+  await expect(deck).toContainText("本机目录已连接");
+  await expect(deck).toContainText("不证明 DSH 配置层已安装");
+  await expect(deck.locator(".harness-capability-metrics strong").first()).toHaveText("1");
+  await page.setViewportSize({ width: 390, height: 900 });
+  expect(await deck.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
 test("wraps narrow rail handoffs and manifest counts without collisions", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
