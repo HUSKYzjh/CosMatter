@@ -7,6 +7,23 @@ import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
 
+const BUNDLE_ROLES: Record<string, readonly [string, string]> = {
+  "@cosmatter/dsh-mission-plugin": ["任务建立", "Mission intake"],
+  "@cosmatter/dsh-observability-plugin": ["状态观测", "Status observation"],
+  "@cosmatter/dsh-policy-plugin": ["授权策略", "Authorization policy"],
+  "@cosmatter/dsh-research-plugin": ["受控检索", "Controlled retrieval"],
+  "@cosmatter/dsh-review-plugin": ["人工筛选", "Human screening"],
+  "@cosmatter/dsh-document-plugin": ["私有全文", "Private full text"],
+  "@cosmatter/dsh-graph-plugin": ["文献图谱", "Literature graph"],
+};
+
+const dependencyKindLabel = (locale: UiLocale, kind: DshProfileStatus["packages"][number]["dependency_kind"]) => {
+  if (kind === "local_link") return t(locale, "本地链接", "Local link");
+  if (kind === "registry_reference") return t(locale, "包引用", "Registry reference");
+  if (kind === "remote_reference") return t(locale, "远程引用", "Remote reference");
+  return t(locale, "未登记", "Absent");
+};
+
 export function HarnessCapabilityDeck(props: {
   locale: UiLocale;
   health: HarnessCatalogueHealth;
@@ -77,6 +94,31 @@ export function HarnessCapabilityDeck(props: {
             : x("没有运行级派发记录；目录与安装状态不会被当作执行证明。", "No runtime dispatch is recorded. Catalogue and installation status are never treated as proof of execution.")}</p>
         </section>
     </div>
+    <Show when={props.profileHealth === "ready" && props.profile}>{(profile) =>
+      <details class="harness-package-proof">
+        <summary>
+          <span>{x("查看逐包依赖证明", "Inspect bundle dependency proof")}</span>
+          <strong>{profile().installed_bundle_count}/{profile().expected_bundle_count}</strong>
+        </summary>
+        <ul>
+          <For each={profile().packages}>{(packageStatus) => {
+            const role = () => BUNDLE_ROLES[packageStatus.package] ?? [packageStatus.package, packageStatus.package] as const;
+            return <li classList={{ installed: packageStatus.installed }}>
+              <i aria-hidden="true" />
+              <div>
+                <strong>{props.locale === "zh" ? role()[0] : role()[1]}</strong>
+                <code>{packageStatus.package}</code>
+              </div>
+              <span>{dependencyKindLabel(props.locale, packageStatus.dependency_kind)}</span>
+            </li>;
+          }}</For>
+        </ul>
+        <p>{x(
+          "清单只显示固定包名、职责与依赖类型；不返回依赖值、本机路径、配置或凭据。",
+          "The list exposes only fixed package names, roles, and dependency kinds. It never returns dependency values, local paths, configuration, or credentials.",
+        )}</p>
+      </details>
+    }</Show>
     <div class="harness-boundary-copy"><p>{props.health === "ready"
       ? x("目录已连接只证明 CosMatter 能读取本机静态契约；profile 依赖快照与运行回执分别证明不同层次，任何一层都不能代替工具结果。", "A connected catalogue proves only that CosMatter can read local static contracts. The profile dependency snapshot and runtime receipts prove separate layers; none can substitute for tool results.")
       : x("目录、profile 依赖快照与运行回执独立检查；其中一项不可用时，其余状态仍会如实显示，但不会据此开放执行权限。", "Catalogue, profile dependency snapshot, and runtime receipts are checked independently. When one is unavailable, the others remain visible without granting execution permission.")}</p><Show when={props.operationPending}><StatusBadge tone="active" pulse>{x("受控操作进行中", "Controlled operation in progress")}</StatusBadge></Show></div>

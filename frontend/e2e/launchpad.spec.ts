@@ -50,6 +50,30 @@ async function openMissionDefinitionWithPendingArtifacts(page: Page) {
   await expect(page.locator(".workbench")).toHaveClass(/view-discover/, workspaceLoad);
 }
 
+async function tinyInteractiveLabels(page: Page) {
+  return page.locator("button, button *, a, a *, summary, summary *").evaluateAll((elements) => elements.flatMap((element) => {
+    const node = element as HTMLElement;
+    const style = getComputedStyle(node);
+    const box = node.getBoundingClientRect();
+    const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+    if (!text || box.width <= 0 || box.height <= 0 || style.visibility !== "visible" || style.display === "none") return [];
+    const size = Number.parseFloat(style.fontSize);
+    if (!Number.isFinite(size) || size >= 12) return [];
+    return [{ tag: node.tagName.toLowerCase(), className: node.className, text: text.slice(0, 72), size }];
+  }).slice(0, 30));
+}
+
+test("keeps visible interactive labels at twelve pixels or larger", async ({ page }) => {
+  for (const width of [1366, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    expect(await tinyInteractiveLabels(page)).toEqual([]);
+    await page.getByRole("button", { name: "预览：受控编排" }).click();
+    await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+    expect(await tinyInteractiveLabels(page)).toEqual([]);
+  }
+});
+
 test("keeps the narrow launch workspace horizontally contained", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -235,9 +259,21 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(deck).toContainText("尚无派发回执");
   await expect(deck).toContainText("任何一层都不能代替工具结果");
   await expect(deck.locator(".harness-capability-metrics strong").first()).toHaveText("1");
+  const packageProof = deck.locator(".harness-package-proof");
+  await expect(packageProof.locator("summary")).toContainText("查看逐包依赖证明");
+  await expect(packageProof.locator("summary strong")).toHaveText("7/7");
+  await expect(packageProof.locator("ul")).not.toBeVisible();
+  await packageProof.locator("summary").click();
+  await expect(packageProof.locator("li")).toHaveCount(7);
+  await expect(packageProof).toContainText("任务建立");
+  await expect(packageProof).toContainText("@cosmatter/dsh-mission-plugin");
+  await expect(packageProof).toContainText("本地链接");
+  await expect(packageProof).toContainText("不返回依赖值、本机路径、配置或凭据");
+  await expect(deck).toHaveScreenshot("dsh-profile-proof.png", { animations: "disabled" });
   await page.setViewportSize({ width: 390, height: 900 });
   const minimumReadableSize = await deck.locator(".cm-status-badge, .harness-state-ledger p").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 11));
   expect(minimumReadableSize).toBe(true);
+  expect(await packageProof.locator("ul").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   expect(await deck.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
