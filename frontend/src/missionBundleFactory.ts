@@ -11,6 +11,20 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
     schemaVersion: "1.0",
     generatedAt: null,
     delegatedTestBoundary: false,
+    workflowTrackSummary: {
+      formalEvidenceTrack: {
+        screening: { state: "not_started", includedDocumentCount: 0 },
+        contentAccess: { state: "not_started", confirmedDocumentCount: 0, failedOrExpiredDocumentCount: 0 },
+        sourceMapping: { state: "not_started", documentCount: 0 },
+        evidence: { state: "not_started", acceptedCardCount: 0 },
+      },
+      delegatedTrialTrack: {
+        screening: { state: "not_started", includedDocumentCount: 0 },
+        contentAccess: { state: "not_started", confirmedDocumentCount: 0, failedOrExpiredDocumentCount: 0 },
+        sourceMapping: { state: "not_started", documentCount: 0 },
+        evidence: { state: "permanently_blocked", acceptedCardCount: 0 },
+      },
+    },
     mission,
     source: "local-file",
     fleet: null,

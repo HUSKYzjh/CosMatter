@@ -109,6 +109,19 @@ function journeyOutputLabel(stage: JourneyStage): string {
     extend: text("待人工复核的 Gap 候选", "Human-review Gap candidates"),
   } as const)[stage.id];
 }
+
+function workflowProgressLabel(state: string): string {
+  const labels: Record<string, [string, string]> = {
+    not_started: ["未开始", "Not started"],
+    completed: ["已完成", "Completed"],
+    attempted_with_failures: ["已尝试 / 有失败", "Attempted / failures"],
+    stale: ["已过期", "Stale"],
+    waiting_human_review: ["等待人工审核", "Awaiting human review"],
+    permanently_blocked: ["永久阻断", "Permanently blocked"],
+  };
+  const label = labels[state] ?? ["状态未知", "Unknown"];
+  return text(label[0], label[1]);
+}
 function sessionHandoffLabel(state: string): string {
   return ({
     awaiting_paper: text("等待选择文献", "Awaiting paper selection"),
@@ -1768,6 +1781,29 @@ export function App() {
         <small>{text("当前研究任务", "CURRENT MISSION")}</small><strong>{bundle().mission.material}</strong><span>{bundle().mission.property}</span><em>{bundle().status?.missionState ?? "LOCAL"}</em><Show when={taskArtifactLocked()}><b class="artifact-lock">{text("旧工件待重新核验", "ARTIFACTS REQUIRE RECHECK")}</b></Show>
       </section>
       <Show when={uiImportReceipt()}>{(receipt) => <section class="rail-import-receipt" aria-label={text("当前本地工件", "Current local artifact")}><small>{text("当前本地工件 / 浏览器内存", "CURRENT LOCAL ARTIFACT / BROWSER MEMORY")}</small><strong>{receipt().fileName}</strong><p>{text(`工件自述版本 ${receipt().schemaVersion} · ${localImportTimestamp(receipt().generatedAt, language())}`, `Artifact-declared version ${receipt().schemaVersion} · ${localImportTimestamp(receipt().generatedAt, language())}`)}</p><span>{text(`${localImportSize(receipt().byteLength)} · ${receipt().visibleRecordCount} 个可显示数据项`, `${localImportSize(receipt().byteLength)} · ${receipt().visibleRecordCount} visible record(s)`)}</span><Show when={receipt().delegatedTestBoundary}><p>{text("该运行已永久标记为受托技术试跑；仅显示任务与候选元数据，所有证据、结论、报告和发布资格均已隐藏。正式人审必须在新的非试跑任务中进行。", "This run is permanently marked as a delegated technical trial. Only task and candidate metadata are shown; evidence, findings, reports, and release eligibility are withheld. Formal human review must use a new non-trial run.")}</p></Show><Show when={receipt().withheldAcceptedEvidenceCount > 0}><p>{text(`已安全隐藏 ${receipt().withheldAcceptedEvidenceCount} 条不符合 UI 证据边界的已接受卡片；未显示其内容。`, `${receipt().withheldAcceptedEvidenceCount} declared accepted card(s) were safely withheld by the UI boundary; their content is not shown.`)}</p></Show></section>}</Show>
+      <section class="workflow-track-board" aria-label={text("正式证据轨与自动试点轨", "Formal evidence and delegated trial tracks")}>
+        <header><small>{text("双轨流程状态 / 仅计数", "DUAL-TRACK STATUS / COUNTS ONLY")}</small><span>{text("试点进度不授予证据资格", "Trial progress grants no evidence authority")}</span></header>
+        <div class="workflow-track-grid">
+          <article class="track-formal">
+            <h3>{text("正式证据轨", "Formal evidence")}</h3>
+            <dl>
+              <div><dt>{text("候选筛选", "Screening")}</dt><dd>{bundle().workflowTrackSummary.formalEvidenceTrack.screening.includedDocumentCount} · {workflowProgressLabel(bundle().workflowTrackSummary.formalEvidenceTrack.screening.state)}</dd></div>
+              <div><dt>{text("全文读取", "Full text")}</dt><dd>{bundle().workflowTrackSummary.formalEvidenceTrack.contentAccess.confirmedDocumentCount} / {bundle().workflowTrackSummary.formalEvidenceTrack.contentAccess.failedOrExpiredDocumentCount} · {workflowProgressLabel(bundle().workflowTrackSummary.formalEvidenceTrack.contentAccess.state)}</dd></div>
+              <div><dt>Source Map</dt><dd>{bundle().workflowTrackSummary.formalEvidenceTrack.sourceMapping.documentCount} · {workflowProgressLabel(bundle().workflowTrackSummary.formalEvidenceTrack.sourceMapping.state)}</dd></div>
+              <div><dt>EvidenceCard</dt><dd>{bundle().workflowTrackSummary.formalEvidenceTrack.evidence.acceptedCardCount} · {workflowProgressLabel(bundle().workflowTrackSummary.formalEvidenceTrack.evidence.state)}</dd></div>
+            </dl>
+          </article>
+          <article class="track-trial">
+            <h3>{text("自动试点轨", "Delegated trial")}</h3>
+            <dl>
+              <div><dt>{text("候选筛选", "Screening")}</dt><dd>{bundle().workflowTrackSummary.delegatedTrialTrack.screening.includedDocumentCount} · {workflowProgressLabel(bundle().workflowTrackSummary.delegatedTrialTrack.screening.state)}</dd></div>
+              <div><dt>{text("全文读取", "Full text")}</dt><dd>{bundle().workflowTrackSummary.delegatedTrialTrack.contentAccess.confirmedDocumentCount} / {bundle().workflowTrackSummary.delegatedTrialTrack.contentAccess.failedOrExpiredDocumentCount} · {workflowProgressLabel(bundle().workflowTrackSummary.delegatedTrialTrack.contentAccess.state)}</dd></div>
+              <div><dt>Source Map</dt><dd>{bundle().workflowTrackSummary.delegatedTrialTrack.sourceMapping.documentCount} · {workflowProgressLabel(bundle().workflowTrackSummary.delegatedTrialTrack.sourceMapping.state)}</dd></div>
+              <div class="track-evidence-block"><dt>EvidenceCard</dt><dd>0 · {workflowProgressLabel(bundle().workflowTrackSummary.delegatedTrialTrack.evidence.state)}</dd></div>
+            </dl>
+          </article>
+        </div>
+      </section>
       <section class={`session-handoff state-${sessionHandoff().state}`} aria-label={text("当前审核锚点", "Current review anchor")}>
         <header><small>{text("当前审核锚点 / 只读", "CURRENT REVIEW ANCHOR / READ ONLY")}</small><span>{sessionHandoff().evidenceId ? text("EvidenceCard 已选", "EvidenceCard selected") : text("尚未选择 EvidenceCard", "No EvidenceCard selected")}</span></header>
         <strong>{sessionHandoffLabel(sessionHandoff().state)}</strong>

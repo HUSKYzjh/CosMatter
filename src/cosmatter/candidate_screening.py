@@ -16,6 +16,8 @@ _SCHEMA_VERSION = "1.1"
 _TEMPLATE_STATUS = "blank_human_candidate_screening_template_not_a_result"
 _REVIEW_STATUS = "human_reviewed_candidate_screening_not_scientific_evidence"
 _AUTOMATED_TRIAL_REVIEW_STATUS = "delegated_automated_trial_screening_not_scientific_evidence"
+HUMAN_CANDIDATE_SCREENING_TRUST_STATUS = _REVIEW_STATUS
+AUTOMATED_TRIAL_CANDIDATE_SCREENING_TRUST_STATUS = _AUTOMATED_TRIAL_REVIEW_STATUS
 _DECISIONS = {"include_for_fulltext", "exclude", "needs_metadata_review"}
 _REASONS = {
     "material_match", "property_match", "scope_match", "method_match", "primary_evidence", "counterevidence",

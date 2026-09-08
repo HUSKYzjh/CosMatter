@@ -207,10 +207,23 @@ export interface AuditSummary {
   evaluation: EvaluationSummary;
 }
 
+export type WorkflowProgressState = "not_started" | "completed" | "attempted_with_failures" | "stale";
+export interface WorkflowTrackProgress {
+  screening: { state: WorkflowProgressState; includedDocumentCount: number };
+  contentAccess: { state: WorkflowProgressState; confirmedDocumentCount: number; failedOrExpiredDocumentCount: number };
+  sourceMapping: { state: WorkflowProgressState; documentCount: number };
+  evidence: { state: "not_started" | "waiting_human_review" | "completed" | "permanently_blocked"; acceptedCardCount: number };
+}
+export interface WorkflowTrackSummary {
+  formalEvidenceTrack: WorkflowTrackProgress;
+  delegatedTrialTrack: WorkflowTrackProgress;
+}
+
 export interface ImportedBundle {
   schemaVersion: string;
   generatedAt: string | null;
   delegatedTestBoundary: boolean;
+  workflowTrackSummary: WorkflowTrackSummary;
   mission: Mission;
   source: "demo" | "local-file" | "loopback";
   fleet: { displayName: string; missionType: string; releaseGate: string } | null;
@@ -747,9 +760,62 @@ function simulationEvidence(value: unknown): SimulationEvidenceProjection | null
   if (raw.delivery_status !== "human_reviewed_pending_evidencecard_gate" || !["energy_force_summary", "relaxation_summary", "md_aggregate_summary"].includes(raw.result_kind as string) || !["converged", "not_applicable"].includes(raw.convergence_status as string) || !["supports", "contradicts", "uncertain"].includes(raw.relation_to_hypothesis as string) || typeof raw.applicability_boundary !== "string" || typeof raw.uncertainty !== "string" || typeof raw.result_interpretation_boundary !== "string") return null;
   return { deliveryStatus: "human_reviewed_pending_evidencecard_gate", resultKind: raw.result_kind as SimulationEvidenceProjection["resultKind"], convergenceStatus: raw.convergence_status as SimulationEvidenceProjection["convergenceStatus"], relationToHypothesis: raw.relation_to_hypothesis as SimulationEvidenceProjection["relationToHypothesis"], applicabilityBoundary: raw.applicability_boundary.slice(0, 500), uncertainty: raw.uncertainty.slice(0, 500), resultInterpretationBoundary: raw.result_interpretation_boundary.slice(0, 500) };
 }
+
+function emptyWorkflowTrack(delegated = false): WorkflowTrackProgress {
+  return {
+    screening: { state: "not_started", includedDocumentCount: 0 },
+    contentAccess: { state: "not_started", confirmedDocumentCount: 0, failedOrExpiredDocumentCount: 0 },
+    sourceMapping: { state: "not_started", documentCount: 0 },
+    evidence: { state: delegated ? "permanently_blocked" : "not_started", acceptedCardCount: 0 },
+  };
+}
+
+function exactObject(value: unknown, keys: string[]): JsonObject | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as JsonObject;
+  const actual = Object.keys(raw);
+  return actual.length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(raw, key)) ? raw : null;
+}
+
+function workflowTrack(value: unknown, delegated: boolean): WorkflowTrackProgress | null {
+  const raw = exactObject(value, ["screening", "content_access", "source_mapping", "evidence"]);
+  const screening = exactObject(raw?.screening, ["state", "included_document_count"]);
+  const content = exactObject(raw?.content_access, ["state", "confirmed_document_count", "failed_or_expired_document_count"]);
+  const source = exactObject(raw?.source_mapping, ["state", "document_count"]);
+  const evidence = exactObject(raw?.evidence, ["state", "accepted_card_count"]);
+  const progressStates = new Set<unknown>(["not_started", "completed", "attempted_with_failures", "stale"]);
+  const evidenceStates = new Set<unknown>(["not_started", "waiting_human_review", "completed", "permanently_blocked"]);
+  const count = (entry: unknown): entry is number => typeof entry === "number" && Number.isSafeInteger(entry) && entry >= 0;
+  if (!raw || !screening || !content || !source || !evidence || !progressStates.has(screening.state) || !count(screening.included_document_count) || !progressStates.has(content.state) || !count(content.confirmed_document_count) || !count(content.failed_or_expired_document_count) || !progressStates.has(source.state) || !count(source.document_count) || !evidenceStates.has(evidence.state) || !count(evidence.accepted_card_count)) return null;
+  if (screening.state !== "completed" && screening.included_document_count !== 0) return null;
+  if (content.state === "not_started" && (content.confirmed_document_count !== 0 || content.failed_or_expired_document_count !== 0)) return null;
+  if (content.state === "completed" && content.confirmed_document_count === 0) return null;
+  if (content.state === "attempted_with_failures" && (content.confirmed_document_count !== 0 || content.failed_or_expired_document_count === 0)) return null;
+  if (content.state === "stale" && content.confirmed_document_count !== 0) return null;
+  if ((source.state === "completed") !== (source.document_count > 0)) return null;
+  if (!delegated && (evidence.state === "permanently_blocked" || (evidence.state === "completed") !== (evidence.accepted_card_count > 0))) return null;
+  if (delegated && (evidence.state !== "permanently_blocked" || evidence.accepted_card_count !== 0)) return null;
+  return {
+    screening: { state: screening.state as WorkflowProgressState, includedDocumentCount: screening.included_document_count },
+    contentAccess: { state: content.state as WorkflowProgressState, confirmedDocumentCount: content.confirmed_document_count, failedOrExpiredDocumentCount: content.failed_or_expired_document_count },
+    sourceMapping: { state: source.state as WorkflowProgressState, documentCount: source.document_count },
+    evidence: { state: evidence.state as WorkflowTrackProgress["evidence"]["state"], acceptedCardCount: evidence.accepted_card_count },
+  };
+}
+
+export function workflowTrackSummary(value: unknown): WorkflowTrackSummary {
+  const fallback = { formalEvidenceTrack: emptyWorkflowTrack(), delegatedTrialTrack: emptyWorkflowTrack(true) };
+  const raw = exactObject(value, ["schema_version", "trust_status", "formal_evidence_track", "delegated_trial_track"]);
+  if (raw?.schema_version !== "cosmatter.workflow-track-summary/v1" || raw.trust_status !== "count_only_formal_and_delegated_track_projection_not_evidence") return fallback;
+  const formalEvidenceTrack = workflowTrack(raw.formal_evidence_track, false);
+  const delegatedTrialTrack = workflowTrack(raw.delegated_trial_track, true);
+  return formalEvidenceTrack && delegatedTrialTrack ? { formalEvidenceTrack, delegatedTrialTrack } : fallback;
+}
+
 export function readBundle(value: unknown, source: ImportedBundle["source"] = "local-file"): ImportedBundle {
   const root = object(value, "UI JSON");
   const delegatedTestBoundary = root.delegated_test_boundary === true;
+  const parsedWorkflowTrackSummary = workflowTrackSummary(root.workflow_track_summary);
   const parsedEvidenceMaturityRegistry = evidenceMaturityRegistry(root.evidence_maturity_registry);
   const maturityRegistryDeliveryStatus = root.evidence_maturity_registry_delivery_status === "rejected" ? "rejected" : root.evidence_maturity_registry_delivery_status === "accepted" ? "accepted" : "not_supplied";
   const rawMission = object(root.mission, "mission");
@@ -844,6 +910,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     schemaVersion: typeof root.schema_version === "string" ? root.schema_version : "unknown",
     generatedAt: generatedAt(root.generated_at),
     delegatedTestBoundary,
+    workflowTrackSummary: parsedWorkflowTrackSummary,
     mission, source,
     fleet: rawFleet ? { displayName: typeof rawFleet.display_name_zh === "string" ? rawFleet.display_name_zh : typeof rawFleet.display_name_en === "string" ? rawFleet.display_name_en : "Unclassified fleet", missionType: typeof rawFleet.mission_type === "string" ? rawFleet.mission_type : "unknown", releaseGate: typeof rawFleet.release_gate === "string" ? rawFleet.release_gate : "unknown" } : null,
     status: rawStatus ? { missionState: typeof rawStatus.mission_state === "string" ? rawStatus.mission_state : "unknown", retryCount: typeof rawStatus.retry_count === "number" ? rawStatus.retry_count : 0, retryBudget: typeof rawStatus.retry_budget === "number" ? rawStatus.retry_budget : 0, returnReason: typeof rawStatus.return_reason === "string" ? rawStatus.return_reason : null } : null,

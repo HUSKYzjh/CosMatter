@@ -35,7 +35,26 @@ from .gap_analysis import GapAnalysisError, load_gap_candidates
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance
 from .material_extraction import MaterialExtractionError, iter_material_facts, load_material_facts, validate_material_fact_source_links
 from .reading_guide import ReadingGuideError, load_reading_guide
-from .source_map import HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map
+from .candidate_screening import (
+    CandidateScreeningError,
+    candidate_fingerprint,
+    load_automated_trial_candidate_screening,
+    load_candidate_screening,
+    screening_matches_candidates,
+)
+from .content_access import (
+    AUTOMATED_TRIAL_CONTENT_ACCESS_TRUST_STATUS,
+    HUMAN_CONTENT_ACCESS_TRUST_STATUS,
+    ContentAccessError,
+    load_content_access,
+)
+from .source_map import (
+    AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS,
+    HUMAN_SOURCE_MAP_TRUST_STATUS,
+    SourceMapError,
+    iter_source_maps,
+    load_source_map,
+)
 from .paper_structure import PaperStructureError, iter_paper_structures, load_paper_structure
 from .relation_reconciliation import RelationReconciliationError, load_relation_reconciliation
 from .candidate_duplicate_reconciliation import CandidateDuplicateReconciliationError, load_candidate_duplicate_queue, load_candidate_duplicate_reconciliation
@@ -60,6 +79,10 @@ _MAX_PAPER_SOURCE_CHARS = 1_000
 _MAX_LITERATURE_GRAPH_CANDIDATES = 48
 _MAX_LITERATURE_GRAPH_NODES = 96
 _MAX_LITERATURE_GRAPH_EDGES = 144
+_WORKFLOW_TRACK_SCHEMA_VERSION = "cosmatter.workflow-track-summary/v1"
+_WORKFLOW_TRACK_TRUST_STATUS = "count_only_formal_and_delegated_track_projection_not_evidence"
+_WORKFLOW_STAGE_STATES = {"not_started", "completed", "attempted_with_failures", "stale"}
+_EVIDENCE_STAGE_STATES = {"not_started", "waiting_human_review", "completed", "permanently_blocked"}
 
 # These are presentation labels, not raw audit events.  The browser receives no
 # actor, event ID, payload, request ID, query text, exception, or review reason.
@@ -1082,6 +1105,167 @@ def _audit_rate(payload: dict[str, Any], key: str) -> float:
     return float(value)
 
 
+def _empty_workflow_track(*, delegated: bool = False) -> dict[str, Any]:
+    return {
+        "screening": {"state": "not_started", "included_document_count": 0},
+        "content_access": {
+            "state": "not_started",
+            "confirmed_document_count": 0,
+            "failed_or_expired_document_count": 0,
+        },
+        "source_mapping": {"state": "not_started", "document_count": 0},
+        "evidence": {
+            "state": "permanently_blocked" if delegated else "not_started",
+            "accepted_card_count": 0,
+        },
+    }
+
+
+def _validate_workflow_track_summary(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != {
+        "schema_version", "trust_status", "formal_evidence_track", "delegated_trial_track"
+    }:
+        raise UiExportError("workflow track summary fields are invalid")
+    if payload.get("schema_version") != _WORKFLOW_TRACK_SCHEMA_VERSION or payload.get("trust_status") != _WORKFLOW_TRACK_TRUST_STATUS:
+        raise UiExportError("workflow track summary boundary is invalid")
+    for track_name in ("formal_evidence_track", "delegated_trial_track"):
+        track = payload.get(track_name)
+        if not isinstance(track, dict) or set(track) != {"screening", "content_access", "source_mapping", "evidence"}:
+            raise UiExportError("workflow track projection fields are invalid")
+        screening, content, source, evidence = (
+            track["screening"], track["content_access"], track["source_mapping"], track["evidence"]
+        )
+        if (
+            not isinstance(screening, dict)
+            or set(screening) != {"state", "included_document_count"}
+            or screening.get("state") not in _WORKFLOW_STAGE_STATES
+            or not isinstance(screening.get("included_document_count"), int)
+            or isinstance(screening.get("included_document_count"), bool)
+            or screening["included_document_count"] < 0
+        ):
+            raise UiExportError("workflow screening projection is invalid")
+        if (
+            not isinstance(content, dict)
+            or set(content) != {"state", "confirmed_document_count", "failed_or_expired_document_count"}
+            or content.get("state") not in _WORKFLOW_STAGE_STATES
+            or any(not isinstance(content.get(key), int) or isinstance(content.get(key), bool) or content[key] < 0 for key in ("confirmed_document_count", "failed_or_expired_document_count"))
+        ):
+            raise UiExportError("workflow content-access projection is invalid")
+        if (
+            not isinstance(source, dict)
+            or set(source) != {"state", "document_count"}
+            or source.get("state") not in _WORKFLOW_STAGE_STATES
+            or not isinstance(source.get("document_count"), int)
+            or isinstance(source.get("document_count"), bool)
+            or source["document_count"] < 0
+        ):
+            raise UiExportError("workflow source-map projection is invalid")
+        if (
+            not isinstance(evidence, dict)
+            or set(evidence) != {"state", "accepted_card_count"}
+            or evidence.get("state") not in _EVIDENCE_STAGE_STATES
+            or not isinstance(evidence.get("accepted_card_count"), int)
+            or isinstance(evidence.get("accepted_card_count"), bool)
+            or evidence["accepted_card_count"] < 0
+        ):
+            raise UiExportError("workflow evidence projection is invalid")
+        if screening["state"] != "completed" and screening["included_document_count"] != 0:
+            raise UiExportError("incomplete workflow screening cannot retain included-document counts")
+        if content["state"] == "not_started" and (content["confirmed_document_count"] or content["failed_or_expired_document_count"]):
+            raise UiExportError("unstarted workflow content access cannot retain counts")
+        if content["state"] == "completed" and content["confirmed_document_count"] == 0:
+            raise UiExportError("completed workflow content access requires a confirmed document")
+        if content["state"] == "attempted_with_failures" and (content["confirmed_document_count"] or content["failed_or_expired_document_count"] == 0):
+            raise UiExportError("failed workflow content access requires only failure counts")
+        if content["state"] == "stale" and content["confirmed_document_count"] != 0:
+            raise UiExportError("stale workflow content access cannot retain confirmed counts")
+        if (source["state"] == "completed") != (source["document_count"] > 0):
+            raise UiExportError("workflow source-map state and count are inconsistent")
+        if track_name == "formal_evidence_track" and (
+            evidence["state"] == "permanently_blocked"
+            or (evidence["state"] == "completed") != (evidence["accepted_card_count"] > 0)
+        ):
+            raise UiExportError("formal workflow evidence state and count are inconsistent")
+    delegated_evidence = payload["delegated_trial_track"]["evidence"]
+    if delegated_evidence != {"state": "permanently_blocked", "accepted_card_count": 0}:
+        raise UiExportError("delegated trial evidence projection must remain permanently blocked")
+    return payload
+
+
+def _workflow_track_summary(
+    run_dir: Path,
+    mission_id: str,
+    candidate_payload: dict[str, Any] | None,
+    source_maps: tuple[dict[str, Any], ...],
+    accepted_card_count: int,
+    delegated_test_boundary: bool,
+) -> dict[str, Any]:
+    formal = _empty_workflow_track()
+    delegated = _empty_workflow_track(delegated=True)
+    human_screening = None if delegated_test_boundary else load_candidate_screening(
+        run_dir / "candidate_screening.json", mission_id
+    )
+    trial_screening = load_automated_trial_candidate_screening(
+        run_dir / "automated_trial_candidate_screening.json", mission_id
+    )
+    for artifact, track in ((human_screening, formal), (trial_screening, delegated)):
+        if artifact is None:
+            continue
+        if candidate_payload is None or not screening_matches_candidates(
+            artifact, candidate_payload, allowed_statuses={artifact["trust_status"]}
+        ):
+            track["screening"]["state"] = "stale"
+            continue
+        track["screening"] = {
+            "state": "completed",
+            "included_document_count": sum(
+                item["decision"] == "include_for_fulltext" for item in artifact["decisions"]
+            ),
+        }
+    content = load_content_access(run_dir / "content_access_confirmations.json", mission_id)
+    if content is not None:
+        content_track = None
+        if content["trust_status"] == AUTOMATED_TRIAL_CONTENT_ACCESS_TRUST_STATUS:
+            content_track = delegated
+        elif content["trust_status"] == HUMAN_CONTENT_ACCESS_TRUST_STATUS and not delegated_test_boundary:
+            content_track = formal
+        if content_track is not None:
+            current = candidate_payload is not None and content["candidate_fingerprint"] == candidate_fingerprint(candidate_payload)
+            if current:
+                confirmed_count = len(content["confirmations"])
+                failed_count = len(content["failures"])
+                content_track["content_access"] = {
+                    "state": "completed" if confirmed_count else "attempted_with_failures",
+                    "confirmed_document_count": confirmed_count,
+                    "failed_or_expired_document_count": failed_count,
+                }
+            else:
+                content_track["content_access"] = {
+                    "state": "stale",
+                    "confirmed_document_count": 0,
+                    "failed_or_expired_document_count": len(content["confirmations"]) + len(content["failures"]),
+                }
+    for trust_status, track in (
+        (HUMAN_SOURCE_MAP_TRUST_STATUS, formal),
+        (AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, delegated),
+    ):
+        if delegated_test_boundary and trust_status == HUMAN_SOURCE_MAP_TRUST_STATUS:
+            continue
+        document_count = len({item["document_id"] for item in source_maps if item.get("trust_status") == trust_status})
+        if document_count:
+            track["source_mapping"] = {"state": "completed", "document_count": document_count}
+    formal["evidence"] = {
+        "state": "completed" if accepted_card_count else "waiting_human_review" if formal["source_mapping"]["document_count"] else "not_started",
+        "accepted_card_count": accepted_card_count,
+    }
+    return _validate_workflow_track_summary({
+        "schema_version": _WORKFLOW_TRACK_SCHEMA_VERSION,
+        "trust_status": _WORKFLOW_TRACK_TRUST_STATUS,
+        "formal_evidence_track": formal,
+        "delegated_trial_track": delegated,
+    })
+
+
 def build_ui_bundle(
     mission: MissionBrief,
     assignment: FleetAssignment,
@@ -1116,6 +1300,7 @@ def build_ui_bundle(
     simulation_evidence: dict[str, Any] | None = None,
     simulation_evidence_delivery_status: str = "not_supplied",
     delegated_test_boundary: bool = False,
+    workflow_track_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -1128,6 +1313,19 @@ def build_ui_bundle(
     projected_evidence, verification_summary = approved_evidence_projection(
         mission.mission_id, evidence_cards, verification_decisions
     )
+    if workflow_track_summary is None:
+        formal = _empty_workflow_track()
+        formal["evidence"] = {
+            "state": "completed" if projected_evidence else "not_started",
+            "accepted_card_count": len(projected_evidence),
+        }
+        workflow_track_summary = {
+            "schema_version": _WORKFLOW_TRACK_SCHEMA_VERSION,
+            "trust_status": _WORKFLOW_TRACK_TRUST_STATUS,
+            "formal_evidence_track": formal,
+            "delegated_trial_track": _empty_workflow_track(delegated=True),
+        }
+    workflow_track_summary = _validate_workflow_track_summary(workflow_track_summary)
     accepted_ids = {item["evidence_id"] for item in projected_evidence}
     candidate_ids: set[str] = set()
     for candidate in research_gap_candidates or []:
@@ -1175,6 +1373,7 @@ def build_ui_bundle(
         "schema_version": UI_SCHEMA_VERSION,
         "generated_at": utc_now(),
         "delegated_test_boundary": delegated_test_boundary,
+        "workflow_track_summary": workflow_track_summary,
         "mission": {
             "mission_id": mission.mission_id,
             "question": mission.question,
@@ -1277,6 +1476,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
     crossref_relations = _crossref_relation_expansion_projection(run_dir / "crossref_relation_expansion.json", mission.mission_id)
     citation_expansion = _citation_expansion_projection(run_dir / "citation_expansion.json", mission.mission_id)
     candidate_history_path = run_dir / "retrieval_candidates.json"
+    candidate_history: dict[str, Any] | None = None
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
     except ReadingGuideError as error:
@@ -1331,6 +1531,14 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         candidate_duplicate_reconciliation = None
     try:
         all_source_maps = iter_source_maps(run_dir, mission.mission_id)
+        workflow_track_summary = _workflow_track_summary(
+            run_dir,
+            mission.mission_id,
+            candidate_history,
+            all_source_maps,
+            len(approved_evidence_projection(mission.mission_id, evidence_cards, verification_decisions)[0]),
+            delegated_test_boundary,
+        )
         # Automated-trial maps are valid private workflow artifacts, but they
         # are not human-reviewed evidence.  Keep them out of every browser
         # source-map, fact-link, and provenance projection while still
@@ -1377,7 +1585,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
                 "material_facts": None,
                 "research_gaps": None,
             }
-    except (ReadingGuideError, SourceMapError, PaperStructureError, MaterialExtractionError, ProvenanceAuditError, RelationReconciliationError, ConditionNormalizationError) as error:
+    except (ReadingGuideError, CandidateScreeningError, ContentAccessError, SourceMapError, PaperStructureError, MaterialExtractionError, ProvenanceAuditError, RelationReconciliationError, ConditionNormalizationError) as error:
         raise UiExportError(str(error)) from error
     bundle = build_ui_bundle(
         mission,
@@ -1412,6 +1620,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         simulation_evidence=simulation_evidence,
         simulation_evidence_delivery_status=simulation_evidence_delivery_status,
         delegated_test_boundary=delegated_test_boundary,
+        workflow_track_summary=workflow_track_summary,
     )
     destination = output_path or run_dir / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)

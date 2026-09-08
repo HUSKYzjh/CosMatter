@@ -32,6 +32,55 @@ describe("readBundle", () => {
     expect(bundle.delegatedTestBoundary).toBe(true);
   });
 
+  it("projects formal and delegated workflow tracks without granting trial evidence authority", () => {
+    const bundle = readBundle({
+      mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
+      workflow_track_summary: {
+        schema_version: "cosmatter.workflow-track-summary/v1",
+        trust_status: "count_only_formal_and_delegated_track_projection_not_evidence",
+        formal_evidence_track: {
+          screening: { state: "completed", included_document_count: 2 },
+          content_access: { state: "attempted_with_failures", confirmed_document_count: 0, failed_or_expired_document_count: 1 },
+          source_mapping: { state: "not_started", document_count: 0 },
+          evidence: { state: "not_started", accepted_card_count: 0 },
+        },
+        delegated_trial_track: {
+          screening: { state: "completed", included_document_count: 3 },
+          content_access: { state: "completed", confirmed_document_count: 2, failed_or_expired_document_count: 1 },
+          source_mapping: { state: "completed", document_count: 2 },
+          evidence: { state: "permanently_blocked", accepted_card_count: 0 },
+        },
+      },
+    });
+    expect(bundle.workflowTrackSummary.formalEvidenceTrack.screening.includedDocumentCount).toBe(2);
+    expect(bundle.workflowTrackSummary.delegatedTrialTrack.contentAccess).toMatchObject({ confirmedDocumentCount: 2, failedOrExpiredDocumentCount: 1 });
+    expect(bundle.workflowTrackSummary.delegatedTrialTrack.evidence).toEqual({ state: "permanently_blocked", acceptedCardCount: 0 });
+  });
+
+  it("fails closed when a delegated workflow projection claims accepted evidence", () => {
+    const bundle = readBundle({
+      mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },
+      workflow_track_summary: {
+        schema_version: "cosmatter.workflow-track-summary/v1",
+        trust_status: "count_only_formal_and_delegated_track_projection_not_evidence",
+        formal_evidence_track: {
+          screening: { state: "not_started", included_document_count: 0 },
+          content_access: { state: "not_started", confirmed_document_count: 0, failed_or_expired_document_count: 0 },
+          source_mapping: { state: "not_started", document_count: 0 },
+          evidence: { state: "not_started", accepted_card_count: 0 },
+        },
+        delegated_trial_track: {
+          screening: { state: "completed", included_document_count: 1 },
+          content_access: { state: "completed", confirmed_document_count: 1, failed_or_expired_document_count: 0 },
+          source_mapping: { state: "completed", document_count: 1 },
+          evidence: { state: "completed", accepted_card_count: 1 },
+        },
+      },
+    });
+    expect(bundle.workflowTrackSummary.delegatedTrialTrack.evidence).toEqual({ state: "permanently_blocked", acceptedCardCount: 0 });
+    expect(bundle.workflowTrackSummary.delegatedTrialTrack.sourceMapping.documentCount).toBe(0);
+  });
+
   it("projects only aggregate human-reviewed evaluation metrics", () => {
     const bundle = readBundle({
       mission: { mission_id: "m", question: "q", material: "BiFeO3", property_name: "phase", scope: "films" },

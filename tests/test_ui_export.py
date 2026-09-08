@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import io
 import json
 import tempfile
@@ -8,6 +9,11 @@ from unittest.mock import patch
 
 from cosmatter.audit import FlightRecorder
 from cosmatter.cli import main
+from cosmatter.candidate_screening import (
+    candidate_screening_from_automated_trial,
+    write_automated_trial_candidate_screening,
+)
+from cosmatter.content_access import record_sciverse_content_access
 from cosmatter.candidate_duplicate_reconciliation import (
     REVIEW_TRUST_STATUS as CANDIDATE_DUPLICATE_REVIEW_TRUST_STATUS,
     build_candidate_duplicate_queue,
@@ -181,14 +187,41 @@ class UiExportTests(unittest.TestCase):
             runs_dir = Path(directory)
             self._write_run(runs_dir, "automated_trial_preview")
             run_dir = runs_dir / "automated_trial_preview"
-            (run_dir / "retrieval_candidates.json").write_text(json.dumps({
+            candidate_payload = {
                 "candidates": [{
                     "document_id": "doc_trial",
                     "title": "Oxygen vacancy ordering in BiFeO3",
                     "source": "Sciverse",
                     "publication_year": 2025,
                 }],
-            }), encoding="utf-8")
+            }
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps(candidate_payload), encoding="utf-8")
+            write_automated_trial_candidate_screening(
+                run_dir,
+                candidate_screening_from_automated_trial(
+                    "mission_ui_export_001",
+                    candidate_payload,
+                    {"decisions": [{
+                        "document_id": "doc_trial",
+                        "decision": "include_for_fulltext",
+                        "reason_codes": ["material_match", "property_match"],
+                    }]},
+                ),
+            )
+            record_sciverse_content_access(
+                run_dir,
+                mission_id="mission_ui_export_001",
+                candidate_payload=candidate_payload,
+                document_id="doc_trial",
+                receipt={
+                    "provider": "sciverse",
+                    "operation": "content",
+                    "receipt_id": "receipt_trial",
+                    "document_id_sha256": hashlib.sha256(b"doc_trial").hexdigest(),
+                    "content_sha256": "a" * 64,
+                },
+                delegated_automated_trial=True,
+            )
             automated_map = source_map_from_review(
                 mission_id="mission_ui_export_001",
                 document_id="doc_trial",
@@ -218,6 +251,18 @@ class UiExportTests(unittest.TestCase):
             "document_ids": [],
         })
         self.assertIsNone(bundle["paper_source_map"])
+        self.assertEqual(bundle["workflow_track_summary"]["formal_evidence_track"], {
+            "screening": {"state": "not_started", "included_document_count": 0},
+            "content_access": {"state": "not_started", "confirmed_document_count": 0, "failed_or_expired_document_count": 0},
+            "source_mapping": {"state": "not_started", "document_count": 0},
+            "evidence": {"state": "not_started", "accepted_card_count": 0},
+        })
+        self.assertEqual(bundle["workflow_track_summary"]["delegated_trial_track"], {
+            "screening": {"state": "completed", "included_document_count": 1},
+            "content_access": {"state": "completed", "confirmed_document_count": 1, "failed_or_expired_document_count": 0},
+            "source_mapping": {"state": "completed", "document_count": 1},
+            "evidence": {"state": "permanently_blocked", "accepted_card_count": 0},
+        })
         self.assertEqual(bundle["audit_summary"]["external_retrieval"]["sciverse_agentic_search_count"], 1)
         self.assertTrue(any(node["label"] == "Oxygen vacancy ordering in BiFeO3" for node in bundle["literature_graph"]["nodes"]))
         serialised = json.dumps(bundle, ensure_ascii=False)
