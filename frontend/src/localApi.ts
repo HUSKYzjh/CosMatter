@@ -29,6 +29,19 @@ export interface HarnessPluginCatalogue {
   trust_status: "static_catalogue_not_plugin_execution_or_evidence_acceptance";
 }
 export type HarnessCatalogueHealth = "disabled" | "loading" | "ready" | "unavailable";
+export type DshProfileInstallationState = "installed" | "partial" | "not_installed" | "unavailable";
+export interface DshProfilePackageStatus { package: string; installed: boolean; dependency_kind: "local_link" | "registry_reference" | "remote_reference" | "absent"; }
+export interface DshProfileStatus {
+  schema_version: "cosmatter.dsh-profile-status/v1";
+  profile_name: "tui";
+  installation_state: DshProfileInstallationState;
+  expected_bundle_count: 7;
+  installed_bundle_count: number;
+  packages: DshProfilePackageStatus[];
+  composition_status: "not_checked_by_http_api";
+  trust_status: "local_dependency_snapshot_not_profile_boot_or_plugin_execution";
+}
+export type DshProfileHealth = "disabled" | "loading" | "ready" | "unavailable";
 
 const stringList = (value: unknown, maximum: number): value is string[] => Array.isArray(value)
   && value.length > 0 && value.length <= maximum
@@ -147,6 +160,7 @@ function jsonPost<T>(path: string, payload: unknown): Promise<T> { return reques
 export function getLocalApiStatus(): Promise<LocalApiStatus> { return request<LocalApiStatus>("./api/status"); }
 export function getFacilityContractCatalogue(): Promise<FacilityContractCatalogue> { return request<FacilityContractCatalogue>("./api/facility-contracts"); }
 export function getHarnessPluginCatalogue(): Promise<HarnessPluginCatalogue> { return request<HarnessPluginCatalogue>("./api/plugins"); }
+export function getDshProfileStatus(): Promise<DshProfileStatus> { return request<DshProfileStatus>("./api/dsh-profile"); }
 export function createLiveMission(payload: { question: string; material: string; property: string; scope: string }): Promise<LiveMission> { return jsonPost<LiveMission>("./api/missions", payload); }
 export function draftAuthorizedPlan(runId: string, dshCallId: string): Promise<DraftPlan> { return jsonPost<DraftPlan>(`./api/runs/${encodeURIComponent(runId)}/authorized-draft-plan`, { authorizations: ["mission_scoped_egress_consent", "deepseek_request_consent"], actor: "browser_researcher", dsh_call_id: dshCallId }); }
 export function approveLivePlan(runId: string, plan: unknown): Promise<ApprovedPlan> { return jsonPost<ApprovedPlan>(`./api/runs/${encodeURIComponent(runId)}/approve-plan`, plan); }
@@ -198,7 +212,35 @@ const REMINDER_RULES: Record<string, { scope: "run" | "project_memory"; action: 
 };
 const REMINDER_STAGES = new Set<string>(["intake", "plan", "retrieval", "screening", "parse", "extraction", "gap", "report", "evaluation"]);
 const LOCAL_API_PROVIDER_KEYS = ["deepseek", "sciverse", "mineru", "openalex", "crossref", "crossref_polite_contact"] as const;
+const DSH_PACKAGE_NAMES = ["@cosmatter/dsh-mission-plugin", "@cosmatter/dsh-observability-plugin", "@cosmatter/dsh-policy-plugin", "@cosmatter/dsh-research-plugin", "@cosmatter/dsh-review-plugin", "@cosmatter/dsh-document-plugin", "@cosmatter/dsh-graph-plugin"] as const;
 const exactObjectKeys = (value: unknown, keys: readonly string[]) => Boolean(value && typeof value === "object" && !Array.isArray(value) && (() => { const actual = Object.keys(value as Record<string, unknown>); return actual.length === keys.length && actual.every((key) => keys.includes(key)); })());
+
+/** Accept only the redacted fixed-profile dependency snapshot. */
+export function isDshProfileStatus(value: unknown): value is DshProfileStatus {
+  if (!exactObjectKeys(value, ["schema_version", "profile_name", "installation_state", "expected_bundle_count", "installed_bundle_count", "packages", "composition_status", "trust_status"])) return false;
+  const status = value as Record<string, unknown>;
+  if (status.schema_version !== "cosmatter.dsh-profile-status/v1"
+    || status.profile_name !== "tui"
+    || !["installed", "partial", "not_installed", "unavailable"].includes(String(status.installation_state))
+    || status.expected_bundle_count !== 7
+    || typeof status.installed_bundle_count !== "number"
+    || !Number.isInteger(status.installed_bundle_count)
+    || status.installed_bundle_count < 0
+    || status.installed_bundle_count > 7
+    || status.composition_status !== "not_checked_by_http_api"
+    || status.trust_status !== "local_dependency_snapshot_not_profile_boot_or_plugin_execution"
+    || !Array.isArray(status.packages)
+    || status.packages.length !== 7) return false;
+  const installedCount = status.packages.filter((item) => Boolean(item && typeof item === "object" && !Array.isArray(item) && (item as Record<string, unknown>).installed)).length;
+  return installedCount === status.installed_bundle_count && status.packages.every((item, index) => {
+    if (!exactObjectKeys(item, ["package", "installed", "dependency_kind"])) return false;
+    const packageStatus = item as Record<string, unknown>;
+    return packageStatus.package === DSH_PACKAGE_NAMES[index]
+      && typeof packageStatus.installed === "boolean"
+      && ["local_link", "registry_reference", "remote_reference", "absent"].includes(String(packageStatus.dependency_kind))
+      && (packageStatus.installed ? packageStatus.dependency_kind !== "absent" : packageStatus.dependency_kind === "absent");
+  });
+}
 
 /** Accept only the fixed, presence-only local API capability surface. */
 export function isLocalApiStatus(value: unknown): value is LocalApiStatus {

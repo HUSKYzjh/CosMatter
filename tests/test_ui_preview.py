@@ -52,6 +52,32 @@ class _HttpFakeMinerU:
 
 
 class UiPreviewTests(unittest.TestCase):
+    def test_dsh_profile_route_exposes_only_the_redacted_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            web = Path(directory)
+            (web / "index.html").write_text("<h1>preview</h1>", encoding="utf-8")
+            api = Mock()
+            api.dsh_profile_status.return_value = {
+                "schema_version": "cosmatter.dsh-profile-status/v1",
+                "profile_name": "tui",
+                "installation_state": "installed",
+                "expected_bundle_count": 7,
+                "installed_bundle_count": 7,
+                "packages": [],
+                "composition_status": "not_checked_by_http_api",
+                "trust_status": "local_dependency_snapshot_not_profile_boot_or_plugin_execution",
+            }
+            server = build_ui_preview_server(0, web, api=api)
+            thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/dsh-profile", timeout=2) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(payload["profile_name"], "tui")
+                self.assertNotIn("path", json.dumps(payload).casefold())
+                api.dsh_profile_status.assert_called_once_with()
+            finally:
+                server.shutdown(); server.server_close(); thread.join(timeout=2)
+
     def test_citation_expansion_route_requires_authorized_endpoint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             web = Path(directory)

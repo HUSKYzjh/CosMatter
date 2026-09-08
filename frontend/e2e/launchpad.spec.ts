@@ -19,6 +19,16 @@ const operationContracts = {
     },
   },
 };
+const dshProfileSnapshot = {
+  schema_version: "cosmatter.dsh-profile-status/v1",
+  profile_name: "tui",
+  installation_state: "installed",
+  expected_bundle_count: 7,
+  installed_bundle_count: 7,
+  packages: ["mission", "observability", "policy", "research", "review", "document", "graph"].map((name) => ({ package: `@cosmatter/dsh-${name}-plugin`, installed: true, dependency_kind: "local_link" })),
+  composition_status: "not_checked_by_http_api",
+  trust_status: "local_dependency_snapshot_not_profile_boot_or_plugin_execution",
+};
 
 async function openEditableTaskDefinition(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -209,6 +219,10 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
       }),
     });
   });
+  await page.route("**/api/dsh-profile", async (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(dshProfileSnapshot),
+  }));
   await page.setViewportSize({ width: 960, height: 900 });
   await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /BFO-01/ }).click();
@@ -216,11 +230,38 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   const deck = page.locator(".harness-capability-deck");
   await expect(deck).toHaveClass(/state-ready/, workspaceLoad);
   await expect(deck).toContainText("本机目录已连接");
-  await expect(deck).toContainText("不证明 DSH 配置层已安装");
+  await expect(deck).toContainText("依赖已安装 7/7");
+  await expect(deck).toContainText("HTTP API 不启动 profile");
+  await expect(deck).toContainText("尚无派发回执");
+  await expect(deck).toContainText("任何一层都不能代替工具结果");
   await expect(deck.locator(".harness-capability-metrics strong").first()).toHaveText("1");
   await page.setViewportSize({ width: 390, height: 900 });
+  const minimumReadableSize = await deck.locator(".cm-status-badge, .harness-state-ledger p").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 11));
+  expect(minimumReadableSize).toBe(true);
   expect(await deck.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test("keeps the verified DSH profile visible when catalogue discovery fails", async ({ page }) => {
+  await page.route("**/api/status", async (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      api_mode: "loopback_only",
+      providers: { deepseek: false, sciverse: false, mineru: false, openalex: false, crossref: false, crossref_polite_contact: false },
+      operation_contracts: operationContracts,
+    }),
+  }));
+  await page.route("**/api/plugins", async (route) => route.fulfill({ status: 503, body: "catalogue unavailable" }));
+  await page.route("**/api/dsh-profile", async (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(dshProfileSnapshot) }));
+  await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /BFO-01/ }).click();
+  await page.getByRole("button", { name: "确认任务并进入编排" }).click();
+
+  const deck = page.locator(".harness-capability-deck");
+  await expect(deck).toHaveClass(/state-unavailable/, workspaceLoad);
+  await expect(deck).toContainText("目录不可用");
+  await expect(deck).toContainText("依赖已安装 7/7");
+  await expect(deck).toContainText("目录、profile 依赖快照与运行回执独立检查");
 });
 
 test("wraps narrow rail handoffs and manifest counts without collisions", async ({ page }) => {
@@ -396,6 +437,8 @@ test("keeps synthetic launch-preview papers out of the real research route", asy
 
   const bridge = page.locator(".fleet-command-stage");
   await expect(bridge).toContainText("只读预览数据层", lazyWorkspaceContentLoad);
+  await expect(bridge).toContainText("只读预览未检查");
+  await expect(bridge.getByRole("button", { name: "重新检查 profile" })).toHaveCount(0);
   await expect(bridge.locator(".workflow-next")).toContainText("等待受控检索或导入可审查文献子图");
   await expect(bridge).not.toContainText("20 篇可审查文献");
 

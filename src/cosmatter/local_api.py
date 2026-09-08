@@ -80,6 +80,7 @@ from .stage_contract import StageContractError, stage_contract
 from .operational_telemetry import OperationalTelemetryError, operational_telemetry
 from .workflow_dag import WorkflowDagError, workflow_dag_projection
 from .reminder_board import ReminderBoardError, project_reminder_board
+from .dsh_profile_status import dsh_profile_status
 
 
 class LocalApiError(ValueError):
@@ -153,6 +154,10 @@ class LocalMissionApi:
             "plugins": catalogue.manifests(),
             "trust_status": "static_catalogue_not_plugin_execution_or_evidence_acceptance",
         }
+
+    def dsh_profile_status(self) -> dict[str, object]:
+        """Return a redacted dependency snapshot for the fixed local TUI profile."""
+        return dsh_profile_status()
 
     def facility_contract_catalogue(self) -> dict[str, object]:
         """Expose static facility schemas and safety boundaries only.
