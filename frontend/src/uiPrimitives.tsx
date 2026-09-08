@@ -29,6 +29,22 @@ export function ActionButton(props: ActionButtonProps) {
   </button>;
 }
 
+export interface ActionLinkProps extends JSX.AnchorHTMLAttributes<HTMLAnchorElement> {
+  variant?: Exclude<ActionButtonVariant, "danger">;
+  size?: ActionButtonSize;
+}
+
+/** Link counterpart to ActionButton: shared hierarchy without changing navigation semantics. */
+export function ActionLink(props: ActionLinkProps) {
+  const [local, rest] = splitProps(props, ["variant", "size", "class", "children"]);
+  return <a
+    {...rest}
+    class={actionButtonClass(local.variant ?? "secondary", local.size ?? "md", local.class)}
+  >
+    <span>{local.children}</span>
+  </a>;
+}
+
 export type StatusBadgeTone = "ready" | "active" | "attention" | "neutral";
 
 export function StatusBadge(props: { tone: StatusBadgeTone; children: JSX.Element; pulse?: boolean }) {

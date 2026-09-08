@@ -7,7 +7,7 @@ import { shouldAutoLoadRecordedSourceMap } from "./sourceMapLoadRecovery";
 import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateSourceMapSegment, SourceMapRecordResult } from "./localApi";
 import { uiLanguage } from "./zh";
 import { safeOperationFeedback } from "./importFeedback";
-import { ActionButton } from "./uiPrimitives";
+import { ActionButton, ActionLink } from "./uiPrimitives";
 
 type SourceKind = PrivateSourceMapSegment["kind"];
 type DraftSegment = PrivateSourceMapSegment;
@@ -99,7 +99,7 @@ export function PrivateSourceMapReview(props: {
   };
 
   return <section class="private-source-map-review">
-    <header><div><small>{tr("人工来源定位 / HUMAN SOURCE MAP", "HUMAN SOURCE MAP")}</small><h2>{sourceMapRecorded() ? tr("沿已登记定位继续核对", "Continue from recorded source locations") : tr("从私有 Markdown 登记可审计短片段", "Register auditable excerpts from private Markdown")}</h2><p>{sourceMapRecorded() ? tr("已登记的片段不会在此表单中重写。可在下方登记与这些片段绑定的结构化材料事实，或在条件完整时人工接受 EvidenceCard。", "Recorded excerpts are not rewritten in this form. Register structured material facts bound to them below, or accept an EvidenceCard by human review once conditions are complete.") : tr("先下载并在本机核对 MinerU Markdown，再仅复制必要的短引文。服务端确认它位于给定行区间；不传输全文、不调用模型，也不自动创建 EvidenceCard。", "Download and inspect the MinerU Markdown locally, then copy only essential short excerpts. The loopback service validates their line range; it never sends full text, calls a model, or creates an EvidenceCard automatically.")}</p></div><Show when={ready() && props.markdownUrl}>{(url) => <a href={url()} download="private-markdown.md">{tr("下载私有 Markdown", "Download private Markdown")}</a>}</Show></header>
+    <header><div><small>{tr("人工来源定位 / HUMAN SOURCE MAP", "HUMAN SOURCE MAP")}</small><h2>{sourceMapRecorded() ? tr("沿已登记定位继续核对", "Continue from recorded source locations") : tr("从私有 Markdown 登记可审计短片段", "Register auditable excerpts from private Markdown")}</h2><p>{sourceMapRecorded() ? tr("已登记的片段不会在此表单中重写。可在下方登记与这些片段绑定的结构化材料事实，或在条件完整时人工接受 EvidenceCard。", "Recorded excerpts are not rewritten in this form. Register structured material facts bound to them below, or accept an EvidenceCard by human review once conditions are complete.") : tr("先下载并在本机核对 MinerU Markdown，再仅复制必要的短引文。服务端确认它位于给定行区间；不传输全文、不调用模型，也不自动创建 EvidenceCard。", "Download and inspect the MinerU Markdown locally, then copy only essential short excerpts. The loopback service validates their line range; it never sends full text, calls a model, or creates an EvidenceCard automatically.")}</p></div><Show when={ready() && props.markdownUrl}>{(url) => <ActionLink size="sm" href={url()} download="private-markdown.md">{tr("下载私有 Markdown", "Download private Markdown")}</ActionLink>}</Show></header>
     <Show when={ready()} fallback={<p class="empty-copy">{tr("等待私有解析完成后，才能登记 Source Map。", "Wait for private parsing to finish before recording a Source Map.")}</p>}>
       <section class="source-map-docking-vector" aria-label={tr("Source Map 来源泊位", "Source Map docking stations")}>
         <header><small>{tr("来源泊位 / 人工溯源", "SOURCE BERTHS / HUMAN PROVENANCE")}</small><span>{sourceMapRecorded() ? tr("已登记片段只读展示；后续每一步仍保留独立人工门禁。", "Recorded segments remain read-only; each follow-up retains an independent human gate.") : tr("此处仅登记必要短引文和定位符；每项状态均来自当前表单。", "Only essential short quotes and locators are registered here; every state reflects the active form.")}</span></header>
