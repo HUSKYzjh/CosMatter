@@ -258,6 +258,15 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(deck).toContainText("HTTP API 不启动 profile");
   await expect(deck).toContainText("尚无派发回执");
   await expect(deck).toContainText("任何一层都不能代替工具结果");
+  const activationTrack = deck.locator(".harness-activation-track");
+  await expect(activationTrack).toContainText("01 / PROFILE");
+  await expect(activationTrack).toContainText("7/7 包已安装");
+  await expect(activationTrack).toContainText("02 / ADAPTER");
+  await expect(activationTrack).toContainText("契约目录已连接");
+  await expect(activationTrack).toContainText("03 / RUNTIME");
+  await expect(activationTrack).toContainText("尚无执行回执");
+  await expect(activationTrack.locator(":scope > i")).toHaveCount(2);
+  await expect(activationTrack.locator(":scope > i").first()).toHaveText("≠");
   await expect(deck.locator(".harness-capability-metrics strong").first()).toHaveText("1");
   const packageProof = deck.locator(".harness-package-proof");
   await expect(packageProof.locator("summary")).toContainText("查看逐包依赖证明");
@@ -276,6 +285,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await page.setViewportSize({ width: 390, height: 900 });
   const minimumReadableSize = await deck.locator(".cm-status-badge, .harness-state-ledger p").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 11));
   expect(minimumReadableSize).toBe(true);
+  expect(await activationTrack.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   expect(await packageProof.locator("ul").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   expect(await deck.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -340,6 +350,8 @@ test("turns a typed question into an explicit selectable and confirmable mission
   await expect(page.getByRole("region", { name: "下一步 / 任务简报与可编辑边界" })).toBeVisible();
   const confirm = page.getByRole("button", { name: "确认任务并进入编排" });
   await expect(confirm).toBeDisabled();
+  await expect(confirm).toHaveClass(/cm-action--primary/);
+  await expect(confirm).toHaveClass(/cm-action--lg/);
 
   await page.getByLabel("研究对象").fill("BiFeO₃ 外延薄膜");
   await expect(confirm).toBeDisabled();
@@ -347,6 +359,11 @@ test("turns a typed question into an explicit selectable and confirmable mission
   await expect(confirm).toBeEnabled();
   await confirm.click();
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await expect(page.locator(".session-handoff > .cm-action")).toHaveClass(/cm-action--sm/);
+  await page.getByRole("button", { name: /任务定义/ }).first().click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-discover/, workspaceLoad);
+  await expect(page.locator(".mission-definition-actions .cm-action")).toHaveClass(/cm-action--primary/);
+  await expect(page.locator(".mission-definition-actions .cm-action")).toHaveClass(/cm-action--lg/);
 });
 
 test("keeps fallback routes tied to the entered material property instead of generic boilerplate", async ({ page }) => {

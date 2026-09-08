@@ -54,6 +54,27 @@ export function HarnessCapabilityDeck(props: {
       <div><small>DSH / COSMATTER ADAPTER SURFACE</small><h2>{x("插件桥与当前任务授权", "Plugin bridge and mission authorization")}</h2></div>
       <StatusBadge tone={badge().tone} pulse={props.health === "loading" || Boolean(props.operationPending)}>{badge().copy}</StatusBadge>
     </header>
+    <section class="harness-activation-track" aria-label={x("DSH 启用层次", "DSH activation layers")}>
+      <div classList={{ ready: props.profileHealth === "ready" && props.profile?.installation_state === "installed", attention: props.profileHealth === "unavailable" || props.profile?.installation_state === "partial" }}>
+        <small>01 / PROFILE</small>
+        <strong>{props.profileHealth === "ready" && props.profile
+          ? x(`${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count} 包已安装`, `${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count} bundles installed`)
+          : x("依赖未核验", "Dependencies not checked")}</strong>
+      </div>
+      <i aria-hidden="true">≠</i>
+      <div classList={{ ready: props.health === "ready", attention: props.health === "unavailable" }}>
+        <small>02 / ADAPTER</small>
+        <strong>{props.health === "ready" ? x("契约目录已连接", "Contract catalogue connected") : props.health === "loading" ? x("正在连接目录", "Connecting catalogue") : x("目录未连接", "Catalogue disconnected")}</strong>
+      </div>
+      <i aria-hidden="true">≠</i>
+      <div classList={{ ready: runtime().state === "completed", attention: runtime().state === "unknown" || runtime().state === "incomplete", active: Boolean(props.operationPending) }}>
+        <small>03 / RUNTIME</small>
+        <strong>{props.operationPending
+          ? x("受控操作进行中", "Controlled operation active")
+          : runtime().dispatchCount ? x(`${runtime().completedCount}/${runtime().dispatchCount} 派发完成`, `${runtime().completedCount}/${runtime().dispatchCount} dispatches complete`)
+            : x("尚无执行回执", "No execution receipt")}</strong>
+      </div>
+    </section>
     <Show when={props.health === "ready"} fallback={<div class="harness-catalogue-message"><p>{props.health === "loading"
       ? x("正在读取固定的本机能力契约；这不会加载插件、调用工具或授予执行权限。", "Reading the fixed local capability contracts. This does not load a plugin, call a tool, or grant execution permission.")
       : props.health === "unavailable"
