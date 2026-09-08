@@ -51,6 +51,7 @@ type View = "launch" | "discover" | "workflow" | "graph" | "reader" | "horizon";
 type RouteRecovery = { view: View; zh: string; en: string; contextZh?: string; contextEn?: string };
 type RootPdfMission = LaunchMission & { missionId: string };
 type RootPdfRetry = { file: File; mission: RootPdfMission };
+type ManualAction = "mission" | "draft" | "approval" | "retrieval";
 type LocalImportReceipt = { fileName: string; byteLength: number; importedAt: number; generatedAt: string | null; schemaVersion: string; visibleRecordCount: number; withheldAcceptedEvidenceCount: number; delegatedTestBoundary: boolean };
 const text = (zhText: string, enText: string) => uiLanguage() === "zh" ? zhText : enText;
 const SOURCES: Array<{ id: RetrievalSource; label: string; provider: string }> = [
@@ -244,6 +245,7 @@ export function App() {
   const [automaticExecution, setAutomaticExecution] = createSignal<AutomaticExecutionStatus | null>(null);
   const [automaticCancellationRequested, setAutomaticCancellationRequested] = createSignal(false);
   const [automaticAuthorization, setAutomaticAuthorization] = createSignal<HarnessAuthorization | null>(null);
+  const [manualActionBusy, setManualActionBusy] = createSignal<ManualAction | null>(null);
   const [apiSummary, setApiSummary] = createSignal(text("本地 API 未启用。", "Local API is disabled."));
   const [apiProviders, setApiProviders] = createSignal<Record<string, boolean>>({});
   const [apiCapabilityHealth, setApiCapabilityHealth] = createSignal<LocalApiCapabilityHealth>("disabled");
@@ -1604,6 +1606,7 @@ export function App() {
     if (!localApiUsable()) { setStatus(text("本机 API 当前不可用；请等待能力快照恢复后再启动受控任务。", "The local API is currently unavailable. Wait for the capability snapshot to recover before starting a controlled task.")); return; }
     if (!updateMission()) return;
     if (!liveMissionLaunchGate.tryStart()) { setStatus(text("正在启动一个受控本地任务；请等待当前请求结束。", "A controlled local mission is already being started; wait for the current request to finish.")); return; }
+    setManualActionBusy("mission");
     setStatus(text("正在启动受控本地任务；不会保留旧任务工件。", "Starting the controlled local mission; artifacts from the previous task will not be retained."));
     const operationId = beginActiveOperation(text("正在启动受控本地任务", "Starting controlled local mission"), text("正在创建新的本地任务壳；任何旧工件都不会被带入新边界。", "Creating a new local task shell; no previous artifact will be carried into the new boundary."));
     const mission = bundle().mission;
@@ -1627,7 +1630,7 @@ export function App() {
     } catch (error) { showMutationRecovery("task_start", error,
       text("无法启动本地 API 任务。", "Unable to start the local API mission."),
       text("启动本地任务请求超时，结果未知；不会自动重试。请先刷新本机任务状态，再决定是否创建新任务。", "The local-task start request timed out and its outcome is unknown. It will not retry automatically; refresh local run status before deciding whether to create a new task.")); }
-    finally { liveMissionLaunchGate.finish(); finishActiveOperation(operationId); }
+    finally { liveMissionLaunchGate.finish(); setManualActionBusy((current) => current === "mission" ? null : current); finishActiveOperation(operationId); }
   }
   async function requestPlanDraft() {
     if (launchPreview()) { setStatus(text("只读预览不允许执行受控任务或外部调用。", "The read-only preview does not permit controlled tasks or external calls.")); return; }
@@ -1635,6 +1638,7 @@ export function App() {
     if (!runId) return;
     if (!planDraftConsent()) { setStatus(text("请先明确授权将当前任务边界发送至 DeepSeek 生成未受信计划草案。", "Explicitly authorize sending the current task boundary to DeepSeek for an untrusted plan draft first.")); return; }
     if (!planDraftGate.tryStart()) { setStatus(text("正在起草计划；请等待当前请求结束。", "A plan draft is already being requested; wait for the current request to finish.")); return; }
+    setManualActionBusy("draft");
     setStatus(text("正在请求未受信计划草案；不会自动批准或执行检索。", "Requesting an untrusted plan draft; it will not be approved or executed automatically."));
     const operationId = beginActiveOperation(text("正在起草计划", "Drafting plan"), text("返回内容仍是未受信建议，必须人工复核后才能批准。", "Returned content remains an untrusted suggestion and requires human review before approval."));
     const epoch = taskEpoch;
@@ -1647,13 +1651,14 @@ export function App() {
       if (currentRunGuard(runId, epoch)()) showMutationRecovery("plan", error,
         text("无法请求计划草案；当前任务与已登记工件保持不变。", "Unable to request a plan draft; the current task and registered artifacts are unchanged."),
         text("计划草案请求超时，结果未知；不会自动重试。请先查看本机调度审计与运行状态。", "The plan-draft request timed out and its outcome is unknown. It will not retry automatically; inspect the local dispatch audit and run status first."));
-    } finally { setPlanDraftConsent(false); planDraftGate.finish(); finishActiveOperation(operationId); }
+    } finally { setPlanDraftConsent(false); planDraftGate.finish(); setManualActionBusy((current) => current === "draft" ? null : current); finishActiveOperation(operationId); }
   }
   async function approveReviewedPlan() {
     if (launchPreview()) { setStatus(text("只读预览不允许执行受控任务或外部调用。", "The read-only preview does not permit controlled tasks or external calls.")); return; }
     const runId = liveRunId();
     if (!runId) return;
     if (!planApprovalGate.tryStart()) { setStatus(text("正在批准复核计划；请等待当前请求结束。", "The reviewed plan is already being approved; wait for the current request to finish.")); return; }
+    setManualActionBusy("approval");
     setStatus(text("正在校验并批准人工复核计划；未提交检索。", "Validating and approving the human-reviewed plan; no retrieval has been submitted."));
     const operationId = beginActiveOperation(text("正在批准复核计划", "Approving reviewed plan"), text("仅在本机验证人工计划与任务边界；检索必须另行明确执行。", "The human plan is being validated locally against the task boundary; retrieval still requires a separate explicit action."));
     const epoch = taskEpoch;
@@ -1666,7 +1671,7 @@ export function App() {
       if (currentRunGuard(runId, epoch)()) showMutationRecovery("plan", error,
         text("无法批准复核计划。请检查 JSON 结构、任务边界与人工审批要求。", "Unable to approve the reviewed plan. Check its JSON structure, mission boundary, and human-approval requirements."),
         text("计划批准请求超时，结果未知；请刷新本机任务状态核验，而非重新提交同一计划。", "The plan-approval request timed out and its outcome is unknown. Refresh local task status to verify it instead of resubmitting the same plan."));
-    } finally { planApprovalGate.finish(); finishActiveOperation(operationId); }
+    } finally { planApprovalGate.finish(); setManualActionBusy((current) => current === "approval" ? null : current); finishActiveOperation(operationId); }
   }
   async function executeApprovedQueries() {
     if (launchPreview()) { setStatus(text("只读预览不允许执行受控任务或外部调用。", "The read-only preview does not permit controlled tasks or external calls.")); return; }
@@ -1674,6 +1679,7 @@ export function App() {
     if (!runId || !planApproved() || !approvedQueryCount() || !retrievalSources().length) return;
     if (!queryExecutionConsent()) { setStatus(text("请先明确授权将已批准检索式发送至所选书目服务。", "Explicitly authorize sending approved queries to the selected bibliographic services first.")); return; }
     if (!queryExecutionGate.tryStart()) { setStatus(text("正在执行已批准检索；请等待当前请求结束。", "Approved retrieval is already running; wait for the current request to finish.")); return; }
+    setManualActionBusy("retrieval");
     setStatus(text("正在按人工批准的顺序执行检索；不会重复提交。", "Running the human-approved retrieval sequence; duplicate submission is blocked."));
     const operationId = beginActiveOperation(text("正在执行已批准检索", "Running approved retrieval"), text("正在依次执行人工批准的主检索与反例检索；重复提交已被拦截。", "Primary and counterevidence queries are running in human-approved order; duplicate submission is blocked."));
     const executionEpoch = taskEpoch;
@@ -1697,7 +1703,7 @@ export function App() {
       showMutationRecovery("query", error,
         text("无法执行已批准检索；当前已登记工件保持不变。", "Unable to execute the approved retrieval; registered artifacts are unchanged."),
         text("受控检索请求超时，结果未知；不会自动重试。请先核验本机调度审计和提供方状态，再创建新的明确授权调用。", "The controlled retrieval request timed out and its outcome is unknown. It will not retry automatically; verify the local dispatch audit and provider status before creating a new explicitly authorised call."));
-    } finally { setQueryExecutionConsent(false); queryExecutionGate.finish(); finishActiveOperation(operationId); }
+    } finally { setQueryExecutionConsent(false); queryExecutionGate.finish(); setManualActionBusy((current) => current === "retrieval" ? null : current); finishActiveOperation(operationId); }
   }
   function toggleSource(source: RetrievalSource) { setRetrievalSources((current) => current.includes(source) ? current.filter((item) => item !== source) : [...current, source]); }
 
@@ -1930,7 +1936,58 @@ export function App() {
         <p class="rail-definition-note">{text("任务输入与确认位于主工作区；侧栏仅保留导航和受控执行。", "Task inputs and confirmation are in the main workspace; this rail keeps navigation and controlled execution only.")}</p>
         <Show when={liveRunId()}><label class="consent plan-draft-consent"><input type="checkbox" checked={planDraftConsent()} onChange={(event) => setPlanDraftConsent(event.currentTarget.checked)} />{text("我同意将当前任务边界发送至 DeepSeek，仅生成未受信计划草案；不会批准计划、检索或接受证据。勾选后可在“高级：手动受控执行”中起草。", "I authorize sending the current task boundary to DeepSeek only for an untrusted plan draft. This does not approve a plan, retrieve, or accept evidence. After checking, draft from Advanced manual control.")}</label></Show>
         <Show when={liveRunId() && planApproved()}><label class="consent query-execution-consent"><input type="checkbox" checked={queryExecutionConsent()} onChange={(event) => setQueryExecutionConsent(event.currentTarget.checked)} />{text("我同意将人工批准的检索式发送至所选书目服务，用于受控元数据检索；不会上传全文或接受 EvidenceCard。勾选后可在“高级：手动受控执行”中执行。", "I authorize sending the human-approved queries to selected bibliographic services for controlled metadata retrieval. This does not upload full text or accept EvidenceCards. After checking, run it from Advanced manual control.")}</label></Show>
-        <details class="mission-api" open={manualControlOpen()} onToggle={(event) => setManualControlOpen(event.currentTarget.open)}><summary>{text("高级：手动受控执行", "Advanced: manual controlled execution")}</summary><p>{text("此分步入口用于人工调试或逐步复现；常规研究请使用上方任务确认或起始页问题入口。它不会替代 EvidenceCard 的人工审核。", "This stepwise route is for manual debugging or reproducible execution. For ordinary research, use the mission confirmation above or the launch-page question entry. It never replaces human EvidenceCard review.")}</p><p>{apiSummary()}</p><button type="button" onClick={updateMission}>{text("仅更新本地任务边界", "Update local mission boundary only")}</button><Show when={localApiUsable()} fallback={<small>{text("执行入口要求当前可连接的本机 API；不会沿用过期提供方能力。", "Execution controls require a currently reachable local API; stale provider capabilities are never reused.")}</small>}><button class="primary-action" type="button" onClick={() => void launchLiveMission()}>{text("启动受控 API 任务", "Start controlled API mission")}</button><Show when={liveRunId()}><button type="button" disabled={!apiProviders().deepseek} onClick={() => void requestPlanDraft()}>{text("起草计划", "Draft plan")}</button><Show when={draftContent()}><label>{text("未受信草案", "Untrusted draft")}<textarea value={draftContent()} readOnly rows="4" /></label></Show><label>{text("人工复核计划 JSON", "Human-reviewed plan JSON")}<textarea value={reviewedPlan()} onInput={(event) => setReviewedPlan(event.currentTarget.value)} rows="5" /></label><button type="button" onClick={() => void approveReviewedPlan()}>{text("批准计划", "Approve plan")}</button><Show when={planApproved()}><fieldset><legend>{text("检索来源", "Retrieval sources")}</legend><For each={SOURCES}>{(source) => <label><input type="checkbox" checked={retrievalSources().includes(source.id)} disabled={!apiProviders()[source.provider]} onChange={() => toggleSource(source.id)} />{source.label}</label>}</For></fieldset><button class="primary-action" type="button" disabled={!retrievalSources().length} onClick={() => void executeApprovedQueries()}>{text("执行已批准检索", "Run approved retrieval")}</button></Show></Show></Show><section class="examples"><p>{text("示例问题", "Suggested questions")}</p><For each={examples()}>{(example) => <button type="button" onClick={() => updateQuestion(example)}>{example}</button>}</For></section><label class="import-control" aria-busy={uiImportPending()}>{uiImportPending() ? text("正在导入脱敏 UI JSON…", "Importing redacted UI JSON…") : text("导入脱敏 UI JSON", "Import redacted UI JSON")}<input type="file" disabled={uiImportPending()} accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; importBundle(file); }} /></label><Show when={uiImportReceipt()}>{(receipt) => <section class="import-artifact-receipt" aria-label={text("已导入工件摘要", "Imported artifact summary")} aria-live="polite"><small>{text("本地导入回执 / 浏览器内存", "LOCAL IMPORT RECEIPT / BROWSER MEMORY")}</small><strong>{receipt().fileName}</strong><dl><div><dt>{text("工件自述版本", "Artifact-declared version")}</dt><dd>{receipt().schemaVersion}</dd></div><div><dt>{text("工件自述生成时间", "Artifact-declared time")}</dt><dd>{localImportTimestamp(receipt().generatedAt, language())}</dd></div><div><dt>{text("文件大小", "File size")}</dt><dd>{localImportSize(receipt().byteLength)}</dd></div><div><dt>{text("可显示数据项", "Visible records")}</dt><dd>{receipt().visibleRecordCount}</dd></div></dl><Show when={receipt().withheldAcceptedEvidenceCount > 0}><p>{text(`已安全隐藏 ${receipt().withheldAcceptedEvidenceCount} 条不符合 UI 证据边界的已接受卡片；未显示其内容。`, `${receipt().withheldAcceptedEvidenceCount} declared accepted card(s) were safely withheld by the UI boundary; their content is not shown.`)}</p></Show><p>{text("此回执仅显示用户明确选择的本地 JSON 自述元数据；不会验证完整性、作者身份或科学结论，也不会上传文件、读取路径或显示全文。", "This receipt displays only self-declared metadata from the user-selected local JSON. It does not verify integrity, authorship, or scientific conclusions, and does not upload the file, read paths, or show full text.")}</p></section>}</Show></details>
+        <details class="mission-api" open={manualControlOpen()} onToggle={(event) => setManualControlOpen(event.currentTarget.open)}>
+          <summary>{text("高级：手动受控执行", "Advanced: manual controlled execution")}</summary>
+          <p>{text("此分步入口用于人工调试或逐步复现；常规研究请使用上方任务确认或起始页问题入口。它不会替代 EvidenceCard 的人工审核。", "This stepwise route is for manual debugging or reproducible execution. For ordinary research, use the mission confirmation above or the launch-page question entry. It never replaces human EvidenceCard review.")}</p>
+          <p>{apiSummary()}</p>
+          <div class="mission-api-actions">
+            <ActionButton size="sm" variant="quiet" disabled={manualActionBusy() !== null} onClick={updateMission}>{text("仅更新本地任务边界", "Update local mission boundary only")}</ActionButton>
+            <Show when={localApiUsable()} fallback={<small>{text("执行入口要求当前可连接的本机 API；不会沿用过期提供方能力。", "Execution controls require a currently reachable local API; stale provider capabilities are never reused.")}</small>}>
+              <ActionButton variant="primary" busy={manualActionBusy() === "mission"} busyLabel={text("正在启动受控任务…", "Starting controlled mission…")} disabled={manualActionBusy() !== null} onClick={() => void launchLiveMission()}>{text("启动受控 API 任务", "Start controlled API mission")}</ActionButton>
+            </Show>
+          </div>
+          <Show when={localApiUsable() && liveRunId()}>
+            <section class="mission-api-sequence" aria-label={text("手动受控执行步骤", "Manual controlled execution steps")}>
+              <header><small>{text("任务已建立 / 后续仍逐步授权", "MISSION CREATED / EACH NEXT STEP REMAINS GATED")}</small><strong>{text("计划、批准与检索互不自动连锁", "Draft, approval, and retrieval never chain automatically")}</strong></header>
+              <div class="mission-api-step">
+                <small>01 / DRAFT</small>
+                <ActionButton size="sm" busy={manualActionBusy() === "draft"} busyLabel={text("正在起草计划…", "Drafting plan…")} disabled={manualActionBusy() !== null || !apiProviders().deepseek} onClick={() => void requestPlanDraft()}>{text("起草未受信计划", "Draft untrusted plan")}</ActionButton>
+                <span>{planDraftConsent() ? text("本次 DeepSeek 草案授权已勾选", "DeepSeek draft consent checked for this request") : text("需先在侧栏勾选本次草案授权", "Check one-time draft consent in the rail first")}</span>
+              </div>
+              <Show when={draftContent()}><label>{text("未受信草案", "Untrusted draft")}<textarea value={draftContent()} readOnly rows="4" /></label></Show>
+              <label>{text("人工复核计划 JSON", "Human-reviewed plan JSON")}<textarea value={reviewedPlan()} onInput={(event) => setReviewedPlan(event.currentTarget.value)} rows="5" /></label>
+              <div class="mission-api-step">
+                <small>02 / APPROVE</small>
+                <ActionButton size="sm" busy={manualActionBusy() === "approval"} busyLabel={text("正在校验并批准…", "Validating and approving…")} disabled={manualActionBusy() !== null} onClick={() => void approveReviewedPlan()}>{text("批准人工复核计划", "Approve reviewed plan")}</ActionButton>
+                <span>{text("只在本机登记批准；不会提交检索", "Records local approval only; no retrieval is submitted")}</span>
+              </div>
+              <Show when={planApproved()}>
+                <fieldset><legend>{text("检索来源", "Retrieval sources")}</legend><For each={SOURCES}>{(source) => <label><input type="checkbox" checked={retrievalSources().includes(source.id)} disabled={!apiProviders()[source.provider] || manualActionBusy() !== null} onChange={() => toggleSource(source.id)} />{source.label}</label>}</For></fieldset>
+                <div class="mission-api-step state-ready">
+                  <small>03 / RETRIEVE</small>
+                  <ActionButton variant="primary" busy={manualActionBusy() === "retrieval"} busyLabel={text("正在执行已批准检索…", "Running approved retrieval…")} disabled={manualActionBusy() !== null || !retrievalSources().length || !approvedQueryCount()} onClick={() => void executeApprovedQueries()}>{text("执行已批准检索", "Run approved retrieval")}</ActionButton>
+                  <span>{queryExecutionConsent() ? text("本次书目服务授权已勾选", "Bibliographic-service consent checked for this request") : text("需先在侧栏勾选本次检索授权", "Check one-time retrieval consent in the rail first")}</span>
+                </div>
+              </Show>
+            </section>
+          </Show>
+          <section class="examples"><p>{text("示例问题", "Suggested questions")}</p><For each={examples()}>{(example) => <button type="button" onClick={() => updateQuestion(example)}>{example}</button>}</For></section>
+          <label class="import-control" aria-busy={uiImportPending()}>{uiImportPending() ? text("正在导入脱敏 UI JSON…", "Importing redacted UI JSON…") : text("导入脱敏 UI JSON", "Import redacted UI JSON")}<input type="file" disabled={uiImportPending()} accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; importBundle(file); }} /></label>
+          <Show when={uiImportReceipt()}>{(receipt) =>
+            <section class="import-artifact-receipt" aria-label={text("已导入工件摘要", "Imported artifact summary")} aria-live="polite">
+              <small>{text("本地导入回执 / 浏览器内存", "LOCAL IMPORT RECEIPT / BROWSER MEMORY")}</small>
+              <strong>{receipt().fileName}</strong>
+              <dl>
+                <div><dt>{text("工件自述版本", "Artifact-declared version")}</dt><dd>{receipt().schemaVersion}</dd></div>
+                <div><dt>{text("工件自述生成时间", "Artifact-declared time")}</dt><dd>{localImportTimestamp(receipt().generatedAt, language())}</dd></div>
+                <div><dt>{text("文件大小", "File size")}</dt><dd>{localImportSize(receipt().byteLength)}</dd></div>
+                <div><dt>{text("可显示数据项", "Visible records")}</dt><dd>{receipt().visibleRecordCount}</dd></div>
+              </dl>
+              <Show when={receipt().withheldAcceptedEvidenceCount > 0}><p>{text(`已安全隐藏 ${receipt().withheldAcceptedEvidenceCount} 条不符合 UI 证据边界的已接受卡片；未显示其内容。`, `${receipt().withheldAcceptedEvidenceCount} declared accepted card(s) were safely withheld by the UI boundary; their content is not shown.`)}</p></Show>
+              <p>{text("此回执仅显示用户明确选择的本地 JSON 自述元数据；不会验证完整性、作者身份或科学结论，也不会上传文件、读取路径或显示全文。", "This receipt displays only self-declared metadata from the user-selected local JSON. It does not verify integrity, authorship, or scientific conclusions, and does not upload the file, read paths, or show full text.")}</p>
+            </section>
+          }</Show>
+        </details>
       </Show>
       <div class="rail-footer"><div class="language-toggle" aria-label="Language"><button type="button" classList={{ active: language() === "zh" }} onClick={() => { setLanguage("zh"); setUiLanguage("zh"); }}>ZH</button><button type="button" classList={{ active: language() === "en" }} onClick={() => { setLanguage("en"); setUiLanguage("en"); }}>EN</button></div><label>{text("主题", "Theme")}<select value={theme()} onChange={(event) => setTheme(event.currentTarget.value as Theme)}><option value="light">{text("浅色", "Light")}</option><option value="dark">{text("深色", "Dark")}</option><option value="eye">{text("护眼", "Eye care")}</option></select></label></div>
     </aside>

@@ -681,6 +681,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-activation-track small { overflow: hidden; color: var(--activation-signal); font: 700 max(.64rem, 11px)/1.3 ui-monospace, "Cascadia Mono", monospace; letter-spacing: .07em; text-overflow: ellipsis; white-space: nowrap; }
 .harness-activation-track strong { overflow-wrap: anywhere; font-size: max(.7rem, 12px); line-height: 1.35; }
 .harness-activation-track > i { align-self: center; color: color-mix(in srgb, var(--muted) 66%, transparent); font: 740 max(.78rem, 13px)/1 ui-monospace, "Cascadia Mono", monospace; font-style: normal; }
+.harness-activation-verdict { --verdict-signal: var(--muted); display: grid; grid-template-columns: auto minmax(10rem, auto) minmax(18rem, 1fr); align-items: center; gap: .28rem .58rem; min-width: 0; padding: .45rem .55rem; border: 1px solid color-mix(in srgb, var(--verdict-signal) 32%, var(--line)); background: color-mix(in srgb, var(--verdict-signal) 5%, var(--surface)); }
+.harness-activation-verdict.state-ready { --verdict-signal: var(--signal-teal); }
+.harness-activation-verdict.state-partial { --verdict-signal: var(--signal-amber); }
+.harness-activation-verdict.state-checking { --verdict-signal: var(--signal-blue); }
+.harness-activation-verdict > i { width: .48rem; height: .48rem; background: var(--verdict-signal); box-shadow: 0 0 .48rem color-mix(in srgb, var(--verdict-signal) 52%, transparent); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.harness-activation-verdict > div { display: grid; gap: .06rem; min-width: 0; }
+.harness-activation-verdict small { color: var(--verdict-signal); font: 700 max(.62rem, 11px)/1.3 ui-monospace, "Cascadia Mono", monospace; letter-spacing: .07em; }
+.harness-activation-verdict strong { overflow-wrap: anywhere; font-size: max(.73rem, 12px); line-height: 1.35; }
+.harness-activation-verdict p { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--muted); font-size: max(.68rem, 12px); line-height: 1.45; }
 .harness-capability-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
 .harness-capability-metrics > div { display: grid; gap: .08rem; min-width: 0; padding: .5rem .6rem; border-inline-start: 1px solid color-mix(in srgb, var(--line) 68%, transparent); }
 .harness-capability-metrics > div:first-child { border-inline-start: 0; }
@@ -725,7 +734,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-permission-list code { color: var(--muted); font-size: max(.64rem, 11px); }
 .harness-catalogue-message { display: grid; justify-items: start; gap: .45rem; }
 .harness-capability-deck.state-unavailable { border-color: color-mix(in srgb, var(--signal-amber) 40%, var(--line)); border-inline-start-color: var(--signal-amber); background: linear-gradient(100deg, color-mix(in srgb, var(--signal-amber) 6%, transparent), transparent 68%); }
-@media (max-width: 720px) { .harness-activation-track { grid-template-columns: 1fr; }.harness-activation-track > i { display: none; } }
+@media (max-width: 720px) { .harness-activation-track, .harness-activation-verdict { grid-template-columns: 1fr; }.harness-activation-track > i, .harness-activation-verdict > i { display: none; } }
 @media (max-width: 720px) { .harness-capability-deck > header, .harness-boundary-copy { align-items: start; flex-direction: column; }.harness-capability-metrics, .harness-state-ledger { grid-template-columns: repeat(2, minmax(0, 1fr)); }.harness-capability-metrics > div:nth-child(3) { border-inline-start: 0; border-top: 1px solid color-mix(in srgb, var(--line) 68%, transparent); }.harness-capability-metrics > div:nth-child(4) { border-top: 1px solid color-mix(in srgb, var(--line) 68%, transparent); } }
 @media (max-width: 430px) { .harness-capability-deck { padding-left: .7rem; }.harness-capability-deck::before { display: none; }.harness-capability-metrics, .harness-state-ledger { grid-template-columns: 1fr; }.harness-capability-metrics > div { border-top: 1px solid color-mix(in srgb, var(--line) 68%, transparent); border-inline-start: 0; }.harness-capability-metrics > div:first-child { border-top: 0; }.harness-state-ledger > section { grid-template-columns: 1fr; }.harness-state-ledger .cm-status-badge { justify-self: start; }.harness-state-ledger p, .harness-state-ledger .cm-action { grid-column: 1; } }
 @media (max-width: 720px) { .harness-package-proof ul { grid-template-columns: 1fr; }.harness-package-proof li:last-child:nth-child(odd) { grid-column: auto; } }
@@ -1029,6 +1038,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .mission-api > p { font-size: .66rem; line-height: 1.5; }
 .mission-api > button { padding: .28rem 0; font: 700 .6rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .04em; }
 .mission-api > button:hover, .mission-api > button:focus-visible { border-bottom-color: var(--signal-teal); color: var(--signal-teal); outline: 0; }
+.mission-api-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .42rem; padding: .16rem 0 .46rem; border-bottom: 1px dashed color-mix(in srgb, var(--line) 68%, transparent); }
+.mission-api-actions > small { color: var(--muted); font-size: max(.66rem, 11px); line-height: 1.45; }
+.mission-api-sequence { display: grid; gap: .5rem; padding: .6rem .64rem .68rem; border: 1px solid color-mix(in srgb, var(--signal-blue) 30%, var(--line)); background: color-mix(in srgb, var(--surface) 62%, transparent); }
+.mission-api-sequence > header { display: grid; gap: .12rem; padding-bottom: .42rem; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.mission-api-sequence > header small { color: var(--signal-blue); font: 700 max(.64rem, 11px)/1.35 ui-monospace, "Cascadia Mono", monospace; letter-spacing: .065em; }
+.mission-api-sequence > header strong { color: var(--ink); font-size: max(.76rem, 13px); line-height: 1.4; }
+.mission-api-step { display: grid; grid-template-columns: minmax(6rem, auto) auto minmax(12rem, 1fr); align-items: center; gap: .35rem .58rem; min-width: 0; padding: .42rem .5rem; border-inline-start: 2px solid var(--signal-violet); background: linear-gradient(90deg, color-mix(in srgb, var(--signal-violet) 6%, transparent), transparent 82%); }
+.mission-api-step.state-ready { border-inline-start-color: var(--signal-teal); background: linear-gradient(90deg, color-mix(in srgb, var(--signal-teal) 7%, transparent), transparent 82%); }
+.mission-api-step > small { color: var(--signal-violet); font: 720 max(.64rem, 11px)/1.3 ui-monospace, "Cascadia Mono", monospace; letter-spacing: .07em; }
+.mission-api-step.state-ready > small { color: var(--signal-teal); }
+.mission-api-step > span { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: max(.66rem, 11px); line-height: 1.4; }
+.mission-api-sequence fieldset { display: flex; flex-wrap: wrap; gap: .38rem .7rem; margin: 0; padding: .48rem .55rem; border: 1px solid color-mix(in srgb, var(--line) 74%, transparent); }
+.mission-api-sequence fieldset legend { padding-inline: .28rem; color: var(--muted); font-size: max(.65rem, 11px); }
+.mission-api-sequence fieldset label { display: flex; align-items: center; gap: .3rem; color: var(--ink); font-size: max(.68rem, 12px); }
 
 .mission-api .examples { gap: .18rem; margin-top: .08rem; padding-top: .42rem; border-top: 1px dashed color-mix(in srgb, var(--line) 65%, transparent); }
 .mission-api .examples p { color: var(--signal-amber); font: .55rem ui-monospace, "Cascadia Mono", monospace; letter-spacing: .08em; }
@@ -1044,6 +1067,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 @media (max-width: 560px) {
   .mission-api { padding: .55rem .45rem .62rem .64rem; }
   .mission-api > summary { font-size: .7rem; }
+  .mission-api-actions { align-items: stretch; flex-direction: column; }
+  .mission-api-actions .cm-action { width: 100%; }
+  .mission-api-step { grid-template-columns: 1fr; }
+  .mission-api-step .cm-action { width: 100%; }
   .mission-api .examples button { min-height: 2.45rem; font-size: .62rem; }
 }
 

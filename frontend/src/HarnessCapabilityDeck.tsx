@@ -42,6 +42,32 @@ export function HarnessCapabilityDeck(props: {
   const externalCount = createMemo(() => (props.plugins ?? []).filter((plugin) => plugin.automation_class === "external_authorized").length);
   const humanGateCount = createMemo(() => (props.plugins ?? []).filter((plugin) => plugin.requires_human_review || plugin.automation_class === "human_gate").length);
   const runtime = createMemo(() => harnessRuntimeSummary(props.operationalTelemetry));
+  const activation = createMemo(() => {
+    if (props.profileHealth === "loading" || props.health === "loading") return {
+      state: "checking",
+      title: x("正在核验 DSH 启用条件", "Checking DSH enablement conditions"),
+      detail: x("等待 profile 依赖快照与插件契约目录同时返回。", "Waiting for both the profile dependency snapshot and plugin contract catalogue."),
+    };
+    const profileReady = props.profileHealth === "ready" && props.profile?.installation_state === "installed";
+    const adapterReady = props.health === "ready";
+    if (profileReady && adapterReady) return {
+      state: "ready",
+      title: x("DSH 插件桥已就绪", "DSH plugin bridge ready"),
+      detail: x("七个包与本机契约目录均已核验；仍需逐任务授权，且只有运行回执能证明实际派发。", "All seven bundles and the local contract catalogue are verified. Mission-scoped authorization is still required, and only runtime receipts prove actual dispatch."),
+    };
+    if (profileReady || adapterReady) return {
+      state: "partial",
+      title: x("DSH 仅部分启用", "DSH enablement is partial"),
+      detail: profileReady
+        ? x("包已安装，但契约目录尚未连接；不会开放派发。", "Bundles are installed, but the contract catalogue is disconnected; dispatch remains closed.")
+        : x("契约目录可读，但 profile 安装尚未核验；不会把目录发现当作插件已装载。", "The catalogue is readable, but profile installation is not verified; catalogue discovery is not treated as plugin loading."),
+    };
+    return {
+      state: "disconnected",
+      title: x("DSH 插件桥未启用", "DSH plugin bridge not enabled"),
+      detail: x("当前只显示安全关闭状态；不会读取配置、凭据或隐式启动 profile。", "Only a safely closed state is shown; configuration, credentials, and profile startup remain untouched."),
+    };
+  });
   const badge = () => props.health === "ready"
     ? permitted().length ? { tone: "active" as const, copy: x("任务授权已登记", "Mission authorization recorded") }
       : { tone: "ready" as const, copy: x("本机目录已连接", "Local catalogue connected") }
@@ -74,6 +100,11 @@ export function HarnessCapabilityDeck(props: {
           : runtime().dispatchCount ? x(`${runtime().completedCount}/${runtime().dispatchCount} 派发完成`, `${runtime().completedCount}/${runtime().dispatchCount} dispatches complete`)
             : x("尚无执行回执", "No execution receipt")}</strong>
       </div>
+    </section>
+    <section class={`harness-activation-verdict state-${activation().state}`} aria-label={x("DSH 启用结论", "DSH enablement verdict")}>
+      <i aria-hidden="true" />
+      <div><small>{x("启用结论", "ENABLEMENT VERDICT")}</small><strong>{activation().title}</strong></div>
+      <p>{activation().detail}</p>
     </section>
     <Show when={props.health === "ready"} fallback={<div class="harness-catalogue-message"><p>{props.health === "loading"
       ? x("正在读取固定的本机能力契约；这不会加载插件、调用工具或授予执行权限。", "Reading the fixed local capability contracts. This does not load a plugin, call a tool, or grant execution permission.")

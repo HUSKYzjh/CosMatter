@@ -267,6 +267,10 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(activationTrack).toContainText("尚无执行回执");
   await expect(activationTrack.locator(":scope > i")).toHaveCount(2);
   await expect(activationTrack.locator(":scope > i").first()).toHaveText("≠");
+  const activationVerdict = deck.locator(".harness-activation-verdict");
+  await expect(activationVerdict).toHaveClass(/state-ready/);
+  await expect(activationVerdict).toContainText("DSH 插件桥已就绪");
+  await expect(activationVerdict).toContainText("只有运行回执能证明实际派发");
   await expect(deck.locator(".harness-capability-metrics strong").first()).toHaveText("1");
   const packageProof = deck.locator(".harness-package-proof");
   await expect(packageProof.locator("summary")).toContainText("查看逐包依赖证明");
@@ -286,6 +290,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   const minimumReadableSize = await deck.locator(".cm-status-badge, .harness-state-ledger p").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 11));
   expect(minimumReadableSize).toBe(true);
   expect(await activationTrack.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
+  expect(await activationVerdict.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   expect(await packageProof.locator("ul").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   expect(await deck.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -456,6 +461,34 @@ test("labels a rejected model result and retries without silently presenting it 
   await expect(origin).toContainText("DeepSeek 候选生成 · 已通过问题锚点校验", { timeout: 4_000 });
   await expect(page.locator(".candidate-planet").first()).toContainText("BiFeO3 相转变温度");
   expect(candidateRequests).toBe(2);
+});
+
+test("keeps manual API execution explicitly staged and readable on a narrow viewport", async ({ page }) => {
+  await page.route("**/api/status", async (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      api_mode: "loopback_only",
+      providers: { deepseek: true, sciverse: false, mineru: false, openalex: false, crossref: false, crossref_polite_contact: false },
+      operation_contracts: operationContracts,
+    }),
+  }));
+
+  await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /BFO-01/ }).click();
+  await page.getByRole("button", { name: "确认任务并进入编排" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await page.getByRole("button", { name: /任务定义/ }).first().click();
+  await page.locator("details.mission-api > summary").click();
+
+  const actions = page.locator(".mission-api-actions");
+  await expect(actions.getByRole("button", { name: "仅更新本地任务边界" })).toHaveClass(/cm-action--quiet/);
+  await expect(actions.getByRole("button", { name: "启动受控 API 任务" })).toHaveClass(/cm-action--primary/);
+  await expect(page.locator(".mission-api-sequence")).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  expect(await actions.getByRole("button").evaluateAll((elements) => elements.every((element) => element.getBoundingClientRect().width === elements[0].getBoundingClientRect().width))).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test("discloses every available automatic metadata destination before consent", async ({ page }) => {
