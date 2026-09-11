@@ -1979,6 +1979,29 @@ button.quiet-action:not(.cm-action):disabled,
 .bfo-task-deck button span { font-size: max(.72rem, 12px); }
 .workbench button em { font-size: max(.78rem, 13px); }
 
+/* Map recovery actions use the shared hierarchy without inheriting the legacy
+   clipped CTA shape. Keep recovery copy readable at desktop and narrow widths. */
+.graph-empty > .cm-action {
+  justify-self: start;
+  width: fit-content;
+  margin-top: .6rem;
+  font-size: max(.76rem, 13px);
+}
+.graph-canvas-fallback > .cm-action {
+  justify-self: start;
+  font-size: max(.76rem, 13px);
+}
+.graph-empty small,
+.graph-canvas-loading small,
+.graph-canvas-fallback small { font-size: max(.68rem, 12px); }
+.graph-empty p,
+.graph-canvas-loading p,
+.graph-canvas-fallback p { font-size: max(.78rem, 13px); }
+@media (max-width: 560px) {
+  .graph-empty > .cm-action,
+  .graph-canvas-fallback > .cm-action { width: 100%; }
+}
+
 /* Reader recovery actions use the shared hierarchy without inheriting the
    compact legacy button rules used by evidence cards and canvas tools. */
 .reader-empty .cm-action,

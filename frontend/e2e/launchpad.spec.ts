@@ -538,6 +538,9 @@ test("keeps synthetic launch-preview papers out of the real research route", asy
   await page.getByRole("button", { name: "03 文献星图" }).first().click();
   await expect(page.locator(".workbench")).toHaveClass(/view-graph/, workspaceLoad);
   await expect(page.locator(".graph-empty")).toContainText("仅供导航或演示的论文式节点", lazyWorkspaceContentLoad);
+  const returnToBridge = page.getByRole("button", { name: "返回舰桥查看工件状态" });
+  await expect(returnToBridge).toHaveClass(/cm-action--primary/);
+  expect(await returnToBridge.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(13);
 });
 
 test("keeps the bridge artifact flow readable beside its research rail", async ({ page }) => {
