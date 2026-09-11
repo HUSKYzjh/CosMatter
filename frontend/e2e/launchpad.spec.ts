@@ -566,6 +566,9 @@ test("keeps the evidence proof chain readable beside its research rail", async (
   await expect(proofTrack.locator(".reader-proof-station")).toHaveCount(5);
   expect(await proofTrack.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(3);
   expect(await proofTrack.evaluate((element) => getComputedStyle(element, "::before").display)).toBe("none");
+  const returnToMap = page.getByRole("button", { name: "返回文献星图", exact: true });
+  await expect(returnToMap).toHaveClass(/cm-action--primary/);
+  expect(await returnToMap.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(13);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 

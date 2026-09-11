@@ -1979,6 +1979,51 @@ button.quiet-action:not(.cm-action):disabled,
 .bfo-task-deck button span { font-size: max(.72rem, 12px); }
 .workbench button em { font-size: max(.78rem, 13px); }
 
+/* Reader recovery actions use the shared hierarchy without inheriting the
+   compact legacy button rules used by evidence cards and canvas tools. */
+.reader-empty .cm-action,
+.reader-selection > .cm-action,
+.reader-intake-note > .cm-action {
+  border-color: color-mix(in srgb, var(--action-accent) 58%, var(--line));
+  color: var(--action-accent);
+  background: color-mix(in srgb, var(--action-accent) 5%, var(--surface));
+  font-size: max(.76rem, 13px);
+}
+.reader-empty .cm-action--primary {
+  color: color-mix(in srgb, var(--signal-teal) 72%, var(--ink));
+  background: color-mix(in srgb, var(--signal-teal) 12%, var(--surface));
+}
+.reader-selection > .cm-action,
+.reader-intake-note > .cm-action { flex: 0 0 auto; }
+.reader-intake-note > .cm-action { justify-self: start; }
+.verification-steps span,
+.verification-steps small,
+.reader-selection small,
+.reader-intake-note small,
+.reader-evidence-pending small,
+.evidence-queue > small,
+.source-reader > small,
+.evidence-locator dt { font-size: max(.7rem, 12px); line-height: 1.45; }
+.verification-steps strong,
+.reader-selection strong,
+.reader-evidence-pending strong { font-size: max(.9rem, 15px); line-height: 1.4; }
+.reader-selection span,
+.reader-intake-note p,
+.reader-evidence-pending p,
+.evidence-queue p,
+.source-reader p,
+.evidence-locator dd,
+.evidence-boundary { font-size: max(.78rem, 13px); line-height: 1.55; }
+.evidence-queue button span { font-size: max(.78rem, 13px); }
+.evidence-queue button small { font-size: max(.7rem, 12px); }
+.source-reader blockquote { font-size: max(.86rem, 14px); }
+@media (max-width: 560px) {
+  .reader-empty .cm-action,
+  .reader-selection > .cm-action,
+  .reader-intake-note > .cm-action,
+  .reader-gate > .cm-action { width: 100%; }
+}
+
 /* Research extension uses the shared action hierarchy and the same readable
    density as the evidence-review surfaces that feed it. */
 .expansion-gate > .cm-action,
