@@ -659,16 +659,17 @@ class LocalMissionApiTests(unittest.TestCase):
     def test_private_pdf_source_map_requires_human_confirmation_and_matching_lines(self):
         mission = self._mission()
         run_dir = self.runs / "live_001"
+        markdown = b"# Title\nThe phase boundary shifts with strain.\n"
         intake = {
             "schema_version": "1.0", "mission_id": mission["mission_id"],
             "document_id": "pdf_0123456789abcdef01234567", "file_name": "authorized.pdf",
             "pdf_sha256": "digest", "byte_count": 12, "consent": True,
-            "batch_id": "batch-test", "state": "done", "markdown_sha256": "a" * 64,
+            "batch_id": "batch-test", "state": "done", "markdown_sha256": hashlib.sha256(markdown).hexdigest(),
             "doi": None, "doi_status": "needs_human_doi",
         }
         (run_dir / "pdf_intake.json").write_text(json.dumps(intake), encoding="utf-8")
         selection = {"segments": [{"locator": "markdown_line:2-2", "kind": "paragraph", "quote": "The phase boundary shifts with strain."}]}
-        with patch("cosmatter.local_api.read_markdown", return_value=b"# Title\nThe phase boundary shifts with strain.\n"):
+        with patch("cosmatter.local_api.read_markdown", return_value=markdown):
             with self.assertRaisesRegex(LocalApiError, "explicit human confirmation"):
                 self.api.record_pdf_source_map("live_001", selection)
             with self.assertRaisesRegex(LocalApiError, "does not match"):
@@ -681,12 +682,12 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertEqual(status["source_map_segment_count"], 1)
         self.assertNotIn("phase boundary shifts", json.dumps(status))
         restored = self.api.pdf_source_map_context("live_001")
-        self.assertEqual(restored["segments"], [{"segment_id": "private_md_001", "locator": "markdown_line:2-2", "kind": "paragraph"}])
+        self.assertEqual(restored["segments"], [{"segment_id": "private_md_001", "locator": "markdown_line:2-2", "kind": "paragraph", "markdown_range": {"start": 2, "end": 2}}])
         self.assertNotIn("phase boundary shifts", json.dumps(restored))
         stored = next((run_dir / "source_maps").glob("*.json"))
         source_map = json.loads(stored.read_text(encoding="utf-8"))
         self.assertEqual(source_map["schema_version"], "1.1")
-        self.assertEqual(source_map["source_markdown_sha256"], "a" * 64)
+        self.assertEqual(source_map["source_markdown_sha256"], intake["markdown_sha256"])
         self.assertNotIn("private", stored.read_text(encoding="utf-8").replace("private_md", ""))
         self.assertIn("source_map_reviewed", (run_dir / "events.jsonl").read_text(encoding="utf-8"))
         with self.assertRaisesRegex(LocalApiError, "explicit human confirmation"):
@@ -771,6 +772,13 @@ class LocalMissionApiTests(unittest.TestCase):
                 "unauthorized.pdf",
                 b"%PDF-1.7 test",
             )
+        revised = markdown.replace(b"Reviewed", b"Different")
+        intake["markdown_sha256"] = hashlib.sha256(revised).hexdigest()
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+        with patch("cosmatter.local_api.read_markdown", return_value=revised), self.assertRaises(LocalApiError) as replaced_source:
+            self.api.private_markdown_lines("live_001", result["document_id"], 2, segment_id="private_md_001")
+        self.assertEqual(replaced_source.exception.status, 409)
+        self.assertNotIn("markdown_range", self.api.pdf_source_map_context("live_001", result["document_id"])["segments"][0])
 
     def test_new_pdf_submission_reuses_the_same_run_and_task_after_response_loss(self):
         calls = []

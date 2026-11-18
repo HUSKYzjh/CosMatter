@@ -1,14 +1,18 @@
-import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 import { createLatestRequestGate } from "./latestRequestGate";
-import { getPrivateMarkdownLines, LocalApiRequestError, PRIVATE_MARKDOWN_WINDOW_SIZE, type PrivateMarkdownLineSource, type PrivateMarkdownWindow } from "./localApi";
+import { getPrivateMarkdownLines, LocalApiRequestError, PRIVATE_MARKDOWN_WINDOW_SIZE, type PrivateMarkdownLineSource, type PrivateMarkdownWindow, type RecordedMarkdownLocation } from "./localApi";
 import { ActionButton } from "./uiPrimitives";
 import { uiLanguage } from "./zh";
 
 const tr = (zh: string, en: string) => uiLanguage() === "zh" ? zh : en;
+const displayRange = (start: number, end: number) => start === end ? String(start) : `${start}–${end}`;
 
 export function PrivateMarkdownLines(props: {
+  id: string;
   source: PrivateMarkdownLineSource;
   onDraft?: (locator: string, quote: string) => void;
+  location?: RecordedMarkdownLocation | null;
+  onClearLocation?: () => void;
 }) {
   const [open, setOpen] = createSignal(false);
   const [page, setPage] = createSignal<PrivateMarkdownWindow | null>(null);
@@ -18,7 +22,9 @@ export function PrivateMarkdownLines(props: {
   const [first, setFirst] = createSignal<number | null>(null);
   const [last, setLast] = createSignal<number | null>(null);
   const [staged, setStaged] = createSignal(false);
+  const [verifiedLocation, setVerifiedLocation] = createSignal<RecordedMarkdownLocation | null>(null);
   const request = createLatestRequestGate();
+  let panel: HTMLElement | undefined;
   let sourceList: HTMLOListElement | undefined;
   let requestedStart = 1;
   onCleanup(request.invalidate);
@@ -42,7 +48,7 @@ export function PrivateMarkdownLines(props: {
   });
   const jumpTarget = () => /^[1-9][0-9]{0,8}$/.test(jump()) && Number(jump()) <= (page()?.total_lines ?? 0) ? Number(jump()) : null;
   const lineSelected = (number: number) => {
-    const selection = range();
+    const selection = verifiedLocation() ?? range();
     return Boolean(selection && number >= selection.start && number <= selection.end);
   };
 
@@ -54,28 +60,41 @@ export function PrivateMarkdownLines(props: {
 
   async function load(start: number) {
     const isLatest = request.begin();
+    const location = props.location ?? null;
     requestedStart = start;
     setLoading(true);
     setError(null);
+    setVerifiedLocation(null);
     clearRange();
     try {
-      const result = await getPrivateMarkdownLines(props.source, start);
+      const result = await getPrivateMarkdownLines(props.source, start, location);
       if (isLatest()) {
         setPage(result);
+        setVerifiedLocation(location);
         setJump(String(result.start));
         if (sourceList) sourceList.scrollTop = 0;
       }
     } catch (failure) {
       if (!isLatest()) return;
-      const forbidden = failure instanceof LocalApiRequestError && failure.httpStatus === 403;
+      const status = failure instanceof LocalApiRequestError ? failure.httpStatus : undefined;
       setPage(null);
-      setError(forbidden
+      setError(status === 403
         ? tr("当前筛选记录未允许核对这篇论文。", "The current screening record does not permit review of this paper.")
+        : location && (status === 409 || status === 416)
+        ? tr("该来源定位与当前原文无法对应。", "This recorded location does not match the current source.")
         : tr("无法读取原文行，请重试。", "Could not open source lines. Try again."));
     } finally {
       if (isLatest()) setLoading(false);
     }
   }
+
+  createEffect(() => {
+    const location = props.location;
+    if (!location) return;
+    setOpen(true);
+    panel?.focus();
+    void untrack(() => load(location.start));
+  });
 
   function toggle() {
     if (!open()) { setOpen(true); void load(1); return; }
@@ -84,7 +103,9 @@ export function PrivateMarkdownLines(props: {
     setLoading(false);
     setPage(null);
     setError(null);
+    setVerifiedLocation(null);
     clearRange();
+    props.onClearLocation?.();
   }
 
   function select(line: number) {
@@ -100,14 +121,20 @@ export function PrivateMarkdownLines(props: {
     setStaged(true);
   }
 
-  return <section class="private-markdown-lines" aria-label={tr("原文行号", "Source lines")}>
+  return <section ref={panel} id={props.id} tabIndex={-1} class="private-markdown-lines" aria-label={tr("原文行号", "Source lines")}>
     <ActionButton size="sm" aria-expanded={open()} onClick={toggle}>{open() ? tr("收起原文", "Collapse source") : tr("查看带行号的原文", "View source with line numbers")}</ActionButton>
     <Show when={open()}>
       <Show when={loading()}><p role="status">{tr("正在读取原文行…", "Reading source lines…")}</p></Show>
       <Show when={error()}>{(message) => <div class="source-line-tools"><p role="status">{message()}</p><ActionButton size="sm" onClick={() => void load(requestedStart)}>{tr("重新读取", "Retry")}</ActionButton></div>}</Show>
       <Show when={page()}>{(current) => <>
+        <Show when={verifiedLocation()}>{(location) => <div class="source-line-tools">
+          <p role="status">{tr(`来源定位第 ${displayRange(location().start, location().end)} 行`, `Recorded source ${location().start === location().end ? "line" : "lines"} ${displayRange(location().start, location().end)}`)}</p>
+          <Show when={current().start !== location().start}>
+            <ActionButton size="sm" variant="quiet" onClick={() => void load(location().start)}>{tr("返回定位起点", "Return to recorded start")}</ActionButton>
+          </Show>
+        </div>}</Show>
         <div class="source-line-tools">
-          <p aria-live="polite">{tr(`第 ${current().start}–${current().start + current().lines.length - 1} 行，共 ${current().total_lines} 行`, `Lines ${current().start}–${current().start + current().lines.length - 1} of ${current().total_lines}`)}</p>
+          <p aria-live="polite">{tr(`第 ${displayRange(current().start, current().start + current().lines.length - 1)} 行，共 ${current().total_lines} 行`, `${current().lines.length === 1 ? "Line" : "Lines"} ${displayRange(current().start, current().start + current().lines.length - 1)} of ${current().total_lines}`)}</p>
           <div class="source-line-tools">
             <ActionButton size="sm" disabled={loading() || current().start === 1} onClick={() => void load(Math.max(1, current().start - PRIVATE_MARKDOWN_WINDOW_SIZE))}>{tr("上一段", "Previous lines")}</ActionButton>
             <ActionButton size="sm" disabled={loading() || current().start + current().lines.length > current().total_lines} onClick={() => void load(current().start + current().lines.length)}>{tr("下一段", "Next lines")}</ActionButton>

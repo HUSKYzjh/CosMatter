@@ -163,7 +163,12 @@ class CliMinerUTests(unittest.TestCase):
             with self.assertRaisesRegex(LocalApiError, "line range"):
                 api.record_fetched_source_map(run_id, review | {"segments": [segments[0] | {"locator": "markdown_line:1-1"}]})
             result = api.record_fetched_source_map(run_id, review)
-            self.assertEqual(result["segments"], [{"segment_id": "private_md_001", "locator": "markdown_line:2-3", "kind": "paragraph"}])
+            self.assertEqual(result["segments"], [{"segment_id": "private_md_001", "locator": "markdown_line:2-3", "kind": "paragraph", "markdown_range": {"start": 2, "end": 3}}])
+            trace = api.private_markdown_lines(run_id, "doc_1", 2, fetched_source=True, segment_id="private_md_001")
+            self.assertEqual(trace["recorded_range"], {"start": 2, "end": 3})
+            with self.assertRaises(LocalApiError) as unknown_segment:
+                api.private_markdown_lines(run_id, "doc_1", 2, fetched_source=True, segment_id="wrong")
+            self.assertEqual(unknown_segment.exception.status, 409)
             self.assertEqual(api.record_fetched_source_map(run_id, review), result)
             self.assertEqual(api.fetched_source_map_context(run_id, "doc_1"), result)
             self.assertEqual(api.source_parse_status(run_id)["tasks"][0]["source_map_segment_count"], 1)

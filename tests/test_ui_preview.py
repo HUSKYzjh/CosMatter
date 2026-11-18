@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import threading
@@ -314,7 +315,8 @@ class UiPreviewTests(unittest.TestCase):
                 registry_path = root / "runs" / "http_flow" / "pdf_intake_tasks.json"
                 registry = json.loads(registry_path.read_text(encoding="utf-8"))
                 intake = registry["tasks"][0]
-                intake["state"] = "done"; intake["markdown_sha256"] = "a" * 64
+                markdown = b"# Title\nHuman-checked evidence line.\n"
+                intake["state"] = "done"; intake["markdown_sha256"] = hashlib.sha256(markdown).hexdigest()
                 registry["tasks"][0] = intake
                 registry_path.write_text(json.dumps(registry), encoding="utf-8")
                 source_map_request = Request(
@@ -323,9 +325,14 @@ class UiPreviewTests(unittest.TestCase):
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with patch("cosmatter.local_api.read_markdown", return_value=b"# Title\nHuman-checked evidence line.\n"):
+                with patch("cosmatter.local_api.read_markdown", return_value=markdown):
                     with urlopen(source_map_request, timeout=2) as response:
                         source_map_result = json.loads(response.read().decode("utf-8"))
+                    lines_url = f"{base}/api/runs/http_flow/pdf/{result['document_id']}/markdown-lines?start=2&segment_id=private_md_001"
+                    with urlopen(lines_url, timeout=2) as response:
+                        traced = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(traced["recorded_range"], {"start": 2, "end": 2})
+                    self.assertEqual(traced["lines"], [{"number": 2, "text": "Human-checked evidence line.", "truncated": False}])
                 self.assertEqual(source_map_result["document_id"], "http-doc")
                 self.assertEqual(source_map_result["segment_count"], 1)
                 self.assertNotIn("Human-checked evidence line.", json.dumps(source_map_result))

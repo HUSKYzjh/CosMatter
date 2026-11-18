@@ -1091,13 +1091,16 @@ class LocalMissionApi:
         content = _read_fetched_source(run_dir, mission.mission_id, receipt)
         return ArtifactDownload(content, "text/markdown; charset=utf-8", "private-mineru-markdown.md")
 
-    def private_markdown_lines(self, run_id: str, document_id: str, start: int, *, fetched_source: bool = False) -> dict[str, object]:
+    def private_markdown_lines(self, run_id: str, document_id: str, start: int, *, fetched_source: bool = False,
+                               segment_id: str | None = None) -> dict[str, object]:
         """Read a bounded local preview using the same line numbering as Source Map validation."""
         if isinstance(start, bool) or not isinstance(start, int) or start < 1:
             raise LocalApiError("Markdown preview requires a positive starting line")
         if fetched_source:
-            run_dir, mission, _, receipt = self._fetched_source_context(run_id, document_id)
+            run_dir, mission, task, receipt = self._fetched_source_context(run_id, document_id)
             content = _read_fetched_source(run_dir, mission.mission_id, receipt)
+            audit_document_id = document_id
+            digest = receipt["source_markdown_sha256"]
         else:
             run_dir, mission = self._active_mission(run_id)
             intake = _pdf_intake(run_dir, mission.mission_id, document_id)
@@ -1108,23 +1111,35 @@ class LocalMissionApi:
             _require_screened_source(run_dir, mission.mission_id, candidate)
             if intake.get("document_id") != document_id or intake.get("state") != "done" or not digest:
                 raise LocalApiError("private Markdown is not ready", 404)
+            content = _read_verified_pdf_markdown(document_id, digest)
+            audit_document_id = _pdf_audit_document_id(intake)
+        recorded_range = None
+        if segment_id is not None:
             try:
-                content = read_markdown(document_id)
-            except (OSError, PrivateStorageError) as error:
-                raise LocalApiError("private Markdown is unavailable", 404) from error
-            if hashlib.sha256(content).hexdigest() != digest:
-                raise LocalApiError("private Markdown could not be verified", 404)
+                source_map = (_fetched_source_map(run_dir, mission.mission_id, task, receipt) if fetched_source
+                              else load_source_map_for_document(run_dir, mission.mission_id, audit_document_id))
+            except (OSError, SourceMapError) as error:
+                raise LocalApiError("recorded source location is unavailable", 409) from error
+            recorded_range = next((segment.get("markdown_range") for segment in _source_map_segments(source_map, digest)
+                                   if segment["segment_id"] == segment_id), None)
+            if recorded_range is None:
+                raise LocalApiError("recorded source location does not match the current Markdown", 409)
         try:
             lines = content.decode("utf-8").splitlines()
         except UnicodeDecodeError as error:
             raise LocalApiError("private Markdown could not be decoded", 404) from error
         if start > len(lines):
             raise LocalApiError("starting line is outside the private Markdown", 416)
+        if recorded_range and recorded_range["end"] > len(lines):
+            raise LocalApiError("recorded source location is outside the private Markdown", 416)
         first_index = start - 1
         window = lines[first_index : first_index + _MARKDOWN_WINDOW_SIZE]
-        return {"run_id": run_id, "document_id": document_id, "start": start, "total_lines": len(lines),
-                "lines": [{"number": number, "text": line[:_MARKDOWN_PREVIEW_LINE_LIMIT], "truncated": len(line) > _MARKDOWN_PREVIEW_LINE_LIMIT}
-                          for number, line in enumerate(window, start)]}
+        response = {"run_id": run_id, "document_id": document_id, "start": start, "total_lines": len(lines),
+                    "lines": [{"number": number, "text": line[:_MARKDOWN_PREVIEW_LINE_LIMIT], "truncated": len(line) > _MARKDOWN_PREVIEW_LINE_LIMIT}
+                              for number, line in enumerate(window, start)]}
+        if recorded_range:
+            response["recorded_range"] = recorded_range
+        return response
 
     def link_fetched_source_markdown(self, run_id: str, document_id: str, content: bytes) -> dict[str, object]:
         """Restore a local copy using the candidate's existing output receipt."""
@@ -1144,7 +1159,7 @@ class LocalMissionApi:
             source_map = _fetched_source_map(run_dir, mission.mission_id, task, receipt)
         except (OSError, SourceMapError) as error:
             raise LocalApiError("reviewed source locations could not be loaded", 404) from error
-        return _source_map_response(run_id, document_id, source_map)
+        return _source_map_response(run_id, document_id, source_map, receipt["source_markdown_sha256"])
 
     def record_fetched_source_map(self, run_id: str, payload: object) -> dict[str, object]:
         body = _object_payload(payload)
@@ -1164,7 +1179,7 @@ class LocalMissionApi:
                 if existing is not None:
                     if existing != source_map:
                         raise LocalApiError("this candidate already has a reviewed Source Map", 409)
-                    return _source_map_response(run_id, document_id, existing)
+                    return _source_map_response(run_id, document_id, existing, receipt["source_markdown_sha256"])
                 write_source_map_for_document(run_dir, source_map)
             except (OSError, UnicodeDecodeError, SourceMapError) as error:
                 raise LocalApiError("could not record the reviewed source locations") from error
@@ -1173,7 +1188,7 @@ class LocalMissionApi:
             payload={"document_id": document_id, "segment_count": len(source_map["segments"]),
                      "access_mode": "screened_candidate", "trust_status": "human_reviewed_parser_selection_not_evidence_card"},
         )
-        return _source_map_response(run_id, document_id, source_map)
+        return _source_map_response(run_id, document_id, source_map, receipt["source_markdown_sha256"])
 
     def _fetched_source_context(self, run_id: str, document_id: str) -> tuple[Path, MissionBrief, dict[str, Any], dict[str, Any]]:
         run_dir, mission, task, receipt = self._fetched_source_receipt_context(run_id, document_id)
@@ -1226,7 +1241,7 @@ class LocalMissionApi:
         intake = _pdf_intake(run_dir, mission.mission_id, document_id)
         audit_document_id = _pdf_audit_document_id(intake)
         source_map = load_source_map_for_document(run_dir, mission.mission_id, audit_document_id)
-        return _source_map_response(run_id, audit_document_id, source_map)
+        return _source_map_response(run_id, audit_document_id, source_map, intake.get("markdown_sha256"))
     def record_pdf_source_map(self, run_id: str, payload: object) -> dict[str, object]:
         """Keep only human-confirmed bounded excerpts from private Markdown."""
         body = _object_payload(payload)
@@ -1244,6 +1259,7 @@ class LocalMissionApi:
                 require_document_screened_for_fulltext(run_dir, mission.mission_id, candidates, candidate_document_id)
             except (CandidateScreeningError, UiExportError, ValueError) as error:
                 raise LocalApiError(str(error)) from error
+        content = _read_verified_pdf_markdown(str(intake["document_id"]), intake["markdown_sha256"])
         try:
             try:
                 task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=audit_document_id)
@@ -1267,7 +1283,7 @@ class LocalMissionApi:
                     task=_mineru_task_from_pdf_batch(str(intake["batch_id"]), str(intake["state"])),
                 )
                 task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=audit_document_id)
-            selection = _source_map_selection_from_private_markdown(body, read_markdown(str(intake["document_id"])), audit_document_id)
+            selection = _source_map_selection_from_private_markdown(body, content, audit_document_id)
             source_map = source_map_from_review(
                 mission_id=mission.mission_id,
                 document_id=audit_document_id,
@@ -1290,7 +1306,7 @@ class LocalMissionApi:
                 "trust_status": "human_reviewed_parser_selection_not_evidence_card",
             },
         )
-        return _source_map_response(run_id, audit_document_id, source_map)
+        return _source_map_response(run_id, audit_document_id, source_map, intake["markdown_sha256"])
     def record_pdf_material_facts(self, run_id: str, payload: object, *, fetched_source: bool = False) -> dict[str, object]:
         """Persist human-reviewed structured facts tied to an existing Source Map."""
         body = _object_payload(payload)
@@ -2378,6 +2394,7 @@ def _mineru_task_from_pdf_batch(batch_id: str, state: str) -> MinerUTask:
 
 
 _PRIVATE_MARKDOWN_LOCATOR = re.compile(r"markdown_line:(\d+)-(\d+)(?::part:\d+)?$")
+_RECORDED_MARKDOWN_LOCATOR = re.compile(r"markdown_(?:reference_)?line:(\d+)-(\d+)(?::part:\d+)?$")
 _MARKDOWN_WINDOW_SIZE = 20
 _MARKDOWN_PREVIEW_LINE_LIMIT = 1_600
 
@@ -2406,9 +2423,35 @@ def _read_fetched_source(run_dir: Path, mission_id: str, receipt: dict[str, Any]
         raise LocalApiError("fetched Markdown could not be verified", 404) from error
 
 
-def _source_map_response(run_id: str, document_id: str, source_map: dict[str, Any] | None) -> dict[str, object]:
-    segments = [{"segment_id": item["segment_id"], "locator": item["locator"], "kind": item["kind"]}
-                for item in source_map["segments"]] if source_map else []
+def _read_verified_pdf_markdown(document_id: str, digest: object) -> bytes:
+    try:
+        content = read_markdown(document_id)
+    except (OSError, PrivateStorageError) as error:
+        raise LocalApiError("private Markdown is unavailable", 404) from error
+    if hashlib.sha256(content).hexdigest() != digest:
+        raise LocalApiError("private Markdown could not be verified", 404)
+    return content
+
+
+def _source_map_segments(source_map: dict[str, Any] | None, digest: object) -> list[dict[str, Any]]:
+    if source_map is None:
+        return []
+    is_bound_to_markdown = (bool(digest) and source_map.get("source_markdown_sha256") == digest
+                            and source_map.get("provider") == "mineru" and source_map.get("trust_status") == HUMAN_SOURCE_MAP_TRUST_STATUS)
+    segments = []
+    for item in source_map["segments"]:
+        segment = {"segment_id": item["segment_id"], "locator": item["locator"], "kind": item["kind"]}
+        match = _RECORDED_MARKDOWN_LOCATOR.fullmatch(item["locator"]) if is_bound_to_markdown else None
+        if match:
+            start, end = map(int, match.groups())
+            if 1 <= start <= end <= 999_999_999:
+                segment["markdown_range"] = {"start": start, "end": end}
+        segments.append(segment)
+    return segments
+
+
+def _source_map_response(run_id: str, document_id: str, source_map: dict[str, Any] | None, digest: object) -> dict[str, object]:
+    segments = _source_map_segments(source_map, digest)
     return {"run_id": run_id, "document_id": document_id, "segment_count": len(segments), "segments": segments,
             "trust_status": "human_reviewed_parser_selection_not_evidence_card" if source_map else "no_human_reviewed_source_map"}
 

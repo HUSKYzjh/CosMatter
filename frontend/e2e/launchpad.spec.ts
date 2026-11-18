@@ -836,10 +836,13 @@ test("resumes browser screening drafts and requires the current checklist revisi
     ...Array.from({ length: 16 }, (_, index) => `Synthetic line ${5 + index}`), "x".repeat(1_601), "Last line"];
   const originalMarkdown = Buffer.from(markdownLines.join("\n") + "\n");
   const previewStarts: number[] = [];
+  const tracedSegments: string[] = [];
+  let recordedLocationChanged = false;
   const markdownLinkAttempts: string[] = [];
   const sourceMapPosts: unknown[] = [];
   const sourceMap = { run_id: runId, document_id: "paper_a", segment_count: 2, trust_status: "human_reviewed_parser_selection_not_evidence_card",
-    segments: [{ segment_id: "private_md_001", locator: "markdown_line:1-1", kind: "paragraph" }, { segment_id: "private_md_002", locator: "markdown_line:2-3", kind: "paragraph" }] };
+    segments: [{ segment_id: "private_md_001", locator: "markdown_line:1-1", kind: "paragraph", markdown_range: { start: 1, end: 1 } },
+      { segment_id: "private_md_002", locator: "markdown_line:2-3", kind: "paragraph", markdown_range: { start: 2, end: 3 } }] };
   await page.route("**/api/runs/**", (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.split("/").pop();
@@ -862,8 +865,15 @@ test("resumes browser screening drafts and requires the current checklist revisi
     if (path === "source-markdown-lines" && url.searchParams.get("document_id") === "paper_a" && route.request().method() === "GET") {
       const start = Number(url.searchParams.get("start"));
       previewStarts.push(start);
+      const segmentId = url.searchParams.get("segment_id");
+      const recordedRange = sourceMap.segments.find((segment) => segment.segment_id === segmentId)?.markdown_range;
+      if (segmentId) {
+        tracedSegments.push(segmentId);
+        if (!recordedRange || recordedLocationChanged) return route.fulfill({ status: 409 });
+      }
       return route.fulfill({ json: { run_id: runId, document_id: "paper_a", start, total_lines: markdownLines.length,
         lines: markdownLines.slice(start - 1, start + 19).map((text, index) => ({ number: start + index, text: text.slice(0, 1_600), truncated: text.length > 1_600 })),
+        ...(recordedRange ? { recorded_range: recordedRange } : {}),
       } });
     }
     if (path === "source-map") {
@@ -988,6 +998,28 @@ test("resumes browser screening drafts and requires the current checklist revisi
     { locator: "markdown_line:1-1", kind: "paragraph", quote: "# Candidate A" },
     { locator: "markdown_line:2-3", kind: "paragraph", quote: `${reviewedExcerpt}\n${conditionLine}` },
   ] }]);
+  await page.getByRole("button", { name: "更换论文" }).click();
+  await expect(queue.getByText("已登记来源定位", { exact: true })).toBeVisible();
+  await queue.getByRole("button", { name: "进入阅读页 · Candidate A" }).press("Enter");
+  const jumpToSecondLocation = page.getByRole("button", { name: "查看原文 markdown_line:2-3", exact: true });
+  await expect(source.getByRole("button", { name: "查看带行号的原文" })).toBeVisible();
+  await jumpToSecondLocation.press("Enter");
+  await expect(source).toBeFocused();
+  await expect(source.getByText("来源定位第 2–3 行", { exact: true })).toBeVisible();
+  await expect(source.locator("li.selected")).toHaveText([`2${reviewedExcerpt}`, `3${conditionLine}`]);
+  await expect(jumpToSecondLocation).toHaveAttribute("aria-pressed", "true");
+  await source.getByRole("button", { name: "下一段" }).click();
+  await expect(source.getByText("第 22 行，共 22 行", { exact: true })).toBeVisible();
+  await expect(source.locator("li.selected")).toHaveCount(0);
+  await source.getByRole("button", { name: "返回定位起点" }).click();
+  await expect(source.locator("li.selected")).toHaveCount(2);
+
+  recordedLocationChanged = true;
+  await jumpToSecondLocation.click();
+  await expect(source.getByText("该来源定位与当前原文无法对应。", { exact: true })).toBeVisible();
+  await expect(source.locator("li.selected")).toHaveCount(0);
+  expect(tracedSegments).toEqual(Array(4).fill("private_md_002"));
+  expect(sourceMapPosts).toHaveLength(1);
   await page.getByRole("button", { name: "更换论文" }).click();
   await expect(queue.getByText("已登记来源定位", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);

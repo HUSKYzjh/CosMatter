@@ -467,16 +467,31 @@ export interface PrivateMarkdownLineSource { runId: string; documentId: string; 
 export const PRIVATE_MARKDOWN_WINDOW_SIZE = 20;
 export interface PrivateMarkdownLine { number: number; text: string; truncated: boolean; }
 export interface PrivateMarkdownWindow { start: number; total_lines: number; lines: PrivateMarkdownLine[]; }
-export async function getPrivateMarkdownLines(source: PrivateMarkdownLineSource, start: number): Promise<PrivateMarkdownWindow> {
+export interface MarkdownLineRange { start: number; end: number; }
+export interface RecordedMarkdownLocation extends MarkdownLineRange { segmentId: string; }
+
+export function isMarkdownLineRange(value: unknown): value is MarkdownLineRange {
+  if (!exactObjectKeys(value, ["start", "end"])) return false;
+  const range = value as Record<string, unknown>;
+  return typeof range.start === "number" && Number.isSafeInteger(range.start) && range.start >= 1
+    && typeof range.end === "number" && Number.isSafeInteger(range.end) && range.end >= range.start && range.end <= 999_999_999;
+}
+
+export async function getPrivateMarkdownLines(source: PrivateMarkdownLineSource, start: number, location?: RecordedMarkdownLocation | null): Promise<PrivateMarkdownWindow> {
   const run = encodeURIComponent(source.runId);
   const documentId = encodeURIComponent(source.documentId);
   const suffix = source.fetched ? `source-markdown-lines?document_id=${documentId}&start=${start}` : `pdf/${documentId}/markdown-lines?start=${start}`;
-  const response = await request<unknown>(`./api/runs/${run}/${suffix}`, { redirect: "error" });
-  if (!exactObjectKeys(response, ["run_id", "document_id", "start", "total_lines", "lines"])) throw new LocalApiRequestError("transport");
+  const segment = location ? `&segment_id=${encodeURIComponent(location.segmentId)}` : "";
+  const response = await request<unknown>(`./api/runs/${run}/${suffix}${segment}`, { redirect: "error" });
+  const fields = ["run_id", "document_id", "start", "total_lines", "lines"];
+  if (location) fields.push("recorded_range");
+  if (!exactObjectKeys(response, fields)) throw new LocalApiRequestError("transport");
   const data = response as Record<string, unknown>;
   if (data.run_id !== source.runId || data.document_id !== source.documentId || data.start !== start
     || typeof data.total_lines !== "number" || !Number.isSafeInteger(data.total_lines) || data.total_lines < start
     || !Array.isArray(data.lines) || data.lines.length !== Math.min(PRIVATE_MARKDOWN_WINDOW_SIZE, data.total_lines - start + 1)) throw new LocalApiRequestError("transport");
+  if (location && (!isMarkdownLineRange(data.recorded_range) || data.recorded_range.start !== location.start
+    || data.recorded_range.end !== location.end || data.recorded_range.end > data.total_lines)) throw new LocalApiRequestError("transport", 409);
   for (const [index, line] of data.lines.entries()) {
     if (!exactObjectKeys(line, ["number", "text", "truncated"]) || line.number !== start + index
       || typeof line.text !== "string" || line.text.length > 3_200 || /[\r\n\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/.test(line.text)
@@ -493,7 +508,7 @@ export async function linkFetchedMarkdown(runId: string, documentId: string, fil
   if (data.run_id !== runId || data.document_id !== documentId || data.markdown_ready !== true) throw new LocalApiRequestError("write_outcome_unknown");
 }
 export interface PrivateSourceMapSegment { locator: string; kind: "paragraph" | "table" | "formula" | "figure_caption"; quote: string; }
-export interface RecordedSourceMapSegment { segment_id: string; locator: string; kind: PrivateSourceMapSegment["kind"]; }
+export interface RecordedSourceMapSegment { segment_id: string; locator: string; kind: PrivateSourceMapSegment["kind"]; markdown_range?: MarkdownLineRange; }
 export interface SourceMapRecordResult { run_id: string; document_id: string; segment_count: number; segments: RecordedSourceMapSegment[]; trust_status: string; }
 export type MaterialFactCategory = "composition" | "structure" | "property" | "processing" | "experimental_condition" | "simulation_method";
 export interface HumanMaterialFactInput { fact_id: string; segment_id: string; category: MaterialFactCategory; name: string; value: string | number | null; unit: string | null; normalized_value: string | number | null; normalized_unit: string | null; qualifiers: Record<string, string | number | null>; }
