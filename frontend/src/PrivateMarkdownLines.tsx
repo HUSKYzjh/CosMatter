@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 import { createLatestRequestGate } from "./latestRequestGate";
-import { getPrivateMarkdownLines, LocalApiRequestError, PRIVATE_MARKDOWN_WINDOW_SIZE, type PrivateMarkdownLineSource, type PrivateMarkdownWindow, type RecordedMarkdownLocation } from "./localApi";
+import { getPrivateMarkdownLines, LocalApiRequestError, PRIVATE_MARKDOWN_WINDOW_SIZE, type MarkdownLineRange, type MarkdownLocation, type PrivateMarkdownLineSource, type PrivateMarkdownWindow } from "./localApi";
 import { ActionButton } from "./uiPrimitives";
 import { uiLanguage } from "./zh";
 
@@ -11,7 +11,7 @@ export function PrivateMarkdownLines(props: {
   id: string;
   source: PrivateMarkdownLineSource;
   onDraft?: (locator: string, quote: string) => void;
-  location?: RecordedMarkdownLocation | null;
+  location?: MarkdownLocation | null;
   onClearLocation?: () => void;
 }) {
   const [open, setOpen] = createSignal(false);
@@ -22,11 +22,12 @@ export function PrivateMarkdownLines(props: {
   const [first, setFirst] = createSignal<number | null>(null);
   const [last, setLast] = createSignal<number | null>(null);
   const [staged, setStaged] = createSignal(false);
-  const [verifiedLocation, setVerifiedLocation] = createSignal<RecordedMarkdownLocation | null>(null);
+  const [verifiedLocation, setVerifiedLocation] = createSignal<MarkdownLineRange | null>(null);
   const request = createLatestRequestGate();
   let panel: HTMLElement | undefined;
   let sourceList: HTMLOListElement | undefined;
-  let requestedStart = 1;
+  let requestedStart: number | null = 1;
+  let activeLocation: MarkdownLocation | null = null;
   onCleanup(request.invalidate);
 
   const range = createMemo(() => {
@@ -58,7 +59,7 @@ export function PrivateMarkdownLines(props: {
     setStaged(false);
   }
 
-  async function load(start: number) {
+  async function load(start: number | null) {
     const isLatest = request.begin();
     const location = props.location ?? null;
     requestedStart = start;
@@ -70,18 +71,20 @@ export function PrivateMarkdownLines(props: {
       const result = await getPrivateMarkdownLines(props.source, start, location);
       if (isLatest()) {
         setPage(result);
-        setVerifiedLocation(location);
+        setVerifiedLocation(result.recordedRange ?? null);
         setJump(String(result.start));
         if (sourceList) sourceList.scrollTop = 0;
       }
     } catch (failure) {
       if (!isLatest()) return;
       const status = failure instanceof LocalApiRequestError ? failure.httpStatus : undefined;
+      const mismatch = location && "evidenceId" in location
+        ? tr("该证据卡与当前原文无法对应。", "This evidence card does not match the current source.")
+        : tr("该来源定位与当前原文无法对应。", "This recorded location does not match the current source.");
       setPage(null);
       setError(status === 403
         ? tr("当前筛选记录未允许核对这篇论文。", "The current screening record does not permit review of this paper.")
-        : location && (status === 409 || status === 416)
-        ? tr("该来源定位与当前原文无法对应。", "This recorded location does not match the current source.")
+        : location && (status === 409 || status === 416) ? mismatch
         : tr("无法读取原文行，请重试。", "Could not open source lines. Try again."));
     } finally {
       if (isLatest()) setLoading(false);
@@ -89,15 +92,19 @@ export function PrivateMarkdownLines(props: {
   }
 
   createEffect(() => {
-    const location = props.location;
-    if (!location) return;
+    const location = props.location ?? null;
+    const previous = activeLocation;
+    activeLocation = location;
+    if (!location) {
+      if (previous) collapse();
+      return;
+    }
     setOpen(true);
     panel?.focus();
-    void untrack(() => load(location.start));
+    void untrack(() => load("segmentId" in location ? location.start : null));
   });
 
-  function toggle() {
-    if (!open()) { setOpen(true); void load(1); return; }
+  function collapse() {
     request.invalidate();
     setOpen(false);
     setLoading(false);
@@ -105,6 +112,11 @@ export function PrivateMarkdownLines(props: {
     setError(null);
     setVerifiedLocation(null);
     clearRange();
+  }
+
+  function toggle() {
+    if (!open()) { setOpen(true); void load(1); return; }
+    collapse();
     props.onClearLocation?.();
   }
 

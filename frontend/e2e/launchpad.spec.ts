@@ -1088,14 +1088,26 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
     { document_id: pending, title: "Pending candidate", source: "local fixture" },
     { document_id: excluded, title: "Excluded candidate", source: "local fixture" },
   ];
-  bundle.literature_graph = { trust_status: "human_reviewed_graph_projection", nodes: papers.map((paper) => ({
+  const reviewedCards = [
+    { evidence_id: "source_ready", claim: "Measured phase boundary", quote: "Temperature measured at 300 K.", locator: "markdown_line:7-7" },
+    { evidence_id: "source_stale", claim: "Recorded comparison", quote: "Observed boundary change.", locator: "markdown_line:8-8" },
+  ];
+  bundle.evidence_cards = reviewedCards.map(({ locator, ...card }) => ({ ...card, review_status: "accepted", stance: "support", conditions: { temperature_k: 300 },
+    provenance: { document_id: ready, locator, source: "human-reviewed MinerU source map", access_policy: "authorized" },
+  }));
+  bundle.literature_graph = { trust_status: "human_reviewed_graph_projection", nodes: [...papers.map((paper) => ({
     node_id: `paper:${paper.document_id}`, kind: "candidate_paper", label: paper.title, trust_status: "candidate_metadata_not_scientific_evidence",
-  })), edges: [] };
+  })), ...reviewedCards.map((card) => ({ node_id: `evidence:${card.evidence_id}`, kind: "evidence_card", label: card.claim, trust_status: "accepted" }))],
+    edges: reviewedCards.map((card) => ({ source_id: `paper:${ready}`, target_id: `evidence:${card.evidence_id}`,
+      edge_type: "source_provenance", relation_source: "reviewed source map", trust_status: "accepted" })),
+  };
   const requests: string[] = [];
+  const evidenceJumps: (string | null)[] = [];
   const paperFragment = (document: string) => new URLSearchParams({ run: runId, document }).toString();
   await page.route("**/api/runs/**", (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const path = url.pathname;
     requests.push(`${request.method()} ${path}`);
     const prefix = `/api/runs/${runId}/`;
     if (!path.startsWith(prefix)) return route.fulfill({ status: 404 });
@@ -1108,17 +1120,43 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
         decisions: papers.map(({ document_id }) => ({ document_id, decision: document_id === excluded ? "exclude" : "include_for_fulltext", reason_codes: [document_id === excluded ? "out_of_scope_material" : "material_match"] })),
       } });
       case "source-parse-status": return route.fulfill({ json: { run_id: runId, mission_id: bundle.mission.mission_id, trust_status: "saved_source_parse_state_not_scientific_evidence",
-        tasks: papers.map(({ document_id }) => ({ document_id, state: document_id === pending ? "running" : "done", markdown_ready: document_id !== pending, can_link_markdown: false, source_map_segment_count: 0 })),
+        tasks: papers.map(({ document_id }) => ({ document_id, state: document_id === pending ? "running" : "done", markdown_ready: document_id !== pending, can_link_markdown: false, source_map_segment_count: document_id === ready ? 2 : 0 })),
       } });
+      case "source-map": return route.fulfill({ json: { run_id: runId, document_id: ready, segment_count: 2, trust_status: "human_reviewed_parser_selection_not_evidence_card",
+        segments: reviewedCards.map(({ locator }, index) => ({ segment_id: `segment_${index}`, locator, kind: "paragraph", markdown_range: { start: 7 + index, end: 7 + index } })),
+      } });
+      case "source-markdown-lines": {
+        const evidenceId = url.searchParams.get("evidence_id");
+        evidenceJumps.push(evidenceId);
+        if (evidenceId !== "source_ready" || url.searchParams.get("document_id") !== ready || url.searchParams.has("start")) return route.fulfill({ status: 409 });
+        return route.fulfill({ json: { run_id: runId, document_id: ready, evidence_id: evidenceId, start: 7, total_lines: 8,
+          recorded_range: { start: 7, end: 7 }, lines: reviewedCards.map((card, index) => ({ number: 7 + index, text: card.quote, truncated: false })),
+        } });
+      }
       default: return route.fulfill({ status: 404 });
     }
   });
 
   await page.goto(`/?api=local#${paperFragment(ready)}`);
   await expect(page.locator(".reader-selection")).toContainText("Ready candidate", workspaceLoad);
-  await expect(page.getByRole("link", { name: "下载私有 Markdown" })).toHaveAttribute("href", /document_id=%E6%96%87%E7%8C%AE%20%26%20ready%3D1$/);
+  await expect(page.locator(".reader-source-intake a[download]")).toHaveAttribute("href", /document_id=%E6%96%87%E7%8C%AE%20%26%20ready%3D1$/);
   await page.reload();
   await expect(page.locator(".reader-selection")).toContainText("Ready candidate", workspaceLoad);
+  await page.getByRole("button", { name: /source_ready.*Measured phase boundary/ }).press("Enter");
+  const openSource = page.getByRole("button", { name: "核对原文", exact: true });
+  const sourcePreview = page.getByRole("region", { name: "原文行号" });
+  expect(evidenceJumps).toEqual([]);
+  await openSource.press("Enter");
+  await expect(sourcePreview).toBeFocused();
+  await expect(sourcePreview.getByText("来源定位第 7 行", { exact: true })).toBeVisible();
+  await expect(sourcePreview.locator("li.selected")).toHaveText("7Temperature measured at 300 K.");
+  await page.getByRole("button", { name: /source_stale.*Recorded comparison/ }).press("Enter");
+  await expect(sourcePreview.locator("li.selected")).toHaveCount(0);
+  expect(evidenceJumps).toEqual(["source_ready"]);
+  await openSource.click();
+  await expect(sourcePreview.getByText("该证据卡与当前原文无法对应。", { exact: true })).toBeVisible();
+  await expect(sourcePreview.locator("li.selected")).toHaveCount(0);
+  expect(evidenceJumps).toEqual(["source_ready", "source_stale"]);
 
   const followPaper = (documentId: string) => page.evaluate((fragment) => { window.location.hash = fragment; }, paperFragment(documentId));
   const inspector = page.getByRole("complementary", { name: "图谱检查器" });

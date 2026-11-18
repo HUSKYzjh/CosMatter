@@ -358,6 +358,16 @@ class UiPreviewTests(unittest.TestCase):
                     evidence_result = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(evidence_result["review_status"], "accepted")
                 self.assertNotIn("Human-checked evidence line.", json.dumps(evidence_result))
+                evidence_lines = f"{base}/api/runs/http_flow/pdf/{result['document_id']}/markdown-lines?evidence_id={evidence_result['evidence_id']}"
+                with patch("cosmatter.local_api.read_markdown", return_value=markdown):
+                    with urlopen(evidence_lines, timeout=2) as response:
+                        evidence_trace = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(evidence_trace["evidence_id"], evidence_result["evidence_id"])
+                    self.assertEqual((evidence_trace["start"], evidence_trace["recorded_range"]), (2, {"start": 2, "end": 2}))
+                    with self.assertRaises(HTTPError) as ambiguous:
+                        urlopen(evidence_lines + "&segment_id=private_md_001", timeout=2)
+                    self.assertEqual(ambiguous.exception.code, 400)
+                    ambiguous.exception.close()
                 with urlopen(f"{base}/api/runs/http_flow/ui", timeout=2) as response:
                     hydrated_ui = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(hydrated_ui["evidence_cards"][0]["review_status"], "accepted")

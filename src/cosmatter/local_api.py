@@ -25,7 +25,7 @@ from .config import AGENT_ROOT, Settings, data_root
 from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .dispatch import DispatchError, MissionDispatcher
 from .metadata_search import MetadataSearchAdapter, MetadataSearchConfigurationError, MetadataSearchRequestError
-from .models import MissionBrief, MissionState
+from .models import AccessPolicy, MissionBrief, MissionState
 from .corpus_preparation import CorpusPreparationError, load_corpus_manifest
 from .local_corpus import LocalCorpusSearchError, candidates_from_local_source_index
 from .planning import (
@@ -50,7 +50,7 @@ from .crossref import CrossrefAdapter, CrossrefRequestError
 from .citation_expansion import CitationExpansionError, build_citation_expansion, validate_citation_expansion, write_citation_expansion
 from .run_package import RunPackageError, export_run_package, restore_run_package
 from .source_map import HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_pool_review, source_map_from_review, write_source_map_for_document
-from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, write_evidence_provenance_audit
+from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, matching_source_segments, write_evidence_provenance_audit
 from .material_extraction import MaterialExtractionError, material_facts_from_review, write_material_facts_for_document
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
 from .source_parse import SourceParseArtifactError, fetched_markdown_path, fetched_markdown_receipt, load_source_parse_tasks, private_task_id_for_document, read_fetched_markdown, record_source_parse_task, task_for_document, update_source_parse_task, write_fetched_markdown
@@ -1091,10 +1091,12 @@ class LocalMissionApi:
         content = _read_fetched_source(run_dir, mission.mission_id, receipt)
         return ArtifactDownload(content, "text/markdown; charset=utf-8", "private-mineru-markdown.md")
 
-    def private_markdown_lines(self, run_id: str, document_id: str, start: int, *, fetched_source: bool = False,
-                               segment_id: str | None = None) -> dict[str, object]:
+    def private_markdown_lines(self, run_id: str, document_id: str, start: int | None = None, *, fetched_source: bool = False,
+                               segment_id: str | None = None, evidence_id: str | None = None) -> dict[str, object]:
         """Read a bounded local preview using the same line numbering as Source Map validation."""
-        if isinstance(start, bool) or not isinstance(start, int) or start < 1:
+        if evidence_id is not None and segment_id is not None:
+            raise LocalApiError("Markdown preview can target only one reviewed item")
+        if (start is not None or evidence_id is None) and (isinstance(start, bool) or not isinstance(start, int) or start < 1):
             raise LocalApiError("Markdown preview requires a positive starting line")
         if fetched_source:
             run_dir, mission, task, receipt = self._fetched_source_context(run_id, document_id)
@@ -1114,16 +1116,21 @@ class LocalMissionApi:
             content = _read_verified_pdf_markdown(document_id, digest)
             audit_document_id = _pdf_audit_document_id(intake)
         recorded_range = None
-        if segment_id is not None:
+        evidence_quote = None
+        if segment_id is not None or evidence_id is not None:
             try:
                 source_map = (_fetched_source_map(run_dir, mission.mission_id, task, receipt) if fetched_source
                               else load_source_map_for_document(run_dir, mission.mission_id, audit_document_id))
             except (OSError, SourceMapError) as error:
                 raise LocalApiError("recorded source location is unavailable", 409) from error
+            if evidence_id is not None:
+                segment_id, evidence_quote = _evidence_source_segment(run_dir, mission, audit_document_id, evidence_id, digest, source_map)
             recorded_range = next((segment.get("markdown_range") for segment in _source_map_segments(source_map, digest)
                                    if segment["segment_id"] == segment_id), None)
             if recorded_range is None:
                 raise LocalApiError("recorded source location does not match the current Markdown", 409)
+            if start is None:
+                start = recorded_range["start"]
         try:
             lines = content.decode("utf-8").splitlines()
         except UnicodeDecodeError as error:
@@ -1132,6 +1139,8 @@ class LocalMissionApi:
             raise LocalApiError("starting line is outside the private Markdown", 416)
         if recorded_range and recorded_range["end"] > len(lines):
             raise LocalApiError("recorded source location is outside the private Markdown", 416)
+        if evidence_quote is not None and evidence_quote not in "\n".join(lines[recorded_range["start"] - 1 : recorded_range["end"]]):
+            raise LocalApiError("evidence quote does not match the current Markdown", 409)
         first_index = start - 1
         window = lines[first_index : first_index + _MARKDOWN_WINDOW_SIZE]
         response = {"run_id": run_id, "document_id": document_id, "start": start, "total_lines": len(lines),
@@ -1139,6 +1148,8 @@ class LocalMissionApi:
                               for number, line in enumerate(window, start)]}
         if recorded_range:
             response["recorded_range"] = recorded_range
+        if evidence_id is not None:
+            response["evidence_id"] = evidence_id
         return response
 
     def link_fetched_source_markdown(self, run_id: str, document_id: str, content: bytes) -> dict[str, object]:
@@ -2448,6 +2459,25 @@ def _source_map_segments(source_map: dict[str, Any] | None, digest: object) -> l
                 segment["markdown_range"] = {"start": start, "end": end}
         segments.append(segment)
     return segments
+
+
+def _evidence_source_segment(run_dir: Path, mission: MissionBrief, document_id: str, evidence_id: str, digest: object,
+                             source_map: dict[str, Any] | None) -> tuple[str, str]:
+    if source_map is None:
+        raise LocalApiError("evidence card has no reviewed source map", 409)
+    try:
+        cards = tuple(card for card in _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
+                      if card.evidence_id == evidence_id)
+        decisions = tuple(decision for decision in _verification_decisions_from_payloads(
+            _load_array_if_present(run_dir / "verification_decisions.json", "verification decisions")) if decision.evidence_id == evidence_id)
+        audit_accepted_evidence_provenance(mission=mission, cards=cards, decisions=decisions, source_maps=(source_map,))
+    except (OSError, ValueError) as error:
+        raise LocalApiError("evidence card has no exact accepted source location", 409) from error
+    card = cards[0]  # The targeted audit requires exactly one accepted card with this ID.
+    if (card.provenance.document_id != document_id or card.provenance.access_policy is AccessPolicy.METADATA_ONLY
+            or card.provenance.content_hash != digest):
+        raise LocalApiError("evidence card does not match the current Markdown", 409)
+    return matching_source_segments(card, source_map)[0]["segment_id"], card.quote
 
 
 def _source_map_response(run_id: str, document_id: str, source_map: dict[str, Any] | None, digest: object) -> dict[str, object]:

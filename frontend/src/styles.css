@@ -379,6 +379,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .source-line-number { min-width: 3.2rem; font: max(.72rem, 12px)/1.5 ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 .source-line-text { min-width: 0; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font: max(.78rem, 13px)/1.6 ui-monospace, monospace; }
 .source-line-text small { letter-spacing: normal; }
+.evidence-source-action { margin-block: .45rem; }
 .recorded-source-map dd { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .35rem .65rem; min-width: 0; }
 .recorded-source-map dd span { overflow-wrap: anywhere; }
 .recorded-source-map .cm-action[aria-pressed="true"] { border-color: var(--signal-teal); color: var(--ink); }

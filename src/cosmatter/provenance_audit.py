@@ -42,12 +42,7 @@ def audit_accepted_evidence_provenance(
         source_map = maps.get(card.provenance.document_id)
         if source_map is None:
             raise ProvenanceAuditError("accepted evidence requires a reviewed source map for its document")
-        quote_digest = hashlib.sha256(card.quote.encode("utf-8")).hexdigest()
-        matched = any(
-            segment["locator"] == card.provenance.locator
-            and segment["quote_sha256"] == quote_digest
-            for segment in source_map["segments"]
-        )
+        matched = matching_source_segments(card, source_map)
         if not matched:
             raise ProvenanceAuditError("accepted evidence does not exactly match the reviewed source map for its document")
         status = "exact_reviewed_source_map_match"
@@ -68,6 +63,15 @@ def audit_accepted_evidence_provenance(
         "exact_source_map_match_rate": round(exact_count / len(items), 6),
         "items": items,
     }
+
+
+def matching_source_segments(card: EvidenceCard, source_map: dict[str, Any]) -> list[dict[str, Any]]:
+    """Find reviewed segments linked by both the locator and the exact quote."""
+    if source_map["document_id"] != card.provenance.document_id:
+        return []
+    quote_digest = hashlib.sha256(card.quote.encode("utf-8")).hexdigest()
+    return [segment for segment in source_map["segments"]
+            if segment["locator"] == card.provenance.locator and segment["quote_sha256"] == quote_digest]
 
 
 def write_evidence_provenance_audit(run_dir: Path, result: dict[str, Any]) -> Path:

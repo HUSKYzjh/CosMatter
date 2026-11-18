@@ -522,19 +522,26 @@ def _query_document_id(fields: dict[str, list[str]]) -> str:
 
 
 def _markdown_lines_query(query: str, document_id: str | None = None) -> dict[str, str | int]:
-    fields_expected = {"document_id", "start"} if document_id is None else {"start"}
+    fields_expected = {"document_id"} if document_id is None else set()
     try:
-        fields = parse_qs(query, strict_parsing=True, keep_blank_values=True, max_num_fields=len(fields_expected) + 1)
+        fields = parse_qs(query, strict_parsing=True, keep_blank_values=True, max_num_fields=len(fields_expected) + 2)
     except ValueError as error:
         raise LocalApiError("invalid Markdown preview parameters") from error
+    start = fields.pop("start", None)
     segment = fields.pop("segment_id", None)
-    if set(fields) != fields_expected or len(fields["start"]) != 1 or not re.fullmatch(r"[1-9][0-9]{0,8}", fields["start"][0]):
+    evidence = fields.pop("evidence_id", None)
+    if set(fields) != fields_expected or (segment is not None and evidence is not None):
+        raise LocalApiError("invalid Markdown preview parameters")
+    if (start is None and evidence is None) or (start is not None and (len(start) != 1 or not re.fullmatch(r"[1-9][0-9]{0,8}", start[0]))):
         raise LocalApiError("invalid Markdown preview starting line")
-    params = {"document_id": document_id or _query_document_id(fields), "start": int(fields["start"][0])}
-    if segment is not None:
-        if len(segment) != 1 or not segment[0].strip() or len(segment[0]) > 160:
-            raise LocalApiError("invalid recorded source segment identifier")
-        params["segment_id"] = segment[0]
+    params: dict[str, str | int] = {"document_id": document_id or _query_document_id(fields)}
+    if start is not None:
+        params["start"] = int(start[0])
+    for key, values, limit in (("segment_id", segment, 160), ("evidence_id", evidence, 320)):
+        if values is not None:
+            if len(values) != 1 or not values[0].strip() or len(values[0]) > limit:
+                raise LocalApiError("invalid recorded source identifier")
+            params[key] = values[0]
     return params
 
 

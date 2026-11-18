@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, createUniqueId } from "solid-js";
 
 import { FleetDecoration } from "./FleetDecoration";
 import { fleetVisualState } from "./fleetVisualState";
@@ -12,7 +12,7 @@ import { paperPdfIntake } from "./paperPdfIntake";
 import { materialFactsForSelectedPaper } from "./readerMaterialFacts";
 import { researchExtensionReadiness } from "./researchExtensionReadiness";
 import { ReadOnlyPreviewContext } from "./ReadOnlyPreviewContext";
-import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateMarkdownLineSource, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
+import type { EvidenceMarkdownLocation, EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateMarkdownLineSource, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
 import { ActionButton } from "./uiPrimitives";
 import { uiLanguage } from "./zh";
 
@@ -81,6 +81,32 @@ export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSe
     : paperPdfIntake(props.pdfTask, props.session.selectedNode).state);
   const sourceAction = createMemo(() => readerSourceAction({ hasLinkedEvidence: intake().hasLinkedEvidence, hasMatchingPrivatePdf: ["source-map", "evidence-review"].includes(privatePdfState()), privatePdfParsing: privatePdfState() === "parsing", privatePdfFailed: privatePdfState() === "failed", hasOtherPaperPdf: Boolean(intake().attachedDocumentId) && !intake().matchingPrivatePdf, screeningAllowsSourceReview: props.screeningAllowsSourceReview }));
   const linkedSelected = createMemo(() => evidenceMatchesPaper(props.bundle, props.session.selectedNode, selected()) ? selected() : null);
+  const [sourceJump, setSourceJump] = createSignal<(EvidenceMarkdownLocation & { sourceKey: string }) | null>(null);
+  const sourceDetailsId = createUniqueId();
+  let sourceDetails: HTMLDetailsElement | undefined;
+  const sourceKey = () => {
+    const source = props.markdownLineSource;
+    return source ? JSON.stringify([source.runId, source.documentId, source.fetched]) : null;
+  };
+  const traceableEvidence = createMemo(() => {
+    const evidence = linkedSelected();
+    const localMap = intake().sourceMapRecorded || Boolean(props.fetchedSource?.source_map_segment_count);
+    if (!evidence || !props.markdownLineSource || !localMap || !/^markdown_(?:reference_)?line:/.test(evidence.provenance.locator)) return null;
+    return evidence.evidenceId.trim() && evidence.evidenceId.length <= 320 ? evidence.evidenceId : null;
+  });
+  const evidenceLocation = createMemo(() => {
+    const target = sourceJump();
+    return target && target.sourceKey === sourceKey() && target.evidenceId === traceableEvidence() ? target : null;
+  });
+  createEffect(() => { if (sourceJump() && !evidenceLocation()) setSourceJump(null); });
+
+  function openEvidenceSource() {
+    const key = sourceKey();
+    const evidenceId = traceableEvidence();
+    if (!key || !evidenceId || !sourceDetails) return;
+    sourceDetails.open = true;
+    setSourceJump({ evidenceId, sourceKey: key });
+  }
   const gate = createMemo(() => evidenceGate(props.bundle, props.session));
   const comparison = createMemo(() => researchExtensionReadiness(props.bundle));
   const reason = createMemo(() => ({ paper: tr("先从文献星图选择一篇论文。"), evidence: linkedEvidence().length ? tr("从与当前论文显式关联的已接受 EvidenceCard 中选择一张。") : tr("该论文尚无已审核的来源映射与 EvidenceCard 关联。"), "source-link": tr("所选 EvidenceCard 没有与当前论文对应的已审核来源映射。"), locator: tr("所选 EvidenceCard 缺少 document ID 或来源定位。"), "source-map": tr("所选 EvidenceCard 对应文献尚无可审计的来源映射片段。"), "provenance-audit": tr("当前已接受 EvidenceCard 尚未全部通过精确来源映射审计。") }[gate().reason ?? "evidence"]));
@@ -115,9 +141,9 @@ export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSe
       <section class="reader-selection"><div><small>{tr("当前论文")}</small><strong>{props.session.selectedNode!.label}</strong><span>{props.session.selectedNode!.source ?? tr("本地工件")}</span></div><ActionButton size="sm" variant="secondary" onClick={() => props.onNavigate("graph")}>{tr("更换论文")}</ActionButton></section>
       <Show when={props.bundle.materialFacts && !currentMaterialFacts()}><section class="reader-intake-note"><small>{tr("其他文献的事实已隐藏", "FACTS FOR ANOTHER PAPER HIDDEN")}</small><p>{tr("本任务存在与当前论文不匹配的已登记材料事实；为避免跨文献混用，本页不会显示它们。请在星图选择对应论文后再核对。", "This mission has recorded material facts for a paper other than the current selection. They are hidden here to prevent cross-paper mixing; select the matching paper in the map to review them.")}</p><ActionButton size="sm" variant="secondary" onClick={() => props.onNavigate("graph")}>{tr("返回文献星图", "Return to literature map")}</ActionButton></section></Show>
       <Show when={sourceAction() === "record_source_locations" || Boolean(props.markdownLineSource)}>
-        <details class="reader-source-intake" open={!intake().hasLinkedEvidence}>
-          <summary>{tr("步骤 02 / 从本机 Markdown 登记来源、材料事实与 EvidenceCard", "STEP 02 / Register source locations, material facts and EvidenceCards from local Markdown")}</summary>
-          <PrivateSourceMapReview pdfTask={props.pdfTask} fetchedSource={props.fetchedSource} markdownUrl={props.markdownUrl} markdownLineSource={props.markdownLineSource} onRecord={props.onRecordSourceMap} onLoad={props.onLoadSourceMap} onRecordFacts={props.onRecordMaterialFacts} materialFactsRecorded={Boolean(currentMaterialFacts()?.facts.length)} onRecordEvidence={props.onRecordEvidence} />
+        <details ref={sourceDetails} id={sourceDetailsId} class="reader-source-intake" open={!intake().hasLinkedEvidence}>
+          <summary>{intake().hasLinkedEvidence ? tr("步骤 02 / 原文与来源定位", "STEP 02 / Original text and source locations") : tr("步骤 02 / 从本机 Markdown 登记来源、材料事实与 EvidenceCard", "STEP 02 / Register source locations, material facts and EvidenceCards from local Markdown")}</summary>
+          <PrivateSourceMapReview pdfTask={props.pdfTask} fetchedSource={props.fetchedSource} markdownUrl={props.markdownUrl} markdownLineSource={props.markdownLineSource} onRecord={props.onRecordSourceMap} onLoad={props.onLoadSourceMap} onRecordFacts={props.onRecordMaterialFacts} materialFactsRecorded={Boolean(currentMaterialFacts()?.facts.length)} onRecordEvidence={props.onRecordEvidence} evidenceLocation={evidenceLocation()} onClearEvidenceLocation={() => setSourceJump(null)} />
         </details>
       </Show>
       <Show when={sourceAction() === "await_private_parsing"}>
@@ -134,7 +160,7 @@ export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSe
       <Show when={linkedEvidence().length} fallback={<section class="reader-evidence-pending"><small>{tr("待接受 EvidenceCard", "EVIDENCECARD PENDING")}</small><strong>{tr("先完成当前论文的来源定位与人工审核", "Complete source location and human review for the current paper first")}</strong><p>{tr("本页暂不显示空的证据队列或核对面板。完成上方 Source Map、材料事实和条件审核后，已接受 EvidenceCard 会以显式溯源关系回到此处。", "Empty evidence queues and verification panels stay hidden here. After the Source Map, material facts, and condition review are complete, an accepted EvidenceCard returns here through an explicit provenance link.")}</p></section>}>
       <section class="reader-layout">
         <article class="evidence-queue"><small>{tr("步骤 03 / 与当前论文关联的已接受 EvidenceCard")}</small><h2>{tr("选择待核对证据")}</h2><p>{tr("仅显示存在已审核 source_provenance 映射的卡片；本界面不会生成、改写或猜测该关联。")}</p><Show when={linkedEvidence().length} fallback={<p class="empty-copy">{tr("当前论文还没有可审计的来源映射与已接受 EvidenceCard。完成上方的来源登记后，或返回星图选择已有溯源关联的论文。")}</p>}><For each={linkedEvidence()}>{(evidence) => <button type="button" classList={{ selected: linkedSelected()?.evidenceId === evidence.evidenceId }} onClick={() => props.onSelectEvidence(evidence)}><strong>{evidence.evidenceId}</strong><span>{evidence.claim}</span><small>{evidence.provenance.documentId} · {evidence.provenance.locator}</small></button>}</For></Show></article>
-        <article class="source-reader"><small>{tr("步骤 03 / 核验已接受 EvidenceCard")}</small><Show when={linkedSelected()} fallback={<><h2>{tr("尚未选择关联 EvidenceCard")}</h2><p>{tr("只有与当前论文显式关联的已接受卡片才能显示其短引用、条件字段和定位符。")}</p></>}>{(evidence) => <><h2>{tr("核对已导入来源")}</h2><dl class="evidence-locator"><div><dt>{tr("文档 ID")}</dt><dd>{evidence().provenance.documentId || tr("缺失")}</dd></div><div><dt>{tr("定位符")}</dt><dd>{evidence().provenance.locator || tr("缺失")}</dd></div><div><dt>{tr("来源与访问策略")}</dt><dd>{evidence().provenance.source} / {evidence().provenance.accessPolicy}</dd></div><div><dt>{tr("条件字段")}</dt><dd>{Object.entries(evidence().conditions).map(([key, value]) => `${key}: ${String(value)}`).join("; ") || tr("未提供")}</dd></div></dl><blockquote>{evidence().quote}</blockquote><p class="evidence-boundary">{tr("该定位来自已导入的审核工件，且图谱已登记其与当前论文的来源关系；页面不显示全文。")}</p></>}</Show></article>
+        <article class="source-reader"><small>{tr("步骤 03 / 核验已接受 EvidenceCard")}</small><Show when={linkedSelected()} fallback={<><h2>{tr("尚未选择关联 EvidenceCard")}</h2><p>{tr("只有与当前论文显式关联的已接受卡片才能显示其短引用、条件字段和定位符。")}</p></>}>{(evidence) => <><h2>{tr("核对已导入来源")}</h2><dl class="evidence-locator"><div><dt>{tr("文档 ID")}</dt><dd>{evidence().provenance.documentId || tr("缺失")}</dd></div><div><dt>{tr("定位符")}</dt><dd>{evidence().provenance.locator || tr("缺失")}</dd></div><div><dt>{tr("来源与访问策略")}</dt><dd>{evidence().provenance.source} / {evidence().provenance.accessPolicy}</dd></div><div><dt>{tr("条件字段")}</dt><dd>{Object.entries(evidence().conditions).map(([key, value]) => `${key}: ${String(value)}`).join("; ") || tr("未提供")}</dd></div></dl><blockquote>{evidence().quote}</blockquote><Show when={traceableEvidence()}><ActionButton class="evidence-source-action" size="sm" aria-controls={sourceDetailsId} onClick={openEvidenceSource}>{tr("核对原文", "Verify against source")}</ActionButton></Show><p class="evidence-boundary">{tr("该定位来自已导入的审核工件，且图谱已登记其与当前论文的来源关系；页面不显示全文。")}</p></>}</Show></article>
       </section>
       <section class="reader-gate"><div><small>{tr("研究拓展门禁")}</small><strong>{gate().ready ? comparison().ready ? tr("当前会话满足最小来源核对条件，并已具备跨文献比较前置工件。", "The current session meets source-verification requirements and has the prerequisites for an across-paper comparison.") : tr("当前会话满足最小来源核对条件；请查看跨文献比较门禁。", "The current session meets source-verification requirements; inspect the cross-paper comparison gate.") : reason()}</strong></div><ActionButton variant="primary" disabled={!gate().ready} onClick={() => props.onNavigate("horizon")}>{tr(comparison().ready ? "进入研究拓展" : "查看跨文献比较门禁", comparison().ready ? "Enter research extension" : "View cross-paper comparison gate")}</ActionButton></section>
       </Show>

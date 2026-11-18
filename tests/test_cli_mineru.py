@@ -180,6 +180,29 @@ class CliMinerUTests(unittest.TestCase):
                 "stance": "support", "conditions": conditions, "reviewer_confidence": 0.8,
             }, fetched_source=True)
             self.assertEqual(evidence["review_status"], "accepted")
+            card_trace = api.private_markdown_lines(run_id, "doc_1", fetched_source=True, evidence_id=evidence["evidence_id"])
+            self.assertEqual(card_trace["evidence_id"], evidence["evidence_id"])
+            self.assertEqual(card_trace["start"], 2)
+            self.assertEqual(card_trace["recorded_range"], {"start": 2, "end": 3})
+            self.assertEqual(card_trace["lines"][:2], selected)
+            later_page = api.private_markdown_lines(run_id, "doc_1", 21, fetched_source=True, evidence_id=evidence["evidence_id"])
+            self.assertEqual((later_page["start"], later_page["recorded_range"]), (21, {"start": 2, "end": 3}))
+            card_path = run_dir / "evidence_cards.json"
+            saved_cards = card_path.read_text(encoding="utf-8")
+            altered = json.loads(saved_cards)
+            altered[0]["quote"] = "A different quote with the same locator."
+            card_path.write_text(json.dumps(altered), encoding="utf-8")
+            with self.assertRaises(LocalApiError) as mismatched_card:
+                api.private_markdown_lines(run_id, "doc_1", fetched_source=True, evidence_id=evidence["evidence_id"])
+            self.assertEqual(mismatched_card.exception.status, 409)
+            card_path.write_text(saved_cards, encoding="utf-8")
+            decision_path = run_dir / "verification_decisions.json"
+            saved_decisions = decision_path.read_text(encoding="utf-8")
+            decision_path.write_text("[]", encoding="utf-8")
+            with self.assertRaises(LocalApiError) as unaudited_card:
+                api.private_markdown_lines(run_id, "doc_1", fetched_source=True, evidence_id=evidence["evidence_id"])
+            self.assertEqual(unaudited_card.exception.status, 409)
+            decision_path.write_text(saved_decisions, encoding="utf-8")
             provenance = json.loads((run_dir / "evidence_provenance_audit.json").read_text(encoding="utf-8"))
             self.assertEqual(provenance["exact_reviewed_source_map_match_count"], 1)
             self.assertFalse((run_dir / "pdf_intake.json").exists())

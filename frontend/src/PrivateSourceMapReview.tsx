@@ -1,4 +1,4 @@
-import { For, Index, Show, createEffect, createSignal, createUniqueId } from "solid-js";
+import { For, Index, Show, batch, createEffect, createSignal, createUniqueId } from "solid-js";
 
 import { PrivateMaterialFactReview } from "./PrivateMaterialFactReview";
 import { PrivateEvidenceReview } from "./PrivateEvidenceReview";
@@ -6,7 +6,7 @@ import { PrivateMarkdownLines } from "./PrivateMarkdownLines";
 import { sourceMapTaskKey } from "./readerSourceIntake";
 import { shouldAutoLoadRecordedSourceMap } from "./sourceMapLoadRecovery";
 import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateMarkdownLineSource, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
-import { isMarkdownLineRange, type RecordedMarkdownLocation, type RecordedSourceMapSegment } from "./localApi";
+import { isMarkdownLineRange, type EvidenceMarkdownLocation, type RecordedMarkdownLocation, type RecordedSourceMapSegment } from "./localApi";
 import { uiLanguage } from "./zh";
 import { safeOperationFeedback } from "./importFeedback";
 import { ActionButton, ActionLink } from "./uiPrimitives";
@@ -27,6 +27,8 @@ export function PrivateSourceMapReview(props: {
   onRecordFacts?: (facts: HumanMaterialFactInput[]) => Promise<void>;
   materialFactsRecorded?: boolean;
   onRecordEvidence?: (input: HumanEvidenceReviewInput) => Promise<EvidenceReviewResult>;
+  evidenceLocation?: EvidenceMarkdownLocation | null;
+  onClearEvidenceLocation?: () => void;
 }) {
   const [segments, setSegments] = createSignal<DraftSegment[]>([emptySegment()]);
   const [recorded, setRecorded] = createSignal<SourceMapRecordResult | null>(null);
@@ -37,6 +39,7 @@ export function PrivateSourceMapReview(props: {
   const [message, setMessage] = createSignal<string | null>(null);
   const [location, setLocation] = createSignal<RecordedMarkdownLocation | null>(null);
   const markdownPanelId = createUniqueId();
+  createEffect(() => { if (props.evidenceLocation) setLocation(null); });
   const reviewKey = () => props.fetchedSource ? props.markdownUrl : sourceMapTaskKey(props.pdfTask);
   let activeTaskKey = reviewKey();
   const ready = () => Boolean(props.markdownUrl && (props.fetchedSource?.markdown_ready || (props.pdfTask?.markdown_ready && props.pdfTask.audit_state === "done")));
@@ -135,7 +138,7 @@ export function PrivateSourceMapReview(props: {
     <Show when={ready()} fallback={<p class="empty-copy">{tr("等待私有解析完成后，才能登记 Source Map。", "Wait for private parsing to finish before recording a Source Map.")}</p>}>
       <Show when={props.markdownLineSource && props.markdownUrl} keyed>
         <PrivateMarkdownLines id={markdownPanelId} source={props.markdownLineSource!} onDraft={canDraftFromLines() ? draftFromLines : undefined}
-          location={location()} onClearLocation={() => setLocation(null)} />
+          location={props.evidenceLocation ?? location()} onClearLocation={() => batch(() => { setLocation(null); props.onClearEvidenceLocation?.(); })} />
       </Show>
       <section class="source-map-docking-vector" aria-label={tr("Source Map 来源泊位", "Source Map docking stations")}>
         <header><small>{tr("来源泊位 / 人工溯源", "SOURCE BERTHS / HUMAN PROVENANCE")}</small><span>{sourceMapRecorded() ? tr("已登记片段只读展示；后续每一步仍保留独立人工门禁。", "Recorded segments remain read-only; each follow-up retains an independent human gate.") : tr("此处仅登记必要短引文和定位符；每项状态均来自当前表单。", "Only essential short quotes and locators are registered here; every state reflects the active form.")}</span></header>
@@ -154,7 +157,7 @@ export function PrivateSourceMapReview(props: {
               <Show when={recordedLocation(result(), segment)}>{(target) =>
                 <ActionButton size="sm" aria-label={tr(`查看原文 ${segment.locator}`, `View source at ${segment.locator}`)}
                   aria-controls={markdownPanelId} aria-pressed={location()?.segmentId === target().segmentId}
-                  onClick={() => setLocation({ ...target() })}>{tr("查看原文", "View source")}</ActionButton>
+                  onClick={() => batch(() => { props.onClearEvidenceLocation?.(); setLocation({ ...target() }); })}>{tr("查看原文", "View source")}</ActionButton>
               }</Show>
             </dd>
           </div>}</For>

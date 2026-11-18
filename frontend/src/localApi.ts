@@ -466,9 +466,11 @@ export function fetchedMarkdownUrl(runId: string, documentId: string): string { 
 export interface PrivateMarkdownLineSource { runId: string; documentId: string; fetched: boolean; }
 export const PRIVATE_MARKDOWN_WINDOW_SIZE = 20;
 export interface PrivateMarkdownLine { number: number; text: string; truncated: boolean; }
-export interface PrivateMarkdownWindow { start: number; total_lines: number; lines: PrivateMarkdownLine[]; }
+export interface PrivateMarkdownWindow { start: number; total_lines: number; lines: PrivateMarkdownLine[]; recordedRange?: MarkdownLineRange; }
 export interface MarkdownLineRange { start: number; end: number; }
 export interface RecordedMarkdownLocation extends MarkdownLineRange { segmentId: string; }
+export interface EvidenceMarkdownLocation { evidenceId: string; }
+export type MarkdownLocation = RecordedMarkdownLocation | EvidenceMarkdownLocation;
 
 export function isMarkdownLineRange(value: unknown): value is MarkdownLineRange {
   if (!exactObjectKeys(value, ["start", "end"])) return false;
@@ -477,27 +479,36 @@ export function isMarkdownLineRange(value: unknown): value is MarkdownLineRange 
     && typeof range.end === "number" && Number.isSafeInteger(range.end) && range.end >= range.start && range.end <= 999_999_999;
 }
 
-export async function getPrivateMarkdownLines(source: PrivateMarkdownLineSource, start: number, location?: RecordedMarkdownLocation | null): Promise<PrivateMarkdownWindow> {
+export async function getPrivateMarkdownLines(source: PrivateMarkdownLineSource, requestedStart: number | null, location?: MarkdownLocation | null): Promise<PrivateMarkdownWindow> {
   const run = encodeURIComponent(source.runId);
   const documentId = encodeURIComponent(source.documentId);
-  const suffix = source.fetched ? `source-markdown-lines?document_id=${documentId}&start=${start}` : `pdf/${documentId}/markdown-lines?start=${start}`;
-  const segment = location ? `&segment_id=${encodeURIComponent(location.segmentId)}` : "";
-  const response = await request<unknown>(`./api/runs/${run}/${suffix}${segment}`, { redirect: "error" });
+  const suffix = source.fetched ? "source-markdown-lines" : `pdf/${documentId}/markdown-lines`;
+  const params = new URLSearchParams();
+  if (source.fetched) params.set("document_id", source.documentId);
+  if (requestedStart !== null) params.set("start", String(requestedStart));
+  const evidenceId = location && "evidenceId" in location ? location.evidenceId : null;
+  if (evidenceId) params.set("evidence_id", evidenceId);
+  if (location && "segmentId" in location) params.set("segment_id", location.segmentId);
+  const response = await request<unknown>(`./api/runs/${run}/${suffix}?${params}`, { redirect: "error" });
   const fields = ["run_id", "document_id", "start", "total_lines", "lines"];
   if (location) fields.push("recorded_range");
+  if (evidenceId) fields.push("evidence_id");
   if (!exactObjectKeys(response, fields)) throw new LocalApiRequestError("transport");
   const data = response as Record<string, unknown>;
-  if (data.run_id !== source.runId || data.document_id !== source.documentId || data.start !== start
+  const recordedRange = isMarkdownLineRange(data.recorded_range) ? data.recorded_range : undefined;
+  if (evidenceId && data.evidence_id !== evidenceId) throw new LocalApiRequestError("transport", 409);
+  const start = requestedStart ?? recordedRange?.start;
+  if (start === undefined || data.run_id !== source.runId || data.document_id !== source.documentId || data.start !== start
     || typeof data.total_lines !== "number" || !Number.isSafeInteger(data.total_lines) || data.total_lines < start
     || !Array.isArray(data.lines) || data.lines.length !== Math.min(PRIVATE_MARKDOWN_WINDOW_SIZE, data.total_lines - start + 1)) throw new LocalApiRequestError("transport");
-  if (location && (!isMarkdownLineRange(data.recorded_range) || data.recorded_range.start !== location.start
-    || data.recorded_range.end !== location.end || data.recorded_range.end > data.total_lines)) throw new LocalApiRequestError("transport", 409);
+  if (location && (!recordedRange || recordedRange.end > data.total_lines
+    || ("segmentId" in location && (recordedRange.start !== location.start || recordedRange.end !== location.end)))) throw new LocalApiRequestError("transport", 409);
   for (const [index, line] of data.lines.entries()) {
     if (!exactObjectKeys(line, ["number", "text", "truncated"]) || line.number !== start + index
       || typeof line.text !== "string" || line.text.length > 3_200 || /[\r\n\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/.test(line.text)
       || typeof line.truncated !== "boolean") throw new LocalApiRequestError("transport");
   }
-  return { start, total_lines: data.total_lines, lines: data.lines };
+  return { start, total_lines: data.total_lines, lines: data.lines, recordedRange };
 }
 export async function linkFetchedMarkdown(runId: string, documentId: string, file: File): Promise<void> {
   const response = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/source-markdown-link?document_id=${encodeURIComponent(documentId)}`, {
