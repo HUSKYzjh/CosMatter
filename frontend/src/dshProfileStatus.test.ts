@@ -52,3 +52,18 @@ it("validates a redacted historical composition check independently of install s
   expect(isDshProfileStatus({ ...snapshot(), composition_check: { ...composition_check, checked_at: "2026-11-31T03:00:00Z" } })).toBe(false);
   expect(isDshProfileStatus({ ...snapshot(), composition_check: { ...composition_check, configuration_stamp: "private" } })).toBe(false);
 });
+
+it("limits observed registry tools to the checked bundles and rejects internal fields", () => {
+  const tool_registry_check = {
+    schema_version: "cosmatter.dsh-tool-registry-check/v1",
+    checked_at: "2026-11-18T03:00:00Z",
+    dsh_version: "0.2.2-rc.3",
+    bundles: [packages[0].package],
+    matches_local_files: true,
+    registered_tools: ["cosmatter_mission_create"],
+  };
+  expect(isDshProfileStatus({ ...snapshot(), tool_registry_check })).toBe(true);
+  expect(isDshProfileStatus({ ...snapshot(), tool_registry_check: { ...tool_registry_check, registered_tools: [] } })).toBe(true);
+  expect(isDshProfileStatus({ ...snapshot(), tool_registry_check: { ...tool_registry_check, registered_tools: ["cosmatter_workflow_status"] } })).toBe(false);
+  expect(isDshProfileStatus({ ...snapshot(), tool_registry_check: { ...tool_registry_check, runtime_stamp: "private" } })).toBe(false);
+});

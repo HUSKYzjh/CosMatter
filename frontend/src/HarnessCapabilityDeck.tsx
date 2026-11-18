@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
+import { packages } from "../../plugins/dsh-plugin-group.json";
 
 import type { DshProfileHealth, DshProfileStatus, HarnessAuthorization, HarnessCatalogueHealth, HarnessPluginDescriptor, OperationalTelemetry } from "./localApi";
 import { ActionButton, StatusBadge } from "./uiPrimitives";
@@ -7,7 +8,8 @@ import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
 import { DshToolCatalogue } from "./DshToolCatalogue";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
-const PROFILE_CHECK_COMMAND = "cosmatter check-dsh-profile";
+const PROFILE_CHECK_COMMAND = "cosmatter check-dsh-profile --verify-tools";
+const TOOL_COUNT = packages.reduce((total, bundle) => total + bundle.tools.length, 0);
 
 const BUNDLE_ROLES: Record<string, readonly [string, string]> = {
   "@cosmatter/dsh-mission-plugin": ["任务建立", "Mission intake"],
@@ -61,9 +63,20 @@ export function HarnessCapabilityDeck(props: {
     }
   };
   const composition = () => props.profile?.composition_check;
+  const registry = () => props.profileHealth === "ready" ? props.profile?.tool_registry_check : undefined;
+  const registryLabel = createMemo(() => {
+    const check = registry();
+    if (!check) return { tone: "neutral" as const, text: x("工具注册待核验", "Tool registration unchecked") };
+    if (!check.matches_local_files) return { tone: "attention" as const, text: x("工具核验已过期", "Tool check out of date") };
+    const count = check.registered_tools.length;
+    return {
+      tone: count === TOOL_COUNT ? "ready" as const : "attention" as const,
+      text: x(`已注册 ${count}/${TOOL_COUNT}`, `Registered ${count}/${TOOL_COUNT}`),
+    };
+  });
   const compositionLabel = createMemo(() => {
     const check = composition();
-    if (!check) return { tone: "neutral" as const, text: x("配置组合与启动未核验", "Composition and startup unverified") };
+    if (!check) return { tone: "neutral" as const, text: x("配置组合待核验", "Composition unchecked") };
     if (!check.matches_local_files) return { tone: "attention" as const, text: x("文件已变化，待复核", "Files changed; recheck needed") };
     const count = check.bundles.length;
     return {
@@ -87,10 +100,15 @@ export function HarnessCapabilityDeck(props: {
     };
     const profileReady = props.profileHealth === "ready" && props.profile?.installation_state === "installed";
     const adapterReady = props.health === "ready";
+    if (profileReady && adapterReady && compositionLabel().tone === "ready" && registryLabel().tone === "ready") return {
+      state: "ready",
+      title: x("七个插件通过隔离注册核验", "All seven bundles passed isolated registration"),
+      detail: x(`DSH 已注册全部 ${TOOL_COUNT} 个工具。当前任务的实际派发结果见运行回执。`, `DSH registered all ${TOOL_COUNT} tools. See the runtime receipts for dispatch results in this mission.`),
+    };
     if (profileReady && adapterReady && compositionLabel().tone === "ready") return {
       state: "partial",
-      title: x("最近一次配置组合完整，等待启动核验", "Last composition complete; startup unverified"),
-      detail: x("上次核验包含全部七个插件。当前任务派发状态见运行回执。", "The last check included all seven bundles. See the runtime receipts for this mission."),
+      title: x("配置组合完整，工具注册待确认", "Composition complete; registration pending"),
+      detail: x("可在终端核验本机插件的工具注册。", "Run the terminal check to verify registration for the local bundles."),
     };
     if (profileReady && adapterReady && compositionLabel().tone === "attention") return {
       state: "partial",
@@ -99,7 +117,7 @@ export function HarnessCapabilityDeck(props: {
     };
     if (profileReady && adapterReady) return {
       state: "partial",
-      title: x("安装与契约已就绪，profile 启动未核验", "Installation and contracts ready; profile startup unverified"),
+      title: x("安装与契约已就绪，工具注册待核验", "Installation and contracts ready; tool registration unchecked"),
       detail: x("已核对七个本机插件包与契约目录。任务派发结果见本次运行回执。", "All seven local bundles and the contract catalogue have been checked. See this mission’s receipts for dispatch results."),
     };
     const profile = props.profileHealth === "ready" ? props.profile : null;
@@ -135,22 +153,23 @@ export function HarnessCapabilityDeck(props: {
     </header>
     <section class="harness-activation-track" aria-label={x("DSH 启用层次", "DSH activation layers")}>
       <div classList={{ ready: profileBadge().tone === "ready", attention: profileBadge().tone === "attention", active: profileBadge().tone === "active" }}>
-        <small>01 / INSTALL</small>
+        <small>{x("安装文件", "Installation")}</small>
         <strong>{profileBadge().copy}</strong>
       </div>
-      <i aria-hidden="true">≠</i>
       <div classList={{ ready: compositionLabel().tone === "ready", attention: compositionLabel().tone === "attention" }}>
-        <small>02 / COMPOSE</small>
+        <small>{x("配置组合", "Composition")}</small>
         <strong>{compositionLabel().text}</strong>
       </div>
-      <i aria-hidden="true">≠</i>
+      <div classList={{ ready: registryLabel().tone === "ready", attention: registryLabel().tone === "attention" }}>
+        <small>{x("隔离注册", "Isolated registration")}</small>
+        <strong>{registryLabel().text}</strong>
+      </div>
       <div classList={{ ready: props.health === "ready", attention: props.health === "unavailable" }}>
-        <small>03 / CONTRACT</small>
+        <small>{x("契约目录", "Contracts")}</small>
         <strong>{props.health === "ready" ? x("契约目录已连接", "Contract catalogue connected") : props.health === "loading" ? x("正在连接目录", "Connecting catalogue") : x("目录未连接", "Catalogue disconnected")}</strong>
       </div>
-      <i aria-hidden="true">≠</i>
       <div classList={{ ready: runtime().state === "completed", attention: runtime().state === "unknown" || runtime().state === "incomplete", active: Boolean(props.operationPending) }}>
-        <small>04 / RUNTIME</small>
+        <small>{x("派发回执", "Dispatch receipts")}</small>
         <strong>{props.operationPending
           ? x("受控操作进行中", "Controlled operation active")
           : runtime().dispatchCount ? x(`${runtime().completedCount}/${runtime().dispatchCount} 派发完成`, `${runtime().completedCount}/${runtime().dispatchCount} dispatches complete`)
@@ -187,11 +206,6 @@ export function HarnessCapabilityDeck(props: {
               : x("检查范围为 tui 的依赖声明和本机安装文件。", "This check covers TUI dependency declarations and local installation files.")}>
               {(profile) => x(`已声明 ${profile().declared_bundle_count} 个依赖。核对包清单，并确认入口与补丁文件存在。`, `${profile().declared_bundle_count} dependencies declared. Checks verify the manifest and the presence of the entry and patch files.`)}
             </Show></p>
-            <Show when={props.profileHealth !== "disabled" && props.onRefreshProfile}>
-              <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在检查…", "Checking…")} onClick={() => props.onRefreshProfile?.()}>
-                {x("重新检查 profile", "Recheck profile")}
-              </ActionButton>
-            </Show>
           </div>
         </section>
         <section>
@@ -207,25 +221,28 @@ export function HarnessCapabilityDeck(props: {
             : x("没有运行级派发记录；目录与安装状态不会被当作执行证明。", "No runtime dispatch is recorded. Catalogue and installation status are never treated as proof of execution.")}</p>
         </section>
         <Show when={props.profileHealth !== "disabled" && props.onRefreshProfile}>
-          <section class="harness-composition-card" aria-label={x("配置组合核验", "Profile composition check")}>
+          <section class="harness-composition-card" aria-label={x("DSH 终端核验", "DSH terminal checks")}>
             <div>
-              <small>{x("配置组合核验", "PROFILE COMPOSITION CHECK")}</small>
-              <strong>{x("终端检查 DSH · tui", "Terminal check · DSH tui")}</strong>
+              <small>{x("终端核验", "TERMINAL CHECKS")}</small>
+              <strong>{x("配置组合与工具注册", "Composition and tool registration")}</strong>
             </div>
-            <StatusBadge tone={compositionLabel().tone}>{compositionLabel().text}</StatusBadge>
-            <p>{x("在 CosMatter 环境运行命令，再点「重新检查 profile」查看结果。", "Run the command in the CosMatter environment, then select Recheck profile to see the result.")}</p>
-            <Show when={composition()}>{(check) => <p class="harness-composition-result">
+            <StatusBadge tone={registryLabel().tone}>{registryLabel().text}</StatusBadge>
+            <p>{x("在 CosMatter 环境运行命令，再刷新核验结果。工具注册在独立 DSH 进程中核验，日常 TUI 启动与任务派发另行确认。", "Run the command in the CosMatter environment, then refresh the results. Registration uses an isolated DSH process. Everyday TUI startup and mission dispatch are checked separately.")}</p>
+            <Show when={registry() ?? composition()}>{(check) => <p class="harness-composition-result">
               <time dateTime={check().checked_at}>{new Intl.DateTimeFormat(props.locale === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(check().checked_at))}</time>
               <span>DSH {check().dsh_version}</span>
-              <span>{x("启动未核验", "Startup unverified")}</span>
             </p>}</Show>
             <div class="harness-installation-footer harness-copy-row">
               <code>{PROFILE_CHECK_COMMAND}</code>
               <ActionButton size="sm" onClick={() => void copyCheckCommand()}>{x("复制核验命令", "Copy check command")}</ActionButton>
+              <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在读取…", "Reading…")} onClick={() => props.onRefreshProfile?.()}>
+                {x("刷新核验结果", "Refresh check results")}
+              </ActionButton>
             </div>
             <Show when={copyFeedback()}>{(feedback) => <p role="status">{feedback() === "copied"
               ? x("已复制。", "Copied.")
               : x("剪贴板不可用，请选中命令手动复制。", "Clipboard unavailable. Select the command and copy it manually.")}</p>}</Show>
+            <Show when={registry() && !registry()!.matches_local_files}><p>{x("本机配置或插件文件已变化，请在终端重新核验。", "Local configuration or bundle files changed. Run the terminal check again.")}</p></Show>
           </section>
         </Show>
     </div>
@@ -238,6 +255,12 @@ export function HarnessCapabilityDeck(props: {
         <ul>
           <For each={profile().packages}>{(packageStatus) => {
             const role = () => BUNDLE_ROLES[packageStatus.package] ?? [packageStatus.package, packageStatus.package] as const;
+            const registration = () => {
+              const check = registry();
+              if (!check?.matches_local_files || !check.bundles.includes(packageStatus.package)) return null;
+              const tools = packages.find(({ package: name }) => name === packageStatus.package)?.tools ?? [];
+              return `${tools.filter((name) => check.registered_tools.includes(name)).length}/${tools.length}`;
+            };
             return <li classList={{ installed: packageStatus.install_status === "verified" }}>
               <i aria-hidden="true" />
               <div>
@@ -246,6 +269,7 @@ export function HarnessCapabilityDeck(props: {
               </div>
               <span class="harness-package-state"><b>{installStatusLabel(props.locale, packageStatus.install_status)}</b>
                 <Show when={packageStatus.dependency_kind !== "absent"}><small>{dependencyKindLabel(props.locale, packageStatus.dependency_kind)}</small></Show>
+                <Show when={registration()}>{(count) => <small>{x(`注册 ${count()}`, `Registered ${count()}`)}</small>}</Show>
               </span>
             </li>;
           }}</For>

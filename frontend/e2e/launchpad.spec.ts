@@ -264,19 +264,17 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(deck).toContainText("尚无派发回执");
   await expect(deck).toContainText("任何一层都不能代替工具结果");
   const activationTrack = deck.locator(".harness-activation-track");
-  await expect(activationTrack).toContainText("01 / INSTALL");
+  await expect(activationTrack).toContainText("安装文件");
   await expect(activationTrack).toContainText("已验证 7/7");
-  await expect(activationTrack).toContainText("02 / COMPOSE");
-  await expect(activationTrack).toContainText("配置组合与启动未核验");
-  await expect(activationTrack).toContainText("03 / CONTRACT");
+  await expect(activationTrack).toContainText("配置组合待核验");
+  await expect(activationTrack).toContainText("隔离注册");
+  await expect(activationTrack).toContainText("工具注册待核验");
   await expect(activationTrack).toContainText("契约目录已连接");
-  await expect(activationTrack).toContainText("04 / RUNTIME");
+  await expect(activationTrack).toContainText("派发回执");
   await expect(activationTrack).toContainText("尚无执行回执");
-  await expect(activationTrack.locator(":scope > i")).toHaveCount(3);
-  await expect(activationTrack.locator(":scope > i").first()).toHaveText("≠");
   const activationVerdict = deck.locator(".harness-activation-verdict");
   await expect(activationVerdict).toHaveClass(/state-partial/);
-  await expect(activationVerdict).toContainText("安装与契约已就绪，profile 启动未核验");
+  await expect(activationVerdict).toContainText("安装与契约已就绪，工具注册待核验");
   await expect(activationVerdict).toContainText("任务派发结果见本次运行回执");
   await expect(deck.locator(".harness-capability-metrics strong").first()).toHaveText("1");
   const packageProof = deck.locator(".harness-package-proof");
@@ -296,7 +294,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await page.setViewportSize({ width: 390, height: 900 });
   const minimumReadableSize = await deck.locator(".cm-status-badge, .harness-state-ledger p").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 11));
   expect(minimumReadableSize).toBe(true);
-  expect(await activationTrack.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
+  expect(await activationTrack.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(2);
   expect(await activationVerdict.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   expect(await packageProof.locator("ul").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   const tools = deck.locator(".dsh-tool-catalogue");
@@ -354,6 +352,14 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
         bundles: dshProfileSnapshot.packages.map(({ package: name }) => name),
         matches_local_files: !filesChanged,
       },
+      tool_registry_check: {
+        schema_version: "cosmatter.dsh-tool-registry-check/v1",
+        checked_at: "2026-11-18T03:00:00Z",
+        dsh_version: "0.2.2-rc.3",
+        bundles: dshProfileSnapshot.packages.slice(0, 2).map(({ package: name }) => name),
+        matches_local_files: !filesChanged,
+        registered_tools: ["cosmatter_workflow_status"],
+      },
     } : {
       ...dshProfileSnapshot,
       installed_bundle_count: 6,
@@ -375,15 +381,15 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   const packageProof = deck.locator(".harness-package-proof");
   await packageProof.locator("summary").press("Enter");
   await expect(packageProof.locator("li").first()).toContainText("文件缺失");
-  const composition = deck.getByRole("region", { name: "配置组合核验" });
+  const composition = deck.getByRole("region", { name: "DSH 终端核验" });
   await composition.getByRole("button", { name: "复制核验命令" }).click();
   await expect(composition.getByRole("status")).toHaveText("已复制。");
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cosmatter check-dsh-profile");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cosmatter check-dsh-profile --verify-tools");
 
   repaired = true;
-  await installationCard.getByRole("button", { name: "重新检查 profile" }).click();
+  await composition.getByRole("button", { name: "刷新核验结果" }).click();
   try {
-    const busy = installationCard.getByRole("button", { name: "正在检查…" });
+    const busy = composition.getByRole("button", { name: "正在读取…" });
     await expect(busy).toHaveAttribute("aria-busy", "true");
     await expect(busy).toBeDisabled();
   } finally {
@@ -391,11 +397,18 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   }
   await expect(installationCard).toContainText("已验证 7/7");
   await expect(packageProof.locator("li").first().locator(".harness-package-state b")).toHaveText("已验证");
-  await expect(composition).toContainText("上次组合 7/7");
-  await expect(composition).toContainText("启动未核验");
+  await expect(deck.locator(".harness-activation-track")).toContainText("上次组合 7/7");
+  await expect(composition).toContainText("已注册 1/19");
+  await expect(packageProof.locator("li").first()).toContainText("注册 0/1");
+  const tools = deck.locator(".dsh-tool-catalogue");
+  await tools.locator(":scope > summary").press("Enter");
+  await expect(tools.getByText("隔离核验已注册", { exact: true })).toHaveCount(1);
+  await expect(tools.getByText("隔离核验未注册", { exact: true })).toHaveCount(5);
   filesChanged = true;
-  await installationCard.getByRole("button", { name: "重新检查 profile" }).click();
-  await expect(composition).toContainText("文件已变化，待复核");
+  await composition.getByRole("button", { name: "刷新核验结果" }).click();
+  await expect(composition).toContainText("工具核验已过期");
+  await expect(tools.locator(".dsh-tool-registration")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test("wraps narrow rail handoffs and manifest counts without collisions", async ({ page }) => {
@@ -638,7 +651,7 @@ test("keeps synthetic launch-preview papers out of the real research route", asy
   const bridge = page.locator(".fleet-command-stage");
   await expect(bridge).toContainText("只读预览数据层", lazyWorkspaceContentLoad);
   await expect(bridge).toContainText("只读预览未检查");
-  await expect(bridge.getByRole("button", { name: "重新检查 profile" })).toHaveCount(0);
+  await expect(bridge.getByRole("button", { name: "刷新核验结果" })).toHaveCount(0);
   await expect(bridge.locator(".workflow-next")).toContainText("等待受控检索或导入可审查文献子图");
   await expect(bridge).not.toContainText("20 篇可审查文献");
 

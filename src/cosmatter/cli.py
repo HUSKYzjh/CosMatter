@@ -141,7 +141,7 @@ def command_check_config(_: argparse.Namespace) -> int:
 
 def command_check_dsh_profile(args: argparse.Namespace) -> int:
     try:
-        _json_print(check_dsh_composition(executable=args.dsh_executable))
+        _json_print(check_dsh_composition(executable=args.dsh_executable, verify_tools=args.verify_tools))
     except DshCompositionCheckError as error:
         _json_print({"error": str(error)})
         return 2
@@ -3605,6 +3605,7 @@ def build_parser() -> argparse.ArgumentParser:
     check.set_defaults(handler=command_check_config)
 
     dsh_check = commands.add_parser("check-dsh-profile", help="record a redacted TUI composition check without launching a session")
+    dsh_check.add_argument("--verify-tools", action="store_true", help="load the installed CosMatter bundles in an isolated DSH process and report their registered tools")
     dsh_check.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_check.set_defaults(handler=command_check_dsh_profile)
 

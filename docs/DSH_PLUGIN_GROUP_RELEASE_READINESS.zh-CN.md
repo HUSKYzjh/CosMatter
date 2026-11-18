@@ -76,11 +76,12 @@ Set-Location D:\CosMatter\development\CosMatter
 .\.venv\Scripts\python.exe tools\verify_dsh_plugin_release.py --profile-smoke
 ```
 
-要在舰桥查看本机 `tui` 的组合结果，请先在 CosMatter 虚拟环境中运行
-`cosmatter check-dsh-profile`，再点安装卡片的「重新检查 profile」。
+要在舰桥查看本机 `tui` 的配置组合与工具注册，请在 CosMatter 虚拟环境中运行
+`cosmatter check-dsh-profile --verify-tools`，再点「DSH 终端核验」里的「刷新核验结果」。
 如果终端找不到 DSH，可加上 `--dsh-executable <本机启动器路径>`。
-命令只保存核验时间、DSH 版本、匹配的插件名和本机配置文件的变更检测信息。
-页面显示上一次配置组合结果，profile 启动与任务派发仍有各自的状态。
+注册检查在临时 DSH 环境中加载 `tui` 已安装并完成配置组合的 CosMatter 包，读取 DSH 实际注册的工具名。
+舰桥显示逐包和逐工具结果。配置或编译后的插件文件变化时，需重新核验。
+日常 TUI 会话启动与当前任务派发各有独立的检查和回执。
 
 ## 回滚
 

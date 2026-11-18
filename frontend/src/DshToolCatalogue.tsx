@@ -59,6 +59,12 @@ export function DshToolCatalogue(props: {
   const [filter, setFilter] = createSignal<Access | "all">("all");
   const [clipboard, setClipboard] = createSignal<{ name: string; copied: boolean } | null>(null);
   const pluginById = createMemo(() => new Map(props.plugins.map((plugin) => [plugin.plugin_id, plugin])));
+  const registry = createMemo(() => {
+    const check = props.profile?.tool_registry_check;
+    return props.profileHealth === "ready" && check?.matches_local_files
+      ? { bundles: new Set(check.bundles), tools: new Set(check.registered_tools) }
+      : null;
+  });
   const visibleTools = createMemo(() => {
     const search = query().trim().toLowerCase();
     return TOOLS.filter(({ name, bundle, copy }) => {
@@ -113,10 +119,16 @@ export function DshToolCatalogue(props: {
             const descriptor = () => tool.copy?.descriptor ? pluginById().get(tool.copy.descriptor) : undefined;
             const label = () => tool.copy ? x(...tool.copy.label) : tool.name;
             const toolStatus = () => clipboard()?.name === tool.name ? clipboard() : null;
+            const registered = () => registry()?.bundles.has(tool.bundle) ? registry()?.tools.has(tool.name) : undefined;
             return <li>
               <details class="harness-disclosure dsh-tool-item">
                 <summary>
-                  <span><strong>{label()}</strong><code>{tool.name}</code></span>
+                  <span>
+                    <strong>{label()}</strong><code>{tool.name}</code>
+                    <Show when={registered() !== undefined}><small classList={{ "dsh-tool-registration": true, ready: registered() }}>
+                      {registered() ? x("隔离核验已注册", "Registered in isolated check") : x("隔离核验未注册", "Missing from isolated registry")}
+                    </small></Show>
+                  </span>
                   <StatusBadge tone={tool.copy?.access === "external" || tool.copy?.access === "review" ? "attention" : "neutral"}>
                     {tool.copy ? x(...ACCESS_LABELS[tool.copy.access]) : x("查阅包说明", "See bundle documentation")}
                   </StatusBadge>

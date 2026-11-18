@@ -7,7 +7,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
 
-from cosmatter.dsh_profile_status import EXPECTED_DSH_PACKAGES, check_dsh_composition, dsh_profile_status
+from cosmatter.dsh_profile_status import EXPECTED_DSH_PACKAGES, _BUNDLE_TOOLS, check_dsh_composition, dsh_profile_status
 
 
 class DshProfileStatusTests(unittest.TestCase):
@@ -126,6 +126,47 @@ class DshProfileStatusTests(unittest.TestCase):
             self.assertTrue(dsh_profile_status(dsh_home=home)["composition_check"]["matches_local_files"])
             (profile / "cordis.patch.yml").write_text("# local edit\n", encoding="utf-8")
             self.assertFalse(dsh_profile_status(dsh_home=home)["composition_check"]["matches_local_files"])
+
+    def test_registry_records_only_observed_tools_and_expires_when_imported_js_changes(self) -> None:
+        manifest = Path(__file__).resolve().parents[1] / "plugins" / "dsh-plugin-group.json"
+        declared = json.loads(manifest.read_text(encoding="utf-8"))["packages"]
+        self.assertEqual(_BUNDLE_TOOLS, {entry["package"]: tuple(entry["tools"]) for entry in declared})
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            profile.mkdir(parents=True)
+            bundle = EXPECTED_DSH_PACKAGES[1]
+            (profile / "package.json").write_text(json.dumps({"dependencies": {bundle: "link:private"}}), encoding="utf-8")
+            self._write_bundle(profile, bundle)
+            client = profile / "node_modules" / bundle / "lib" / "client.js"
+            client.write_text("export const revision = 1", encoding="utf-8")
+            config = f"- id: cosmatter-observability\n  name: '{bundle}'\n"
+
+            def diagnostic(executable, arguments, cwd, environment):
+                if arguments == ["--version"]:
+                    return "0.2.2-rc.3"
+                if arguments[-1] == "--dump-config":
+                    return config
+                self.assertNotEqual(environment["DSH_HOME"], str(home))
+                self.assertNotIn("DEEPSEEK_API_KEY", environment)
+                overlay = json.loads(Path(arguments[arguments.index("--patch") + 1]).read_text(encoding="utf-8"))
+                self.assertIn({"id": "headless-runner", "disabled": True}, overlay)
+                self.assertIn({"id": "llm-deepseek-account", "disabled": True}, overlay)
+                self.assertEqual(overlay[-1]["insert"][0]["name"], client.with_name("index.js").resolve().as_uri())
+                return 'COSMATTER_TOOL_REGISTRY ["cosmatter_workflow_status"]\n'
+
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=diagnostic,
+            ), patch.dict("os.environ", {"DEEPSEEK_API_KEY": "private-test-key"}):
+                observed = check_dsh_composition(dsh_home=home, verify_tools=True)["tool_registry_check"]
+                check_dsh_composition(dsh_home=home)
+            self.assertEqual(observed["registered_tools"], ["cosmatter_workflow_status"])
+            self.assertEqual(dsh_profile_status(dsh_home=home)["tool_registry_check"], observed)
+            client.write_text("export const revision = 2", encoding="utf-8")
+            updated = dsh_profile_status(dsh_home=home)
+            self.assertTrue(updated["composition_check"]["matches_local_files"])
+            self.assertFalse(updated["tool_registry_check"]["matches_local_files"])
+            self.assertNotIn("runtime_stamp", json.dumps(updated))
 
 
 if __name__ == "__main__":

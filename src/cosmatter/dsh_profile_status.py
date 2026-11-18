@@ -31,8 +31,39 @@ _ENTRY = "lib/index.js"
 _PATCH = "cordis.patch.yml"
 _COMPOSITION_RECEIPT = ".cosmatter-composition-check.json"
 _COMPOSITION_SCHEMA = "cosmatter.dsh-composition-check/v1"
+_REGISTRY_RECEIPT = ".cosmatter-tool-registry-check.json"
+_REGISTRY_SCHEMA = "cosmatter.dsh-tool-registry-check/v1"
 _MAX_CONFIG_BYTES = 1_000_000
 _DSH_VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-[a-z0-9.]{1,24})?")
+_REGISTRY_OUTPUT = "COSMATTER_TOOL_REGISTRY "
+_BOOTSTRAP_ENV = {
+    "path", "pathext", "comspec", "systemroot", "windir", "temp", "tmp",
+    "systemdrive", "programdata", "programfiles", "programfiles(x86)", "lang",
+}
+_BUNDLE_TOOLS = dict(zip(EXPECTED_DSH_PACKAGES, (
+    ("cosmatter_mission_create",),
+    ("cosmatter_workflow_status", "cosmatter_stage_contract", "cosmatter_operational_telemetry", "cosmatter_workflow_dag", "cosmatter_artifact_manifest"),
+    ("cosmatter_plugin_catalogue", "cosmatter_plugin_authorization_plan"),
+    ("cosmatter_research_plan_draft", "cosmatter_research_plan_approve", "cosmatter_research_query_execute"),
+    ("cosmatter_candidate_screening_template", "cosmatter_candidate_screening_record"),
+    ("cosmatter_mineru_source_submit", "cosmatter_mineru_task_poll"),
+    ("cosmatter_graph_query", "cosmatter_accepted_evidence_search", "cosmatter_graph_plan", "cosmatter_graph_review_request"),
+), strict=True))
+_REGISTRY_PROBE = """
+export const name = 'cosmatter-tool-registry-check'
+export const inject = ['tools']
+export async function apply(ctx, { expected }) {
+  const deadline = Date.now() + 6000
+  let observed
+  do {
+    const registered = new Set(ctx.tools.definitions().map(({ name }) => name))
+    observed = expected.filter(name => registered.has(name))
+    if (observed.length === expected.length) break
+    await new Promise(resolve => setTimeout(resolve, 50))
+  } while (Date.now() < deadline)
+  process.stdout.write('COSMATTER_TOOL_REGISTRY ' + JSON.stringify(observed) + '\\n', () => process.exit(0))
+}
+"""
 
 
 class DshCompositionCheckError(RuntimeError):
@@ -84,10 +115,14 @@ def dsh_profile_status(profile_name: str = "tui", *, dsh_home: Path | None = Non
     }
     if profile_name == "tui" and not unavailable and (check := _read_composition_check(profile)) is not None:
         snapshot["composition_check"] = check
+    if profile_name == "tui" and not unavailable and (registry := _read_registry_check(profile)) is not None:
+        snapshot["tool_registry_check"] = registry
     return snapshot
 
 
-def check_dsh_composition(*, executable: str = "dsh", dsh_home: Path | None = None) -> dict[str, Any]:
+def check_dsh_composition(
+    *, executable: str = "dsh", dsh_home: Path | None = None, verify_tools: bool = False,
+) -> dict[str, Any]:
     """Run the fixed TUI composition diagnostic and save only its redacted result."""
     dsh = shutil.which(executable)
     if not dsh:
@@ -113,10 +148,76 @@ def check_dsh_composition(*, executable: str = "dsh", dsh_home: Path | None = No
             "dsh_version": version,
             "bundles": composed,
         }
-        _write_composition_receipt(profile, {**check, "configuration_stamp": stamp})
+        _write_profile_receipt(profile, _COMPOSITION_RECEIPT, {**check, "configuration_stamp": stamp})
+        if verify_tools:
+            registry = _check_tool_registry(dsh, profile, composed, version, stamp)
+            check["tool_registry_check"] = registry
     except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
         raise DshCompositionCheckError("DSH composition check timed out or could not complete locally.") from exc
     return {**check, "matches_local_files": True}
+
+
+def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: str, stamp: str) -> dict[str, Any]:
+    bundles = [name for name in composed if _bundle_status(profile / "node_modules" / name, name) == "verified"]
+    if not bundles:
+        raise DshCompositionCheckError("No composed CosMatter bundle has a valid local entry to check.")
+    runtime_stamp = _bundle_runtime_stamp(profile, bundles)
+    expected = sorted(tool for bundle in bundles for tool in _BUNDLE_TOOLS[bundle])
+    with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-registry-") as temporary:
+        directory = Path(temporary)
+        environment = {key: value for key, value in os.environ.items() if key.casefold() in _BOOTSTRAP_ENV}
+        environment.update({key: temporary for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA")})
+        environment.update(DSH_HOME=str(directory / "dsh-home"), CI="1")
+        (directory / "registry.mjs").write_text(_REGISTRY_PROBE, encoding="utf-8")
+        overlay = directory / "registry.json"
+        overlay.write_text(json.dumps([
+            {"id": "headless-runner", "disabled": True},
+            {"id": "llm-deepseek-account", "disabled": True},
+            {"insert": [
+                *({"id": "registry-" + bundle.split("/")[1], "name": (profile / "node_modules" / bundle / _ENTRY).resolve(strict=True).as_uri()} for bundle in bundles),
+                {"id": "cosmatter-tool-registry-check", "name": "./registry.mjs", "config": {"expected": expected}},
+            ]},
+        ]), encoding="utf-8")
+        output = _run_dsh_diagnostic(dsh, [
+            "--profile", "cosmatter-registry-check", "--from-default-profile", "headless",
+            "--patch", str(overlay), "CosMatter tool registration check",
+        ], temporary, environment)
+    try:
+        results = [line.removeprefix(_REGISTRY_OUTPUT) for line in output.splitlines() if line.startswith(_REGISTRY_OUTPUT)]
+        tools = json.loads(results[0]) if len(results) == 1 else None
+        if not isinstance(tools, list) or tools != [name for name in expected if name in tools]:
+            raise ValueError("unexpected tool registry output")
+    except ValueError as exc:
+        raise DshCompositionCheckError("DSH did not return a valid isolated tool registry.") from exc
+    if stamp != _configuration_stamp(profile) or runtime_stamp != _bundle_runtime_stamp(profile, bundles):
+        raise DshCompositionCheckError("The local profile or bundle files changed during the registration check. Run it again.")
+    check = {
+        "schema_version": _REGISTRY_SCHEMA,
+        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "dsh_version": version, "bundles": bundles, "registered_tools": tools,
+    }
+    _write_profile_receipt(profile, _REGISTRY_RECEIPT, {**check, "configuration_stamp": stamp, "runtime_stamp": runtime_stamp})
+    return {**check, "matches_local_files": True}
+
+
+def _bundle_runtime_stamp(profile: Path, bundles: list[str]) -> str:
+    digest = hashlib.sha256()
+    for bundle in bundles:
+        root = (profile / "node_modules" / bundle).resolve(strict=True)
+        files = sorted((root / "lib").rglob("*.js"))
+        if not files or len(files) > 64:
+            raise OSError("Invalid compiled DSH bundle inventory")
+        for file in files:
+            resolved = file.resolve(strict=True)
+            if not resolved.is_relative_to(root):
+                raise OSError("Invalid compiled DSH bundle path")
+            with resolved.open("rb") as stream:
+                content = stream.read(_MAX_CONFIG_BYTES + 1)
+            if len(content) > _MAX_CONFIG_BYTES:
+                raise OSError("Compiled DSH bundle file exceeds the size limit")
+            digest.update(f"{bundle}/{file.relative_to(root).as_posix()}\n".encode("utf-8"))
+            digest.update(hashlib.sha256(content).digest())
+    return digest.hexdigest()
 
 
 def _run_dsh_diagnostic(dsh: str, arguments: list[str], cwd: str, environment: dict[str, str]) -> str:
@@ -191,29 +292,35 @@ def _profile_config_digest(profile: Path) -> str | None:
     return hashlib.sha256(contents).hexdigest()
 
 
-def _write_composition_receipt(profile: Path, payload: dict[str, Any]) -> None:
+def _write_profile_receipt(profile: Path, filename: str, payload: dict[str, Any]) -> None:
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=profile, delete=False) as stream:
         temporary = Path(stream.name)
         try:
             json.dump(payload, stream)
             stream.close()
-            temporary.replace(profile / _COMPOSITION_RECEIPT)
+            temporary.replace(profile / filename)
         finally:
             temporary.unlink(missing_ok=True)
 
 
-def _read_composition_check(profile: Path) -> dict[str, Any] | None:
+def _read_profile_receipt(profile: Path, filename: str) -> dict[str, Any] | None:
     try:
         root = profile.resolve()
-        path = (root / _COMPOSITION_RECEIPT).resolve(strict=True)
+        path = (root / filename).resolve(strict=True)
         if not path.is_relative_to(root) or not path.is_file():
             return None
         with path.open("rb") as stream:
-            data = stream.read(2049)
-        if len(data) > 2048:
-            return None
+            data = stream.read(4097)
         payload = json.loads(data)
-        if not isinstance(payload, dict) or set(payload) != {"schema_version", "checked_at", "dsh_version", "bundles", "configuration_stamp"}:
+        return payload if len(data) <= 4096 and isinstance(payload, dict) else None
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _read_composition_check(profile: Path) -> dict[str, Any] | None:
+    try:
+        payload = _read_profile_receipt(profile, _COMPOSITION_RECEIPT)
+        if payload is None or set(payload) != {"schema_version", "checked_at", "dsh_version", "bundles", "configuration_stamp"}:
             return None
         version, checked_at, bundles = payload["dsh_version"], payload["checked_at"], payload["bundles"]
         stamp = payload["configuration_stamp"]
@@ -232,6 +339,34 @@ def _read_composition_check(profile: Path) -> dict[str, Any] | None:
         }
     except (OSError, RuntimeError, ValueError):
         return None
+
+
+def _read_registry_check(profile: Path) -> dict[str, Any] | None:
+    payload = _read_profile_receipt(profile, _REGISTRY_RECEIPT)
+    if payload is None or set(payload) != {"schema_version", "checked_at", "dsh_version", "bundles", "registered_tools", "configuration_stamp", "runtime_stamp"}:
+        return None
+    version, checked_at, bundles = payload["dsh_version"], payload["checked_at"], payload["bundles"]
+    tools, stamp, runtime_stamp = payload["registered_tools"], payload["configuration_stamp"], payload["runtime_stamp"]
+    if (
+        payload["schema_version"] != _REGISTRY_SCHEMA
+        or not isinstance(version, str) or not _DSH_VERSION.fullmatch(version)
+        or not isinstance(checked_at, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", checked_at)
+        or not isinstance(bundles, list) or not bundles or bundles != [name for name in EXPECTED_DSH_PACKAGES if name in bundles]
+        or not all(isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) for value in (stamp, runtime_stamp))
+    ):
+        return None
+    expected = sorted(tool for bundle in bundles for tool in _BUNDLE_TOOLS[bundle])
+    if not isinstance(tools, list) or tools != [name for name in expected if name in tools]:
+        return None
+    try:
+        datetime.fromisoformat(checked_at)
+    except ValueError:
+        return None
+    try:
+        matches = stamp == _configuration_stamp(profile) and runtime_stamp == _bundle_runtime_stamp(profile, bundles)
+    except (OSError, RuntimeError, ValueError):
+        matches = False
+    return {key: payload[key] for key in ("schema_version", "checked_at", "dsh_version", "bundles", "registered_tools")} | {"matches_local_files": matches}
 
 
 def _bundle_status(directory: Path, package_name: str) -> str:

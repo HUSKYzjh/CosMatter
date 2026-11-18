@@ -1,3 +1,5 @@
+import { packages as dshBundles } from "../../plugins/dsh-plugin-group.json";
+
 export interface LocalApiStatus {
   api_mode: "loopback_only";
   providers: Record<string, boolean>;
@@ -42,6 +44,10 @@ export interface DshCompositionCheck {
   bundles: string[];
   matches_local_files: boolean;
 }
+export interface DshToolRegistryCheck extends Omit<DshCompositionCheck, "schema_version"> {
+  schema_version: "cosmatter.dsh-tool-registry-check/v1";
+  registered_tools: string[];
+}
 export interface DshProfileStatus {
   schema_version: "cosmatter.dsh-profile-status/v2";
   profile_name: "tui";
@@ -52,6 +58,7 @@ export interface DshProfileStatus {
   packages: DshProfilePackageStatus[];
   composition_status: "not_checked_by_http_api";
   composition_check?: DshCompositionCheck;
+  tool_registry_check?: DshToolRegistryCheck;
   trust_status: "local_installation_snapshot_not_profile_boot_or_plugin_execution";
 }
 export type DshProfileHealth = "disabled" | "loading" | "ready" | "unavailable";
@@ -225,21 +232,23 @@ const REMINDER_RULES: Record<string, { scope: "run" | "project_memory"; action: 
 };
 const REMINDER_STAGES = new Set<string>(["intake", "plan", "retrieval", "screening", "parse", "extraction", "gap", "report", "evaluation"]);
 const LOCAL_API_PROVIDER_KEYS = ["deepseek", "sciverse", "mineru", "openalex", "crossref", "crossref_polite_contact"] as const;
-const DSH_PACKAGE_NAMES = ["@cosmatter/dsh-mission-plugin", "@cosmatter/dsh-observability-plugin", "@cosmatter/dsh-policy-plugin", "@cosmatter/dsh-research-plugin", "@cosmatter/dsh-review-plugin", "@cosmatter/dsh-document-plugin", "@cosmatter/dsh-graph-plugin"] as const;
+const DSH_PACKAGE_NAMES = dshBundles.map((bundle) => bundle.package);
 const exactObjectKeys = (value: unknown, keys: readonly string[]) => Boolean(value && typeof value === "object" && !Array.isArray(value) && (() => { const actual = Object.keys(value as Record<string, unknown>); return actual.length === keys.length && actual.every((key) => keys.includes(key)); })());
 
 /** Accept the redacted fixed-profile snapshot only when the package states agree. */
 export function isDshProfileStatus(value: unknown): value is DshProfileStatus {
   const keys = ["schema_version", "profile_name", "installation_state", "expected_bundle_count", "declared_bundle_count", "installed_bundle_count", "packages", "composition_status", "trust_status"];
-  const hasCheck = exactObjectKeys(value, [...keys, "composition_check"]);
-  if (!hasCheck && !exactObjectKeys(value, keys)) return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const status = value as Record<string, unknown>;
+  const optional = ["composition_check", "tool_registry_check"].filter((key) => Object.hasOwn(status, key));
+  if (!exactObjectKeys(status, [...keys, ...optional])) return false;
   if (status.schema_version !== "cosmatter.dsh-profile-status/v2"
     || status.profile_name !== "tui"
     || status.expected_bundle_count !== DSH_PACKAGE_NAMES.length
     || status.composition_status !== "not_checked_by_http_api"
     || status.trust_status !== "local_installation_snapshot_not_profile_boot_or_plugin_execution"
-    || (hasCheck && !isDshCompositionCheck(status.composition_check))
+    || (optional.includes("composition_check") && !isDshCompositionCheck(status.composition_check))
+    || (optional.includes("tool_registry_check") && !isDshToolRegistryCheck(status.tool_registry_check))
     || !Array.isArray(status.packages)
     || status.packages.length !== DSH_PACKAGE_NAMES.length) return false;
   const packagesAreValid = status.packages.every((item, index) => {
@@ -262,8 +271,21 @@ export function isDshProfileStatus(value: unknown): value is DshProfileStatus {
 function isDshCompositionCheck(value: unknown): value is DshCompositionCheck {
   if (!exactObjectKeys(value, ["schema_version", "checked_at", "dsh_version", "bundles", "matches_local_files"])) return false;
   const check = value as Record<string, unknown>;
-  if (check.schema_version !== "cosmatter.dsh-composition-check/v1"
-    || typeof check.checked_at !== "string"
+  return check.schema_version === "cosmatter.dsh-composition-check/v1" && isDshCheckFields(check);
+}
+
+function isDshToolRegistryCheck(value: unknown): value is DshToolRegistryCheck {
+  if (!exactObjectKeys(value, ["schema_version", "checked_at", "dsh_version", "bundles", "matches_local_files", "registered_tools"])) return false;
+  const check = value as Record<string, unknown>;
+  if (check.schema_version !== "cosmatter.dsh-tool-registry-check/v1" || !isDshCheckFields(check) || !check.bundles.length || !Array.isArray(check.registered_tools)) return false;
+  const tools = check.registered_tools;
+  const expected = dshBundles.filter(({ package: name }) => check.bundles.includes(name)).flatMap(({ tools }) => tools).sort();
+  const filtered = expected.filter((name) => tools.includes(name));
+  return filtered.length === tools.length && filtered.every((name, index) => name === tools[index]);
+}
+
+function isDshCheckFields(check: Record<string, unknown>): check is Record<string, unknown> & Pick<DshCompositionCheck, "bundles" | "checked_at" | "dsh_version" | "matches_local_files"> {
+  if (typeof check.checked_at !== "string"
     || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(check.checked_at)
     || typeof check.dsh_version !== "string"
     || !/^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[a-z0-9.]{1,24})?$/.test(check.dsh_version)
