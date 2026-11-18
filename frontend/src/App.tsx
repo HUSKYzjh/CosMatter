@@ -1,6 +1,7 @@
 import { For, Show, Suspense, batch, createEffect, createMemo, createSignal, lazy, onCleanup, onMount, untrack } from "solid-js";
 
 import { FleetDecoration } from "./FleetDecoration";
+import { DshRunHandoff } from "./DshRunHandoff";
 import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget } from "./Launchpad";
 import { type LaunchPreviewStage } from "./launchStages";
 import { launchMissionMissingFields } from "./launchMissionValidation";
@@ -1944,6 +1945,7 @@ export function App() {
           {feedback().copied ? (feedback().format === "id" ? text("运行 ID 已复制。", "Run ID copied.") : text("本机任务链接已复制。", "Local run link copied.")) : text("剪贴板不可用。", "Clipboard unavailable.")}
           <Show when={!feedback().copied && feedback().format === "link"}> <a href={localRunLink(window.location.origin, runId())} target="_blank" rel="noopener">{text("打开本机任务链接", "Open the local run link")}</a></Show>
         </p>}</Show>
+        <Show when={runId()} keyed>{(activeRunId) => <DshRunHandoff runId={activeRunId} locale={language()} />}</Show>
       </div>}</Show>
       <details class="rail-context" open={railContextOpen()} onToggle={(event) => setRailContextOpen(event.currentTarget.open)}>
         <summary><span>{text("任务概览与本地状态", "Mission context and local status")}</span><small title={text("展开查看航线、审核锚点与本地状态", "Expand route, review anchor, and local status")}>{railContextSummary()}</small></summary>

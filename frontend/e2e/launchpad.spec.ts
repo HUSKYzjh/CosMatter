@@ -708,13 +708,26 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await input.press("Enter");
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
   await expect(page.getByText("cached-running.pdf", { exact: true })).toBeVisible(lazyWorkspaceContentLoad);
-  await expect(page.locator(".rail-run-identity code")).toHaveText(runId);
+  await expect(page.locator(".rail-run-id code")).toHaveText(runId);
   await page.getByRole("button", { name: "复制运行 ID" }).click();
   await expect(page.locator(".rail-run-identity").getByRole("status")).toHaveText("运行 ID 已复制。");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(runId);
   await page.getByRole("button", { name: "复制任务链接" }).click();
   await expect(page.locator(".rail-run-identity").getByRole("status")).toHaveText("本机任务链接已复制。");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(page.url());
+  const handoff = page.locator(".dsh-run-handoff");
+  await handoff.locator("summary").press("Enter");
+  const command = "cosmatter dsh-run-status " + runId + " --port " + new URL(page.url()).port;
+  await expect(handoff.locator("code")).toHaveText(command);
+  await handoff.getByRole("button", { name: "复制 DSH 命令" }).click();
+  await expect(handoff.getByRole("status")).toHaveText("DSH 命令已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(command);
+  await page.evaluate(() => Object.defineProperty(navigator.clipboard, "writeText", {
+    value: () => Promise.reject(new DOMException("Clipboard access denied", "NotAllowedError")),
+  }));
+  await handoff.getByRole("button", { name: "复制 DSH 命令" }).click();
+  await expect(handoff.getByRole("status")).toHaveText("剪贴板不可用，可选中上方命令复制。");
+  expect(await handoff.evaluate((element) => element.scrollWidth === element.clientWidth)).toBe(true);
   await page.getByRole("link", { name: "CosMatter", exact: true }).click();
   expect(new URL(page.url()).hash).toBe("");
   await page.getByRole("button", { name: /^续航任务/ }).click();
@@ -761,7 +774,7 @@ test("opens local DSH links directly and keeps a failed linked run editable", as
   const cached = page.waitForResponse(`**/api/runs/${runId}/pdf/tasks/cached`);
   await page.goto(`/?api=local#run=${runId}`);
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
-  await expect(page.locator(".rail-run-identity code")).toHaveText(runId);
+  await expect(page.locator(".rail-run-id code")).toHaveText(runId);
   await cached;
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
   expect(runRequests.every((request) => request.startsWith("GET "))).toBe(true);

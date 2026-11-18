@@ -36,6 +36,9 @@ _REGISTRY_SCHEMA = "cosmatter.dsh-tool-registry-check/v1"
 _MAX_CONFIG_BYTES = 1_000_000
 _DSH_VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-[a-z0-9.]{1,24})?")
 _REGISTRY_OUTPUT = "COSMATTER_TOOL_REGISTRY "
+_RUN_STATUS_OUTPUT = "COSMATTER_DSH_RUN_STATUS "
+_OBSERVABILITY_BUNDLE = "@cosmatter/dsh-observability-plugin"
+_LOCAL_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,254}")
 _BOOTSTRAP_ENV = {
     "path", "pathext", "comspec", "systemroot", "windir", "temp", "tmp",
     "systemdrive", "programdata", "programfiles", "programfiles(x86)", "lang",
@@ -62,6 +65,41 @@ export async function apply(ctx, { expected }) {
     await new Promise(resolve => setTimeout(resolve, 50))
   } while (Date.now() < deadline)
   process.stdout.write('COSMATTER_TOOL_REGISTRY ' + JSON.stringify(observed) + '\\n', () => process.exit(0))
+}
+"""
+_RUN_STATUS_PROBE = """
+export const name = 'cosmatter-run-status-reader'
+export const inject = ['tools']
+export async function apply(ctx, { runId }) {
+  const send = value => process.stdout.write('COSMATTER_DSH_RUN_STATUS ' + JSON.stringify(value) + '\\n', () => process.exit(0))
+  const names = ['cosmatter_workflow_status', 'cosmatter_stage_contract']
+  try {
+    const deadline = Date.now() + 5000
+    while (!names.every(name => ctx.tools.definitions().some(tool => tool.name === name))) {
+      if (Date.now() >= deadline) return send({error: 'not_registered'})
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    const execution = await ctx.tools.execute({
+      calls: names.map(name => ({type: 'tool-call', id: name, name, arguments: JSON.stringify({run_id: runId})})),
+      signal: AbortSignal.timeout(8000),
+    })
+    const results = new Map(execution.results.map(({callId, result}) => [callId, result]))
+    const [workflow, contract] = names.map(name => results.get(name))
+    if (!workflow || !contract || workflow.isError || contract.isError) return send({error: 'run_unavailable'})
+    const status = workflow.value
+    const stages = contract.value
+    if (status.run_id !== runId || stages.run_id !== runId || status.mission_id !== stages.mission_id || status.next_stage !== stages.next_stage) {
+      return send({error: 'snapshot_changed'})
+    }
+    return send({
+      ...status,
+      checked_via: names,
+      runtime_safety: stages.runtime_safety,
+      next_stage_contract: stages.stages.find(({stage}) => stage === status.next_stage) ?? null,
+    })
+  } catch {
+    return send({error: 'run_unavailable'})
+  }
 }
 """
 
@@ -163,32 +201,9 @@ def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: 
         raise DshCompositionCheckError("No composed CosMatter bundle has a valid local entry to check.")
     runtime_stamp = _bundle_runtime_stamp(profile, bundles)
     expected = sorted(tool for bundle in bundles for tool in _BUNDLE_TOOLS[bundle])
-    with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-registry-") as temporary:
-        directory = Path(temporary)
-        environment = {key: value for key, value in os.environ.items() if key.casefold() in _BOOTSTRAP_ENV}
-        environment.update({key: temporary for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA")})
-        environment.update(DSH_HOME=str(directory / "dsh-home"), CI="1")
-        (directory / "registry.mjs").write_text(_REGISTRY_PROBE, encoding="utf-8")
-        overlay = directory / "registry.json"
-        overlay.write_text(json.dumps([
-            {"id": "headless-runner", "disabled": True},
-            {"id": "llm-deepseek-account", "disabled": True},
-            {"insert": [
-                *({"id": "registry-" + bundle.split("/")[1], "name": (profile / "node_modules" / bundle / _ENTRY).resolve(strict=True).as_uri()} for bundle in bundles),
-                {"id": "cosmatter-tool-registry-check", "name": "./registry.mjs", "config": {"expected": expected}},
-            ]},
-        ]), encoding="utf-8")
-        output = _run_dsh_diagnostic(dsh, [
-            "--profile", "cosmatter-registry-check", "--from-default-profile", "headless",
-            "--patch", str(overlay), "CosMatter tool registration check",
-        ], temporary, environment)
-    try:
-        results = [line.removeprefix(_REGISTRY_OUTPUT) for line in output.splitlines() if line.startswith(_REGISTRY_OUTPUT)]
-        tools = json.loads(results[0]) if len(results) == 1 else None
-        if not isinstance(tools, list) or tools != [name for name in expected if name in tools]:
-            raise ValueError("unexpected tool registry output")
-    except ValueError as exc:
-        raise DshCompositionCheckError("DSH did not return a valid isolated tool registry.") from exc
+    tools = _run_isolated_dsh_probe(dsh, profile, dict.fromkeys(bundles), _REGISTRY_PROBE, {"expected": expected}, _REGISTRY_OUTPUT)
+    if not isinstance(tools, list) or tools != [name for name in expected if name in tools]:
+        raise DshCompositionCheckError("DSH did not return a valid isolated tool registry.")
     if stamp != _configuration_stamp(profile) or runtime_stamp != _bundle_runtime_stamp(profile, bundles):
         raise DshCompositionCheckError("The local profile or bundle files changed during the registration check. Run it again.")
     check = {
@@ -198,6 +213,70 @@ def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: 
     }
     _write_profile_receipt(profile, _REGISTRY_RECEIPT, {**check, "configuration_stamp": stamp, "runtime_stamp": runtime_stamp})
     return {**check, "matches_local_files": True}
+
+
+def read_dsh_run_status(
+    run_id: str, *, port: int = 8765, executable: str = "dsh", dsh_home: Path | None = None,
+) -> dict[str, Any]:
+    """Read one existing run through the installed DSH observability tools."""
+    if not _LOCAL_RUN_ID.fullmatch(run_id):
+        raise DshCompositionCheckError("Run ID must use letters, numbers, underscores, or hyphens.")
+    if not 1 <= port <= 65535:
+        raise DshCompositionCheckError("Port must be between 1 and 65535.")
+    dsh = shutil.which(executable)
+    if not dsh:
+        raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
+    profile = (dsh_home or _default_dsh_home()).resolve() / "profiles" / "tui"
+    if _bundle_status(profile / "node_modules" / _OBSERVABILITY_BUNDLE, _OBSERVABILITY_BUNDLE) != "verified":
+        raise DshCompositionCheckError("The local tui profile has no valid CosMatter observability bundle.")
+    result = _run_isolated_dsh_probe(
+        dsh, profile, {_OBSERVABILITY_BUNDLE: {"baseUrl": f"http://127.0.0.1:{port}"}},
+        _RUN_STATUS_PROBE, {"runId": run_id}, _RUN_STATUS_OUTPUT,
+    )
+    if isinstance(result, dict):
+        error = result.get("error")
+        if error == "not_registered":
+            raise DshCompositionCheckError("DSH did not register the CosMatter status tools.")
+        if error == "run_unavailable":
+            raise DshCompositionCheckError("DSH could not read the run. Check the run ID and that CosMatter is serving the requested port.")
+        if error == "snapshot_changed":
+            raise DshCompositionCheckError("The workflow changed during the read. Run the command again.")
+        if "error" not in result and result.get("run_id") == run_id:
+            return result
+    raise DshCompositionCheckError("DSH did not return a status for the requested run.")
+
+
+def _run_isolated_dsh_probe(
+    dsh: str, profile: Path, bundles: dict[str, dict[str, Any] | None], script: str,
+    probe_config: dict[str, Any], prefix: str,
+) -> Any:
+    try:
+        with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-probe-") as temporary:
+            directory = Path(temporary)
+            environment = {key: value for key, value in os.environ.items() if key.casefold() in _BOOTSTRAP_ENV}
+            environment.update({key: temporary for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA")})
+            environment.update(DSH_HOME=str(directory / "dsh-home"), CI="1")
+            (directory / "probe.mjs").write_text(script, encoding="utf-8")
+            overlay = directory / "probe.json"
+            entries = [
+                {"id": "probe-" + name.split("/")[1], "name": (profile / "node_modules" / name / _ENTRY).resolve(strict=True).as_uri(), "config": config or {}}
+                for name, config in bundles.items()
+            ]
+            overlay.write_text(json.dumps([
+                {"id": "headless-runner", "disabled": True},
+                {"id": "llm-deepseek-account", "disabled": True},
+                {"insert": [*entries, {"id": "cosmatter-isolated-probe", "name": "./probe.mjs", "config": probe_config}]},
+            ]), encoding="utf-8")
+            output = _run_dsh_diagnostic(dsh, [
+                "--profile", "cosmatter-isolated-probe", "--from-default-profile", "headless",
+                "--patch", str(overlay), "CosMatter local diagnostic",
+            ], temporary, environment)
+        results = [line.removeprefix(prefix) for line in output.splitlines() if line.startswith(prefix)]
+        if len(results) == 1:
+            return json.loads(results[0])
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        raise DshCompositionCheckError("The isolated DSH diagnostic could not complete.") from exc
+    raise DshCompositionCheckError("The isolated DSH diagnostic did not return a result.")
 
 
 def _bundle_runtime_stamp(profile: Path, bundles: list[str]) -> str:
@@ -226,7 +305,7 @@ def _run_dsh_diagnostic(dsh: str, arguments: list[str], cwd: str, environment: d
         capture_output=True, timeout=20, check=False,
     )
     if result.returncode or len(result.stdout) > _MAX_CONFIG_BYTES:
-        raise DshCompositionCheckError("DSH could not produce a valid local configuration snapshot.")
+        raise DshCompositionCheckError("DSH could not produce a valid local diagnostic result.")
     return result.stdout.decode("utf-8")
 
 

@@ -60,7 +60,7 @@ export class CosMatterObservabilityClient {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.config.timeoutMs)
     const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true })
     try {
-      const response = await this.request(new URL(`/api/runs/${encodeURIComponent(runIdValue)}/workflow-status`, this.config.baseUrl), { method: 'GET', headers: { Accept: 'application/json' }, signal: controller.signal })
+      const response = await this.request(new URL(`/api/runs/${encodeURIComponent(runIdValue)}/workflow-status`, this.config.baseUrl), { method: 'GET', redirect: 'error', headers: { Accept: 'application/json' }, signal: controller.signal })
       const length = Number(response.headers.get('content-length') ?? 0)
       if (length > this.config.maxResponseBytes) throw new Error('CosMatter workflow status response exceeds configured size')
       const text = await response.text()
@@ -90,7 +90,7 @@ export class CosMatterObservabilityClient {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.config.timeoutMs)
     const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true })
     try {
-      const response = await this.request(new URL(`/api/runs/${encodeURIComponent(runIdValue)}/stage-contract`, this.config.baseUrl), { method: 'GET', headers: { Accept: 'application/json' }, signal: controller.signal })
+      const response = await this.request(new URL(`/api/runs/${encodeURIComponent(runIdValue)}/stage-contract`, this.config.baseUrl), { method: 'GET', redirect: 'error', headers: { Accept: 'application/json' }, signal: controller.signal })
       const length = Number(response.headers.get('content-length') ?? 0)
       if (length > this.config.maxResponseBytes) throw new Error('CosMatter stage contract response exceeds configured size')
       const text = await response.text()

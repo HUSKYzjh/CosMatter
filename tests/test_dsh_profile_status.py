@@ -7,7 +7,10 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
 
-from cosmatter.dsh_profile_status import EXPECTED_DSH_PACKAGES, _BUNDLE_TOOLS, check_dsh_composition, dsh_profile_status
+from cosmatter.dsh_profile_status import (
+    EXPECTED_DSH_PACKAGES, DshCompositionCheckError, _BUNDLE_TOOLS,
+    check_dsh_composition, dsh_profile_status, read_dsh_run_status,
+)
 
 
 class DshProfileStatusTests(unittest.TestCase):
@@ -167,6 +170,36 @@ class DshProfileStatusTests(unittest.TestCase):
             self.assertTrue(updated["composition_check"]["matches_local_files"])
             self.assertFalse(updated["tool_registry_check"]["matches_local_files"])
             self.assertNotIn("runtime_stamp", json.dumps(updated))
+
+    def test_run_status_uses_installed_observability_bundle_and_requires_the_requested_id(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = EXPECTED_DSH_PACKAGES[1]
+            self._write_bundle(profile, bundle)
+            payload = {"run_id": "run_001", "next_stage": "plan"}
+
+            def diagnostic(executable, arguments, cwd, environment):
+                overlay = json.loads(Path(arguments[arguments.index("--patch") + 1]).read_text(encoding="utf-8"))
+                entries = overlay[-1]["insert"]
+                self.assertEqual(len(entries), 2)
+                self.assertEqual(entries[0]["name"], (profile / "node_modules" / bundle / "lib" / "index.js").resolve().as_uri())
+                self.assertEqual(entries[0]["config"], {"baseUrl": "http://127.0.0.1:8769"})
+                self.assertEqual(entries[1]["config"], {"runId": "run_001"})
+                return "COSMATTER_DSH_RUN_STATUS " + json.dumps(payload)
+
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=diagnostic,
+            ) as launch:
+                self.assertEqual(read_dsh_run_status("run_001", port=8769, dsh_home=home), payload)
+                payload["run_id"] = "different_run"
+                with self.assertRaisesRegex(DshCompositionCheckError, "requested run"):
+                    read_dsh_run_status("run_001", port=8769, dsh_home=home)
+                with self.assertRaisesRegex(DshCompositionCheckError, "Run ID"):
+                    read_dsh_run_status("run_001; bad", port=8769, dsh_home=home)
+                with self.assertRaisesRegex(DshCompositionCheckError, "Port"):
+                    read_dsh_run_status("run_001", port=65536, dsh_home=home)
+                self.assertEqual(launch.call_count, 2)
 
 
 if __name__ == "__main__":

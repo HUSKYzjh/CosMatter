@@ -70,6 +70,9 @@ DSH 原生工具执行器通过临时 CosMatter HTTP 服务读取正式契约目
 `cosmatter_mission_create` 会返回 `workbench_url`。在运行 CosMatter 的同一台机器打开这个链接，即可直接进入任务。
 也可以在「续航任务 → 按运行 ID 打开」粘贴 `run_id`，或从任务页复制本机链接。
 首次打开读取已有工件和保存的 PDF 状态；需要更新 PDF 状态时，可在舰桥手动刷新。
+从舰桥回到终端时，展开运行 ID 下方的「在 DSH 查看进度」，复制命令到 CosMatter 虚拟环境运行。
+命令使用页面的本机端口和当前 `run_id`，由 DSH 调用 `cosmatter_workflow_status` 与 `cosmatter_stage_contract`，
+返回同一任务的就绪度和下一阶段门禁。诊断进程仅派发这两个本机读取工具。
 
 ```powershell
 Set-Location D:\CosMatter\development\CosMatter

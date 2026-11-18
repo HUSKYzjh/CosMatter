@@ -85,7 +85,7 @@ from .crossref import CrossrefAdapter, CrossrefRequestError
 from .crossref_relation_expansion import CrossrefRelationExpansionError, build_crossref_relation_expansion, write_crossref_relation_expansion
 from .paper_structure import PaperStructureError, paper_structure_from_review, write_paper_structure_for_document
 from .ui_preview import UiPreviewError, serve_ui_preview
-from .dsh_profile_status import DshCompositionCheckError, check_dsh_composition
+from .dsh_profile_status import DshCompositionCheckError, check_dsh_composition, read_dsh_run_status
 from .relation_reconciliation import RelationReconciliationError, reconciliation_from_review, write_relation_reconciliation
 from .condition_normalization import ConditionNormalizationError, condition_normalization_from_review, write_condition_normalization
 from .reporting import ReportGateError, build_evidence_manifest, build_structured_research_report, write_mission_report, write_structured_research_report
@@ -142,6 +142,15 @@ def command_check_config(_: argparse.Namespace) -> int:
 def command_check_dsh_profile(args: argparse.Namespace) -> int:
     try:
         _json_print(check_dsh_composition(executable=args.dsh_executable, verify_tools=args.verify_tools))
+    except DshCompositionCheckError as error:
+        _json_print({"error": str(error)})
+        return 2
+    return 0
+
+
+def command_dsh_run_status(args: argparse.Namespace) -> int:
+    try:
+        _json_print(read_dsh_run_status(args.run_id, port=args.port, executable=args.dsh_executable))
     except DshCompositionCheckError as error:
         _json_print({"error": str(error)})
         return 2
@@ -3608,6 +3617,12 @@ def build_parser() -> argparse.ArgumentParser:
     dsh_check.add_argument("--verify-tools", action="store_true", help="load the installed CosMatter bundles in an isolated DSH process and report their registered tools")
     dsh_check.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_check.set_defaults(handler=command_check_dsh_profile)
+
+    dsh_status = commands.add_parser("dsh-run-status", help="read an existing local run through DSH observability tools")
+    dsh_status.add_argument("run_id", help="existing CosMatter run ID")
+    dsh_status.add_argument("--port", type=int, default=8765, help="port for the local CosMatter preview API")
+    dsh_status.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
+    dsh_status.set_defaults(handler=command_dsh_run_status)
 
     preview = commands.add_parser("preview-ui", help="serve a loopback-only UI; credentials and unselected run artifacts are never exposed")
     preview.add_argument("--port", type=int, default=8765)

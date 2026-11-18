@@ -60,6 +60,7 @@ test('client reads only a bounded workflow-status projection', async () => {
   assert.equal(result.next_stage, 'screening')
   assert.equal(request.url, 'http://127.0.0.1:8765/api/runs/run_001/workflow-status')
   assert.equal(request.options.method, 'GET')
+  assert.equal(request.options.redirect, 'error')
 })
 
 test('client rejects non-loopback endpoints and sensitive response fields', async () => {
@@ -79,13 +80,14 @@ test('client reads only fixed artifact cards and rejects arbitrary download path
 
 test('client reads a fixed non-executing stage contract and rejects changed recovery routes', async () => {
   let request
-  const client = new CosMatterObservabilityClient({}, async url => {
-    request = String(url)
+  const client = new CosMatterObservabilityClient({}, async (url, options) => {
+    request = { url: String(url), options }
     return new Response(JSON.stringify(contract), { status: 200 })
   })
   const result = await client.stageContract('run_001')
   assert.equal(result.stages[1].recovery_route, 'plan_review')
-  assert.equal(request, 'http://127.0.0.1:8765/api/runs/run_001/stage-contract')
+  assert.equal(request.url, 'http://127.0.0.1:8765/api/runs/run_001/stage-contract')
+  assert.equal(request.options.redirect, 'error')
   const unsafe = structuredClone(contract); unsafe.stages[0].recovery_route = 'execute_arbitrary_command'
   const unsafeClient = new CosMatterObservabilityClient({}, async () => new Response(JSON.stringify(unsafe), { status: 200 }))
   await assert.rejects(() => unsafeClient.stageContract('run_001'), /template is invalid/)

@@ -517,6 +517,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .rail-run-actions { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 100%; }
 .rail-run-identity code { color: var(--ink); font: max(.72rem, 12px)/1.4 ui-monospace, "Cascadia Mono", monospace; overflow-wrap: anywhere; user-select: all; }
 .rail-run-identity > p { flex: 1 0 100%; margin: 0; }
+.dsh-run-handoff { flex: 1 0 100%; min-width: 0; }
+.dsh-run-handoff > div { display: grid; justify-items: start; gap: .45rem; min-width: 0; padding: .5rem .6rem; border-top: 1px solid var(--line); }
+.dsh-run-handoff > div > p { margin: 0; color: var(--muted); font-size: max(.72rem, 12px); line-height: 1.45; overflow-wrap: anywhere; }
+.dsh-run-handoff code { display: block; max-width: 100%; }
 @media (max-width: 520px) {
   .run-id-form-row { grid-template-columns: minmax(0, 1fr); }
   .run-continuation-card > .cm-action { width: 100%; }
