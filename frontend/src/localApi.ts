@@ -463,6 +463,27 @@ export async function getSavedSourceParses(runId: string, missionId: string): Pr
 export async function getPdfStatus(runId: string, documentId: string): Promise<PdfTaskStatus> { const task = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/status`); if (!isPdfTaskStatus(task)) throw new LocalApiRequestError("transport"); return task; }
 export function privateMarkdownUrl(runId: string, documentId: string): string { return `./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/markdown`; }
 export function fetchedMarkdownUrl(runId: string, documentId: string): string { return `./api/runs/${encodeURIComponent(runId)}/source-markdown?document_id=${encodeURIComponent(documentId)}`; }
+export interface PrivateMarkdownLineSource { runId: string; documentId: string; fetched: boolean; }
+export const PRIVATE_MARKDOWN_WINDOW_SIZE = 20;
+export interface PrivateMarkdownLine { number: number; text: string; truncated: boolean; }
+export interface PrivateMarkdownWindow { start: number; total_lines: number; lines: PrivateMarkdownLine[]; }
+export async function getPrivateMarkdownLines(source: PrivateMarkdownLineSource, start: number): Promise<PrivateMarkdownWindow> {
+  const run = encodeURIComponent(source.runId);
+  const documentId = encodeURIComponent(source.documentId);
+  const suffix = source.fetched ? `source-markdown-lines?document_id=${documentId}&start=${start}` : `pdf/${documentId}/markdown-lines?start=${start}`;
+  const response = await request<unknown>(`./api/runs/${run}/${suffix}`, { redirect: "error" });
+  if (!exactObjectKeys(response, ["run_id", "document_id", "start", "total_lines", "lines"])) throw new LocalApiRequestError("transport");
+  const data = response as Record<string, unknown>;
+  if (data.run_id !== source.runId || data.document_id !== source.documentId || data.start !== start
+    || typeof data.total_lines !== "number" || !Number.isSafeInteger(data.total_lines) || data.total_lines < start
+    || !Array.isArray(data.lines) || data.lines.length !== Math.min(PRIVATE_MARKDOWN_WINDOW_SIZE, data.total_lines - start + 1)) throw new LocalApiRequestError("transport");
+  for (const [index, line] of data.lines.entries()) {
+    if (!exactObjectKeys(line, ["number", "text", "truncated"]) || line.number !== start + index
+      || typeof line.text !== "string" || line.text.length > 3_200 || /[\r\n\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/.test(line.text)
+      || typeof line.truncated !== "boolean") throw new LocalApiRequestError("transport");
+  }
+  return { start, total_lines: data.total_lines, lines: data.lines };
+}
 export async function linkFetchedMarkdown(runId: string, documentId: string, file: File): Promise<void> {
   const response = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/source-markdown-link?document_id=${encodeURIComponent(documentId)}`, {
     method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file, redirect: "error",

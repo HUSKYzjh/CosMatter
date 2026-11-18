@@ -734,13 +734,18 @@ class LocalMissionApiTests(unittest.TestCase):
         status = self.api.pdf_status("live_001")
         self.assertEqual(status["candidate_document_id"], "doc-1")
         self.assertEqual(status["audit_document_id"], "doc-1")
-        intake["state"] = "done"; intake["markdown_sha256"] = "b" * 64
+        markdown = b"# Title\nReviewed source excerpt.\n"
+        intake["state"] = "done"; intake["markdown_sha256"] = hashlib.sha256(markdown).hexdigest()
         registry_path = self.runs / "live_001" / "pdf_intake_tasks.json"
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
         registry["tasks"][0] = intake
         registry_path.write_text(json.dumps(registry), encoding="utf-8")
-        with patch("cosmatter.local_api.read_markdown", return_value=b"# Title\nReviewed source excerpt.\n"):
+        with patch("cosmatter.local_api.read_markdown", return_value=markdown):
+            preview = self.api.private_markdown_lines("live_001", result["document_id"], 2)
+            self.assertEqual(preview["lines"], [{"number": 2, "text": "Reviewed source excerpt.", "truncated": False}])
             self.api.record_pdf_source_map("live_001", {"human_confirmed": True, "segments": [{"locator": "markdown_line:2-2", "kind": "paragraph", "quote": "Reviewed source excerpt."}]})
+        with patch("cosmatter.local_api.read_markdown", return_value=b"# altered\n"), self.assertRaisesRegex(LocalApiError, "could not be verified"):
+            self.api.private_markdown_lines("live_001", result["document_id"], 1)
         with self.assertRaisesRegex(LocalApiError, "explicit human confirmation"):
             self.api.record_pdf_evidence_card("live_001", {"segment_id": "private_md_001", "claim": "A human-reviewed claim", "stance": "support", "conditions": {}, "reviewer_confidence": 0.8})
         valid_conditions = {"sample_form": "film", "strain_percent": 0, "substrate": "synthetic", "thickness_nm": 10, "temperature_k": 300, "method": "xrd"}

@@ -831,11 +831,15 @@ test("resumes browser screening drafts and requires the current checklist revisi
   const submissions: unknown[] = [];
   let sourceTasks: { document_id: string; state: string; markdown_ready?: boolean; can_link_markdown?: boolean; source_map_segment_count?: number }[] = [];
   const reviewedExcerpt = "Synthetic checked source excerpt.";
-  const originalMarkdown = Buffer.from(`# Candidate A\n${reviewedExcerpt}\n`);
+  const conditionLine = "Reported measurement conditions.";
+  const markdownLines = ["# Candidate A", reviewedExcerpt, conditionLine, '<img src="https://example.invalid/figure.png">',
+    ...Array.from({ length: 16 }, (_, index) => `Synthetic line ${5 + index}`), "x".repeat(1_601), "Last line"];
+  const originalMarkdown = Buffer.from(markdownLines.join("\n") + "\n");
+  const previewStarts: number[] = [];
   const markdownLinkAttempts: string[] = [];
   const sourceMapPosts: unknown[] = [];
-  const sourceMap = { run_id: runId, document_id: "paper_a", segment_count: 1, trust_status: "human_reviewed_parser_selection_not_evidence_card",
-    segments: [{ segment_id: "private_md_001", locator: "markdown_line:2-2", kind: "paragraph" }] };
+  const sourceMap = { run_id: runId, document_id: "paper_a", segment_count: 2, trust_status: "human_reviewed_parser_selection_not_evidence_card",
+    segments: [{ segment_id: "private_md_001", locator: "markdown_line:1-1", kind: "paragraph" }, { segment_id: "private_md_002", locator: "markdown_line:2-3", kind: "paragraph" }] };
   await page.route("**/api/runs/**", (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.split("/").pop();
@@ -855,10 +859,17 @@ test("resumes browser screening drafts and requires the current checklist revisi
       sourceTasks = [{ document_id: documentId, state: "done", markdown_ready: true, can_link_markdown: false, source_map_segment_count: 0 }];
       return route.fulfill({ json: { run_id: runId, document_id: documentId, markdown_ready: true } });
     }
+    if (path === "source-markdown-lines" && url.searchParams.get("document_id") === "paper_a" && route.request().method() === "GET") {
+      const start = Number(url.searchParams.get("start"));
+      previewStarts.push(start);
+      return route.fulfill({ json: { run_id: runId, document_id: "paper_a", start, total_lines: markdownLines.length,
+        lines: markdownLines.slice(start - 1, start + 19).map((text, index) => ({ number: start + index, text: text.slice(0, 1_600), truncated: text.length > 1_600 })),
+      } });
+    }
     if (path === "source-map") {
       if (route.request().method() === "POST") {
         sourceMapPosts.push(route.request().postDataJSON());
-        sourceTasks = [{ document_id: "paper_a", state: "done", markdown_ready: true, source_map_segment_count: 1 }];
+        sourceTasks = [{ document_id: "paper_a", state: "done", markdown_ready: true, source_map_segment_count: 2 }];
         return route.fulfill({ json: sourceMap });
       }
       if (url.searchParams.get("document_id") === "paper_a") return route.fulfill({ json: sourceMap });
@@ -937,14 +948,46 @@ test("resumes browser screening drafts and requires the current checklist revisi
   await expect(page.locator(".reader-selection")).toContainText("Candidate A");
   const markdownLink = page.getByRole("link", { name: "下载私有 Markdown" });
   await expect(markdownLink).toHaveAttribute("href", /\/source-markdown\?document_id=paper_a$/);
-  await page.getByLabel("来源定位", { exact: true }).fill("markdown_line:2-2");
-  await page.getByLabel("人工核对的短引文", { exact: true }).fill(reviewedExcerpt);
+  const locators = page.getByLabel("来源定位", { exact: true });
+  const quotes = page.getByLabel("人工核对的短引文", { exact: true });
+  const confirmation = page.getByRole("checkbox", { name: /我已在本地 Markdown 中核对/ });
+  await locators.first().pressSequentially("markdown_line:1-1");
+  await expect(locators.first()).toHaveValue("markdown_line:1-1");
+  await quotes.first().fill("# Candidate A");
+  await confirmation.check();
+  expect(previewStarts).toEqual([]);
+
+  const source = page.getByRole("region", { name: "原文行号" });
+  await source.getByRole("button", { name: "查看带行号的原文" }).press("Enter");
+  await expect(source.getByText("第 1–20 行，共 22 行")).toBeVisible();
+  await expect(source.getByText('<img src="https://example.invalid/figure.png">', { exact: true })).toBeVisible();
+  await expect(source.locator("img")).toHaveCount(0);
+  await source.getByRole("button", { name: "下一段" }).click();
+  await expect(source.getByText("第 21–22 行，共 22 行")).toBeVisible();
+  await source.getByRole("button", { name: "第 21 行", exact: true }).click();
+  await expect(source.getByRole("button", { name: "填入来源草稿" })).toBeDisabled();
+  await source.getByLabel("行号", { exact: true }).fill("2");
+  await source.getByRole("button", { name: "跳转" }).click();
+  await expect(source.getByText("第 2–21 行，共 22 行")).toBeVisible();
+  await source.getByRole("button", { name: "第 2 行", exact: true }).press("Enter");
+  await source.getByRole("button", { name: "第 3 行", exact: true }).press("Enter");
+  await source.getByRole("button", { name: "填入来源草稿" }).click();
+  expect(previewStarts).toEqual([1, 21, 2]);
+  await expect(locators.first()).toHaveValue("markdown_line:1-1");
+  await expect(locators.nth(1)).toHaveValue("markdown_line:2-3");
+  await expect(quotes.nth(1)).toHaveValue(`${reviewedExcerpt}\n${conditionLine}`);
+  await expect(confirmation).not.toBeChecked();
+  expect(sourceMapPosts).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
   const save = page.getByRole("button", { name: "登记人工 Source Map" });
   await expect(save).toBeDisabled();
-  await page.getByRole("checkbox", { name: /我已在本地 Markdown 中核对/ }).check();
+  await confirmation.check();
   await save.click();
-  await expect(page.locator(".recorded-source-map")).toContainText("markdown_line:2-2");
-  expect(sourceMapPosts).toEqual([{ document_id: "paper_a", human_confirmed: true, segments: [{ locator: "markdown_line:2-2", kind: "paragraph", quote: reviewedExcerpt }] }]);
+  await expect(page.locator(".recorded-source-map")).toContainText("markdown_line:2-3");
+  expect(sourceMapPosts).toEqual([{ document_id: "paper_a", human_confirmed: true, segments: [
+    { locator: "markdown_line:1-1", kind: "paragraph", quote: "# Candidate A" },
+    { locator: "markdown_line:2-3", kind: "paragraph", quote: `${reviewedExcerpt}\n${conditionLine}` },
+  ] }]);
   await page.getByRole("button", { name: "更换论文" }).click();
   await expect(queue.getByText("已登记来源定位", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);

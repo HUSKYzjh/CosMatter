@@ -12,7 +12,7 @@ import { paperPdfIntake } from "./paperPdfIntake";
 import { materialFactsForSelectedPaper } from "./readerMaterialFacts";
 import { researchExtensionReadiness } from "./researchExtensionReadiness";
 import { ReadOnlyPreviewContext } from "./ReadOnlyPreviewContext";
-import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
+import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateMarkdownLineSource, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
 import { ActionButton } from "./uiPrimitives";
 import { uiLanguage } from "./zh";
 
@@ -70,7 +70,7 @@ const EN: Record<string, string> = {
 };
 const tr = (zhText: string, enText?: string) => uiLanguage() === "zh" ? zhText : enText ?? EN[zhText] ?? zhText;
 
-export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSession; pdfTask: PdfTaskStatus | null; fetchedSource?: SavedSourceParseTask | null; screeningAllowsSourceReview: boolean; markdownUrl: string | null; onRecordSourceMap?: (segments: PrivateSourceMapSegment[]) => Promise<SourceMapRecordResult>; onLoadSourceMap?: () => Promise<SourceMapRecordResult>; onRecordMaterialFacts?: (facts: HumanMaterialFactInput[]) => Promise<void>; onRecordEvidence?: (input: HumanEvidenceReviewInput) => Promise<EvidenceReviewResult>; readOnlyPreview?: boolean; onExitPreview?: () => void; onNavigate: (view: View) => void; onSelectEvidence: (evidence: EvidenceCard) => boolean }) {
+export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSession; pdfTask: PdfTaskStatus | null; fetchedSource?: SavedSourceParseTask | null; screeningAllowsSourceReview: boolean; markdownUrl: string | null; markdownLineSource?: PrivateMarkdownLineSource | null; onRecordSourceMap?: (segments: PrivateSourceMapSegment[]) => Promise<SourceMapRecordResult>; onLoadSourceMap?: () => Promise<SourceMapRecordResult>; onRecordMaterialFacts?: (facts: HumanMaterialFactInput[]) => Promise<void>; onRecordEvidence?: (input: HumanEvidenceReviewInput) => Promise<EvidenceReviewResult>; readOnlyPreview?: boolean; onExitPreview?: () => void; onNavigate: (view: View) => void; onSelectEvidence: (evidence: EvidenceCard) => boolean }) {
   const [note, setNote] = createSignal("");
   const selected = createMemo(() => selectedEvidence(props.bundle, props.session));
   const linkedEvidence = createMemo(() => evidenceForPaper(props.bundle, props.session.selectedNode));
@@ -117,7 +117,7 @@ export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSe
       <Show when={sourceAction() === "record_source_locations" || Boolean(props.fetchedSource)}>
         <details class="reader-source-intake" open={!intake().hasLinkedEvidence}>
           <summary>{tr("步骤 02 / 从本机 Markdown 登记来源、材料事实与 EvidenceCard", "STEP 02 / Register source locations, material facts and EvidenceCards from local Markdown")}</summary>
-          <PrivateSourceMapReview pdfTask={props.pdfTask} fetchedSource={props.fetchedSource} markdownUrl={props.markdownUrl} onRecord={props.onRecordSourceMap} onLoad={props.onLoadSourceMap} onRecordFacts={props.onRecordMaterialFacts} materialFactsRecorded={Boolean(currentMaterialFacts()?.facts.length)} onRecordEvidence={props.onRecordEvidence} />
+          <PrivateSourceMapReview pdfTask={props.pdfTask} fetchedSource={props.fetchedSource} markdownUrl={props.markdownUrl} markdownLineSource={props.markdownLineSource} onRecord={props.onRecordSourceMap} onLoad={props.onLoadSourceMap} onRecordFacts={props.onRecordMaterialFacts} materialFactsRecorded={Boolean(currentMaterialFacts()?.facts.length)} onRecordEvidence={props.onRecordEvidence} />
         </details>
       </Show>
       <Show when={sourceAction() === "await_private_parsing"}>

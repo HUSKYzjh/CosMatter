@@ -139,6 +139,10 @@ def build_ui_preview_server(
             if run_id is not None:
                 self._api_artifact(lambda: api.fetched_source_markdown(run_id, _source_document_query(parsed.query)) if api is not None else _api_disabled())
                 return
+            run_id = _api_run_id(path, "/api/runs/", "/source-markdown-lines")
+            if run_id is not None:
+                self._api_json(lambda: api.private_markdown_lines(run_id, *_markdown_lines_query(parsed.query), fetched_source=True) if api is not None else _api_disabled())
+                return
             run_id = _api_run_id(path, "/api/runs/", "/source-map")
             if run_id is not None:
                 self._api_json(lambda: api.fetched_source_map_context(run_id, _source_document_query(parsed.query)) if api is not None else _api_disabled())
@@ -167,6 +171,10 @@ def build_ui_preview_server(
             match = re.fullmatch(r"/api/runs/([A-Za-z0-9][A-Za-z0-9_-]*)/pdf/(pdf_[a-f0-9]{24})/markdown", path)
             if match:
                 self._api_bytes(lambda: api.private_markdown(match.group(1), match.group(2)) if api is not None else _api_disabled())
+                return
+            match = re.fullmatch(r"/api/runs/([A-Za-z0-9][A-Za-z0-9_-]*)/pdf/(pdf_[a-f0-9]{24})/markdown-lines", path)
+            if match:
+                self._api_json(lambda: api.private_markdown_lines(match.group(1), *_markdown_lines_query(parsed.query, match.group(2))) if api is not None else _api_disabled())
                 return
             if path.startswith("/api/"):
                 self.send_error(404, "Unknown local API route")
@@ -503,10 +511,25 @@ def _source_document_query(query: str) -> str:
         fields = parse_qs(query, strict_parsing=True, max_num_fields=1)
     except ValueError as error:
         raise LocalApiError("expected a source document identifier") from error
+    return _query_document_id(fields)
+
+
+def _query_document_id(fields: dict[str, list[str]]) -> str:
     values = fields.get("document_id", [])
     if len(values) != 1 or not values[0].strip() or len(values[0]) > 255:
         raise LocalApiError("expected a source document identifier")
     return values[0]
+
+
+def _markdown_lines_query(query: str, document_id: str | None = None) -> tuple[str, int]:
+    fields_expected = {"document_id", "start"} if document_id is None else {"start"}
+    try:
+        fields = parse_qs(query, strict_parsing=True, keep_blank_values=True, max_num_fields=len(fields_expected))
+    except ValueError as error:
+        raise LocalApiError("invalid Markdown preview parameters") from error
+    if set(fields) != fields_expected or len(fields["start"]) != 1 or not re.fullmatch(r"[1-9][0-9]{0,8}", fields["start"][0]):
+        raise LocalApiError("invalid Markdown preview starting line")
+    return (document_id or _query_document_id(fields), int(fields["start"][0]))
 
 
 def _api_run_id(path: str, prefix: str, suffix: str) -> str | None:

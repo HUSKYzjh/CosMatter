@@ -80,6 +80,7 @@ DSH 可以通过 `cosmatter_candidate_screening_template` 读取已登记决定�
 `cosmatter_mineru_source_submit` 和 `cosmatter_mineru_task_poll` 的 `workbench_url` 会定位到对应候选。阶段核验通过且候选已人工纳入、本机 Markdown 已就绪时，链接直接打开阅读页；解析中或等待关联原文件时，可在文献星图的该论文检查器继续。
 「刷新本机解析记录」只读取已保存的账本。首次取回使用 `mineru-fetch-markdown`。如果曾经取回并保留了原文件，
 可在队列选择「关联本机 Markdown」。后端在本机核对该候选的回执和文件哈希，成功后即可进入阅读页。
+阅读页可按 20 行查看私有 Markdown。点击行号可将当前段内的连续短引文填入来源草稿。提交前须重新确认，服务器按原文件核对行号和引文。
 进行中或已完成的解析会阻止同一候选重复上传 PDF。
 首次打开读取已有工件和保存的 PDF 状态；需要更新 PDF 状态时，可在舰桥手动刷新。
 从舰桥回到终端时，展开运行 ID 下方的「在 DSH 查看进度」，复制命令到 CosMatter 虚拟环境运行。

@@ -109,7 +109,8 @@ class CliMinerUTests(unittest.TestCase):
             task_id = "task_private_fetch"
             record_source_parse_task(run_dir, mission_id=mission.mission_id, document_id="doc_1", source_url=source_url, task=MinerUTask(task_id, "done", "request_submit"), model_version="vlm")
             output_path = root / "private.md"
-            markdown = b"# Private MinerU output\nA synthetic reviewed excerpt.\n"
+            markdown = ("# Private MinerU output\r\nA synthetic reviewed excerpt.\n条件\u2028"
+                        + "x" * 1_601 + "\n" + "continuation\n" * 20).encode("utf-8")
             output = io.StringIO()
             settings = Settings.load({"MINERU_API_TOKEN": "test-token", "API_MAX_RETRIES": "1", "MINERU_MODEL_VERSION": "vlm"})
             with (
@@ -143,16 +144,26 @@ class CliMinerUTests(unittest.TestCase):
             output_path.unlink()
             self.assertEqual(api.fetched_source_markdown(run_id, "doc_1").data, markdown)
             self.assertTrue(api.source_parse_status(run_id)["tasks"][0]["markdown_ready"])
+            window = api.private_markdown_lines(run_id, "doc_1", 1, fetched_source=True)
+            self.assertEqual((window["start"], window["total_lines"], len(window["lines"])), (1, 24, 20))
+            self.assertEqual(window["lines"][2], {"number": 3, "text": "条件", "truncated": False})
+            self.assertEqual(window["lines"][3], {"number": 4, "text": "x" * 1_600, "truncated": True})
+            tail = api.private_markdown_lines(run_id, "doc_1", 21, fetched_source=True)
+            self.assertEqual([line["number"] for line in tail["lines"]], [21, 22, 23, 24])
+            with self.assertRaises(LocalApiError) as outside:
+                api.private_markdown_lines(run_id, "doc_1", 25, fetched_source=True)
+            self.assertEqual(outside.exception.status, 416)
             with self.assertRaises(LocalApiError) as wrong_document:
                 api.fetched_source_markdown(run_id, "different_candidate")
             self.assertEqual(wrong_document.exception.status, 403)
 
-            segments = [{"locator": "markdown_line:2-2", "kind": "paragraph", "quote": "A synthetic reviewed excerpt."}]
+            selected = window["lines"][1:3]
+            segments = [{"locator": "markdown_line:2-3", "kind": "paragraph", "quote": "\n".join(line["text"] for line in selected)}]
             review = {"document_id": "doc_1", "human_confirmed": True, "segments": segments}
             with self.assertRaisesRegex(LocalApiError, "line range"):
                 api.record_fetched_source_map(run_id, review | {"segments": [segments[0] | {"locator": "markdown_line:1-1"}]})
             result = api.record_fetched_source_map(run_id, review)
-            self.assertEqual(result["segments"], [{"segment_id": "private_md_001", "locator": "markdown_line:2-2", "kind": "paragraph"}])
+            self.assertEqual(result["segments"], [{"segment_id": "private_md_001", "locator": "markdown_line:2-3", "kind": "paragraph"}])
             self.assertEqual(api.record_fetched_source_map(run_id, review), result)
             self.assertEqual(api.fetched_source_map_context(run_id, "doc_1"), result)
             self.assertEqual(api.source_parse_status(run_id)["tasks"][0]["source_map_segment_count"], 1)
@@ -181,6 +192,9 @@ class CliMinerUTests(unittest.TestCase):
             with self.assertRaises(LocalApiError) as excluded_link:
                 api.link_fetched_source_markdown(run_id, "doc_1", markdown)
             self.assertEqual(excluded_link.exception.status, 403)
+            with self.assertRaises(LocalApiError) as excluded_preview:
+                api.private_markdown_lines(run_id, "doc_1", 1, fetched_source=True)
+            self.assertEqual(excluded_preview.exception.status, 403)
 
     def test_source_map_requires_completed_task_and_keeps_quote_out_of_audit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

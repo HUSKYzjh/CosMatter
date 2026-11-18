@@ -1091,6 +1091,41 @@ class LocalMissionApi:
         content = _read_fetched_source(run_dir, mission.mission_id, receipt)
         return ArtifactDownload(content, "text/markdown; charset=utf-8", "private-mineru-markdown.md")
 
+    def private_markdown_lines(self, run_id: str, document_id: str, start: int, *, fetched_source: bool = False) -> dict[str, object]:
+        """Read a bounded local preview using the same line numbering as Source Map validation."""
+        if isinstance(start, bool) or not isinstance(start, int) or start < 1:
+            raise LocalApiError("Markdown preview requires a positive starting line")
+        if fetched_source:
+            run_dir, mission, _, receipt = self._fetched_source_context(run_id, document_id)
+            content = _read_fetched_source(run_dir, mission.mission_id, receipt)
+        else:
+            run_dir, mission = self._active_mission(run_id)
+            intake = _pdf_intake(run_dir, mission.mission_id, document_id)
+            digest = intake.get("markdown_sha256")
+            candidate = intake.get("candidate_document_id")
+            if not isinstance(candidate, str) or not candidate:
+                raise LocalApiError("Markdown preview requires a human-included candidate", 403)
+            _require_screened_source(run_dir, mission.mission_id, candidate)
+            if intake.get("document_id") != document_id or intake.get("state") != "done" or not digest:
+                raise LocalApiError("private Markdown is not ready", 404)
+            try:
+                content = read_markdown(document_id)
+            except (OSError, PrivateStorageError) as error:
+                raise LocalApiError("private Markdown is unavailable", 404) from error
+            if hashlib.sha256(content).hexdigest() != digest:
+                raise LocalApiError("private Markdown could not be verified", 404)
+        try:
+            lines = content.decode("utf-8").splitlines()
+        except UnicodeDecodeError as error:
+            raise LocalApiError("private Markdown could not be decoded", 404) from error
+        if start > len(lines):
+            raise LocalApiError("starting line is outside the private Markdown", 416)
+        first_index = start - 1
+        window = lines[first_index : first_index + _MARKDOWN_WINDOW_SIZE]
+        return {"run_id": run_id, "document_id": document_id, "start": start, "total_lines": len(lines),
+                "lines": [{"number": number, "text": line[:_MARKDOWN_PREVIEW_LINE_LIMIT], "truncated": len(line) > _MARKDOWN_PREVIEW_LINE_LIMIT}
+                          for number, line in enumerate(window, start)]}
+
     def link_fetched_source_markdown(self, run_id: str, document_id: str, content: bytes) -> dict[str, object]:
         """Restore a local copy using the candidate's existing output receipt."""
         with self._candidate_screening_lock:
@@ -1151,11 +1186,7 @@ class LocalMissionApi:
 
     def _fetched_source_receipt_context(self, run_id: str, document_id: str) -> tuple[Path, MissionBrief, dict[str, Any], dict[str, Any]]:
         run_dir, mission = self._active_mission(run_id)
-        try:
-            candidates = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
-            require_document_screened_for_fulltext(run_dir, mission.mission_id, candidates, document_id)
-        except (OSError, UiExportError, CandidateScreeningError) as error:
-            raise LocalApiError("Markdown review requires a current human inclusion decision", 403) from error
+        _require_screened_source(run_dir, mission.mission_id, document_id)
         try:
             task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=document_id)
             receipt = fetched_markdown_receipt(task, load_provider_receipts(run_dir)) if task["state"] == "done" else None
@@ -2347,6 +2378,8 @@ def _mineru_task_from_pdf_batch(batch_id: str, state: str) -> MinerUTask:
 
 
 _PRIVATE_MARKDOWN_LOCATOR = re.compile(r"markdown_line:(\d+)-(\d+)(?::part:\d+)?$")
+_MARKDOWN_WINDOW_SIZE = 20
+_MARKDOWN_PREVIEW_LINE_LIMIT = 1_600
 
 
 def _fetched_source_map(run_dir: Path, mission_id: str, task: dict[str, Any], receipt: dict[str, Any]) -> dict[str, Any] | None:
@@ -2356,6 +2389,14 @@ def _fetched_source_map(run_dir: Path, mission_id: str, task: dict[str, Any], re
             and source_map.get("source_markdown_sha256") == receipt["source_markdown_sha256"]):
         return source_map
     return None
+
+
+def _require_screened_source(run_dir: Path, mission_id: str, document_id: str) -> None:
+    try:
+        candidates = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
+        require_document_screened_for_fulltext(run_dir, mission_id, candidates, document_id)
+    except (OSError, UiExportError, CandidateScreeningError) as error:
+        raise LocalApiError("Markdown review requires a current human inclusion decision", 403) from error
 
 
 def _read_fetched_source(run_dir: Path, mission_id: str, receipt: dict[str, Any]) -> bytes:
