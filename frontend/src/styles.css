@@ -1997,9 +1997,38 @@ button.quiet-action:not(.cm-action):disabled,
 .graph-empty p,
 .graph-canvas-loading p,
 .graph-canvas-fallback p { font-size: max(.78rem, 13px); }
+.graph-screening-cue > .cm-action {
+  flex: 0 0 auto;
+  font-size: max(.76rem, 13px);
+}
+.graph-screening-cue small,
+.graph-hidden-selection small,
+.evidence-inspector > small,
+.evidence-handoff > small,
+.condition-cluster-inspector > small,
+.imported-evidence-list > small { font-size: max(.68rem, 12px); line-height: 1.45; }
+.graph-screening-cue strong { font-size: max(.9rem, 15px); }
+.graph-screening-cue p,
+.graph-hidden-selection p,
+.evidence-inspector p,
+.evidence-inspector dd,
+.evidence-handoff p { font-size: max(.78rem, 13px); line-height: 1.55; }
+.graph-hidden-selection strong { font-size: max(.82rem, 14px); }
+.graph-hidden-selection > .cm-action {
+  flex: 0 0 auto;
+  font-size: max(.7rem, 12px);
+}
+.evidence-inspector dt { font-size: max(.68rem, 12px); line-height: 1.45; }
+.evidence-handoff > .cm-action {
+  justify-self: start;
+  font-size: max(.76rem, 13px);
+}
 @media (max-width: 560px) {
   .graph-empty > .cm-action,
-  .graph-canvas-fallback > .cm-action { width: 100%; }
+  .graph-canvas-fallback > .cm-action,
+  .graph-screening-cue > .cm-action,
+  .graph-hidden-selection > .cm-action,
+  .evidence-handoff > .cm-action { width: 100%; }
 }
 
 /* Reader recovery actions use the shared hierarchy without inheriting the

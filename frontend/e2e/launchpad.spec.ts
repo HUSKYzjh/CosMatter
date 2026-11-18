@@ -422,6 +422,13 @@ test("loads an explicitly server-selected UI bundle as a read-only literature ma
   await expect(page.getByText("只读预览：可查看阶段与空态")).toBeVisible();
   await expect(page.locator(".fleet-reading-cards")).toContainText("Phase transitions in BiFeO3", lazyWorkspaceContentLoad);
   await expect(page.locator(".fleet-reading-cards")).toContainText("任务对象与维度双命中", lazyWorkspaceContentLoad);
+  await page.locator(".fleet-reading-cards button").first().click();
+  const inspector = page.locator(".evidence-inspector");
+  await expect(inspector).toBeVisible();
+  expect(await inspector.locator(":scope > small").evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(12);
+  expect(await inspector.locator("p").first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(13);
+  expect(await inspector.locator("dd").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 13))).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(apiRequests).toEqual([]);
 });
 
