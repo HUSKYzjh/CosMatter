@@ -1,7 +1,9 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import { packages } from "../../plugins/dsh-plugin-group.json";
+import { continuationStageLabel } from "./continuationStage";
+import { DSH_STAGE_NOTES, DSH_STAGE_TOOLS } from "./dshStageTools";
 import type { UiLocale } from "./fleetRegistry";
-import type { DshProfileHealth, DshProfileStatus, HarnessPluginDescriptor } from "./localApi";
+import type { DshProfileHealth, DshProfileStatus, HarnessPluginDescriptor, WorkflowStageName } from "./localApi";
 import { ActionButton, StatusBadge } from "./uiPrimitives";
 
 type Access = "read" | "local" | "review" | "external";
@@ -54,10 +56,12 @@ export function DshToolCatalogue(props: {
   plugins: readonly HarnessPluginDescriptor[];
   profile: DshProfileStatus | null;
   profileHealth: DshProfileHealth;
+  currentStage?: WorkflowStageName | null;
 }) {
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const [query, setQuery] = createSignal("");
   const [filter, setFilter] = createSignal<Access | "all">("all");
+  const [stageFilter, setStageFilter] = createSignal<WorkflowStageName | "all">("all");
   const [clipboard, setClipboard] = createSignal<{ name: string; copied: boolean } | null>(null);
   const pluginById = createMemo(() => new Map(props.plugins.map((plugin) => [plugin.plugin_id, plugin])));
   const registry = createMemo(() => {
@@ -68,11 +72,18 @@ export function DshToolCatalogue(props: {
   });
   const visibleTools = createMemo(() => {
     const search = query().trim().toLowerCase();
+    const stage = stageFilter();
     return TOOLS.filter(({ name, bundle, copy }) => {
+      if (stage !== "all" && !DSH_STAGE_TOOLS[stage].includes(name)) return false;
       if (filter() !== "all" && filter() !== copy?.access) return false;
       return [name, bundle, ...(copy?.label ?? []), copy?.descriptor].some((term) => term?.toLowerCase().includes(search));
     });
   });
+  const stageNote = () => {
+    const stage = stageFilter();
+    return stage === "all" ? undefined : DSH_STAGE_NOTES[stage];
+  };
+  const clearFilters = () => { setQuery(""); setFilter("all"); setStageFilter("all"); };
   const bundleState = (bundle: string) => {
     if (props.profileHealth !== "ready" || !props.profile || props.profile.installation_state === "unavailable") {
       return x("本机安装状态未确认", "Local installation unconfirmed");
@@ -98,10 +109,20 @@ export function DshToolCatalogue(props: {
   return <details class="harness-disclosure dsh-tool-catalogue" aria-live="off">
     <summary><span>{x("查找 DSH 工具", "Find DSH tools")}</span><strong>{TOOLS.length}</strong></summary>
     <div class="dsh-tool-body">
-      <p>{x("按工具名、插件包或授权类型查找。工具名可复制到 DSH 会话。", "Search by tool, bundle or authorization. Copy a tool name into a DSH session.")}</p>
+      <p>{x("按阶段、工具名、插件包或授权类型查找。目录仅供查阅，运行前仍须核对阶段要求。", "Find tools by stage, name, bundle, or authorization. Check the stage requirements before running a tool.")}</p>
+      <Show when={props.currentStage}>{(stage) => <div class="dsh-current-stage">
+        <p><span>{x("本机已核验阶段", "Locally verified stage")}</span><strong>{continuationStageLabel(stage(), props.locale)}</strong></p>
+        <ActionButton size="sm" aria-pressed={stageFilter() === stage()} onClick={() => setStageFilter(stageFilter() === stage() ? "all" : stage())}>{x("只看本阶段", "Filter to this stage")}</ActionButton>
+      </div>}</Show>
       <div class="dsh-tool-filters">
         <label><span>{x("搜索工具或插件包", "Search tools or bundles")}</span>
           <input type="search" value={query()} maxLength={160} onInput={(event) => setQuery(event.currentTarget.value)} />
+        </label>
+        <label><span>{x("研究阶段", "Research stage")}</span>
+          <select value={stageFilter()} onChange={(event) => setStageFilter(event.currentTarget.value as WorkflowStageName | "all")}>
+            <option value="all">{x("全部阶段", "All stages")}</option>
+            <For each={Object.keys(DSH_STAGE_TOOLS) as WorkflowStageName[]}>{(stage) => <option value={stage}>{continuationStageLabel(stage, props.locale)}</option>}</For>
+          </select>
         </label>
         <label><span>{x("授权类型", "Authorization type")}</span>
           <select value={filter()} onChange={(event) => setFilter(event.currentTarget.value as Access | "all")}>
@@ -110,10 +131,11 @@ export function DshToolCatalogue(props: {
           </select>
         </label>
       </div>
+      <Show when={stageNote()}>{(note) => <p class="dsh-stage-note">{x(...note())}</p>}</Show>
       <p class="dsh-tool-count" role="status">{x(`显示 ${visibleTools().length}/${TOOLS.length} 个工具`, `Showing ${visibleTools().length} of ${TOOLS.length} tools`)}</p>
       <Show when={visibleTools().length > 0} fallback={<div class="dsh-tool-empty">
         <p>{x("没有符合条件的工具。", "No tools match these filters.")}</p>
-        <ActionButton size="sm" onClick={() => { setQuery(""); setFilter("all"); }}>{x("清除筛选", "Clear filters")}</ActionButton>
+        <ActionButton size="sm" onClick={clearFilters}>{x("清除筛选", "Clear filters")}</ActionButton>
       </div>}>
         <ul class="dsh-tool-list">
           <For each={visibleTools()}>{(tool) => {
@@ -125,7 +147,8 @@ export function DshToolCatalogue(props: {
               <details class="harness-disclosure dsh-tool-item">
                 <summary>
                   <span>
-                    <strong>{label()}</strong><code>{tool.name}</code>
+                    <strong>{label()}</strong><code>{tool.name.split("_").map((segment, index, segments) =>
+                      index === segments.length - 1 ? segment : <>{segment}_<wbr /></>)}</code>
                     <Show when={registered() !== undefined}><small classList={{ "dsh-tool-registration": true, ready: registered() }}>
                       {registered() ? x("隔离核验已注册", "Registered in isolated check") : x("隔离核验未注册", "Missing from isolated registry")}
                     </small></Show>

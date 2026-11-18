@@ -325,6 +325,19 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(tools.getByRole("status")).toHaveText("显示 0/20 个工具");
   await tools.getByRole("button", { name: "清除筛选" }).click();
   await expect(tools.getByRole("status")).toHaveText("显示 20/20 个工具");
+  await expect(tools.getByRole("button", { name: "只看本阶段" })).toHaveCount(0);
+  const stage = tools.getByLabel("研究阶段");
+  await stage.selectOption("parse");
+  await expect(tools.getByRole("status")).toHaveText("显示 4/20 个工具");
+  await filter.selectOption("external");
+  await expect(tools.getByRole("status")).toHaveText("显示 2/20 个工具");
+  await expect(tools.locator(".dsh-tool-item > summary code")).toHaveText(["cosmatter_mineru_source_submit", "cosmatter_mineru_task_poll"]);
+  await stage.selectOption("report");
+  await expect(tools.getByRole("status")).toHaveText("显示 0/20 个工具");
+  await expect(tools.locator(".dsh-stage-note")).toContainText("在工作台审核报告");
+  await filter.selectOption("read");
+  await expect(tools.locator(".dsh-tool-item > summary code")).toHaveText(["cosmatter_stage_contract", "cosmatter_artifact_manifest"]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test("rechecks a missing DSH bundle while the catalogue is unavailable", async ({ page }) => {

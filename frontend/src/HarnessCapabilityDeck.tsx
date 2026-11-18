@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import { packages } from "../../plugins/dsh-plugin-group.json";
 
-import type { DshProfileHealth, DshProfileStatus, HarnessAuthorization, HarnessCatalogueHealth, HarnessPluginDescriptor, OperationalTelemetry } from "./localApi";
+import type { DshProfileHealth, DshProfileStatus, HarnessAuthorization, HarnessCatalogueHealth, HarnessPluginDescriptor, OperationalTelemetry, WorkflowStageName } from "./localApi";
 import { ActionButton, StatusBadge } from "./uiPrimitives";
 import type { UiLocale } from "./fleetRegistry";
 import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
@@ -44,6 +44,7 @@ export function HarnessCapabilityDeck(props: {
   profileHealth: DshProfileHealth;
   operationalTelemetry: OperationalTelemetry | null;
   operationPending?: boolean;
+  currentStage?: WorkflowStageName | null;
   onRefresh?: () => void;
   onRefreshProfile?: () => void;
 }) {
@@ -281,7 +282,7 @@ export function HarnessCapabilityDeck(props: {
       </details>
     }</Show>
     <Show when={props.health !== "disabled" || props.profileHealth !== "disabled"}>
-      <DshToolCatalogue locale={props.locale} plugins={props.health === "ready" ? props.plugins ?? [] : []} profile={props.profile} profileHealth={props.profileHealth} />
+      <DshToolCatalogue locale={props.locale} plugins={props.health === "ready" ? props.plugins ?? [] : []} profile={props.profile} profileHealth={props.profileHealth} currentStage={props.currentStage} />
     </Show>
     <div class="harness-boundary-copy"><p>{props.health === "ready"
       ? x("目录已连接只证明 CosMatter 能读取本机静态契约；profile 依赖快照与运行回执分别证明不同层次，任何一层都不能代替工具结果。", "A connected catalogue proves only that CosMatter can read local static contracts. The profile dependency snapshot and runtime receipts prove separate layers; none can substitute for tool results.")

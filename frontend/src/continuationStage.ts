@@ -51,6 +51,7 @@ export function reconcileRestoredStage(
  */
 export function continuationStageLabel(stage: string | null | undefined, locale: "zh" | "en"): string {
   const labels: Record<string, readonly [string, string]> = {
+    intake: ["任务定义", "mission definition"],
     plan: ["计划人工复核", "plan review"],
     retrieval: ["受控检索", "controlled retrieval"],
     screening: ["候选筛选", "candidate screening"],
