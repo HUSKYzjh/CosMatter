@@ -1,7 +1,7 @@
 # CosMatter DSH 插件组：兼容性、升级与发布就绪度
 
 > 状态：本地开发/隔离 profile 已验收；**尚未批准公开发布**。
-> 更新：2026-09-01。
+> 更新：2026-11-18。
 
 本文件是 `plugins/dsh-plugin-group.json` 的运行与发布补充。CosMatter 的
 Python 领域层仍是任务、来源、人工门禁和审计的唯一真相源；DSH bundle 只经
@@ -16,9 +16,9 @@ Python 领域层仍是任务、来源、人工门禁和审计的唯一真相源�
 | npm | 11.17.0 | 每个独立 bundle 的锁文件、构建和 `npm pack --dry-run`。 |
 | pnpm | 11.22.0 | DSH 的 `plugin add` 实际调用 pnpm；clean-profile smoke 在安装前核验该版本。 |
 | SciVerse Python SDK | 0.7.1 | `AgentToolsClient` 适配器单测、editable 安装与 loopback 调研回归。 |
-| DSH CLI | 0.1.0-rc.7 | 隔离 profile `cosmatter-graph-test` 的配置转储。 |
-| Cordis | 4.0.1 | 每个 bundle 的 peer/dev dependency 锁定。 |
-| `@deepseek-ai/dsh-tools` | 0.0.1-rc.1 | 每个 bundle 的 peer/dev dependency 锁定。 |
+| DSH CLI | 0.2.2-rc.3 | 隔离 headless profile 安装、配置组合与启动检查。 |
+| Cordis | 4.1.0 | 七个 bundle 的构建与真实 Cordis 工具注册。 |
+| `@deepseek-ai/dsh-tools` | 0.2.2-rc.3 | 检查全部 19 个已注册工具，调用一次本地目录工具。 |
 
 | bundle | DSH 工具 | 外部能力与不可越过的边界 |
 | --- | --- | --- |
@@ -63,8 +63,10 @@ $env:PYTHONPATH = 'src'
 时必须重新执行上述全套验证，不能仅依赖 TypeScript 编译成功。
 
 在本机诊断安装环境时，先执行下面的无 key 命令。它会明确报告 DSH、Node、npm 或
-pnpm 缺失/版本不符；随后才会临时打包七个已提交的 `lib` 发布物并安装到临时
-`DSH_HOME`。这个检查不会读取 `.env`、不会加载默认 profile，也不会调用模型或服务商：
+pnpm 缺失或版本不符。随后打包七个 bundle，在临时 `DSH_HOME` 中安装并核对组合配置。
+验收还会检查 headless 帮助入口，并在禁用任务运行器和模型适配器的 profile 中检查 19 个工具的注册。
+其中目录工具会向临时本机 HTTP 服务读取一次合成目录。
+整个检查使用临时 profile 和合成目录数据。
 
 ```powershell
 Set-Location D:\CosMatter\development\CosMatter

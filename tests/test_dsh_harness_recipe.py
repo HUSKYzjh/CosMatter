@@ -21,7 +21,8 @@ class DshHarnessRecipeTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertTrue(report["passed"])
         self.assertEqual([item["name"] for item in report["checks"]], ["release_matrix", "market_snapshot_review", "third_party_admission", "synthetic_replay"])
-        self.assertEqual(report["environment"]["dsh"], "0.1.0-rc.7")
+        compatibility = json.loads((self.root / "configs" / "dsh_compatibility.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["environment"]["dsh"], compatibility["dsh"])
         self.assertNotIn("fixture-token", result.stdout)
         self.assertNotIn("Synthetic phase-stability workflow", result.stdout)
 

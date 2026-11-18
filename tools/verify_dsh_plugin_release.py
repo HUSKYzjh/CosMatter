@@ -2,9 +2,9 @@
 
 Default mode is deliberately local and keyless: it validates the compatibility
 matrix, every package manifest and published-file allowlist.  ``--profile-smoke``
-adds all packed local tarballs to a fresh temporary DSH home and checks the
-composed configuration.  It never loads ``.env`` or starts a provider-backed
-agent turn.
+installs the packed tarballs in a temporary DSH home, checks profile
+composition and startup, and invokes an installed tool against a loopback
+fixture. It never loads ``.env`` or starts a provider-backed agent turn.
 """
 
 from __future__ import annotations
@@ -16,7 +16,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 from typing import Any
 
 
@@ -37,9 +39,11 @@ def main(argv: list[str] | None = None) -> int:
     compatibility = _load_json(ROOT / "configs" / "dsh_compatibility.json")
     manifest = _load_json(ROOT / "plugins" / "dsh-plugin-group.json")
     _validate(compatibility, manifest)
+    report = {"status": "ok", "bundle_count": len(manifest["packages"]), "profile_smoke": args.profile_smoke}
     if args.profile_smoke:
-        _profile_smoke(compatibility, manifest, timeout_seconds=args.timeout_seconds)
-    print(json.dumps({"status": "ok", "bundle_count": len(manifest["packages"]), "profile_smoke": args.profile_smoke}, ensure_ascii=False))
+        report["registered_tool_count"] = _profile_smoke(compatibility, manifest, timeout_seconds=args.timeout_seconds)
+        report["loopback_catalogue_verified"] = True
+    print(json.dumps(report, ensure_ascii=False))
     return 0
 
 
@@ -63,6 +67,9 @@ def _validate(compatibility: dict[str, Any], manifest: dict[str, Any]) -> None:
         package = _load_json(package_dir / "package.json")
         if package.get("name") != entry["package"] or package.get("files") != required_files:
             raise ReleaseGateError(f"package manifest is inconsistent for {entry['package']}")
+        for dependencies in ("peerDependencies", "devDependencies"):
+            if package.get(dependencies, {}).get("@deepseek-ai/dsh-tools") != compatibility["dsh"]:
+                raise ReleaseGateError(f"DSH tools version does not match the runtime pin for {entry['package']}")
         for name in required_files:
             if not (package_dir / name).exists():
                 raise ReleaseGateError(f"required published file is missing for {entry['package']}: {name}")
@@ -73,7 +80,7 @@ def _validate(compatibility: dict[str, Any], manifest: dict[str, Any]) -> None:
             raise ReleaseGateError(f"loopback patch contract is invalid for {entry['package']}")
 
 
-def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, timeout_seconds: int) -> None:
+def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, timeout_seconds: int) -> int:
     dsh = shutil.which("dsh")
     npm = shutil.which("npm")
     node = shutil.which("node")
@@ -114,6 +121,12 @@ def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, t
         # forever in CI even though this is a fully local tarball install.
         environment = {**os.environ, "DSH_HOME": str(temporary / "dsh-home"), "PYTHONPATH": "", "CI": "1"}
         profile = "cosmatter-release-smoke"
+        initialize = _run(
+            [dsh, "--profile", profile, "--from-default-profile", "headless", "--dump-config"],
+            cwd=temporary, env=environment, timeout=timeout_seconds,
+        )
+        if initialize.returncode:
+            raise ReleaseGateError(f"clean headless profile initialization failed: {initialize.stderr.strip()}")
         install = _run([dsh, "plugin", "--profile", profile, "add", *tarballs], cwd=ROOT, env=environment, timeout=timeout_seconds)
         if install.returncode:
             raise ReleaseGateError(f"clean-profile bundle install failed: {install.stderr.strip() or install.stdout.strip()}")
@@ -123,6 +136,67 @@ def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, t
         for entry in manifest["packages"]:
             if f"id: {entry['plugin_id']}" not in dump.stdout:
                 raise ReleaseGateError(f"clean profile did not compose {entry['plugin_id']}")
+        startup = _run([dsh, "--profile", profile, "--help"], cwd=temporary, env=environment, timeout=timeout_seconds)
+        if startup.returncode or "Usage: dsh --profile headless" not in startup.stdout:
+            raise ReleaseGateError(f"clean profile failed to reach the headless app: {startup.stderr.strip()}")
+        return _verify_tool_registry(dsh, profile, manifest, temporary, environment, timeout_seconds)
+
+
+def _verify_tool_registry(
+    dsh: str, profile: str, manifest: dict[str, Any], temporary: Path, environment: dict[str, str], timeout_seconds: int,
+) -> int:
+    catalogue = {
+        "catalogue_api_version": "2.0",
+        "trust_status": "static_catalogue_not_plugin_execution_or_evidence_acceptance",
+        "plugins": [{"plugin_id": "mission.define", "required_authorizations": [], "contract": {}}],
+    }
+    body = json.dumps(catalogue).encode("utf-8")
+
+    class CatalogueFixture(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path != "/api/plugins":
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    expected_tools = [tool for entry in manifest["packages"] for tool in entry["tools"]]
+    with ThreadingHTTPServer(("127.0.0.1", 0), CatalogueFixture) as server:
+        patch = temporary / "registry-probe.json"
+        shutil.copyfile(ROOT / "tools" / "verify_dsh_tool_registry.mjs", temporary / "registry-probe.mjs")
+        patch.write_text(json.dumps([
+            {"id": "headless-runner", "disabled": True},
+            {"id": "llm-deepseek-account", "disabled": True},
+            {
+                "id": "cosmatter-policy",
+                "config": {"baseUrl": f"http://127.0.0.1:{server.server_port}", "timeoutMs": 5000},
+            },
+            {"insert": [{
+                "id": "cosmatter-release-registry-probe",
+                "name": "./registry-probe.mjs",
+                "config": {"expectedTools": expected_tools, "catalogue": catalogue},
+            }]},
+        ]), encoding="utf-8")
+        worker = Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            probe = _run(
+                [dsh, "--profile", profile, "--patch", str(patch), "CosMatter release registry probe"], cwd=temporary,
+                env=environment, timeout=timeout_seconds,
+            )
+        finally:
+            server.shutdown()
+            worker.join()
+    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue verified"
+    if probe.returncode or marker not in probe.stdout:
+        raise ReleaseGateError(f"installed bundle tool registry failed: {probe.stderr.strip() or 'missing tool registry result'}")
+    return len(expected_tools)
 
 
 def _command_text(command: list[str]) -> str:

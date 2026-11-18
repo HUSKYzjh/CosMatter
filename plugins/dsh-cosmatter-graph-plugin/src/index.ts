@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import '@deepseek-ai/cordis'
-import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools'
+import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 import { CosMatterLoopbackClient } from './client.js'
 import type { CosMatterGraphConfig } from './config.js'
