@@ -699,7 +699,11 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await page.getByRole("button", { name: "复制运行 ID" }).click();
   await expect(page.locator(".rail-run-identity").getByRole("status")).toHaveText("运行 ID 已复制。");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(runId);
+  await page.getByRole("button", { name: "复制任务链接" }).click();
+  await expect(page.locator(".rail-run-identity").getByRole("status")).toHaveText("本机任务链接已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(page.url());
   await page.getByRole("link", { name: "CosMatter", exact: true }).click();
+  expect(new URL(page.url()).hash).toBe("");
   await page.getByRole("button", { name: /^续航任务/ }).click();
   await input.fill("wrong_mission_run");
   await open.click();
@@ -709,6 +713,46 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
   expect(requests.filter((request) => request.includes("/pdf/"))).toEqual([`GET /api/runs/${runId}/pdf/tasks/cached`]);
   expect(requests.every((request) => request.startsWith("GET "))).toBe(true);
+});
+
+test("opens local DSH links directly and keeps a failed linked run editable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const runId = "run_dsh_link_01";
+  const missingId = "missing_run";
+  const { readFile } = await import("node:fs/promises");
+  const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
+  const runRequests: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/runs/")) runRequests.push(`${request.method()} ${path}`);
+  });
+  await page.route("**/api/runs/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === `/api/runs/${runId}/ui`) return route.fulfill({ json: bundle });
+    if (path === `/api/runs/${runId}/status`) return route.fulfill({ json: { run_id: runId, mission_id: bundle.mission.mission_id, state: "INTAKE" } });
+    if (path === `/api/runs/${runId}/pdf/tasks/cached`) return route.fulfill({ json: { run_id: runId, tasks: [] } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+
+  await page.goto(`/#run=${runId}`);
+  await expect(page.locator(".workbench")).toHaveClass(/view-launch/);
+  await page.goto("/?api=local#run=..%2Foutside");
+  await expect(page.locator(".workbench")).toHaveClass(/view-launch/);
+  expect(runRequests).toEqual([]);
+
+  await page.goto(`/?api=local#run=${missingId}`);
+  await expect(page.getByRole("alert")).toContainText("无法打开该运行");
+  await expect(page.getByLabel("现有运行 ID")).toHaveValue(missingId);
+  await expect(page.getByRole("button", { name: "打开本机运行" })).toBeEnabled();
+
+  const cached = page.waitForResponse(`**/api/runs/${runId}/pdf/tasks/cached`);
+  await page.goto(`/?api=local#run=${runId}`);
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await expect(page.locator(".rail-run-identity code")).toHaveText(runId);
+  await cached;
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+  expect(runRequests.every((request) => request.startsWith("GET "))).toBe(true);
+  expect(runRequests.filter((request) => request.includes("/pdf/"))).toEqual([`GET /api/runs/${runId}/pdf/tasks/cached`]);
 });
 
 test("keeps one reachable PDF refresh or citation action on the bridge", async ({ page }) => {

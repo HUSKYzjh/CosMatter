@@ -2,7 +2,18 @@ import type { OperationalTelemetry, RunStatus, StageContract, WorkflowDag } from
 import type { ImportedBundle } from "./model";
 
 export function isLocalRunId(value: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/.test(value);
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(value);
+}
+
+export function localRunLinkId(hash: string): string | null {
+  const runId = hash.startsWith("#run=") ? hash.slice(5) : "";
+  return isLocalRunId(runId) ? runId : null;
+}
+
+export function localRunLink(origin: string, runId: string): string {
+  const url = new URL("/?api=local", origin);
+  url.hash = `run=${runId}`;
+  return url.href;
 }
 
 /** Keep every loopback projection bound to the run and mission that produced it. */

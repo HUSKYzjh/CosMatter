@@ -512,8 +512,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .run-id-form-row input[aria-invalid="true"] { border-color: var(--signal-amber); }
 .run-id-form-row input:focus-visible { outline: 2px solid var(--signal-blue); outline-offset: 1px; }
 .rail-run-identity { display: flex; flex-wrap: wrap; align-items: center; gap: .38rem .5rem; padding: .35rem 0; }
-.rail-run-identity > div { display: grid; gap: .15rem; flex: 1 1 7rem; min-width: 0; }
-.rail-run-identity > div span { color: var(--muted); font-size: max(.7rem, 12px); }
+.rail-run-id { display: grid; gap: .15rem; flex: 1 1 7rem; min-width: 0; }
+.rail-run-id span { color: var(--muted); font-size: max(.7rem, 12px); }
+.rail-run-actions { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 100%; }
 .rail-run-identity code { color: var(--ink); font: max(.72rem, 12px)/1.4 ui-monospace, "Cascadia Mono", monospace; overflow-wrap: anywhere; user-select: all; }
 .rail-run-identity > p { flex: 1 0 100%; margin: 0; }
 @media (max-width: 520px) {

@@ -46,6 +46,7 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin }) {
     })
     assert.equal(mission.run_id, runId)
     assert.equal(mission.state, 'INTAKE')
+    assert.equal(mission.workbench_url, `${webOrigin}/?api=local#run=${runId}`)
     const workflow = await dispatch(ctx, 'cosmatter_workflow_status', { run_id: runId })
     assert.equal(workflow.run_id, runId)
     assert.equal(workflow.mission_id, mission.mission_id)

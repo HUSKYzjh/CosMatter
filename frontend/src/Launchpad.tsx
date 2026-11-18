@@ -41,12 +41,12 @@ const fallbackCandidates = (question: string): LaunchCandidate[] => questionBoun
 const MODES: Array<{ id: LaunchMode; icon: string; zh: string; en: string; zhDetail: string; enDetail: string }> = [
   { id: "question", icon: "✦", zh: "问题启航", en: "Question", zhDetail: "问题 → 候选资料库 / 计划", enDetail: "Question → candidates / plan" },
   { id: "pdf", icon: "▱", zh: "文献入港", en: "PDF intake", zhDetail: "PDF → 私有 Markdown / 引文", enDetail: "PDF → private Markdown / citations" },
-  { id: "resume", icon: "↗", zh: "续航任务", en: "Resume", zhDetail: "运行包 → 未完成阶段", enDetail: "Run package → unfinished stage" },
+  { id: "resume", icon: "↗", zh: "续航任务", en: "Resume", zhDetail: "本机运行 / 运行包", enDetail: "Local run / run package" },
 ];
 
-export function Launchpad(props: { onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; existingRunReadPending?: boolean; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
+export function Launchpad(props: { onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; linkedRunId?: string; existingRunReadPending?: boolean; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
   const [foregroundIndex, setForegroundIndex] = createSignal(nextFleetIndex());
-  const [mode, setMode] = createSignal<LaunchMode>("question");
+  const [mode, setMode] = createSignal<LaunchMode>(props.linkedRunId ? "resume" : "question");
   const activeStage = () => stageForLaunchMode(mode());
   const [prompt, setPrompt] = createSignal("");
   const [candidates, setCandidates] = createSignal<LaunchCandidate[]>([]);
@@ -62,7 +62,7 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission, executio
   const [pdfConsent, setPdfConsent] = createSignal(false);
   const [automaticConsent, setAutomaticConsent] = createSignal(false);
   const [resume, setResume] = createSignal<File | null>(null);
-  const [existingRunId, setExistingRunId] = createSignal("");
+  const [existingRunId, setExistingRunId] = createSignal(props.linkedRunId ?? "");
   const continuationBusy = () => Boolean(props.existingRunReadPending || props.resumeSubmissionPending);
   const bfoPresets = () => bfoTaskPresets(props.language);
   const selectedBfoFormation = () => {
@@ -74,6 +74,13 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission, executio
   const fieldLabel = (field: LaunchMissionField) => ({ question: copy("研究问题", "research question"), material: copy("研究对象", "research objects"), property: copy("研究目标", "research target"), scope: copy("比较范围", "comparison scope") } as const)[field];
   let latestCandidateRequest = 0;
   createEffect(() => { if (props.candidatePdfTarget) setMode("pdf"); });
+  createEffect(() => {
+    const runId = props.linkedRunId;
+    if (runId) {
+      setExistingRunId(runId);
+      setMode("resume");
+    }
+  });
   let fleetNode: HTMLDivElement | undefined;
   onMount(() => {
     if (!fleetNode) return;
@@ -253,7 +260,7 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission, executio
               <Show when={props.onOpenExistingRun} fallback={<p>{copy("此入口需要启用本机 API。", "This entry requires the local API.")}</p>}>
                 <label for="continuation-run-id">{copy("现有运行 ID", "Existing run ID")}</label>
                 <div class="run-id-form-row">
-                  <input id="continuation-run-id" value={existingRunId()} maxLength={128} autocomplete="off" autocapitalize="off" spellcheck={false}
+                  <input id="continuation-run-id" value={existingRunId()} maxLength={255} autocomplete="off" autocapitalize="off" spellcheck={false}
                     placeholder="run_…" disabled={continuationBusy()}
                     aria-invalid={Boolean(existingRunId().trim() && !isLocalRunId(existingRunId().trim()))}
                     aria-describedby="continuation-run-id-hint"

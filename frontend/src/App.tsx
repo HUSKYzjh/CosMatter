@@ -14,7 +14,7 @@ import { hasNavigableLiteratureGraph, missionJourney, type JourneyStage } from "
 import { automaticGraphHandoffAlreadySettled, automaticGraphHandoffTarget } from "./automaticGraphHandoff";
 import { automaticCancellationEnabled } from "./automaticCancellation";
 import { availableRetrievalSources, reconcileRetrievalSources, type LocalApiCapabilityHealth } from "./localApiCapabilities";
-import { isLocalRunId, liveBundleMatchesRun, runtimeProjectionsMatchRun } from "./liveRunIdentity";
+import { isLocalRunId, liveBundleMatchesRun, localRunLink, localRunLinkId, runtimeProjectionsMatchRun } from "./liveRunIdentity";
 import { operationRecovery, type OperationRecoveryKind } from "./operationRecovery";
 import { deriveMissionArtifactStatus, taskBoundaryFingerprint, type MissionArtifactStatus } from "./missionArtifactStatus";
 import { auditableAcceptedEvidence, documentIdForReviewablePaper, evidenceForPaper, reviewablePaperCount, reviewablePaperForDocumentId } from "./evidenceLinking";
@@ -226,6 +226,10 @@ export function App() {
   const [launchPreview, setLaunchPreview] = createSignal(
     serverUiPreviewRequested(window.location.search),
   );
+  const readLocalRunLink = () => localApiEnabled() && !serverUiPreviewRequested(window.location.search)
+    ? localRunLinkId(window.location.hash) ?? undefined
+    : undefined;
+  const [linkedLaunchRunId, setLinkedLaunchRunId] = createSignal(readLocalRunLink());
   const [launchNotice, setLaunchNotice] = createSignal<string | null>(null);
   const [activeOperation, setActiveOperation] = createSignal<OperationActivity | null>(null);
   const [status, setStatusRaw] = createSignal(text("当前显示本地演示工件；尚未发起网络请求。", "Showing local demonstration artifacts; no network request has been made."));
@@ -255,7 +259,7 @@ export function App() {
   const [retrievalSources, setRetrievalSources] = createSignal<RetrievalSource[]>([]);
   let retrievalSourcesInitialized = false;
   const [liveRunId, setLiveRunId] = createSignal<string | null>(null);
-  const [runIdCopyFeedback, setRunIdCopyFeedback] = createSignal<{ runId: string; copied: boolean } | null>(null);
+  const [runCopyFeedback, setRunCopyFeedback] = createSignal<{ runId: string; format: "id" | "link"; copied: boolean } | null>(null);
   const [stageContract, setStageContract] = createSignal<StageContract | null>(null);
   const [workflowDag, setWorkflowDag] = createSignal<WorkflowDag | null>(null);
   const [operationalTelemetry, setOperationalTelemetry] = createSignal<OperationalTelemetry | null>(null);
@@ -453,6 +457,7 @@ export function App() {
   }
   function openLaunchPreview(stage: LaunchPreviewStage) {
     existingRunReadGate.invalidate();
+    setExistingRunReadPending(false);
     // Effects stop scheduling remote refreshes in preview mode, but a request
     // that was already in flight must not update this read-only workspace.
     automaticRefreshGate.invalidate();
@@ -468,6 +473,8 @@ export function App() {
   }
 
   function returnToLaunch() {
+    if (readLocalRunLink()) window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
+    setLinkedLaunchRunId(undefined);
     setLaunchPreview(false);
     setView("launch");
     setStatus(liveRunId()
@@ -478,6 +485,7 @@ export function App() {
   function returnToActiveRunWorkspace() {
     if (!liveRunId()) return;
     existingRunReadGate.invalidate();
+    setExistingRunReadPending(false);
     setLaunchPreview(false);
     setRouteRecovery(null);
     setView("workflow");
@@ -1504,7 +1512,7 @@ export function App() {
 
   async function openExistingRun(rawRunId: string) {
     const runId = rawRunId.trim();
-    if (!localApiEnabled() || !isLocalRunId(runId) || !resumeSubmissionGate.tryStart()) return;
+    if (!localApiEnabled() || !isLocalRunId(runId) || resumeSubmissionPending()) return;
     const previousEpoch = taskEpoch;
     const isLatest = existingRunReadGate.begin();
     const stillOnLaunch = () => isLatest() && isCurrentTask(previousEpoch) && view() === "launch" && !launchPreview();
@@ -1517,6 +1525,7 @@ export function App() {
         setLaunchNotice(text("该运行已停止。请输入一个可续接的本机运行 ID。", "This run has been stopped. Enter the ID of a local run that can be continued."));
         return;
       }
+      window.history.replaceState(window.history.state, "", localRunLink(window.location.origin, runId));
       const epoch = batch(() => {
         const currentEpoch = supersedeActiveRun("keep");
         clearRunScopedClientArtifacts();
@@ -1536,21 +1545,22 @@ export function App() {
     } catch {
       if (stillOnLaunch()) setLaunchNotice(text("无法打开该运行。请核对运行 ID 和当前本机服务的数据目录。", "Could not open this run. Check its ID and the current local service's data directory."));
     } finally {
-      resumeSubmissionGate.finish();
-      setExistingRunReadPending(false);
+      if (isLatest()) setExistingRunReadPending(false);
     }
   }
 
-  async function copyCurrentRunId(runId: string) {
+  async function copyCurrentRun(runId: string, format: "id" | "link") {
+    const value = format === "id" ? runId : localRunLink(window.location.origin, runId);
     try {
-      await navigator.clipboard.writeText(runId);
-      setRunIdCopyFeedback({ runId, copied: true });
+      await navigator.clipboard.writeText(value);
+      setRunCopyFeedback({ runId, format, copied: true });
     } catch {
-      setRunIdCopyFeedback({ runId, copied: false });
+      setRunCopyFeedback({ runId, format, copied: false });
     }
   }
 
   function resumeLaunch(file: File) {
+    if (existingRunReadPending()) return;
     setLaunchNotice(null);
     if (!file.name.endsWith(".cosmatter-run.json")) {
       const message = text("续航入口只接受 .cosmatter-run.json；旧 UI JSON 请在工作台的只读导入中打开。", "Continuation accepts only .cosmatter-run.json; open legacy UI JSON through the workbench read-only import.");
@@ -1841,6 +1851,19 @@ export function App() {
   }
   onMount(() => {
     if (window.matchMedia("(max-width: 1040px)").matches) setRailContextOpen(false);
+    const followLocalRunLink = () => {
+      const runId = readLocalRunLink();
+      if (!runId || resumeSubmissionPending() || (liveRunId() === runId && view() !== "launch" && !launchPreview())) return;
+      batch(() => {
+        setLinkedLaunchRunId(runId);
+        setLaunchPreview(false);
+        setView("launch");
+      });
+      void openExistingRun(runId);
+    };
+    followLocalRunLink();
+    window.addEventListener("hashchange", followLocalRunLink);
+    onCleanup(() => window.removeEventListener("hashchange", followLocalRunLink));
     if (!serverUiPreviewRequested(window.location.search)) return;
     setUiImportPending(true);
     const operationId = beginActiveOperation(text("正在载入本机预览工件", "Loading local preview artifact"), text("只读取固定同源 /ui.json；不会发送凭据、跟随重定向或调用提供方。", "Reading only the fixed same-origin /ui.json route; no credentials, redirects, or provider calls are allowed."));
@@ -1902,7 +1925,7 @@ export function App() {
   });
 
   return <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} existingRunReadPending={existingRunReadPending()} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>
@@ -1912,11 +1935,15 @@ export function App() {
         <For each={journey()}>{(stage, index) => <li class={`journey-${stage.state}`}><button type="button" aria-current={stage.view === view() ? "step" : undefined} title={journeyStateLabel(stage)} onClick={() => navigate(stage.view)}><span>{String(index() + 1).padStart(2, "0")}</span><div><strong>{language() === "zh" ? stage.zh : stage.en}</strong><small>{journeyStateLabel(stage)}</small></div></button></li>}</For>
       </ol>
       <Show when={!launchPreview() && localApiEnabled() && liveRunId()}>{(runId) => <div class="rail-run-identity">
-        <div><span>{text("运行 ID", "Run ID")}</span><code>{runId()}</code></div>
-        <ActionButton size="sm" onClick={() => void copyCurrentRunId(runId())}>{text("复制运行 ID", "Copy run ID")}</ActionButton>
-        <Show when={runIdCopyFeedback()?.runId === runId()}><p role="status">{runIdCopyFeedback()?.copied
-          ? text("运行 ID 已复制。", "Run ID copied.")
-          : text("剪贴板不可用，可手动选中运行 ID。", "Clipboard unavailable. You can select the run ID manually.")}</p></Show>
+        <div class="rail-run-id"><span>{text("运行 ID", "Run ID")}</span><code>{runId()}</code></div>
+        <div class="rail-run-actions">
+          <ActionButton size="sm" onClick={() => void copyCurrentRun(runId(), "id")}>{text("复制运行 ID", "Copy run ID")}</ActionButton>
+          <ActionButton size="sm" onClick={() => void copyCurrentRun(runId(), "link")}>{text("复制任务链接", "Copy run link")}</ActionButton>
+        </div>
+        <Show when={runCopyFeedback()?.runId === runId() ? runCopyFeedback() : null}>{(feedback) => <p role="status">
+          {feedback().copied ? (feedback().format === "id" ? text("运行 ID 已复制。", "Run ID copied.") : text("本机任务链接已复制。", "Local run link copied.")) : text("剪贴板不可用。", "Clipboard unavailable.")}
+          <Show when={!feedback().copied && feedback().format === "link"}> <a href={localRunLink(window.location.origin, runId())} target="_blank" rel="noopener">{text("打开本机任务链接", "Open the local run link")}</a></Show>
+        </p>}</Show>
       </div>}</Show>
       <details class="rail-context" open={railContextOpen()} onToggle={(event) => setRailContextOpen(event.currentTarget.open)}>
         <summary><span>{text("任务概览与本地状态", "Mission context and local status")}</span><small title={text("展开查看航线、审核锚点与本地状态", "Expand route, review anchor, and local status")}>{railContextSummary()}</small></summary>

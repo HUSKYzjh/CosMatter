@@ -32,6 +32,6 @@ export function launchModeStatus(mode: LaunchMode, locale: "zh" | "en"): string 
     ? ["问题入口：确认后进入受控编排。", "Question entry: confirmation leads to controlled orchestration."]
     : mode === "pdf"
       ? ["PDF 入口：私有解析后进入来源定位。", "PDF entry: private parsing leads to source location."]
-      : ["续航入口：校验运行包后恢复首个可执行阶段。", "Resume entry: validation restores the first executable stage."];
+      : ["打开已有本机任务，或校验并恢复运行包。", "Open an existing local run or validate and restore a run package."];
   return status[locale === "zh" ? 0 : 1];
 }

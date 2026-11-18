@@ -1,5 +1,5 @@
 import { normalizeConfig } from './config.js';
-const safeRunId = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const safeRunId = /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/;
 const sensitiveKey = /(token|secret|password|authorization|api[_-]?key|path|quote|content)/i;
 function bounded(value, field, max) {
     if (!value.trim() || value.trim().length > max)
@@ -33,12 +33,17 @@ export class CosMatterMissionClient {
         signal?.addEventListener('abort', abort, { once: true });
         try {
             const response = await this.request(new URL('/api/missions', this.config.baseUrl), {
-                method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload), signal: controller.signal,
+                method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload), signal: controller.signal,
             });
             const value = await response.json();
             if (!response.ok)
                 throw new Error(`CosMatter mission creation failed with HTTP ${response.status}`);
-            return validateMissionCreated(value);
+            const mission = validateMissionCreated(value);
+            if (payload.run_id !== undefined && mission.run_id !== payload.run_id)
+                throw new Error('CosMatter mission response does not match the requested run');
+            const workbench = new URL('/?api=local', this.config.baseUrl);
+            workbench.hash = `run=${mission.run_id}`;
+            return { ...mission, workbench_url: workbench.href };
         }
         finally {
             clearTimeout(timer);
@@ -52,8 +57,9 @@ export function validateMissionCreated(value) {
     const result = value;
     if (Object.keys(result).some(key => sensitiveKey.test(key)))
         throw new Error('CosMatter mission response contains a forbidden field');
-    if (!safeRunId.test(String(result.run_id)) || !/^mission_[a-z0-9_]{8,128}$/i.test(String(result.mission_id)) || typeof result.fleet_type !== 'string' || typeof result.mission_type !== 'string' || result.state !== 'INTAKE') {
+    const { run_id, mission_id, fleet_type, mission_type, state } = result;
+    if (typeof run_id !== 'string' || !safeRunId.test(run_id) || typeof mission_id !== 'string' || !/^mission_[a-z0-9_]{8,128}$/i.test(mission_id) || typeof fleet_type !== 'string' || typeof mission_type !== 'string' || state !== 'INTAKE') {
         throw new Error('CosMatter mission response is invalid');
     }
-    return result;
+    return { run_id, mission_id, fleet_type, mission_type, state };
 }

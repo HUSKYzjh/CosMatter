@@ -14,10 +14,13 @@ export interface MissionCreated {
     mission_type: string;
     state: 'INTAKE';
 }
+export interface MissionHandoff extends MissionCreated {
+    workbench_url: string;
+}
 export declare class CosMatterMissionClient {
     private readonly request;
     readonly config: NormalizedConfig;
     constructor(config?: CosMatterMissionConfig, request?: typeof fetch);
-    create(input: MissionInput, signal?: AbortSignal): Promise<MissionCreated>;
+    create(input: MissionInput, signal?: AbortSignal): Promise<MissionHandoff>;
 }
 export declare function validateMissionCreated(value: unknown): MissionCreated;

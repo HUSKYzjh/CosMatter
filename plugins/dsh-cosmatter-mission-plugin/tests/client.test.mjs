@@ -14,8 +14,19 @@ test('client creates a bounded mission through the loopback API', async () => {
   })
   const result = await client.create({ question: 'How does strain change phase stability?', material: 'BiFeO3', property: 'phase stability', scope: 'thin films', run_id: 'bfo_001' })
   assert.equal(result.run_id, 'bfo_001')
+  assert.equal(result.workbench_url, 'http://127.0.0.1:8765/?api=local#run=bfo_001')
   assert.equal(request.url, 'http://127.0.0.1:8765/api/missions')
+  assert.equal(request.options.redirect, 'error')
   assert.equal(JSON.parse(request.options.body).run_id, 'bfo_001')
+})
+
+test('derives the workbench link from the configured port and verified run identity', async () => {
+  const client = new CosMatterMissionClient({ baseUrl: 'http://127.0.0.1:8769' }, async () => new Response(JSON.stringify({
+    ...created, workbench_url: 'https://example.com/elsewhere', details: { secret: 'sensitive' },
+  }), { status: 201 }))
+  const input = { question: 'A valid research question', material: 'BiFeO3', property: 'phase stability', scope: 'thin films' }
+  assert.deepEqual(await client.create(input), { ...created, workbench_url: 'http://127.0.0.1:8769/?api=local#run=bfo_001' })
+  await assert.rejects(() => client.create({ ...input, run_id: 'other_run' }), /does not match the requested run/)
 })
 
 test('client rejects invalid endpoints and sensitive responses', async () => {
@@ -37,6 +48,8 @@ test('DSH apply registers only bounded mission creation', async () => {
   const result = await tools[0].execute({ question: 'How does strain change phase stability?', material: 'BiFeO3', property: 'phase stability', scope: 'thin films', run_id: 'bfo_001' }, { signal: new AbortController().signal })
   assert.equal(result.state, 'INTAKE')
   assert.equal(events[0][0], 'cosmatter-mission/created')
+  assert.equal(events[0][1].workbench_url, result.workbench_url)
+  assert.equal(JSON.parse(tools[0].output.render({}, result)[0].text).workbench_url, result.workbench_url)
   dispose()
   globalThis.fetch = originalFetch
 })
