@@ -1000,6 +1000,69 @@ test("opens local DSH links directly and keeps a failed linked run editable", as
   expect(runRequests.filter((request) => request.includes("/pdf/"))).toEqual([`GET /api/runs/${runId}/pdf/tasks/cached`]);
 });
 
+test("opens the linked DSH candidate at its verified review step", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  const runId = "dsh_candidate_handoff";
+  const { readFile } = await import("node:fs/promises");
+  const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
+  const ready = "文献 & ready=1";
+  const pending = "pending_paper";
+  const excluded = "excluded_paper";
+  const papers = [
+    { document_id: ready, title: "Ready candidate", source: "local fixture" },
+    { document_id: pending, title: "Pending candidate", source: "local fixture" },
+    { document_id: excluded, title: "Excluded candidate", source: "local fixture" },
+  ];
+  bundle.literature_graph = { trust_status: "human_reviewed_graph_projection", nodes: papers.map((paper) => ({
+    node_id: `paper:${paper.document_id}`, kind: "candidate_paper", label: paper.title, trust_status: "candidate_metadata_not_scientific_evidence",
+  })), edges: [] };
+  const requests: string[] = [];
+  const paperFragment = (document: string) => new URLSearchParams({ run: runId, document }).toString();
+  await page.route("**/api/runs/**", (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    requests.push(`${request.method()} ${path}`);
+    const prefix = `/api/runs/${runId}/`;
+    if (!path.startsWith(prefix)) return route.fulfill({ status: 404 });
+    switch (path.slice(prefix.length)) {
+      case "ui": return route.fulfill({ json: bundle });
+      case "status": return route.fulfill({ json: { run_id: runId, mission_id: bundle.mission.mission_id, state: "INTAKE" } });
+      case "stage-contract": return route.fulfill({ json: stageContractFixture(runId, bundle.mission.mission_id, "parse") });
+      case "pdf/tasks/cached": return route.fulfill({ json: { run_id: runId, tasks: [], trust_status: "private_pdf_task_registry_metadata_only" } });
+      case "candidate-screening": return route.fulfill({ json: { run_id: runId, candidate_count: papers.length, candidates: papers, trust_status: "human_reviewed_candidate_screening_not_scientific_evidence",
+        decisions: papers.map(({ document_id }) => ({ document_id, decision: document_id === excluded ? "exclude" : "include_for_fulltext", reason_codes: [document_id === excluded ? "out_of_scope_material" : "material_match"] })),
+      } });
+      case "source-parse-status": return route.fulfill({ json: { run_id: runId, mission_id: bundle.mission.mission_id, trust_status: "saved_source_parse_state_not_scientific_evidence",
+        tasks: papers.map(({ document_id }) => ({ document_id, state: document_id === pending ? "running" : "done", markdown_ready: document_id !== pending, can_link_markdown: false, source_map_segment_count: 0 })),
+      } });
+      default: return route.fulfill({ status: 404 });
+    }
+  });
+
+  await page.goto(`/?api=local#${paperFragment(ready)}`);
+  await expect(page.locator(".reader-selection")).toContainText("Ready candidate", workspaceLoad);
+  await expect(page.getByRole("link", { name: "下载私有 Markdown" })).toHaveAttribute("href", /document_id=%E6%96%87%E7%8C%AE%20%26%20ready%3D1$/);
+  await page.reload();
+  await expect(page.locator(".reader-selection")).toContainText("Ready candidate", workspaceLoad);
+
+  const followPaper = (documentId: string) => page.evaluate((fragment) => { window.location.hash = fragment; }, paperFragment(documentId));
+  const inspector = page.getByRole("complementary", { name: "图谱检查器" });
+  await followPaper(pending);
+  await expect(inspector.getByRole("heading", { name: "Pending candidate", exact: true })).toBeVisible(workspaceLoad);
+  await expect(inspector).toBeFocused();
+  await expect(inspector.getByText(/DSH 轮询后可刷新/)).toBeVisible();
+  await followPaper(excluded);
+  await expect(inspector.getByRole("heading", { name: "Excluded candidate", exact: true })).toBeVisible(workspaceLoad);
+  await expect(inspector.getByText("请先完成当前候选的人工筛选。")).toBeVisible();
+  await expect(page.getByRole("link", { name: "下载私有 Markdown" })).toHaveCount(0);
+  await followPaper("missing_paper");
+  await expect(page.getByText("当前文献星图找不到链接指定的论文。", { exact: true })).toBeVisible(workspaceLoad);
+  await expect(inspector).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+  expect(requests.every((request) => request.startsWith("GET "))).toBe(true);
+  expect(requests).not.toContain(`GET /api/runs/${runId}/pdf/tasks`);
+});
+
 test("keeps one reachable PDF refresh or citation action on the bridge", async ({ page }) => {
   const trustStatus = "private_markdown_outside_run_not_scientific_evidence";
   const pdf = {

@@ -6,6 +6,7 @@ export interface MinerUTaskStatus {
     task_state: 'pending' | 'running' | 'done' | 'failed';
     trust_status: string;
     idempotency_status?: 'duplicate_completed';
+    workbench_url: string;
 }
 export declare class CosMatterDocumentClient {
     private readonly request;

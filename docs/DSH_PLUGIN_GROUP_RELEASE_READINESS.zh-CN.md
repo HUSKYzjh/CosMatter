@@ -77,6 +77,7 @@ DSH 可以通过 `cosmatter_candidate_screening_template` 读取已登记决定�
 `checklist_revision` 与人工决定一并交给 `cosmatter_candidate_screening_record`。候选或已有决定更新后，
 服务器会要求重新读取清单，浏览器也会提示重新核对。
 「全文核对队列」按已登记的纳入决定显示候选，合并本机 PDF 绑定与 DSH 来源解析状态。
+`cosmatter_mineru_source_submit` 和 `cosmatter_mineru_task_poll` 的 `workbench_url` 会定位到对应候选。阶段核验通过且候选已人工纳入、本机 Markdown 已就绪时，链接直接打开阅读页；解析中或等待关联原文件时，可在文献星图的该论文检查器继续。
 「刷新本机解析记录」只读取已保存的账本。首次取回使用 `mineru-fetch-markdown`。如果曾经取回并保留了原文件，
 可在队列选择「关联本机 Markdown」。后端在本机核对该候选的回执和文件哈希，成功后即可进入阅读页。
 进行中或已完成的解析会阻止同一候选重复上传 PDF。

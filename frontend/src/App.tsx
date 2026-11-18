@@ -15,7 +15,7 @@ import { hasNavigableLiteratureGraph, missionJourney, type JourneyStage } from "
 import { automaticGraphHandoffAlreadySettled, automaticGraphHandoffTarget } from "./automaticGraphHandoff";
 import { automaticCancellationEnabled } from "./automaticCancellation";
 import { availableRetrievalSources, reconcileRetrievalSources, type LocalApiCapabilityHealth } from "./localApiCapabilities";
-import { isLocalRunId, liveBundleMatchesRun, localRunLink, localRunLinkId, runtimeProjectionsMatchRun } from "./liveRunIdentity";
+import { isLocalRunId, liveBundleMatchesRun, localRunLink, parseLocalRunLink, runtimeProjectionsMatchRun } from "./liveRunIdentity";
 import { operationRecovery, type OperationRecoveryKind } from "./operationRecovery";
 import { deriveMissionArtifactStatus, taskBoundaryFingerprint, type MissionArtifactStatus } from "./missionArtifactStatus";
 import { auditableAcceptedEvidence, documentIdForReviewablePaper, evidenceForPaper, reviewablePaperCount, reviewablePaperForDocumentId } from "./evidenceLinking";
@@ -232,9 +232,9 @@ export function App() {
     serverUiPreviewRequested(window.location.search),
   );
   const readLocalRunLink = () => localApiEnabled() && !serverUiPreviewRequested(window.location.search)
-    ? localRunLinkId(window.location.hash) ?? undefined
-    : undefined;
-  const [linkedLaunchRunId, setLinkedLaunchRunId] = createSignal(readLocalRunLink());
+    ? parseLocalRunLink(window.location.hash)
+    : null;
+  const [linkedLaunchRunId, setLinkedLaunchRunId] = createSignal(readLocalRunLink()?.runId);
   const [launchNotice, setLaunchNotice] = createSignal<string | null>(null);
   const [activeOperation, setActiveOperation] = createSignal<OperationActivity | null>(null);
   const [status, setStatusRaw] = createSignal(text("当前显示本地演示工件；尚未发起网络请求。", "Showing local demonstration artifacts; no network request has been made."));
@@ -264,7 +264,7 @@ export function App() {
   const [retrievalSources, setRetrievalSources] = createSignal<RetrievalSource[]>([]);
   let retrievalSourcesInitialized = false;
   const [liveRunId, setLiveRunId] = createSignal<string | null>(null);
-  const [existingRunLanding, setExistingRunLanding] = createSignal<{ runId: string; landing: ReturnType<typeof localRunLanding> } | null>(null);
+  const [existingRunLanding, setExistingRunLanding] = createSignal<{ runId: string; landing: ReturnType<typeof localRunLanding>; documentId: string | null } | null>(null);
   const [runCopyFeedback, setRunCopyFeedback] = createSignal<{ runId: string; format: "id" | "link"; copied: boolean } | null>(null);
   const [stageContract, setStageContract] = createSignal<StageContract | null>(null);
   const [workflowDag, setWorkflowDag] = createSignal<WorkflowDag | null>(null);
@@ -375,7 +375,7 @@ export function App() {
     documentId: selectedDocumentId(),
     evidenceId: researchSession().evidenceId,
     screeningAllowsSourceReview: selectedPaperScreenedForFulltext(),
-    privateFulltextReady: completedPrivateSourceMapMatchesPaper(pdfTask(), selectedDocumentId()),
+    privateFulltextReady: privateSourceMapIntakeAvailable(),
     sourceMapRecorded: Boolean(selectedDocumentId() && bundle().sourceMapSummary.documentIds.includes(selectedDocumentId()!)),
     evidenceReady: gate().ready,
   }));
@@ -959,12 +959,17 @@ export function App() {
       setPdfTaskReadHealth("unavailable");
       throw new Error("PDF task registry identity mismatch");
     }
-    setPdfTasks(registry.tasks);
-    const observedAt = Date.now();
-    setPdfTaskObservedAt(Object.fromEntries(registry.tasks.map((task) => [task.document_id, observedAt])));
-    setPdfTaskReadHealth("ready");
-    setPdfTask((selected) => registry.tasks.find((item) => item.document_id === selected?.document_id) ?? registry.tasks[0] ?? null);
+    applyPdfTaskRegistry(registry.tasks);
     return registry.tasks;
+  }
+
+  function applyPdfTaskRegistry(tasks: PdfTaskStatus[]) {
+    setPdfTasks(tasks);
+    const observedAt = Date.now();
+    setPdfTaskObservedAt(Object.fromEntries(tasks.map((task) => [task.document_id, observedAt])));
+    setPdfTaskReadHealth("ready");
+    const paperId = selectedDocumentId();
+    setPdfTask((selected) => paperId ? pdfTaskForSession(tasks, paperId) : tasks.find((item) => item.document_id === selected?.document_id) ?? tasks[0] ?? null);
   }
 
   createEffect(() => {
@@ -1592,7 +1597,7 @@ export function App() {
     scheduleCurrentView(pdfEpoch, "workflow");
   }
 
-  async function openExistingRun(rawRunId: string) {
+  async function openExistingRun(rawRunId: string, documentId: string | null = null) {
     const runId = rawRunId.trim();
     if (!localApiEnabled() || !isLocalRunId(runId) || resumeSubmissionPending()) return;
     const previousEpoch = taskEpoch;
@@ -1611,7 +1616,20 @@ export function App() {
         return;
       }
       const landing = localRunLanding(runId, snapshot.imported, stage);
-      window.history.replaceState(window.history.state, "", localRunLink(window.location.origin, runId));
+      const paper = documentId && landing.view === "graph" ? reviewablePaperForDocumentId(snapshot.imported.literatureGraph.nodes, documentId) : null;
+      const paperContext = paper ? await Promise.all([
+        getCandidateScreening(runId).catch(() => null),
+        getSavedSourceParses(runId, snapshot.imported.mission.missionId).catch(() => null),
+        getPdfTasks(runId, "cached").catch(() => null),
+      ]) : null;
+      if (!stillOnLaunch()) return;
+      const [screening, sources, registry] = paperContext ?? [null, null, null];
+      const attachedPdf = pdfTaskForSession(registry?.tasks ?? [], documentId);
+      const savedSource = sources?.find((task) => task.document_id === documentId) ?? null;
+      const sourceAction = candidatePdfAction(attachedPdf, savedSource);
+      const canOpenReader = paper && screeningAllowsSourceReview(screening, runId, documentId)
+        && (sourceAction === "recorded_reader" || sourceAction === "open_reader");
+      window.history.replaceState(window.history.state, "", localRunLink(window.location.origin, runId, documentId));
       const epoch = batch(() => {
         const currentEpoch = supersedeActiveRun("keep");
         clearRunScopedClientArtifacts();
@@ -1619,16 +1637,22 @@ export function App() {
         setBfoFormationLink(null);
         applyImportedBundle(snapshot.imported);
         setLiveRunId(runId);
-        setExistingRunLanding({ runId, landing });
-        setStatus(text(`已打开本机运行 ${runId}。`, `Opened local run ${runId}.`));
-        setView(landing.view);
+        setExistingRunLanding({ runId, landing, documentId });
+        if (paper) setResearchSession(selectPaper(emptyResearchSession(), paper));
+        if (screening?.run_id === runId) setCandidateScreening(screening);
+        if (sources) { setSourceParseTasks(sources); setSourceParseHealth("ready"); }
+        if (registry?.run_id === runId) applyPdfTaskRegistry(registry.tasks);
+        setStatus(paper
+          ? text(`已定位论文「${paper.label}」。`, `Opened paper “${paper.label}”.`)
+          : text(`已打开本机运行 ${runId}。`, `Opened local run ${runId}.`));
+        setView(canOpenReader ? "reader" : landing.view);
         return currentEpoch;
       });
       const current = currentRunGuard(runId, epoch);
-      void getCandidateScreening(runId).then((screening) => {
-        if (current() && screening.run_id === runId) setCandidateScreening(screening);
+      if (!screening) void getCandidateScreening(runId).then((loaded) => {
+        if (current() && loaded.run_id === runId) setCandidateScreening(loaded);
       }).catch(() => undefined);
-      void refreshPdfTasks(runId, current).catch(() => undefined);
+      if (!registry) void refreshPdfTasks(runId, current).catch(() => undefined);
     } catch {
       if (stillOnLaunch()) setLaunchNotice(text("无法打开该运行。请核对运行 ID 和当前本机服务的数据目录。", "Could not open this run. Check its ID and the current local service's data directory."));
     } finally {
@@ -1951,14 +1975,14 @@ export function App() {
   onMount(() => {
     if (window.matchMedia("(max-width: 1040px)").matches) setRailContextOpen(false);
     const followLocalRunLink = () => {
-      const runId = readLocalRunLink();
-      if (!runId || resumeSubmissionPending() || (liveRunId() === runId && view() !== "launch" && !launchPreview())) return;
+      const target = readLocalRunLink();
+      if (!target || resumeSubmissionPending() || (!target.documentId && liveRunId() === target.runId && view() !== "launch" && !launchPreview())) return;
       batch(() => {
-        setLinkedLaunchRunId(runId);
+        setLinkedLaunchRunId(target.runId);
         setLaunchPreview(false);
         setView("launch");
       });
-      void openExistingRun(runId);
+      void openExistingRun(target.runId, target.documentId);
     };
     followLocalRunLink();
     window.addEventListener("hashchange", followLocalRunLink);
@@ -2192,7 +2216,7 @@ export function App() {
       <div class="rail-footer"><div class="language-toggle" aria-label="Language"><button type="button" classList={{ active: language() === "zh" }} onClick={() => { setLanguage("zh"); setUiLanguage("zh"); }}>ZH</button><button type="button" classList={{ active: language() === "en" }} onClick={() => { setLanguage("en"); setUiLanguage("en"); }}>EN</button></div><label>{text("主题", "Theme")}<select value={theme()} onChange={(event) => setTheme(event.currentTarget.value as Theme)}><option value="light">{text("浅色", "Light")}</option><option value="dark">{text("深色", "Dark")}</option><option value="eye">{text("护眼", "Eye care")}</option></select></label></div>
     </aside>
     <Suspense fallback={<main class="route-loading" aria-live="polite"><div class="route-loading-beacon" aria-hidden="true"><i /><i /><i /></div><small>{text("正在切换工作区", "SWITCHING WORKSPACE")}</small><h1>{text("正在载入已选择的本地工作区", "Loading the selected local workspace")}</h1><p>{text("不会读取私有文件、调用提供方或改变任务。", "No private file is read, provider is called, or task is changed.")}</p><div class="route-loading-radar" aria-hidden="true"><i /><i /><i /></div></main>}>
-      <Show when={view() === "discover"} fallback={view() === "workflow" ? <FleetCommand bundle={bundle()} locale={language()} facilityContracts={facilityContracts()} facilityCatalogueHealth={facilityCatalogueHealth()} onRefreshFacilityContracts={() => void refreshFacilityContracts()} harnessPlugins={harnessPlugins()} harnessCatalogueHealth={harnessCatalogueHealth()} onRefreshHarnessCatalogue={() => void refreshHarnessCatalogue()} dshProfile={dshProfile()} dshProfileHealth={dshProfileHealth()} onRefreshDshProfile={() => void refreshDshProfile()} operationalTelemetry={launchPreview() ? null : operationalTelemetry()} bfoTemplateId={launchPreview() ? null : activeBfoTemplateId()} selectedDocumentId={launchPreview() ? null : selectedDocumentId()} pdfTask={previewPdfTask()} pdfTaskFreshness={selectedPdfTaskFreshness()} pdfTasks={previewPdfTasks()} onSelectPdf={previewCanActOnRun() ? (task) => setPdfTask(task) : undefined} markdownUrl={previewPdfTask() && liveRunId() ? privateMarkdownUrl(liveRunId()!, previewPdfTask()!.document_id) : null} onRefreshPdf={previewPdfTask() ? refreshPdfTask : undefined} onConfirmPdfDoi={previewPdfTask() ? confirmManualPdfDoi : undefined} onExpandPdfCitations={previewPdfTask() ? expandPdfCitationGraph : undefined} onOpenTaskControl={previewCanActOnRun() ? openManualTaskControl : undefined} automaticMissionPending={launchPreview() ? false : automaticMissionPending()} automaticCancellationRequested={launchPreview() ? false : automaticCancellationRequested()} onCancelAutomaticMission={automaticCancellationEnabled(launchPreview(), liveRunId(), automaticExecution()?.state, automaticCancellationRequested()) ? cancelAutomaticMission : undefined} automaticAuthorization={launchPreview() ? null : automaticAuthorization()} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} /> : view() === "graph" ? <GraphNetwork bundle={bundle()} theme={theme()} locale={language()} runId={previewCanActOnRun() ? liveRunId() : null} selectedDocumentId={launchPreview() ? null : selectedDocumentId()} pdfTask={previewPdfTask()} pdfTasks={previewPdfTasks()} sourceTasks={sourceParseTasks()} sourceHealth={sourceParseHealth()} onRefreshSourceParses={previewCanActOnRun() ? () => void refreshSavedSourceParses() : undefined} onLinkSourceMarkdown={previewCanActOnRun() ? linkPrivateSourceMarkdown : undefined} screening={candidateScreening()} onLoadScreening={previewCanActOnRun() ? loadCandidateScreening : undefined} onSubmitScreening={previewCanActOnRun() ? submitCandidateScreening : undefined} onRequestFulltext={previewCanActOnRun() ? prepareCandidatePdf : undefined} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} onSelectPaper={choosePaper} onSelectEvidence={chooseEvidence} /> : view() === "reader" ? <PaperReader bundle={bundle()} session={researchSession()} pdfTask={previewPdfTask()} fetchedSource={selectedFetchedSource()} screeningAllowsSourceReview={previewCanActOnRun() && selectedPaperScreenedForFulltext()} markdownUrl={readerMarkdownUrl()} onRecordSourceMap={(selectedFetchedSource() || previewPdfTask()) ? recordPrivateSourceMap : undefined} onLoadSourceMap={(selectedFetchedSource() || previewPdfTask()) ? loadPrivateSourceMap : undefined} onRecordMaterialFacts={(selectedFetchedSource() || previewPdfTask()) ? recordPrivateMaterialFacts : undefined} onRecordEvidence={(selectedFetchedSource() || previewPdfTask()) ? recordPrivateEvidenceCard : undefined} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} onSelectEvidence={chooseEvidence} /> : <ResearchExpansion bundle={bundle()} session={researchSession()} onNavigate={navigate} onOpenTaskControl={previewCanActOnRun() ? openManualTaskControl : undefined} onBuildConditionMatrix={previewCanActOnRun() ? buildConditionMatrix : undefined} onBuildGapCandidates={previewCanActOnRun() ? buildGapCandidates : undefined} onFocusEvidence={focusGapEvidence} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} />}>
+      <Show when={view() === "discover"} fallback={view() === "workflow" ? <FleetCommand bundle={bundle()} locale={language()} facilityContracts={facilityContracts()} facilityCatalogueHealth={facilityCatalogueHealth()} onRefreshFacilityContracts={() => void refreshFacilityContracts()} harnessPlugins={harnessPlugins()} harnessCatalogueHealth={harnessCatalogueHealth()} onRefreshHarnessCatalogue={() => void refreshHarnessCatalogue()} dshProfile={dshProfile()} dshProfileHealth={dshProfileHealth()} onRefreshDshProfile={() => void refreshDshProfile()} operationalTelemetry={launchPreview() ? null : operationalTelemetry()} bfoTemplateId={launchPreview() ? null : activeBfoTemplateId()} selectedDocumentId={launchPreview() ? null : selectedDocumentId()} pdfTask={previewPdfTask()} pdfTaskFreshness={selectedPdfTaskFreshness()} pdfTasks={previewPdfTasks()} onSelectPdf={previewCanActOnRun() ? (task) => setPdfTask(task) : undefined} markdownUrl={previewPdfTask() && liveRunId() ? privateMarkdownUrl(liveRunId()!, previewPdfTask()!.document_id) : null} onRefreshPdf={previewPdfTask() ? refreshPdfTask : undefined} onConfirmPdfDoi={previewPdfTask() ? confirmManualPdfDoi : undefined} onExpandPdfCitations={previewPdfTask() ? expandPdfCitationGraph : undefined} onOpenTaskControl={previewCanActOnRun() ? openManualTaskControl : undefined} automaticMissionPending={launchPreview() ? false : automaticMissionPending()} automaticCancellationRequested={launchPreview() ? false : automaticCancellationRequested()} onCancelAutomaticMission={automaticCancellationEnabled(launchPreview(), liveRunId(), automaticExecution()?.state, automaticCancellationRequested()) ? cancelAutomaticMission : undefined} automaticAuthorization={launchPreview() ? null : automaticAuthorization()} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} /> : view() === "graph" ? <GraphNetwork bundle={bundle()} linkedDocumentId={previewCanActOnRun() ? existingRunLanding()?.documentId : null} theme={theme()} locale={language()} runId={previewCanActOnRun() ? liveRunId() : null} selectedDocumentId={launchPreview() ? null : selectedDocumentId()} pdfTask={previewPdfTask()} pdfTasks={previewPdfTasks()} sourceTasks={sourceParseTasks()} sourceHealth={sourceParseHealth()} onRefreshSourceParses={previewCanActOnRun() ? () => void refreshSavedSourceParses() : undefined} onLinkSourceMarkdown={previewCanActOnRun() ? linkPrivateSourceMarkdown : undefined} screening={candidateScreening()} onLoadScreening={previewCanActOnRun() ? loadCandidateScreening : undefined} onSubmitScreening={previewCanActOnRun() ? submitCandidateScreening : undefined} onRequestFulltext={previewCanActOnRun() ? prepareCandidatePdf : undefined} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} onSelectPaper={choosePaper} onSelectEvidence={chooseEvidence} /> : view() === "reader" ? <PaperReader bundle={bundle()} session={researchSession()} pdfTask={previewPdfTask()} fetchedSource={selectedFetchedSource()} screeningAllowsSourceReview={previewCanActOnRun() && selectedPaperScreenedForFulltext()} markdownUrl={readerMarkdownUrl()} onRecordSourceMap={(selectedFetchedSource() || previewPdfTask()) ? recordPrivateSourceMap : undefined} onLoadSourceMap={(selectedFetchedSource() || previewPdfTask()) ? loadPrivateSourceMap : undefined} onRecordMaterialFacts={(selectedFetchedSource() || previewPdfTask()) ? recordPrivateMaterialFacts : undefined} onRecordEvidence={(selectedFetchedSource() || previewPdfTask()) ? recordPrivateEvidenceCard : undefined} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} onSelectEvidence={chooseEvidence} /> : <ResearchExpansion bundle={bundle()} session={researchSession()} onNavigate={navigate} onOpenTaskControl={previewCanActOnRun() ? openManualTaskControl : undefined} onBuildConditionMatrix={previewCanActOnRun() ? buildConditionMatrix : undefined} onBuildGapCandidates={previewCanActOnRun() ? buildGapCandidates : undefined} onFocusEvidence={focusGapEvidence} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} />}>
       <main class="discovery-stage mission-stage"><FleetDecoration kind="discover" state={fleetVisualState(bundle(), "discover")} />
         <header class="stage-header"><div><p class="stage-kicker">COSMATTER / {text("任务定义", "MISSION DEFINITION")}</p><h1>{text("从问题到可审计的证据航线", "From question to an auditable evidence route")}</h1><p>{bundle().mission.question}</p></div></header>
         <Show when={launchPreview()}><ReadOnlyPreviewContext locale={language()} onExit={returnToLaunch} /></Show>

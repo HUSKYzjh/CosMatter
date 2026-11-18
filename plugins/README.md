@@ -11,7 +11,7 @@ CosMatter 的 Python 领域层仍是任务工件、证据门禁和审计记录�
 | `dsh-cosmatter-policy-plugin` | `cosmatter_plugin_catalogue`、`cosmatter_plugin_authorization_plan` | 只读能力目录和非执行授权边界判断；不记录同意、不调度适配器。 |
 | `dsh-cosmatter-research-plugin` | `cosmatter_research_plan_draft`、`cosmatter_research_plan_approve`、`cosmatter_research_query_execute` | 仅在工具调用提供精确、任务范围同意时，由 loopback 后端生成不可信 DeepSeek 计划草案或执行已批准的元数据检索；不读取全文、不调用 MinerU、不接受证据。 |
 | `dsh-cosmatter-review-plugin` | `cosmatter_candidate_screening_template`、`cosmatter_candidate_screening_record` | 只读候选元数据并记录完整人工筛选；不调用提供商、不调度全文或 MinerU、不接受证据。 |
-| `dsh-cosmatter-document-plugin` | `cosmatter_mineru_source_submit`、`cosmatter_mineru_task_poll` | 仅在候选已有上游全文访问声明或当前哈希确认、完整人工筛选和三项精确授权后调度/轮询 MinerU；只返回任务元数据，不返回 URL、解析正文或证据。 |
+| `dsh-cosmatter-document-plugin` | `cosmatter_mineru_source_submit`、`cosmatter_mineru_task_poll` | 在候选具备全文访问依据、完整人工筛选及三项精确授权后提交或轮询 MinerU。返回任务元数据和精确到候选的本机工作台链接。 |
 | `dsh-cosmatter-graph-plugin` | `cosmatter_graph_query`、`cosmatter_accepted_evidence_search`、`cosmatter_graph_plan`、`cosmatter_graph_review_request` | 已接受证据的只读图投影与有界检索；计划与审核请求始终待人工处理。 |
 
 为避免影响默认 profile，先使用单独 profile。DSH 将 `plugin` 参数转交给 pnpm，

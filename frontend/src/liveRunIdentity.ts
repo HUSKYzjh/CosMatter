@@ -5,14 +5,26 @@ export function isLocalRunId(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(value);
 }
 
-export function localRunLinkId(hash: string): string | null {
-  const runId = hash.startsWith("#run=") ? hash.slice(5) : "";
-  return isLocalRunId(runId) ? runId : null;
+export interface LocalRunLinkTarget { runId: string; documentId: string | null; }
+
+export function parseLocalRunLink(hash: string): LocalRunLinkTarget | null {
+  if (!hash.startsWith("#") || hash.length > 4_096) return null;
+  const params = new URLSearchParams(hash.slice(1));
+  const keys = [...params.keys()];
+  const runId = params.get("run") ?? "";
+  const documentId = params.get("document");
+  if (!isLocalRunId(runId) || keys.length !== (documentId === null ? 1 : 2)
+    || keys.some((key) => key !== "run" && key !== "document")) return null;
+  if (documentId !== null && (!documentId || documentId.length > 255 || documentId.trim() !== documentId
+    || /[\u0000-\u001f\u007f]/.test(documentId))) return null;
+  return { runId, documentId };
 }
 
-export function localRunLink(origin: string, runId: string): string {
+export function localRunLink(origin: string, runId: string, documentId: string | null = null): string {
   const url = new URL("/?api=local", origin);
-  url.hash = `run=${runId}`;
+  const params = new URLSearchParams({ run: runId });
+  if (documentId) params.set("document", documentId);
+  url.hash = params.toString();
   return url.href;
 }
 
