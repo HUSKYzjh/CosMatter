@@ -8,6 +8,7 @@ import { bfoTaskFormation } from "./bfoTaskFormation";
 import { questionBoundFallbackCandidates } from "./launchQuestionCandidates";
 import { ActionButton } from "./uiPrimitives";
 import type { RetrievalSource } from "./localApi";
+import { isLocalRunId } from "./liveRunIdentity";
 
 export type LaunchMode = "question" | "pdf" | "resume";
 export type LaunchExecution = { kind: "local" } | { kind: "authorized-retrieval"; sources: RetrievalSource[] };
@@ -43,7 +44,7 @@ const MODES: Array<{ id: LaunchMode; icon: string; zh: string; en: string; zhDet
   { id: "resume", icon: "↗", zh: "续航任务", en: "Resume", zhDetail: "运行包 → 未完成阶段", enDetail: "Run package → unfinished stage" },
 ];
 
-export function Launchpad(props: { onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
+export function Launchpad(props: { onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; existingRunReadPending?: boolean; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
   const [foregroundIndex, setForegroundIndex] = createSignal(nextFleetIndex());
   const [mode, setMode] = createSignal<LaunchMode>("question");
   const activeStage = () => stageForLaunchMode(mode());
@@ -61,6 +62,8 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission, executio
   const [pdfConsent, setPdfConsent] = createSignal(false);
   const [automaticConsent, setAutomaticConsent] = createSignal(false);
   const [resume, setResume] = createSignal<File | null>(null);
+  const [existingRunId, setExistingRunId] = createSignal("");
+  const continuationBusy = () => Boolean(props.existingRunReadPending || props.resumeSubmissionPending);
   const bfoPresets = () => bfoTaskPresets(props.language);
   const selectedBfoFormation = () => {
     const candidate = selected();
@@ -201,8 +204,8 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission, executio
     </section>
 
     <section class="launch-workspace">
-      <Show when={props.launchNotice}>{(notice) => <section class="launch-notice" role="alert" aria-live="assertive"><div><small>{copy("本地文件校验提示", "LOCAL FILE VALIDATION")}</small><p>{notice()}</p></div><button type="button" onClick={() => props.onDismissLaunchNotice?.()}>{copy("关闭提示", "Dismiss")}</button></section>}</Show>
-      <Show when={props.activeRunId}>{(runId) => <section class="launch-active-run" role="status" aria-live="polite"><div><small>{copy("本机任务仍在保留", "LOCAL RUN RETAINED")}</small><strong>{copy("返回起始页不会取消当前任务", "Returning to launch does not cancel the current task")}</strong><p>{copy(`本机运行 ${runId()} 仍可继续查看。只有明确修改任务边界或新建任务时才会替换它。`, `Local run ${runId()} remains available for review. It is replaced only after an explicit task-boundary change or new task.`)}</p></div><button type="button" onClick={() => props.onReturnToActiveRun?.()}>{copy("返回当前任务", "Return to current task")}</button></section>}</Show>
+      <Show when={props.launchNotice}>{(notice) => <section class="launch-notice" role="alert" aria-live="assertive"><div><small>{copy("本机操作提示", "LOCAL OPERATION NOTICE")}</small><p>{notice()}</p></div><button type="button" onClick={() => props.onDismissLaunchNotice?.()}>{copy("关闭提示", "Dismiss")}</button></section>}</Show>
+      <Show when={props.activeRunId}>{(runId) => <section class="launch-active-run" role="status" aria-live="polite"><div><small>{copy("本机任务仍在保留", "LOCAL RUN RETAINED")}</small><strong>{copy("可返回当前运行", "Current run is available")}</strong><p>{copy(`当前运行 ID 为 ${runId()}。`, `Current run ID: ${runId()}.`)}</p></div><ActionButton size="sm" onClick={() => props.onReturnToActiveRun?.()}>{copy("返回当前任务", "Return to current task")}</ActionButton></section>}</Show>
       <Show when={mode() === "question"}>
         <section class="signal-receiver"><header><p class="launch-kicker">QUESTION SIGNAL</p><h2>{copy("提出一个可由文献证据回答的问题", "Ask a question answerable with literature evidence")}</h2><ol><li>{copy("输入研究问题", "Enter a research question")}</li><li>{copy("生成未受信候选航向", "Generate untrusted candidate routes")}</li><li>{copy("确认任务边界", "Confirm the task boundary")}</li></ol></header><section class="bfo-task-deck" aria-label={copy("BiFeO₃ 任务模板", "BiFeO₃ task templates")}><header><small>{copy("BFO 任务模板 / 只填入本地简报", "BFO TASK TEMPLATES / LOCAL BRIEF ONLY")}</small><span>{copy("选择后仍可编辑，并须确认；不会检索、上传或创建任务。", "Selection remains editable and requires confirmation; it does not retrieve, upload, or create a task.")}</span></header><div><For each={bfoPresets()}>{(preset, index) => <button type="button" aria-pressed={selected()?.id === preset.id} classList={{ selected: selected()?.id === preset.id }} onClick={() => selectBfoPreset(preset)}><small>BFO-{String(index() + 1).padStart(2, "0")}</small><strong>{preset.question}</strong><span>{preset.material} · {preset.property}</span><em>{preset.scope}</em></button>}</For></div></section><label>{copy("候选航向研究问题", "Candidate-route research question")}<textarea value={prompt()} rows="3" onInput={(event) => { setPrompt(event.currentTarget.value); resizeQuestionInput(event.currentTarget); }} placeholder={copy("例如：为什么不同薄膜研究对 BiFeO₃ 相稳定性有相反结论？", "Example: Why do thin-film studies disagree about BiFeO₃ phase stability?")} /></label><small>{props.onCandidates ? copy("输入至少 12 个字符后，先明确授权候选生成模型；授权后约 0.8 秒生成未受信候选航向。", "After at least 12 characters, explicitly authorize the candidate-generation model; untrusted route suggestions appear about 0.8 seconds later.") : copy("输入至少 12 个字符后，系统将在约 0.8 秒后形成候选航向。", "After at least 12 characters, candidate routes appear in about 0.8 seconds.")}</small>
           <Show when={props.onCandidates}><label class="consent launch-candidate-consent"><input type="checkbox" checked={candidateConsent()} onChange={(event) => setCandidateConsent(event.currentTarget.checked)} />{copy("我同意将上述研究问题发送至已配置的候选生成模型，以形成未受信候选航向；不会检索、上传全文或创建任务。", "I authorize sending the research question above to the configured candidate-generation model for untrusted route suggestions. This does not retrieve, upload full text, or create a task.")}</label></Show>
@@ -237,7 +240,45 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission, executio
         </section>
       </Show>
       <Show when={mode() === "pdf"}><section class="mode-panel" aria-busy={props.pdfSubmissionPending}><p class="launch-kicker">DOCUMENT INTAKE</p><h2>{copy("将有权处理的 PDF 送入私有资料舱", "Send an authorized PDF to the private document bay")}</h2><Show when={props.candidatePdfTarget}>{(target) => <p class="candidate-pdf-context">{copy("当前将把已人工纳入的候选关联到原任务：", "The authorized PDF will be linked to the original task for the human-included candidate:")} <strong>{target().title}</strong></p>}</Show><Show when={props.retryPdfSubmission}>{(retry) => <section class="launch-pdf-retry" role="status"><small>{copy("未确认提交 / 原任务仍保留", "UNCONFIRMED SUBMISSION / ORIGINAL TASK RETAINED")}</small><p>{copy(`“${retry().fileName}”仍只保留在此浏览器会话内。重试将使用原任务 ID，不会创建第二个任务。`, `“${retry().fileName}” remains only in this browser session. Retrying uses the original task ID and does not create a second task.`)}</p><ActionButton class="launch-primary" variant="primary" size="lg" busy={props.pdfSubmissionPending} busyLabel={copy("正在重试解析任务…", "Retrying parsing task…")} onClick={() => props.onRetryPdfSubmission?.()}>{copy("使用原任务重试", "Retry original task")}</ActionButton></section>}</Show><p>{copy("文件先进入本机环回服务；确认后才提交 MinerU。完整 Markdown 不进入 UI JSON 或运行包。", "The file first enters the local loopback service; it reaches MinerU only after consent. Full Markdown never enters UI JSON or a run package.")}</p><label class="file-bay">{copy("选择 PDF", "Choose PDF")}<input type="file" disabled={props.pdfSubmissionPending} accept="application/pdf,.pdf" onChange={(event) => setPdf(event.currentTarget.files?.[0] ?? null)} /></label><Show when={pdf()}>{(file) => <p class="file-name">{file().name} · {(file().size / 1024 / 1024).toFixed(1)} MB</p>}</Show><label class="consent"><input type="checkbox" disabled={props.pdfSubmissionPending} checked={pdfConsent()} onChange={(event) => setPdfConsent(event.currentTarget.checked)} />{copy("我确认有权处理该 PDF，并同意提交后发送至 MinerU 云端。", "I have the right to process this PDF and consent to MinerU cloud submission.")}</label><ActionButton class="launch-primary" variant="primary" size="lg" busy={props.pdfSubmissionPending} busyLabel={copy("正在提交解析任务…", "Submitting parsing task…")} disabled={!pdf() || !pdfConsent()} onClick={() => pdf() && props.onPdf(pdf()!, props.candidatePdfTarget ?? undefined)}>{copy("创建解析任务", "Create parsing task")}</ActionButton></section></Show>
-      <Show when={mode() === "resume"}><section class="mode-panel" aria-busy={props.resumeSubmissionPending}><p class="launch-kicker">RUN CONTINUATION</p><h2>{copy("恢复可执行的研究航程", "Restore an executable research voyage")}</h2><p>{copy("仅接受版本化 .cosmatter-run.json。旧 ui.json 仅可只读查看，不能恢复后端执行。", "Only versioned .cosmatter-run.json is accepted. Legacy ui.json remains read-only and cannot resume backend execution.")}</p><label class="file-bay">{copy("选择运行包", "Choose run package")}<input type="file" disabled={props.resumeSubmissionPending} accept="application/json,.json" onChange={(event) => setResume(event.currentTarget.files?.[0] ?? null)} /></label><Show when={resume()}>{(file) => <p class="file-name">{file().name}</p>}</Show><ActionButton class="launch-primary" variant="primary" size="lg" busy={props.resumeSubmissionPending} busyLabel={copy("正在校验并恢复…", "Validating and restoring…")} disabled={!resume()} onClick={() => resume() && props.onResume(resume()!)}>{copy("校验并继续任务", "Validate and continue")}</ActionButton></section></Show>
+      <Show when={mode() === "resume"}>
+        <section class="mode-panel run-continuation" aria-busy={props.resumeSubmissionPending || props.existingRunReadPending}>
+          <h2>{copy("继续研究任务", "Continue a research run")}</h2>
+          <div class="run-continuation-options">
+            <form class="run-continuation-card" onSubmit={(event) => {
+              event.preventDefault();
+              if (!continuationBusy() && isLocalRunId(existingRunId().trim())) props.onOpenExistingRun?.(existingRunId());
+            }}>
+              <h3>{copy("按运行 ID 打开", "Open by run ID")}</h3>
+              <p>{copy("适用于 DSH 或本机浏览器已经建立的任务，直接进入同一运行。", "Open the same run created in DSH or in the local browser.")}</p>
+              <Show when={props.onOpenExistingRun} fallback={<p>{copy("此入口需要启用本机 API。", "This entry requires the local API.")}</p>}>
+                <label for="continuation-run-id">{copy("现有运行 ID", "Existing run ID")}</label>
+                <div class="run-id-form-row">
+                  <input id="continuation-run-id" value={existingRunId()} maxLength={128} autocomplete="off" autocapitalize="off" spellcheck={false}
+                    placeholder="run_…" disabled={continuationBusy()}
+                    aria-invalid={Boolean(existingRunId().trim() && !isLocalRunId(existingRunId().trim()))}
+                    aria-describedby="continuation-run-id-hint"
+                    onInput={(event) => setExistingRunId(event.currentTarget.value)} />
+                  <ActionButton type="submit" variant="primary" size="md" busy={props.existingRunReadPending}
+                    busyLabel={copy("正在打开…", "Opening…")} disabled={continuationBusy() || !isLocalRunId(existingRunId().trim())}>
+                    {copy("打开本机运行", "Open local run")}
+                  </ActionButton>
+                </div>
+                <p id="continuation-run-id-hint">{copy("例如 DSH 返回的 run_id。可使用字母、数字、下划线和连字符。", "Use the run_id returned by DSH. Letters, numbers, underscores and hyphens are supported.")}</p>
+              </Show>
+            </form>
+            <section class="run-continuation-card">
+              <h3>{copy("从运行包恢复", "Restore from a run package")}</h3>
+              <p>{copy("选择原始导出的 .cosmatter-run.json 运行包。", "Select the original exported .cosmatter-run.json package.")}</p>
+              <label class="file-bay">{copy("选择运行包", "Choose run package")}<input type="file" disabled={continuationBusy()} accept="application/json,.json" onChange={(event) => setResume(event.currentTarget.files?.[0] ?? null)} /></label>
+              <Show when={resume()}>{(file) => <p class="file-name">{file().name}</p>}</Show>
+              <ActionButton size="md" busy={props.resumeSubmissionPending} busyLabel={copy("正在校验并恢复…", "Validating and restoring…")}
+                disabled={continuationBusy() || !resume()} onClick={() => resume() && props.onResume(resume()!)}>
+                {copy("校验并继续任务", "Validate and continue")}
+              </ActionButton>
+            </section>
+          </div>
+        </section>
+      </Show>
     </section>
 
     <footer class="launch-flow" aria-label={copy("证据流程", "Evidence workflow")}><p>{copy("证据流程", "EVIDENCE ROUTE")}</p><div><span>{copy("输入", "Input")}</span><i>→</i><span>{copy("编排", "Orchestrate")}</span><i>→</i><span>{copy("文献星图", "Literature map")}</span><i>→</i><span>{copy("证据核对", "Verify")}</span><i>→</i><span>Gap {copy("候选", "candidates")}</span></div></footer>

@@ -1037,14 +1037,20 @@ class LocalMissionApi:
         _write_pdf_intake(run_dir, mission.mission_id, artifact)
         return _pdf_public_status(artifact, _source_map_review_status(run_dir, mission.mission_id, artifact))
 
-    def pdf_tasks(self, run_id: str) -> dict[str, object]:
+    def pdf_tasks(self, run_id: str, *, refresh: bool = True) -> dict[str, object]:
         """Return public status projections for every private document task."""
         run_dir, mission = self._active_mission(run_id)
         try:
-            document_ids = [str(item["document_id"]) for item in load_pdf_tasks(run_dir, mission.mission_id)]
+            artifacts = load_pdf_tasks(run_dir, mission.mission_id, missing_ok=not refresh)
         except PdfTaskRegistryError as error:
             raise LocalApiError(str(error), 404) from error
-        return {"run_id": run_id, "tasks": [self.pdf_status(run_id, document_id) for document_id in document_ids], "trust_status": "private_pdf_task_registry_metadata_only"}
+        tasks = []
+        for artifact in artifacts:
+            if refresh:
+                tasks.append(self.pdf_status(run_id, str(artifact["document_id"])))
+            else:
+                tasks.append(_pdf_public_status(artifact, _source_map_review_status(run_dir, mission.mission_id, artifact)))
+        return {"run_id": run_id, "tasks": tasks, "trust_status": "private_pdf_task_registry_metadata_only"}
     def private_markdown(self, run_id: str, document_id: str) -> bytes:
         run_dir, mission = self._active_mission(run_id)
         artifact = _pdf_intake(run_dir, mission.mission_id, document_id)

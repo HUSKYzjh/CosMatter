@@ -1,6 +1,10 @@
 import type { OperationalTelemetry, RunStatus, StageContract, WorkflowDag } from "./localApi";
 import type { ImportedBundle } from "./model";
 
+export function isLocalRunId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/.test(value);
+}
+
 /** Keep every loopback projection bound to the run and mission that produced it. */
 export function liveBundleMatchesRun(runId: string, status: RunStatus, bundle: ImportedBundle): boolean {
   return status.run_id === runId && status.mission_id === bundle.mission.missionId;

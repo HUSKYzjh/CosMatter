@@ -118,6 +118,10 @@ def build_ui_preview_server(
             if run_id is not None:
                 self._api_json(lambda: api.pdf_tasks(run_id) if api is not None else _api_disabled())
                 return
+            run_id = _api_run_id(path, "/api/runs/", "/pdf/tasks/cached")
+            if run_id is not None:
+                self._api_json(lambda: api.pdf_tasks(run_id, refresh=False) if api is not None else _api_disabled())
+                return
             match = re.fullmatch(r"/api/runs/([A-Za-z0-9][A-Za-z0-9_-]*)/pdf/(pdf_[a-f0-9]{24})/(status|source-map)", path)
             if match:
                 operation = match.group(3)

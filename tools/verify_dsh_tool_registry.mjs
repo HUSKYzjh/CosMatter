@@ -17,7 +17,13 @@ async function dispatch(ctx, name, args) {
   return result.value
 }
 
-export async function apply(ctx, { expectedTools, catalogue }) {
+async function browserRead(webOrigin, path) {
+  const response = await fetch(new URL(path, webOrigin), { signal: AbortSignal.timeout(5000) })
+  if (!response.ok) throw new Error(`browser handoff read for ${path} returned HTTP ${response.status}`)
+  return await response.json()
+}
+
+export async function apply(ctx, { expectedTools, catalogue, webOrigin }) {
   try {
     const registeredCosMatterTools = () => ctx.tools.definitions()
       .map(({ name }) => name)
@@ -44,7 +50,18 @@ export async function apply(ctx, { expectedTools, catalogue }) {
     assert.equal(workflow.run_id, runId)
     assert.equal(workflow.mission_id, mission.mission_id)
     assert.equal(workflow.next_stage, 'plan')
-    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue and mission verified\n`, () => process.exit(0))
+    const runRoute = `/api/runs/${runId}`
+    const [browserStatus, browserBundle, pdfRegistry] = await Promise.all([
+      browserRead(webOrigin, `${runRoute}/status`),
+      browserRead(webOrigin, `${runRoute}/ui`),
+      browserRead(webOrigin, `${runRoute}/pdf/tasks/cached`),
+    ])
+    assert.equal(browserStatus.run_id, runId)
+    assert.equal(browserStatus.mission_id, mission.mission_id)
+    assert.equal(browserBundle.mission.mission_id, mission.mission_id)
+    assert.equal(pdfRegistry.run_id, runId)
+    assert.deepEqual(pdfRegistry.tasks, [])
+    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission, and browser handoff verified\n`, () => process.exit(0))
   } catch (error) {
     process.stderr.write(`CosMatter release probe failed: ${error.message}\n`, () => process.exit(1))
   }

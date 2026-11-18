@@ -1,4 +1,4 @@
-import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount, untrack } from "solid-js";
+import { For, Show, Suspense, batch, createEffect, createMemo, createSignal, lazy, onCleanup, onMount, untrack } from "solid-js";
 
 import { FleetDecoration } from "./FleetDecoration";
 import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget } from "./Launchpad";
@@ -14,7 +14,7 @@ import { hasNavigableLiteratureGraph, missionJourney, type JourneyStage } from "
 import { automaticGraphHandoffAlreadySettled, automaticGraphHandoffTarget } from "./automaticGraphHandoff";
 import { automaticCancellationEnabled } from "./automaticCancellation";
 import { availableRetrievalSources, reconcileRetrievalSources, type LocalApiCapabilityHealth } from "./localApiCapabilities";
-import { liveBundleMatchesRun, runtimeProjectionsMatchRun } from "./liveRunIdentity";
+import { isLocalRunId, liveBundleMatchesRun, runtimeProjectionsMatchRun } from "./liveRunIdentity";
 import { operationRecovery, type OperationRecoveryKind } from "./operationRecovery";
 import { deriveMissionArtifactStatus, taskBoundaryFingerprint, type MissionArtifactStatus } from "./missionArtifactStatus";
 import { auditableAcceptedEvidence, documentIdForReviewablePaper, evidenceForPaper, reviewablePaperCount, reviewablePaperForDocumentId } from "./evidenceLinking";
@@ -255,6 +255,7 @@ export function App() {
   const [retrievalSources, setRetrievalSources] = createSignal<RetrievalSource[]>([]);
   let retrievalSourcesInitialized = false;
   const [liveRunId, setLiveRunId] = createSignal<string | null>(null);
+  const [runIdCopyFeedback, setRunIdCopyFeedback] = createSignal<{ runId: string; copied: boolean } | null>(null);
   const [stageContract, setStageContract] = createSignal<StageContract | null>(null);
   const [workflowDag, setWorkflowDag] = createSignal<WorkflowDag | null>(null);
   const [operationalTelemetry, setOperationalTelemetry] = createSignal<OperationalTelemetry | null>(null);
@@ -274,10 +275,12 @@ export function App() {
   const [pdfSubmissionPending, setPdfSubmissionPending] = createSignal(false);
   const [rootPdfRetry, setRootPdfRetry] = createSignal<RootPdfRetry | null>(null);
   const [resumeSubmissionPending, setResumeSubmissionPending] = createSignal(false);
+  const [existingRunReadPending, setExistingRunReadPending] = createSignal(false);
   const [uiImportPending, setUiImportPending] = createSignal(false);
   const [uiImportReceipt, setUiImportReceipt] = createSignal<LocalImportReceipt | null>(null);
   const [pdfTask, setPdfTask] = createSignal<PdfTaskStatus | null>(null);
   const [pdfTasks, setPdfTasks] = createSignal<PdfTaskStatus[]>([]);
+  const [pdfObservationMode, setPdfObservationMode] = createSignal<"refresh" | "cached">("refresh");
   const [pdfTaskObservedAt, setPdfTaskObservedAt] = createSignal<Record<string, number>>({});
   const [pdfTaskReadHealth, setPdfTaskReadHealth] = createSignal<PdfTaskReadHealth>("disabled");
   const [pdfFreshnessNow, setPdfFreshnessNow] = createSignal(Date.now());
@@ -449,6 +452,7 @@ export function App() {
     setView(next);
   }
   function openLaunchPreview(stage: LaunchPreviewStage) {
+    existingRunReadGate.invalidate();
     // Effects stop scheduling remote refreshes in preview mode, but a request
     // that was already in flight must not update this read-only workspace.
     automaticRefreshGate.invalidate();
@@ -467,12 +471,13 @@ export function App() {
     setLaunchPreview(false);
     setView("launch");
     setStatus(liveRunId()
-      ? text("已返回起始页；当前本机任务仍被保留，可随时返回查看。新任务或边界修改才会替换它。", "Returned to launch. The current local task is retained and can be reopened at any time; only a new task or boundary change replaces it.")
+      ? text("已返回起始页，可随时返回当前本机运行。", "Returned to launch. You can return to the current local run at any time.")
       : text("已返回起始页；选择入口并完成确认后才会执行任务。", "Returned to launch. A task runs only after an entry is selected and confirmed."));
   }
 
   function returnToActiveRunWorkspace() {
     if (!liveRunId()) return;
+    existingRunReadGate.invalidate();
     setLaunchPreview(false);
     setRouteRecovery(null);
     setView("workflow");
@@ -545,6 +550,7 @@ export function App() {
   const runtimeProjectionRefreshGate = createLatestRequestGate();
   const pdfTaskRefreshGate = createLatestRequestGate();
   const pdfTasksRefreshGate = createLatestRequestGate();
+  const existingRunReadGate = createLatestRequestGate();
   const pdfSubmissionGate = createExclusiveSubmissionGate();
   const resumeSubmissionGate = createExclusiveSubmissionGate();
   const uiImportSubmissionGate = createExclusiveSubmissionGate();
@@ -578,7 +584,7 @@ export function App() {
     finishActiveOperation(automaticOperationId);
     automaticOperationId = null;
   }
-  function supersedeActiveRun() {
+  function supersedeActiveRun(previousRun: "cancel" | "keep" = "cancel") {
     taskEpoch += 1;
     automaticRefreshGate.invalidate();
     runtimeProjectionRefreshGate.invalidate();
@@ -598,7 +604,7 @@ export function App() {
     setRuntimeProjectionHealth("disabled");
     setRuntimeProjectionObservedAt(null);
     const priorRunId = liveRunId();
-    if (priorRunId && localApiEnabled()) void cancelRun(priorRunId).catch(() => undefined);
+    if (previousRun === "cancel" && priorRunId && localApiEnabled()) void cancelRun(priorRunId).catch(() => undefined);
     return taskEpoch;
   }
   async function refreshRuntimeProjections(runId: string, stillCurrent: () => boolean = () => liveRunId() === runId): Promise<StageContract | null> {
@@ -701,6 +707,7 @@ export function App() {
     setRootPdfRetry(null);
     setPdfTask(null);
     setPdfTasks([]);
+    setPdfObservationMode("refresh");
     setPdfTaskObservedAt({});
     setPdfTaskReadHealth("disabled");
     setResearchSession(emptyResearchSession());
@@ -737,11 +744,16 @@ export function App() {
     setCandidatePdfTarget(null);
   }
 
-  async function hydrateLiveRunBundle(runId: string, stillCurrent: () => boolean = () => true, preserveResearchSession = false): Promise<ImportedBundle> {
+  async function readLiveRunSnapshot(runId: string) {
     const [rawBundle, status] = await Promise.all([fetchLiveUiBundle(runId), getRunStatus(runId)]);
     const imported = readBundle(rawBundle, "loopback");
-    if (!stillCurrent()) throw new Error("stale task result");
     if (!liveBundleMatchesRun(runId, status, imported)) throw new Error("live run bundle identity mismatch");
+    return { imported, status };
+  }
+
+  async function hydrateLiveRunBundle(runId: string, stillCurrent: () => boolean = () => true, preserveResearchSession = false): Promise<ImportedBundle> {
+    const { imported } = await readLiveRunSnapshot(runId);
+    if (!stillCurrent()) throw new Error("stale task result");
     applyImportedBundle(imported, preserveResearchSession);
     if (localApiEnabled()) {
       try {
@@ -852,7 +864,7 @@ export function App() {
     if (untrack(pdfTaskReadHealth) !== "ready") setPdfTaskReadHealth("loading");
     let registry: PdfTaskRegistry;
     try {
-      registry = await getPdfTasks(runId);
+      registry = await getPdfTasks(runId, untrack(pdfObservationMode));
     } catch (error) {
       if (isLatestRefresh() && stillCurrent() && currentRunGuard(runId, epoch)()) setPdfTaskReadHealth("unavailable");
       throw error;
@@ -873,7 +885,7 @@ export function App() {
   createEffect(() => {
     const runId = liveRunId();
     const tasks = pdfTasks();
-    if (launchPreview() || !localApiEnabled() || !runId || !tasks.some((task) => shouldPollPdfTask(runId, task))) return;
+    if (launchPreview() || !localApiEnabled() || !runId || pdfObservationMode() === "cached" || !tasks.some((task) => shouldPollPdfTask(runId, task))) return;
     let refreshing = false;
     const refresh = async () => {
       if (refreshing) return;
@@ -1490,6 +1502,54 @@ export function App() {
     scheduleCurrentView(pdfEpoch, "workflow");
   }
 
+  async function openExistingRun(rawRunId: string) {
+    const runId = rawRunId.trim();
+    if (!localApiEnabled() || !isLocalRunId(runId) || !resumeSubmissionGate.tryStart()) return;
+    const previousEpoch = taskEpoch;
+    const isLatest = existingRunReadGate.begin();
+    const stillOnLaunch = () => isLatest() && isCurrentTask(previousEpoch) && view() === "launch" && !launchPreview();
+    setLaunchNotice(null);
+    setExistingRunReadPending(true);
+    try {
+      const snapshot = await readLiveRunSnapshot(runId);
+      if (!stillOnLaunch()) return;
+      if (snapshot.status.cancellation === "requested" || snapshot.status.state === "CANCELLED") {
+        setLaunchNotice(text("该运行已停止。请输入一个可续接的本机运行 ID。", "This run has been stopped. Enter the ID of a local run that can be continued."));
+        return;
+      }
+      const epoch = batch(() => {
+        const currentEpoch = supersedeActiveRun("keep");
+        clearRunScopedClientArtifacts();
+        setPdfObservationMode("cached");
+        setBfoFormationLink(null);
+        applyImportedBundle(snapshot.imported);
+        setLiveRunId(runId);
+        setStatus(text(`已打开本机运行 ${runId}。PDF 显示上次保存的状态，可手动刷新。`, `Opened local run ${runId}. PDF status shows the last saved record and can be refreshed manually.`));
+        setView("workflow");
+        return currentEpoch;
+      });
+      const current = currentRunGuard(runId, epoch);
+      void getCandidateScreening(runId).then((screening) => {
+        if (current() && screening.run_id === runId) setCandidateScreening(screening);
+      }).catch(() => undefined);
+      void refreshPdfTasks(runId, current).catch(() => undefined);
+    } catch {
+      if (stillOnLaunch()) setLaunchNotice(text("无法打开该运行。请核对运行 ID 和当前本机服务的数据目录。", "Could not open this run. Check its ID and the current local service's data directory."));
+    } finally {
+      resumeSubmissionGate.finish();
+      setExistingRunReadPending(false);
+    }
+  }
+
+  async function copyCurrentRunId(runId: string) {
+    try {
+      await navigator.clipboard.writeText(runId);
+      setRunIdCopyFeedback({ runId, copied: true });
+    } catch {
+      setRunIdCopyFeedback({ runId, copied: false });
+    }
+  }
+
   function resumeLaunch(file: File) {
     setLaunchNotice(null);
     if (!file.name.endsWith(".cosmatter-run.json")) {
@@ -1842,7 +1902,7 @@ export function App() {
   });
 
   return <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} existingRunReadPending={existingRunReadPending()} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>
@@ -1851,6 +1911,13 @@ export function App() {
       <ol class="journey-track" aria-label={text("研究阶段", "Research stages")}>
         <For each={journey()}>{(stage, index) => <li class={`journey-${stage.state}`}><button type="button" aria-current={stage.view === view() ? "step" : undefined} title={journeyStateLabel(stage)} onClick={() => navigate(stage.view)}><span>{String(index() + 1).padStart(2, "0")}</span><div><strong>{language() === "zh" ? stage.zh : stage.en}</strong><small>{journeyStateLabel(stage)}</small></div></button></li>}</For>
       </ol>
+      <Show when={!launchPreview() && localApiEnabled() && liveRunId()}>{(runId) => <div class="rail-run-identity">
+        <div><span>{text("运行 ID", "Run ID")}</span><code>{runId()}</code></div>
+        <ActionButton size="sm" onClick={() => void copyCurrentRunId(runId())}>{text("复制运行 ID", "Copy run ID")}</ActionButton>
+        <Show when={runIdCopyFeedback()?.runId === runId()}><p role="status">{runIdCopyFeedback()?.copied
+          ? text("运行 ID 已复制。", "Run ID copied.")
+          : text("剪贴板不可用，可手动选中运行 ID。", "Clipboard unavailable. You can select the run ID manually.")}</p></Show>
+      </div>}</Show>
       <details class="rail-context" open={railContextOpen()} onToggle={(event) => setRailContextOpen(event.currentTarget.open)}>
         <summary><span>{text("任务概览与本地状态", "Mission context and local status")}</span><small title={text("展开查看航线、审核锚点与本地状态", "Expand route, review anchor, and local status")}>{railContextSummary()}</small></summary>
       <Show when={journeyRelay().current}>{(current) => <section class="route-command-handoff" aria-label={text("当前航线交接", "Current route handoff")}>

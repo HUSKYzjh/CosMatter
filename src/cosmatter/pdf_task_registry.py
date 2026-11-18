@@ -25,7 +25,7 @@ class PdfTaskRegistryError(ValueError):
     pass
 
 
-def load_pdf_tasks(run_dir: Path, mission_id: str) -> list[dict[str, Any]]:
+def load_pdf_tasks(run_dir: Path, mission_id: str, *, missing_ok: bool = False) -> list[dict[str, Any]]:
     """Load a registry, transparently projecting one legacy task when needed."""
     registry_path = run_dir / REGISTRY_FILENAME
     if registry_path.exists():
@@ -37,6 +37,8 @@ def load_pdf_tasks(run_dir: Path, mission_id: str) -> list[dict[str, Any]]:
         return [dict(item) for item in payload["tasks"]]
     legacy_path = run_dir / LEGACY_FILENAME
     if not legacy_path.exists():
+        if missing_ok:
+            return []
         raise PdfTaskRegistryError("private PDF task is not available")
     try:
         legacy = json.loads(legacy_path.read_text(encoding="utf-8"))

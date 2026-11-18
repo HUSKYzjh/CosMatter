@@ -368,7 +368,12 @@ export function isPdfTaskRegistry(value: unknown, runId?: string): value is PdfT
   const documentIds = new Set<string>();
   return registry.tasks.every((task) => isPdfTaskStatus(task) && !documentIds.has(task.document_id) && Boolean(documentIds.add(task.document_id)));
 }
-export async function getPdfTasks(runId: string): Promise<PdfTaskRegistry> { const registry = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/tasks`); if (!isPdfTaskRegistry(registry, runId)) throw new LocalApiRequestError("transport"); return registry; }
+export async function getPdfTasks(runId: string, readMode: "refresh" | "cached" = "refresh"): Promise<PdfTaskRegistry> {
+  const suffix = readMode === "cached" ? "/cached" : "";
+  const registry = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/tasks${suffix}`);
+  if (!isPdfTaskRegistry(registry, runId)) throw new LocalApiRequestError("transport");
+  return registry;
+}
 export async function getPdfStatus(runId: string, documentId: string): Promise<PdfTaskStatus> { const task = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/status`); if (!isPdfTaskStatus(task)) throw new LocalApiRequestError("transport"); return task; }
 export function privateMarkdownUrl(runId: string, documentId: string): string { return `./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/markdown`; }
 export interface PrivateSourceMapSegment { locator: string; kind: "paragraph" | "table" | "formula" | "figure_caption"; quote: string; }

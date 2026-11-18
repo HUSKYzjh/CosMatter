@@ -67,6 +67,8 @@ pnpm 缺失或版本不符。随后打包七个 bundle，在临时 `DSH_HOME` �
 验收还会检查 headless 帮助入口，并在禁用任务运行器和模型适配器的 profile 中检查 19 个工具的注册。
 DSH 原生工具执行器通过临时 CosMatter HTTP 服务读取正式契约目录、建立一个合成任务，再确认该任务的下一步为计划阶段。
 验收使用临时 profile 与任务目录，关闭提供方配置。舰桥的「查找 DSH 工具」提供工具名、所属包与授权要求。
+在「续航任务 → 按运行 ID 打开」粘贴 DSH 返回的 `run_id`，即可在舰桥进入同一本机运行。
+首次打开读取已有工件和保存的 PDF 状态；需要更新 PDF 状态时，可在舰桥手动刷新。
 
 ```powershell
 Set-Location D:\CosMatter\development\CosMatter

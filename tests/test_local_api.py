@@ -570,6 +570,27 @@ class LocalMissionApiTests(unittest.TestCase):
         by_id = {item["document_id"]: item for item in registry["tasks"]}
         self.assertEqual(by_id[second]["doi_status"], "human_confirmed")
         self.assertEqual(by_id[first]["doi_status"], "needs_human_doi")
+
+    def test_cached_pdf_tasks_do_not_poll_or_reconcile_provider_state(self):
+        mission = self._mission()
+        run_dir = self.runs / "live_001"
+        self.assertEqual(self.api.pdf_tasks("live_001", refresh=False)["tasks"], [])
+        document_id = "pdf_0123456789abcdef01234567"
+        write_pdf_task(run_dir, mission["mission_id"], {
+            "schema_version": "1.0", "mission_id": mission["mission_id"], "document_id": document_id,
+            "file_name": "pending.pdf", "pdf_sha256": "d" * 64, "byte_count": 12,
+            "consent": True, "batch_id": "saved-batch", "state": "running",
+            "markdown_sha256": None, "doi": None, "doi_status": "pending",
+        })
+        with patch("cosmatter.local_api.MinerUAdapter", side_effect=AssertionError("provider contacted during cached read")), patch.object(
+            self.api, "settings_loader", side_effect=AssertionError("settings loaded during cached read"),
+        ):
+            snapshot = self.api.pdf_tasks("live_001", refresh=False)
+        self.assertEqual(snapshot["run_id"], "live_001")
+        self.assertEqual(snapshot["tasks"][0]["document_id"], document_id)
+        self.assertEqual(snapshot["tasks"][0]["state"], "running")
+        self.assertNotIn("saved-batch", json.dumps(snapshot))
+
     def test_private_pdf_source_map_requires_human_confirmation_and_matching_lines(self):
         mission = self._mission()
         run_dir = self.runs / "live_001"

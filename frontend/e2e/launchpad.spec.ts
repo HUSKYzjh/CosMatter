@@ -650,6 +650,67 @@ test("keeps synthetic launch-preview papers out of the real research route", asy
   expect(await returnToBridge.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(13);
 });
 
+test("opens an existing DSH run by ID and reads PDF status from the local snapshot", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const runId = "run_dsh_existing_01";
+  const missionId = "mission_dsh_existing_01";
+  const documentId = "pdf_0123456789abcdef01234567";
+  const { readFile } = await import("node:fs/promises");
+  const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
+  bundle.mission.mission_id = missionId;
+  bundle.mission.question = "Local DSH handoff for a reviewed BiFeO3 thin-film question";
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/")) requests.push(`${request.method()} ${path}`);
+  });
+  await page.route("**/api/runs/**/ui", (route) => route.fulfill({ json: bundle }));
+  await page.route("**/api/runs/**/status", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/")[3];
+    return route.fulfill({ json: { run_id: id, mission_id: id === runId ? missionId : "mismatched_mission", state: "INTAKE" } });
+  });
+  await page.route(`**/api/runs/${runId}/pdf/tasks/cached`, (route) => route.fulfill({ json: {
+    run_id: runId, trust_status: "private_pdf_task_registry_metadata_only", tasks: [{
+      document_id: documentId, candidate_document_id: null, audit_document_id: documentId,
+      file_name: "cached-running.pdf", state: "running", audit_state: "running",
+      doi: null, doi_status: "pending", markdown_ready: false, source_map_review_status: "absent",
+      source_map_segment_count: 0, error: null, trust_status: "private_markdown_outside_run_not_scientific_evidence",
+    }],
+  } }));
+
+  await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^续航任务/ }).click();
+  const input = page.getByLabel("现有运行 ID");
+  const open = page.getByRole("button", { name: "打开本机运行" });
+  await input.fill("../anything");
+  await expect(open).toBeDisabled();
+  expect(requests.every((request) => !request.includes("/api/runs/"))).toBe(true);
+  await input.fill("wrong_mission_run");
+  await open.click();
+  await expect(page.getByRole("alert")).toContainText("无法打开该运行");
+  await expect(input).toHaveValue("wrong_mission_run");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  await input.fill(` ${runId} `);
+  await input.press("Enter");
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await expect(page.getByText("cached-running.pdf", { exact: true })).toBeVisible(lazyWorkspaceContentLoad);
+  await expect(page.locator(".rail-run-identity code")).toHaveText(runId);
+  await page.getByRole("button", { name: "复制运行 ID" }).click();
+  await expect(page.locator(".rail-run-identity").getByRole("status")).toHaveText("运行 ID 已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(runId);
+  await page.getByRole("link", { name: "CosMatter", exact: true }).click();
+  await page.getByRole("button", { name: /^续航任务/ }).click();
+  await input.fill("wrong_mission_run");
+  await open.click();
+  await expect(page.getByRole("alert")).toContainText("无法打开该运行");
+  await expect(page.locator(".launch-active-run")).toContainText(runId);
+  await page.getByRole("button", { name: "返回当前任务" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  expect(requests.filter((request) => request.includes("/pdf/"))).toEqual([`GET /api/runs/${runId}/pdf/tasks/cached`]);
+  expect(requests.every((request) => request.startsWith("GET "))).toBe(true);
+});
+
 test("keeps one reachable PDF refresh or citation action on the bridge", async ({ page }) => {
   const trustStatus = "private_markdown_outside_run_not_scientific_evidence";
   const pdf = {

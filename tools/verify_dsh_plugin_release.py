@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
         report["registered_tool_count"] = _profile_smoke(compatibility, manifest, timeout_seconds=args.timeout_seconds)
         report["loopback_catalogue_verified"] = True
         report["loopback_mission_roundtrip_verified"] = True
+        report["browser_run_handoff_verified"] = True
     print(json.dumps(report, ensure_ascii=False))
     return 0
 
@@ -172,7 +173,7 @@ def _verify_tool_registry(
             {"insert": [{
                 "id": "cosmatter-release-registry-probe",
                 "name": "./registry-probe.mjs",
-                "config": {"expectedTools": expected_tools, "catalogue": catalogue},
+                "config": {"expectedTools": expected_tools, "catalogue": catalogue, "webOrigin": f"http://127.0.0.1:{server.server_port}"},
             }]},
         ]), encoding="utf-8")
         worker = Thread(target=server.serve_forever, daemon=True)
@@ -185,7 +186,7 @@ def _verify_tool_registry(
         finally:
             server.shutdown()
             worker.join()
-    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue and mission verified"
+    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue, mission, and browser handoff verified"
     if probe.returncode or marker not in probe.stdout:
         raise ReleaseGateError(f"installed bundle tool registry failed: {probe.stderr.strip() or 'missing tool registry result'}")
     return len(expected_tools)
