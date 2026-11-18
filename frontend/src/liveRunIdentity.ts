@@ -5,7 +5,7 @@ export function isLocalRunId(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(value);
 }
 
-export interface LocalRunLinkTarget { runId: string; documentId: string | null; evidenceId: string | null; }
+export interface LocalRunLinkTarget { runId: string; documentId: string | null; evidenceId: string | null; screeningRevision?: string; }
 
 function validLinkIdentifier(value: string, maxLength: number): boolean {
   return value.length > 0 && value.length <= maxLength && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
@@ -18,10 +18,12 @@ export function parseLocalRunLink(hash: string): LocalRunLinkTarget | null {
   const runId = params.get("run") ?? "";
   const documentId = params.get("document");
   const evidenceId = params.get("evidence");
-  if (!isLocalRunId(runId) || new Set(keys).size !== keys.length || keys.some((key) => !["run", "document", "evidence"].includes(key))) return null;
+  const screeningRevision = params.get("screening");
+  if (!isLocalRunId(runId) || new Set(keys).size !== keys.length || keys.some((key) => !["run", "document", "evidence", "screening"].includes(key))) return null;
   if (documentId !== null && !validLinkIdentifier(documentId, 255)) return null;
   if (evidenceId !== null && (!documentId || !validLinkIdentifier(evidenceId, 200))) return null;
-  return { runId, documentId, evidenceId };
+  if (screeningRevision !== null && (documentId !== null || evidenceId !== null || !/^[a-f0-9]{64}$/.test(screeningRevision))) return null;
+  return { runId, documentId, evidenceId, ...(screeningRevision === null ? {} : { screeningRevision }) };
 }
 
 export function localRunLink(origin: string, runId: string, documentId: string | null = null, evidenceId: string | null = null): string {
@@ -32,6 +34,12 @@ export function localRunLink(origin: string, runId: string, documentId: string |
     if (evidenceId) params.set("evidence", evidenceId);
   }
   url.hash = params.toString();
+  return url.href;
+}
+
+export function localRunScreeningLink(origin: string, runId: string, screeningRevision: string): string {
+  const url = new URL("/?api=local", origin);
+  url.hash = new URLSearchParams({ run: runId, screening: screeningRevision }).toString();
   return url.href;
 }
 

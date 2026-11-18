@@ -513,6 +513,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .screening-decision-fields select { font-size: max(.8rem, 13px); min-height: 2.3rem; }
 .screening-progress > div { display: flex; flex-wrap: wrap; align-items: baseline; }
 .candidate-screening :is(.screening-error, .screening-notice) { overflow-wrap: anywhere; }
+.candidate-screening h2:focus-visible { outline: 2px solid var(--signal-blue); outline-offset: 2px; }
+.candidate-screening .screening-link-notice { margin: 0; padding: .45rem .55rem; border-inline-start: 2px solid var(--signal-teal); color: var(--ink); background: color-mix(in srgb, var(--signal-teal) 7%, var(--surface)); font-size: max(.73rem, 12px); }
+.candidate-screening .screening-link-notice.revision-changed { border-inline-start-color: var(--signal-amber); background: color-mix(in srgb, var(--signal-amber) 12%, var(--surface)); }
 
 .condition-evidence-links { display: grid; gap: .28rem; }
 .condition-evidence-link { display: grid; justify-items: start; gap: .1rem; width: 100%; padding: .28rem .4rem; border: 1px solid color-mix(in srgb, var(--signal-violet) 30%, var(--line)); color: var(--ink); background: color-mix(in srgb, var(--signal-violet) 4%, transparent); text-align: left; }

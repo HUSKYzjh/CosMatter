@@ -211,7 +211,7 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertNotIn("Private telemetry question", json.dumps(telemetry))
 
     def test_operational_telemetry_projects_only_validation_rejection_class_and_count(self):
-        self.api.create_mission({
+        created = self.api.create_mission({
             "question": "Private rejected parameter question", "material": "BiFeO3", "property": "phase stability",
             "scope": "private synthetic scope", "run_id": "validation_telemetry_001",
         })
@@ -220,12 +220,15 @@ class LocalMissionApiTests(unittest.TestCase):
             "--document-id", "private-document", "--output", "private-output.txt", "--limit", "8192",
         ], self.runs))
         telemetry = self.api.operational_telemetry("validation_telemetry_001")
+        self.assertEqual(telemetry["mission_id"], created["mission_id"])
         self.assertEqual(telemetry["validation_rejections"], [{
             "command": "sciverse_read_context", "reason_code": "limit_above_maximum", "rejection_count": 1,
         }])
         rendered = json.dumps(telemetry)
-        for secret in ("8192", "private-document", "private-output", "Private rejected parameter question"):
+        for secret in ("private-document", "private-output", "Private rejected parameter question"):
             self.assertNotIn(secret, rendered)
+        # The verified, randomly generated mission ID can contain these digits.
+        self.assertNotIn("8192", json.dumps({key: value for key, value in telemetry.items() if key != "mission_id"}))
 
     def test_workflow_dag_is_declared_serial_and_nonexecuting(self):
         self.api.create_mission({

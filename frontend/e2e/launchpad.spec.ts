@@ -983,15 +983,16 @@ test("resumes browser screening drafts and requires the current checklist revisi
     }
     return route.fulfill({ status: 404, json: {} });
   });
-  const open = () => page.getByRole("button", { name: /^(开始人工筛选|载入筛选清单)$/ }).first().click();
   const panel = page.getByRole("region", { name: "候选文献人工筛选" });
+  const originalScreeningLink = `/?api=local#run=${runId}&screening=${screening.checklist_revision}`;
   const selectA = async () => {
     await panel.getByRole("combobox", { name: "决定", exact: true }).selectOption("include_for_fulltext");
     await expect(panel.getByRole("combobox", { name: "理由", exact: true })).toHaveValue("");
     await panel.getByRole("combobox", { name: "理由", exact: true }).selectOption("material_match");
   };
-  await page.goto("/?api=local#run=" + runId);
-  await open();
+  await page.goto(originalScreeningLink);
+  await expect(panel.getByRole("heading")).toBeFocused();
+  await expect(panel.locator(".screening-link-notice")).toHaveText("已从 DSH 打开同一版本的筛选清单。");
   await selectA();
   await expect(panel.getByText("已登记 0 篇 · 草稿修改 1 篇")).toBeVisible();
   await expect(panel.getByRole("button", { name: "提交人工筛选决定" })).toBeDisabled();
@@ -999,16 +1000,20 @@ test("resumes browser screening drafts and requires the current checklist revisi
   await panel.getByRole("button", { name: "下一待审" }).press("Enter");
   await expect(panel.locator(".screening-queue-card")).toContainText("Candidate B");
   await panel.getByRole("button", { name: "收起筛选" }).click();
+  await expect(panel).toHaveCount(0);
   await page.reload();
-  await open();
+  await expect(panel.getByRole("heading")).toBeFocused();
   await expect(panel.locator(".screening-queue-card")).toContainText("Candidate B");
   await expect(panel.getByText("已登记 0 篇 · 草稿修改 1 篇")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
 
   screening = { ...screening, checklist_revision: "b".repeat(64) };
-  await panel.getByRole("button", { name: "刷新筛选清单" }).click();
-  await expect(panel.getByRole("status")).toContainText("清单或登记记录已更新");
-  await panel.getByRole("button", { name: "上一篇" }).click();
+  await page.reload();
+  await expect(panel.locator(".screening-link-notice")).toHaveText("DSH 链接中的清单已更新，请按当前版本重新核对。");
+  await expect(panel.getByText("清单或登记记录已更新，请按当前版本重新核对。", { exact: true })).toBeVisible();
+  await expect(panel.locator(".screening-queue-card")).toContainText("Candidate A");
+  await expect(panel.getByRole("button", { name: "提交人工筛选决定" })).toBeDisabled();
+  expect(submissions).toEqual([]);
   await selectA();
   await panel.getByRole("button", { name: "下一待审" }).click();
   await panel.getByRole("combobox", { name: "决定", exact: true }).selectOption("exclude");
@@ -1163,6 +1168,11 @@ test("opens local DSH links directly and keeps a failed linked run editable", as
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
   expect(runRequests.every((request) => request.startsWith("GET "))).toBe(true);
   expect(runRequests.filter((request) => request.includes("/pdf/"))).toEqual([`GET /api/runs/${runId}/pdf/tasks/cached`]);
+  await page.goto(`/?api=local#run=${runId}&screening=${"a".repeat(64)}`);
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await expect(page.getByText(/暂时无法打开链接指定的筛选清单/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "候选文献人工筛选" })).toHaveCount(0);
+  expect(runRequests.every((request) => request.startsWith("GET "))).toBe(true);
 });
 
 test("opens the linked DSH candidate at its verified review step", async ({ page }) => {

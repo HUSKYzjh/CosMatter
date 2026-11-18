@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 
 import type { CandidateScreening, CandidateScreeningDecision } from "./localApi";
 import { hasScreeningDecision, isScreeningComplete, sameScreeningDecision, screeningDraftChanges, screeningDraftForCandidates, screeningSubmission, type ScreeningDraft } from "./candidateScreeningDraft";
@@ -39,12 +39,15 @@ export function CandidateScreeningPanel(props: {
   submit: (decisions: CandidateScreeningDecision[], revision?: string) => Promise<void>;
   onClose: () => void;
   focusDocumentId?: string | null;
+  linkedRevision?: string | null;
 }) {
   const [draft, setDraft] = createSignal<ScreeningDraft>({});
   const [activeDocumentId, setActiveDocumentId] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [draftNotice, setDraftNotice] = createSignal<"invalidated" | "storage_unavailable" | null>(null);
+  const [linkAcknowledged, setLinkAcknowledged] = createSignal(false);
+  let heading!: HTMLHeadingElement;
   let draftRevision: string | undefined;
   const t = (zh: string, en: string) => copy(props.locale, zh, en);
   const candidates = createMemo(() => props.screening?.candidates ?? []);
@@ -55,6 +58,7 @@ export function CandidateScreeningPanel(props: {
   const editedIds = createMemo(() => new Set(changes().map((decision) => decision.document_id)));
   const includedCount = createMemo(() => Object.values(draft()).filter((item) => item.decision === "include_for_fulltext").length);
   const persistedReview = createMemo(() => props.screening?.trust_status === "human_reviewed_candidate_screening_not_scientific_evidence");
+  const linkedRevisionChanged = () => props.linkedRevision !== props.screening?.checklist_revision;
   const activeCandidate = createMemo(() => {
     const list = candidates();
     const current = activeDocumentId();
@@ -110,7 +114,13 @@ export function CandidateScreeningPanel(props: {
     const focus = props.focusDocumentId;
     if (focus && candidates().some((candidate) => candidate.document_id === focus)) setActiveDocumentId(focus);
   });
-  onMount(() => { if (!props.screening) void request(); });
+  onMount(() => {
+    if (!props.screening) void request();
+    if (props.linkedRevision) {
+      const focus = window.requestAnimationFrame(() => heading.focus());
+      onCleanup(() => window.cancelAnimationFrame(focus));
+    }
+  });
 
   const updateDraft = (decision: CandidateScreeningDecision) => {
     const next = { ...draft(), [decision.document_id]: decision };
@@ -155,6 +165,7 @@ export function CandidateScreeningPanel(props: {
     setError(null);
     try {
       await props.submit(screeningSubmission(props.screening.candidates, draft()), props.screening.checklist_revision);
+      setLinkAcknowledged(true);
     } catch (cause) {
       setError(safeOperationFeedback(cause, t("无法登记人工筛选。请刷新清单，核对记录后再提交。", "Unable to record screening. Refresh the checklist and verify the record before submitting.")));
     } finally {
@@ -164,12 +175,17 @@ export function CandidateScreeningPanel(props: {
 
   return <section class="candidate-screening" aria-label={t("候选文献人工筛选", "Candidate literature human screening")}>
     <header>
-      <h2>{t("候选文献人工筛选", "Human screening of candidate papers")}</h2>
+      <h2 ref={heading} tabIndex={props.linkedRevision ? -1 : undefined}>{t("候选文献人工筛选", "Human screening of candidate papers")}</h2>
       <div class="screening-header-actions">
         <ActionButton size="sm" busy={busy()} busyLabel={t("处理中…", "Working…")} onClick={() => void request()}>{t("刷新筛选清单", "Refresh checklist")}</ActionButton>
         <ActionButton size="sm" variant="quiet" disabled={busy()} onClick={() => props.onClose()}>{t("收起筛选", "Hide screening")}</ActionButton>
       </div>
     </header>
+    <Show when={props.linkedRevision && props.screening && !linkAcknowledged()}>
+      <p class="screening-notice screening-link-notice" classList={{ "revision-changed": linkedRevisionChanged() }} role="status">{linkedRevisionChanged()
+        ? t("DSH 链接中的清单已更新，请按当前版本重新核对。", "The linked DSH checklist has changed. Review the current version.")
+        : t("已从 DSH 打开同一版本的筛选清单。", "Opened the same checklist revision from DSH.")}</p>
+    </Show>
     <Show when={error()}>{(message) => <p class="screening-error" role="alert">{message()}</p>}</Show>
     <Show when={draftNotice()}>{(notice) => <p class="screening-notice" role="status">{notice() === "invalidated"
       ? t("清单或登记记录已更新，请按当前版本重新核对。", "The checklist or recorded review changed. Review the current version before submitting.")

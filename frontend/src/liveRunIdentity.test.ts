@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { liveBundleMatchesRun, localRunLink, parseLocalRunLink, runtimeProjectionsMatchRun } from "./liveRunIdentity";
+import { liveBundleMatchesRun, localRunLink, localRunScreeningLink, parseLocalRunLink, runtimeProjectionsMatchRun } from "./liveRunIdentity";
 import { demoBundle } from "./model";
 import type { OperationalTelemetry, RunStatus, StageContract, WorkflowDag } from "./localApi";
 
@@ -26,6 +26,15 @@ describe("live run identity fence", () => {
     expect(liveBundleMatchesRun("run_1", status(), demoBundle)).toBe(true);
     expect(liveBundleMatchesRun("run_2", status(), demoBundle)).toBe(false);
     expect(liveBundleMatchesRun("run_1", { ...status(), mission_id: "other" }, demoBundle)).toBe(false);
+  });
+
+  it("binds linked screening to one run and one checklist revision", () => {
+    const revision = "a".repeat(64);
+    const url = new URL(localRunScreeningLink("http://127.0.0.1:8790", "run_1", revision));
+    expect(url.href).toBe(`http://127.0.0.1:8790/?api=local#run=run_1&screening=${revision}`);
+    expect(parseLocalRunLink(url.hash)).toEqual({ runId: "run_1", documentId: null, evidenceId: null, screeningRevision: revision });
+    for (const suffix of ["&document=a", "&document=a&evidence=b", "&screening=" + revision]) expect(parseLocalRunLink(url.hash + suffix)).toBeNull();
+    expect(parseLocalRunLink("#run=run_1&screening=bad")).toBeNull();
   });
 
   it("rejects mixed runtime projections", () => {

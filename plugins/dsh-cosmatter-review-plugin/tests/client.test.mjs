@@ -22,4 +22,28 @@ test('reads recorded human decisions and can send the matching checklist revisio
   await assert.rejects(() => invalid.template('run_1'), /identities/)
 })
 test('client keeps screening metadata bounded and requires full decisions', async () => { assert.throws(() => new CosMatterReviewClient({ baseUrl: 'https://example.com' })); const responses = [template, recorded]; const client = new CosMatterReviewClient({}, async () => new Response(JSON.stringify(responses.shift()), { status: 200 })); assert.equal((await client.template('run_1')).candidate_count, 1); assert.equal((await client.record('run_1', decisions)).candidate_count, 1); await assert.rejects(() => client.record('run_1', [{ ...decisions[0], reason_codes: [] }]), /invalid/) })
-test('DSH apply registers only human screening tools', async () => { const tools = []; const events = []; let dispose; const responses = [template, recorded]; const originalFetch = globalThis.fetch; globalThis.fetch = async () => new Response(JSON.stringify(responses.shift()), { status: 200 }); apply({ tools: { register: tool => tools.push(tool) }, emit: (event, payload) => events.push([event, payload]), effect: effect => { dispose = effect() } }); assert.equal(name, 'cosmatter-review'); assert.deepEqual(inject, ['tools']); assert.deepEqual(tools.map(tool => tool.name), ['cosmatter_candidate_screening_template', 'cosmatter_candidate_screening_record']); await tools[0].execute({ run_id: 'run_1' }, { signal: new AbortController().signal }); const result = await tools[1].execute({ run_id: 'run_1', decisions }, { signal: new AbortController().signal }); assert.equal(result.candidate_count, 1); assert.deepEqual(events.map(item => item[0]), ['cosmatter-review/template-read', 'cosmatter-review/recorded']); dispose(); globalThis.fetch = originalFetch })
+test('DSH screening links target the validated revision and configured loopback port', async (context) => {
+  const tools = []
+  const events = []
+  let dispose
+  const revision = 'a'.repeat(64)
+  const responses = [{ ...template, checklist_revision: revision }, template, recorded]
+  context.mock.method(globalThis, 'fetch', async () => Response.json(responses.shift()))
+  apply({
+    tools: { register: tool => tools.push(tool) },
+    emit: (event, payload) => events.push([event, payload]),
+    effect: effect => { dispose = effect() },
+  }, { baseUrl: 'http://127.0.0.1:8789' })
+  assert.equal(name, 'cosmatter-review')
+  assert.deepEqual(inject, ['tools'])
+  assert.deepEqual(tools.map(tool => tool.name), ['cosmatter_candidate_screening_template', 'cosmatter_candidate_screening_record'])
+  const exec = { signal: new AbortController().signal }
+  const saved = await tools[0].execute({ run_id: 'run_1' }, exec)
+  assert.equal(saved.workbench_url, `http://127.0.0.1:8789/?api=local#run=run_1&screening=${revision}`)
+  const legacy = await tools[0].execute({ run_id: 'run_1' }, exec)
+  assert.deepEqual(legacy, template)
+  const result = await tools[1].execute({ run_id: 'run_1', decisions }, exec)
+  assert.equal(result.candidate_count, 1)
+  assert.deepEqual(events.map(item => item[0]), ['cosmatter-review/template-read', 'cosmatter-review/template-read', 'cosmatter-review/recorded'])
+  dispose()
+})

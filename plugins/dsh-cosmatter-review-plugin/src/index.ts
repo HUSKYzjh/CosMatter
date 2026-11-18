@@ -18,13 +18,16 @@ export function apply(ctx: Context, config: CosMatterReviewConfig = {}): void {
   const client = new CosMatterReviewClient(config)
   ctx.tools.register(defineTool({
     name: 'cosmatter_candidate_screening_template',
-    description: 'Read the metadata-only screening checklist and any human decisions already recorded for this run.',
+    description: 'Read the metadata-only screening checklist and recorded human decisions. A workbench link targets the returned checklist revision.',
     parameters: { run_id: { type: 'string', required: true } },
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     async execute(args, exec) {
       const result = await client.template(String(args.run_id), exec.signal)
       ctx.emit('cosmatter-review/template-read', { run_id: result.run_id, candidate_count: result.candidate_count })
-      return result as unknown as Record<string, JsonValue>
+      if (!result.checklist_revision || !result.candidate_count || result.run_id.length > 255) return result as unknown as Record<string, JsonValue>
+      const link = new URL('/?api=local', client.config.baseUrl)
+      link.hash = new URLSearchParams({ run: result.run_id, screening: result.checklist_revision }).toString()
+      return { ...result, workbench_url: link.href } as unknown as Record<string, JsonValue>
     },
   }))
   ctx.tools.register(defineTool({

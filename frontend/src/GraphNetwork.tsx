@@ -69,7 +69,7 @@ function edgeGroup(edge: LiteratureGraphEdge): EdgeGroup {
   return "structure";
 }
 
-export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; locale: "zh" | "en"; runId?: string | null; selectedDocumentId?: string | null; linkedDocumentId?: string | null; evidenceLinkUnavailable?: boolean; pdfTask: PdfTaskStatus | null; pdfTasks?: PdfTaskStatus[]; sourceTasks?: SavedSourceParseTask[]; sourceHealth?: SavedSourceParseHealth; onRefreshSourceParses?: () => void; onLinkSourceMarkdown?: (runId: string, documentId: string, file: File) => Promise<void>; screening: CandidateScreening | null; onLoadScreening?: () => Promise<void>; onSubmitScreening?: (decisions: CandidateScreeningDecision[], revision?: string) => Promise<void>; onRequestFulltext?: (candidate: CandidateScreeningCandidate) => void; readOnlyPreview?: boolean; onExitPreview?: () => void; onNavigate: (view: NavigateView) => void; onSelectPaper: (node: LiteratureGraphNode) => boolean; onSelectEvidence: (evidence: EvidenceCard) => boolean }) {
+export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; locale: "zh" | "en"; runId?: string | null; selectedDocumentId?: string | null; linkedDocumentId?: string | null; linkedScreeningRevision?: string | null; evidenceLinkUnavailable?: boolean; pdfTask: PdfTaskStatus | null; pdfTasks?: PdfTaskStatus[]; sourceTasks?: SavedSourceParseTask[]; sourceHealth?: SavedSourceParseHealth; onRefreshSourceParses?: () => void; onLinkSourceMarkdown?: (runId: string, documentId: string, file: File) => Promise<void>; screening: CandidateScreening | null; onLoadScreening?: () => Promise<void>; onSubmitScreening?: (decisions: CandidateScreeningDecision[], revision?: string) => Promise<void>; onRequestFulltext?: (candidate: CandidateScreeningCandidate) => void; readOnlyPreview?: boolean; onExitPreview?: () => void; onNavigate: (view: NavigateView) => void; onSelectPaper: (node: LiteratureGraphNode) => boolean; onSelectEvidence: (evidence: EvidenceCard) => boolean }) {
   const [query, setQuery] = createSignal("");
   const [selectedTopic, setSelectedTopic] = createSignal<TopicKey | "all">("all");
   const [advanced, setAdvanced] = createSignal(false);
@@ -84,7 +84,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
   const [citationAutoShown, setCitationAutoShown] = createSignal(false);
   const [sessionSelectionRestored, setSessionSelectionRestored] = createSignal(false);
   const [screeningFocusId, setScreeningFocusId] = createSignal<string | null>(null);
-  const [screeningPanelOpen, setScreeningPanelOpen] = createSignal(false);
+  const [screeningPanelOpen, setScreeningPanelOpen] = createSignal(Boolean(props.linkedScreeningRevision));
   const t = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const graph = () => props.bundle.literatureGraph;
   const visibleNodes = createMemo(() => {
@@ -301,7 +301,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     <Show when={hasReviewablePapers() && props.onLoadScreening && props.onSubmitScreening && screeningPanelOpen()}>
       <div class="graph-screening-drawer">
         <CandidateScreeningPanel locale={props.locale} screening={props.screening} load={props.onLoadScreening!} submit={props.onSubmitScreening!}
-          focusDocumentId={screeningFocusId()} onClose={() => setScreeningPanelOpen(false)} />
+          focusDocumentId={screeningFocusId()} linkedRevision={props.linkedScreeningRevision} onClose={() => setScreeningPanelOpen(false)} />
       </div>
     </Show>
     <Show when={advanced()}><section class="advanced-filters"><div><strong>{t("节点类型", "Node types")}</strong><For each={NODE_GROUPS}>{(group) => <label><input type="checkbox" checked={nodeVisibility()[group.id]} onChange={() => setNodeVisibility((current) => ({ ...current, [group.id]: !current[group.id] }))} />{t(group.zh, group.en)}</label>}</For></div><div><strong>{t("关系类型", "Relation types")}</strong><For each={EDGE_GROUPS}>{(group) => <label><input type="checkbox" checked={edgeVisibility()[group.id]} onChange={() => setEdgeVisibility((current) => ({ ...current, [group.id]: !current[group.id] }))} />{t(group.zh, group.en)}</label>}</For></div></section></Show>
