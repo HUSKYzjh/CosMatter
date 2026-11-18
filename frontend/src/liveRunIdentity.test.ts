@@ -13,9 +13,11 @@ describe("live run identity fence", () => {
   it("round-trips document links and rejects ambiguous or malformed handoffs", () => {
     const url = new URL(localRunLink("http://127.0.0.1:8790", "run_1", "文献 & x=1"));
     expect(url.search).toBe("?api=local");
-    expect(parseLocalRunLink(url.hash)).toEqual({ runId: "run_1", documentId: "文献 & x=1" });
-    expect(parseLocalRunLink("#run=run_1")).toEqual({ runId: "run_1", documentId: null });
-    for (const fragment of ["#run=../run", "#run=run_1&run=run_2", "#run=run_1&document=", "#run=run_1&document=a%00b", "#run=run_1&document=a&document=b", "#run=run_1&view=reader"]) {
+    expect(parseLocalRunLink(url.hash)).toEqual({ runId: "run_1", documentId: "文献 & x=1", evidenceId: null });
+    expect(parseLocalRunLink("#run=run_1")).toEqual({ runId: "run_1", documentId: null, evidenceId: null });
+    const evidenceUrl = new URL(localRunLink("http://127.0.0.1:8790", "run_1", "文献 & x=1", "证据 + y=2"));
+    expect(parseLocalRunLink(evidenceUrl.hash)).toEqual({ runId: "run_1", documentId: "文献 & x=1", evidenceId: "证据 + y=2" });
+    for (const fragment of ["#run=../run", "#run=run_1&run=run_2", "#run=run_1&document=", "#run=run_1&document=a%00b", "#run=run_1&document=a&document=b", "#run=run_1&view=reader", "#run=run_1&evidence=e", "#run=run_1&document=a&evidence=", "#run=run_1&document=a&evidence=x&evidence=y", "#run=run_1&document=a&evidence=x%0Ay"]) {
       expect(parseLocalRunLink(fragment)).toBeNull();
     }
   });

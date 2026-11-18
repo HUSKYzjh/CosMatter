@@ -1831,7 +1831,7 @@ class LocalMissionApi:
             event_type="accepted_evidence_searched", actor="accepted_evidence_search", state=MissionState.MAP,
             payload={"query_sha256": result["query_sha256"], "result_count": result["result_count"], "trust_status": result["trust_status"]},
         )
-        return result
+        return {"run_id": run_id, **result}
 
     def cancel(self, run_id: str) -> dict[str, object]:
         run_dir, mission = self._active_mission(run_id)

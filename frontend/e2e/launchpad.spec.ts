@@ -1095,6 +1095,7 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   bundle.evidence_cards = reviewedCards.map(({ locator, ...card }) => ({ ...card, review_status: "accepted", stance: "support", conditions: { temperature_k: 300 },
     provenance: { document_id: ready, locator, source: "human-reviewed MinerU source map", access_policy: "authorized" },
   }));
+  bundle.evidence_cards.push({ ...bundle.evidence_cards[0], evidence_id: "source_unlinked" });
   bundle.literature_graph = { trust_status: "human_reviewed_graph_projection", nodes: [...papers.map((paper) => ({
     node_id: `paper:${paper.document_id}`, kind: "candidate_paper", label: paper.title, trust_status: "candidate_metadata_not_scientific_evidence",
   })), ...reviewedCards.map((card) => ({ node_id: `evidence:${card.evidence_id}`, kind: "evidence_card", label: card.claim, trust_status: "accepted" }))],
@@ -1103,7 +1104,8 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   };
   const requests: string[] = [];
   const evidenceJumps: (string | null)[] = [];
-  const paperFragment = (document: string) => new URLSearchParams({ run: runId, document }).toString();
+  let markdownReady = true;
+  const paperFragment = (document: string, evidence?: string) => new URLSearchParams({ run: runId, document, ...(evidence ? { evidence } : {}) }).toString();
   await page.route("**/api/runs/**", (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -1120,7 +1122,7 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
         decisions: papers.map(({ document_id }) => ({ document_id, decision: document_id === excluded ? "exclude" : "include_for_fulltext", reason_codes: [document_id === excluded ? "out_of_scope_material" : "material_match"] })),
       } });
       case "source-parse-status": return route.fulfill({ json: { run_id: runId, mission_id: bundle.mission.mission_id, trust_status: "saved_source_parse_state_not_scientific_evidence",
-        tasks: papers.map(({ document_id }) => ({ document_id, state: document_id === pending ? "running" : "done", markdown_ready: document_id !== pending, can_link_markdown: false, source_map_segment_count: document_id === ready ? 2 : 0 })),
+        tasks: papers.map(({ document_id }) => ({ document_id, state: document_id === pending ? "running" : "done", markdown_ready: document_id !== pending && markdownReady, can_link_markdown: false, source_map_segment_count: document_id === ready && markdownReady ? 2 : 0 })),
       } });
       case "source-map": return route.fulfill({ json: { run_id: runId, document_id: ready, segment_count: 2, trust_status: "human_reviewed_parser_selection_not_evidence_card",
         segments: reviewedCards.map(({ locator }, index) => ({ segment_id: `segment_${index}`, locator, kind: "paragraph", markdown_range: { start: 7 + index, end: 7 + index } })),
@@ -1158,8 +1160,26 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await expect(sourcePreview.locator("li.selected")).toHaveCount(0);
   expect(evidenceJumps).toEqual(["source_ready", "source_stale"]);
 
-  const followPaper = (documentId: string) => page.evaluate((fragment) => { window.location.hash = fragment; }, paperFragment(documentId));
+  const followPaper = (documentId: string, evidenceId?: string) => page.evaluate((fragment) => { window.location.hash = fragment; }, paperFragment(documentId, evidenceId));
+  await followPaper(ready, "source_ready");
+  await expect(page.locator(".source-reader blockquote")).toHaveText(reviewedCards[0].quote, workspaceLoad);
+  await expect(page.locator(".source-reader")).toBeFocused();
+  expect(new URL(page.url()).hash).toBe("#" + paperFragment(ready, "source_ready"));
+  expect(evidenceJumps).toEqual(["source_ready", "source_stale"]);
+  markdownReady = false;
+  await page.reload();
+  await expect(page.locator(".source-reader blockquote")).toHaveText(reviewedCards[0].quote, workspaceLoad);
+  await expect(openSource).toHaveCount(0);
+  markdownReady = true;
+
   const inspector = page.getByRole("complementary", { name: "图谱检查器" });
+  await followPaper(ready, "source_unlinked");
+  await expect(inspector.getByRole("heading", { name: "Ready candidate", exact: true })).toBeVisible(workspaceLoad);
+  await expect(page.getByText("链接指定的 EvidenceCard 或其已审核来源关系在当前运行中不可用。", { exact: true })).toBeVisible();
+  await expect(page.locator(".source-reader blockquote")).toHaveCount(0);
+  await followPaper(pending, "source_ready");
+  await expect(inspector.getByRole("heading", { name: "Pending candidate", exact: true })).toBeVisible(workspaceLoad);
+  await expect(page.getByText("链接指定的 EvidenceCard 或其已审核来源关系在当前运行中不可用。", { exact: true })).toBeVisible();
   await followPaper(pending);
   await expect(inspector.getByRole("heading", { name: "Pending candidate", exact: true })).toBeVisible(workspaceLoad);
   await expect(inspector).toBeFocused();

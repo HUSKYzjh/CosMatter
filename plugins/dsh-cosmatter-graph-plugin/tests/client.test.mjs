@@ -47,9 +47,26 @@ test('graph plan drafts accept only the untrusted local response', async () => {
 })
 
 test('accepted-evidence search accepts only safe reviewed-card pointers', async () => {
-  const response = { mission_id: 'mission_1', trust_status: 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion', query_sha256: 'a'.repeat(64), results: [{ evidence_id: 'evidence_1', document_id: 'doc_1', claim: 'Reviewed claim', stance: 'support', material: 'BiFeO3', property_name: 'phase stability', conditions: { strain_percent: 1 }, locator: 'figure:2', source: 'fixture', score: 2 }] }
-  const client = new CosMatterLoopbackClient({}, async () => new Response(JSON.stringify(response), { status: 200 }))
-  assert.equal((await client.searchAcceptedEvidence('run_1', 'strain phase stability')).results.length, 1)
+  const response = { run_id: 'run_1', mission_id: 'mission_1', trust_status: 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion', query_sha256: 'a'.repeat(64), results: [{ evidence_id: '证据 + y=2', document_id: '文献 & x=1', claim: 'Reviewed claim', stance: 'support', material: 'BiFeO3', property_name: 'phase stability', conditions: { strain_percent: 1 }, locator: 'figure:2', source: 'fixture', score: 2 }] }
+  let output = response
+  const client = new CosMatterLoopbackClient({ baseUrl: 'http://127.0.0.1:8790' }, async (url, init) => {
+    assert.equal(url.origin, 'http://127.0.0.1:8790')
+    assert.equal(init.redirect, 'error')
+    return new Response(JSON.stringify(output), { status: 200 })
+  })
+  const search = () => client.searchAcceptedEvidence('run_1', 'strain phase stability')
+  const result = await search()
+  assert.equal(result.results.length, 1)
+  const link = new URL(result.results[0].workbench_url)
+  assert.equal(link.origin, 'http://127.0.0.1:8790')
+  assert.equal(link.search, '?api=local')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(link.hash.slice(1))), { run: 'run_1', document: '文献 & x=1', evidence: '证据 + y=2' })
+  output = { ...response, run_id: 'another_run' }
+  await assert.rejects(search, /response is invalid/)
+  output = { ...response, results: [{ ...response.results[0], workbench_url: 'https://example.org/' }] }
+  await assert.rejects(search, /response is invalid/)
+  output = { ...response, quote: 'A body that must stay local' }
+  await assert.rejects(search, /response is invalid/)
 })
 
 test('DSH apply registers the bounded query and plan tools', async () => {

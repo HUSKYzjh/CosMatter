@@ -1,6 +1,7 @@
 import { normalizeConfig } from './config.js';
 import { assertGraphSnapshot } from './contract.js';
 const runId = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const evidenceSearchKeys = new Set(['run_id', 'schema_version', 'mission_id', 'trust_status', 'query_sha256', 'query_char_count', 'accepted_evidence_count', 'result_count', 'results']);
 export class CosMatterLoopbackClient {
     request;
     config;
@@ -42,16 +43,39 @@ export class CosMatterLoopbackClient {
         }
     }
     async searchAcceptedEvidence(runIdValue, query, limit = 8, signal) {
-        if (!runId.test(runIdValue) || typeof query !== 'string' || !query.trim() || query.length > 300 || !Number.isInteger(limit) || limit < 1 || limit > 12)
+        if (!runId.test(runIdValue) || runIdValue.length > 255 || typeof query !== 'string' || !query.trim() || query.length > 300 || !Number.isInteger(limit) || limit < 1 || limit > 12)
             throw new Error('accepted-evidence search request is invalid');
-        const response = await this.request(new URL(`/api/runs/${encodeURIComponent(runIdValue)}/accepted-evidence/search`, this.config.baseUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ query: query.trim(), limit }), signal });
-        const payload = await response.json();
-        if (!response.ok || !payload || typeof payload !== 'object')
+        const url = new URL(`/api/runs/${encodeURIComponent(runIdValue)}/accepted-evidence/search`, this.config.baseUrl);
+        const timeout = AbortSignal.timeout(this.config.timeoutMs);
+        const response = await this.request(url, {
+            method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ query: query.trim(), limit }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+        });
+        if (!response.ok)
             throw new Error('accepted-evidence search was rejected');
-        const result = payload;
-        if (result.mission_id === undefined || result.trust_status !== 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion' || typeof result.query_sha256 !== 'string' || !Array.isArray(result.results) || result.results.length > limit || result.results.some(item => !safeEvidenceResult(item)))
+        if (Number(response.headers.get('content-length') ?? 0) > this.config.maxGraphBytes)
+            throw new Error('accepted-evidence search response exceeds configured size');
+        const text = await response.text();
+        if (new TextEncoder().encode(text).byteLength > this.config.maxGraphBytes)
+            throw new Error('accepted-evidence search response exceeds configured size');
+        const payload = JSON.parse(text);
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload))
             throw new Error('accepted-evidence search response is invalid');
-        return result;
+        const result = payload;
+        if (Object.keys(result).some(key => !evidenceSearchKeys.has(key)) || (result.run_id !== undefined && result.run_id !== runIdValue)
+            || typeof result.mission_id !== 'string' || !result.mission_id.trim()
+            || result.trust_status !== 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion'
+            || typeof result.query_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(result.query_sha256)
+            || !Array.isArray(result.results) || result.results.length > limit || !result.results.every(safeEvidenceResult))
+            throw new Error('accepted-evidence search response is invalid');
+        const results = result.results.map(item => {
+            if (!canLinkIdentifier(item.document_id, 255) || !canLinkIdentifier(item.evidence_id, 200))
+                return item;
+            const workbench = new URL('/?api=local', this.config.baseUrl.origin);
+            workbench.hash = new URLSearchParams({ run: runIdValue, document: item.document_id, evidence: item.evidence_id }).toString();
+            return { ...item, workbench_url: workbench.href };
+        });
+        return { ...result, results };
     }
     async requestReview(runIdValue, nodeIds, rationale, signal) {
         if (!runId.test(runIdValue) || !nodeIds.length || nodeIds.length > 25 || nodeIds.some(item => !/^[a-z_]+:[a-f0-9]{16,64}$/.test(item)) || !rationale.trim() || rationale.length > 1000)
@@ -71,6 +95,9 @@ export class CosMatterLoopbackClient {
             throw new Error('CosMatter graph plan draft was rejected');
         return payload;
     }
+}
+function canLinkIdentifier(value, maxLength) {
+    return value.length > 0 && value.length <= maxLength && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 }
 function safeEvidenceResult(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value))

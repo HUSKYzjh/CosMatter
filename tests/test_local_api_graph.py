@@ -70,6 +70,7 @@ class LocalApiGraphTests(unittest.TestCase):
             (run_dir / "evidence_cards.json").write_text(json.dumps([card.to_dict()]), encoding="utf-8")
             (run_dir / "verification_decisions.json").write_text(json.dumps([decision.to_dict()]), encoding="utf-8")
             result = api.search_accepted_evidence("search_graph", {"query": "strain phase stability", "limit": 4})
+            self.assertEqual(result["run_id"], "search_graph")
             self.assertEqual(result["result_count"], 1)
             self.assertEqual(result["results"][0]["evidence_id"], card.evidence_id)
             self.assertNotIn("private source quote", json.dumps(result))

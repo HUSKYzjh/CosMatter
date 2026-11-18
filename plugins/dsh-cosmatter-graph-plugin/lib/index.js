@@ -30,7 +30,7 @@ export function apply(ctx, config = {}) {
     }));
     ctx.tools.register(defineTool({
         name: 'cosmatter_accepted_evidence_search',
-        description: 'Search only already human-accepted evidence-card metadata for this run. Results are source-located pointers, never raw full text, MinerU output, unreviewed material, or a new scientific conclusion.',
+        description: 'Search human-accepted evidence-card metadata for this run. A result with a workbench_url opens that evidence card in the local reader for human review.',
         parameters: { run_id: { type: 'string', required: true }, query: { type: 'string', required: true }, limit: { type: 'integer' } },
         output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
         async execute(args, exec) { return await client.searchAcceptedEvidence(String(args.run_id), String(args.query), typeof args.limit === 'number' ? args.limit : 8, exec.signal); },
