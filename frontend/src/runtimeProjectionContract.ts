@@ -24,9 +24,9 @@ const exactKeys = (value: unknown, keys: readonly string[]) => Boolean(value && 
 const sameStrings = (actual: unknown, expected: readonly string[]) => Array.isArray(actual) && actual.length === expected.length && actual.every((value, index) => typeof value === "string" && value === expected[index]);
 const boundedInteger = (value: unknown, maximum = 1_000_000) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= maximum;
 
-function trustedStageContract(runId: string, contract: StageContract): boolean {
+export function trustedStageContract(runId: string, contract: StageContract): boolean {
   if (!exactKeys(contract, ["schema_version", "run_id", "mission_id", "trust_status", "next_stage", "runtime_safety", "stages"])
-    || contract.schema_version !== "cosmatter.stage-contract/v1" || contract.run_id !== runId || !contract.mission_id || contract.trust_status !== STAGE_CONTRACT_TRUST
+    || contract.schema_version !== "cosmatter.stage-contract/v1" || contract.run_id !== runId || typeof contract.mission_id !== "string" || !contract.mission_id || contract.trust_status !== STAGE_CONTRACT_TRUST
     || !["verified", "attention_required"].includes(contract.runtime_safety) || !Array.isArray(contract.stages) || contract.stages.length !== STAGES.length) return false;
   if (contract.stages.some((raw, index) => {
     if (!exactKeys(raw, ["stage", "status", "completion_requirements", "human_gate", "expected_outputs", "recovery_route", "metrics"])) return true;

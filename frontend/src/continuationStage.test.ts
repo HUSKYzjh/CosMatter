@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { continuationStageLabel, reconcileRestoredStage, viewForContinuationStage, viewForRestoredRun } from "./continuationStage";
+import { continuationStageLabel, localRunLanding, reconcileRestoredStage, viewForContinuationStage } from "./continuationStage";
+import { readBundle } from "./model";
+import { stageContractFixture } from "./stageContractFixture";
 
 describe("viewForContinuationStage", () => {
   it("keeps plan and retrieval recovery on the controlled bridge", () => {
@@ -14,9 +16,23 @@ describe("viewForContinuationStage", () => {
     expect(continuationStageLabel("screening", "en")).toBe("candidate screening");
   });
 
-  it("keeps a failed artifact hydration on the controlled bridge", () => {
-    expect(viewForRestoredRun("screening", false)).toBe("workflow");
-    expect(viewForRestoredRun("screening", true)).toBe("graph");
+  it("routes a verified local task to its usable workspace", () => {
+    const bundle = readBundle({
+      schema_version: "1.0",
+      mission: { mission_id: "mission_run", question: "How does strain affect BiFeO3?", material: "BiFeO3", property_name: "phase stability", scope: "thin films" },
+      literature_graph: { trust_status: "human_reviewed_graph_projection", nodes: [
+        { node_id: "paper:candidate", label: "Candidate to screen", kind: "candidate_paper", trust_status: "candidate_metadata_not_scientific_evidence" },
+      ], edges: [] },
+    }, "loopback");
+    const screening = stageContractFixture("saved_run", bundle.mission.missionId, "screening");
+    const graphless = { ...bundle, literatureGraph: { ...bundle.literatureGraph, nodes: [], edges: [] } };
+    expect(localRunLanding("saved_run", bundle, screening)).toEqual({ view: "graph", state: "confirmed", stage: "screening" });
+    expect(localRunLanding("saved_run", graphless, screening).state).toBe("graph_unavailable");
+    expect(localRunLanding("saved_run", bundle, { ...screening, runtime_safety: "attention_required" }).view).toBe("workflow");
+    expect(localRunLanding("saved_run", bundle, { ...screening, mission_id: "another_mission" }).state).toBe("unverified");
+    expect(localRunLanding("saved_run", bundle, { ...screening, next_stage: "parse" }).view).toBe("workflow");
+    const complete = stageContractFixture("saved_run", bundle.mission.missionId, null);
+    expect(localRunLanding("saved_run", bundle, complete)).toEqual({ view: "graph", state: "confirmed", stage: null });
   });
 
   it("reopens downstream work at the map because paper selection is session-only", () => {

@@ -5,7 +5,7 @@ import { DshRunHandoff } from "./DshRunHandoff";
 import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget } from "./Launchpad";
 import { type LaunchPreviewStage } from "./launchStages";
 import { launchMissionMissingFields } from "./launchMissionValidation";
-import { continuationStageLabel, reconcileRestoredStage, viewForRestoredRun } from "./continuationStage";
+import { continuationStageLabel, localRunLanding, reconcileRestoredStage } from "./continuationStage";
 import { fleetVisualState } from "./fleetVisualState";
 import { ReadOnlyPreviewContext } from "./ReadOnlyPreviewContext";
 import { QuestionSetReviewDesk } from "./QuestionSetReviewDesk";
@@ -55,6 +55,7 @@ type RootPdfRetry = { file: File; mission: RootPdfMission };
 type ManualAction = "mission" | "draft" | "approval" | "retrieval";
 type LocalImportReceipt = { fileName: string; byteLength: number; importedAt: number; generatedAt: string | null; schemaVersion: string; visibleRecordCount: number; withheldAcceptedEvidenceCount: number; delegatedTestBoundary: boolean };
 const text = (zhText: string, enText: string) => uiLanguage() === "zh" ? zhText : enText;
+const CONTINUATION_STAGE_TIMEOUT_MS = 3_000;
 const SOURCES: Array<{ id: RetrievalSource; label: string; provider: string }> = [
   { id: "sciverse", label: "Sciverse", provider: "sciverse" },
   { id: "openalex", label: "OpenAlex", provider: "openalex" },
@@ -224,6 +225,7 @@ export function App() {
   const [theme, setTheme] = createSignal<Theme>("light");
   const [language, setLanguage] = createSignal(uiLanguage());
   const [view, setView] = createSignal<View>("launch");
+  let lastActiveWorkspace: { runId: string; view: Exclude<View, "launch"> } | null = null;
   const [launchPreview, setLaunchPreview] = createSignal(
     serverUiPreviewRequested(window.location.search),
   );
@@ -260,6 +262,7 @@ export function App() {
   const [retrievalSources, setRetrievalSources] = createSignal<RetrievalSource[]>([]);
   let retrievalSourcesInitialized = false;
   const [liveRunId, setLiveRunId] = createSignal<string | null>(null);
+  const [existingRunLanding, setExistingRunLanding] = createSignal<{ runId: string; landing: ReturnType<typeof localRunLanding> } | null>(null);
   const [runCopyFeedback, setRunCopyFeedback] = createSignal<{ runId: string; format: "id" | "link"; copied: boolean } | null>(null);
   const [stageContract, setStageContract] = createSignal<StageContract | null>(null);
   const [workflowDag, setWorkflowDag] = createSignal<WorkflowDag | null>(null);
@@ -474,6 +477,9 @@ export function App() {
   }
 
   function returnToLaunch() {
+    const runId = liveRunId();
+    const currentView = view();
+    if (runId && currentView !== "launch" && !launchPreview()) lastActiveWorkspace = { runId, view: currentView };
     if (readLocalRunLink()) window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
     setLinkedLaunchRunId(undefined);
     setLaunchPreview(false);
@@ -484,13 +490,17 @@ export function App() {
   }
 
   function returnToActiveRunWorkspace() {
-    if (!liveRunId()) return;
+    const runId = liveRunId();
+    if (!runId) return;
     existingRunReadGate.invalidate();
     setExistingRunReadPending(false);
     setLaunchPreview(false);
     setRouteRecovery(null);
-    setView("workflow");
-    setStatus(text("已返回当前本机任务；仅查看已登记状态，不会自动重试或重新发起检索。", "Returned to the current local task. Only recorded status is shown; no retry or retrieval is started automatically."));
+    batch(() => {
+      setView("workflow");
+      setStatus(text("已返回当前本机任务。", "Returned to the current local run."));
+      if (lastActiveWorkspace?.runId === runId && lastActiveWorkspace.view !== "workflow") navigate(lastActiveWorkspace.view);
+    });
   }
 
   function updateMission() {
@@ -708,6 +718,7 @@ export function App() {
    * matching in-run PDF task while refreshing its graph projection.
    */
   function clearRunScopedClientArtifacts() {
+    setExistingRunLanding(null);
     setCandidateScreening(null);
     setCandidatePdfTarget(null);
     // A browser-held PDF may only be retried while its original empty mission
@@ -1520,12 +1531,16 @@ export function App() {
     setLaunchNotice(null);
     setExistingRunReadPending(true);
     try {
-      const snapshot = await readLiveRunSnapshot(runId);
+      const [snapshot, stage] = await Promise.all([
+        readLiveRunSnapshot(runId),
+        getStageContract(runId, CONTINUATION_STAGE_TIMEOUT_MS).catch(() => null),
+      ]);
       if (!stillOnLaunch()) return;
       if (snapshot.status.cancellation === "requested" || snapshot.status.state === "CANCELLED") {
         setLaunchNotice(text("该运行已停止。请输入一个可续接的本机运行 ID。", "This run has been stopped. Enter the ID of a local run that can be continued."));
         return;
       }
+      const landing = localRunLanding(runId, snapshot.imported, stage);
       window.history.replaceState(window.history.state, "", localRunLink(window.location.origin, runId));
       const epoch = batch(() => {
         const currentEpoch = supersedeActiveRun("keep");
@@ -1534,8 +1549,9 @@ export function App() {
         setBfoFormationLink(null);
         applyImportedBundle(snapshot.imported);
         setLiveRunId(runId);
-        setStatus(text(`已打开本机运行 ${runId}。PDF 显示上次保存的状态，可手动刷新。`, `Opened local run ${runId}. PDF status shows the last saved record and can be refreshed manually.`));
-        setView("workflow");
+        setExistingRunLanding({ runId, landing });
+        setStatus(text(`已打开本机运行 ${runId}。`, `Opened local run ${runId}.`));
+        setView(landing.view);
         return currentEpoch;
       });
       const current = currentRunGuard(runId, epoch);
@@ -1547,6 +1563,18 @@ export function App() {
       if (stillOnLaunch()) setLaunchNotice(text("无法打开该运行。请核对运行 ID 和当前本机服务的数据目录。", "Could not open this run. Check its ID and the current local service's data directory."));
     } finally {
       if (isLatest()) setExistingRunReadPending(false);
+    }
+  }
+
+  function continuationLandingCopy(landing: ReturnType<typeof localRunLanding>) {
+    const label = continuationStageLabel(landing.stage, language());
+    switch (landing.state) {
+      case "unverified": return text("阶段暂未核验，已打开受控编排。", "Stage verification is unavailable. Controlled orchestration is open.");
+      case "attention": return text("本机运行状态待核对，已打开受控编排。", "Local run status needs review. Controlled orchestration is open.");
+      case "graph_unavailable": return text("文献星图工件暂不可用，已打开受控编排。", "Literature map artifacts are unavailable. Controlled orchestration is open.");
+      default: return landing.stage === null
+        ? text("打开时，全部阶段已完成。", "All stages were complete when opened.")
+        : text(`打开时阶段为“${label}”。`, `Stage when opened: ${label}.`);
     }
   }
 
@@ -1629,7 +1657,7 @@ export function App() {
         applyImportedBundle(emptyBundleForMission(fallbackMission));
         setStatus(text(`运行包已登记，但工件未能载入：${detail}。已保留空任务壳，且不会重新发起自动检索。`, `Run package was registered but artifacts could not be loaded: ${detail}. An empty task shell is retained and no automatic retrieval was restarted.`));
       }
-      setView(viewForRestoredRun(restoredStage, artifactsHydrated && localContractAvailable));
+      setView(localRunLanding(result.run_id, bundle(), artifactsHydrated && localContractAvailable ? stageContract() : null).view);
     }).catch((error: unknown) => {
       if (!queuedResumeCanCommit(resumeEpoch ?? queuedTaskEpoch, taskEpoch)) return;
       const message = safeImportFeedback(
@@ -1937,6 +1965,9 @@ export function App() {
       </ol>
       <Show when={!launchPreview() && localApiEnabled() && liveRunId()}>{(runId) => <div class="rail-run-identity">
         <div class="rail-run-id"><span>{text("运行 ID", "Run ID")}</span><code>{runId()}</code></div>
+        <Show when={existingRunLanding()?.runId === runId() ? existingRunLanding()?.landing : null}>{(landing) =>
+          <p class="rail-run-entry-note" aria-live="polite">{continuationLandingCopy(landing())}</p>
+        }</Show>
         <div class="rail-run-actions">
           <ActionButton size="sm" onClick={() => void copyCurrentRun(runId(), "id")}>{text("复制运行 ID", "Copy run ID")}</ActionButton>
           <ActionButton size="sm" onClick={() => void copyCurrentRun(runId(), "link")}>{text("复制任务链接", "Copy run link")}</ActionButton>

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { isLocalApiStatus, LOCAL_API_READ_TIMEOUT_MS, LOCAL_API_WRITE_TIMEOUT_MS, LocalApiRequestError, localApiHttpFailure, localApiTimeoutFailure } from "./localApi";
+import { getStageContract, isLocalApiStatus, LOCAL_API_READ_TIMEOUT_MS, LOCAL_API_WRITE_TIMEOUT_MS, LocalApiRequestError, localApiHttpFailure, localApiTimeoutFailure } from "./localApi";
 
 describe("local API request boundary", () => {
   it("distinguishes safe read timeouts from writes with an unknown outcome", () => {
@@ -14,6 +14,23 @@ describe("local API request boundary", () => {
     expect(LOCAL_API_READ_TIMEOUT_MS).toBeGreaterThan(0);
     expect(LOCAL_API_WRITE_TIMEOUT_MS).toBeGreaterThan(LOCAL_API_READ_TIMEOUT_MS);
     expect(new LocalApiRequestError("write_outcome_unknown").failure).toBe("write_outcome_unknown");
+  });
+
+  it("keeps the short continuation timeout active through the response body", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    vi.stubGlobal("fetch", async (_path: string, { signal }: RequestInit) => ({
+      ok: true,
+      json: () => new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true })),
+    }));
+    try {
+      const outcome = expect(getStageContract("run_1", 10)).rejects.toMatchObject({ failure: "read_timeout" });
+      await vi.advanceTimersByTimeAsync(10);
+      await outcome;
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 
   it("treats a received write 5xx as an unknown outcome but not a validated client rejection", () => {

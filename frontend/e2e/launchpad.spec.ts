@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resolve } from "node:path";
+import { stageContractFixture } from "../src/stageContractFixture";
 
 const routeDiagnosticsExport = resolve(process.cwd(), "..", "examples", "ui-demo", "route_diagnostics.json");
 const workspaceLoad = { timeout: 15_000 };
@@ -746,6 +747,11 @@ test("finds recent local missions without a run ID and reuses the selected run",
   const runId = "saved_run_05";
   const { readFile } = await import("node:fs/promises");
   const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
+  bundle.literature_graph = {
+    trust_status: "human_reviewed_graph_projection",
+    nodes: [{ node_id: "paper:saved", kind: "candidate_paper", label: "Saved candidate to screen", trust_status: "candidate_metadata_not_scientific_evidence" }],
+    edges: [],
+  };
   const requests: string[] = [];
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
@@ -768,6 +774,7 @@ test("finds recent local missions without a run ID and reuses the selected run",
   await page.route("**/api/runs/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/runs/" + runId + "/ui") return route.fulfill({ json: bundle });
+    if (path === "/api/runs/" + runId + "/stage-contract") return route.fulfill({ json: stageContractFixture(runId, bundle.mission.mission_id, "screening") });
     if (path === "/api/runs/" + runId + "/status") {
       await statusAllowed;
       return route.fulfill({ json: { run_id: runId, mission_id: bundle.mission.mission_id, state: "INTAKE" } });
@@ -795,8 +802,12 @@ test("finds recent local missions without a run ID and reuses the selected run",
   } finally {
     releaseStatus();
   }
-  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await expect(page.locator(".workbench")).toHaveClass(/view-graph/, workspaceLoad);
   await expect(page.locator(".rail-run-id code")).toHaveText(runId);
+  await expect(page.getByText(/打开时阶段为“候选筛选”/)).toBeVisible();
+  await page.getByRole("link", { name: "CosMatter", exact: true }).click();
+  await page.getByRole("button", { name: "返回当前任务" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-graph/, workspaceLoad);
   expect(requests.filter((request) => request === "GET /api/runs/" + runId + "/ui")).toHaveLength(1);
   expect(requests.every((request) => request.startsWith("GET "))).toBe(true);
 });
@@ -837,6 +848,7 @@ test("opens local DSH links directly and keeps a failed linked run editable", as
   await page.goto(`/?api=local#run=${runId}`);
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
   await expect(page.locator(".rail-run-id code")).toHaveText(runId);
+  await expect(page.getByText(/阶段暂未核验/)).toBeVisible();
   await cached;
   expect(recentRequests).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);

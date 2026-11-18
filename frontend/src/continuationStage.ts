@@ -1,4 +1,25 @@
+import type { StageContract } from "./localApi";
+import { hasNavigableLiteratureGraph } from "./missionJourney";
+import type { ImportedBundle } from "./model";
+import { trustedStageContract } from "./runtimeProjectionContract";
+
 export type ContinuationView = "workflow" | "graph";
+
+export function localRunLanding(runId: string, bundle: ImportedBundle, contract: StageContract | null): {
+  view: ContinuationView;
+  stage: StageContract["next_stage"];
+  state: "confirmed" | "unverified" | "attention" | "graph_unavailable";
+} {
+  if (!contract || !trustedStageContract(runId, contract) || contract.mission_id !== bundle.mission.missionId) {
+    return { view: "workflow", stage: null, state: "unverified" };
+  }
+  const stage = contract.next_stage;
+  if (contract.runtime_safety !== "verified") return { view: "workflow", stage, state: "attention" };
+  const view = stage === null ? "graph" : viewForContinuationStage(stage);
+  return view === "graph" && !hasNavigableLiteratureGraph(bundle)
+    ? { view: "workflow", stage, state: "graph_unavailable" }
+    : { view, stage, state: "confirmed" };
+}
 
 export interface RestoredStageReconciliation {
   stage: string | null;
@@ -41,10 +62,6 @@ export function continuationStageLabel(stage: string | null | undefined, locale:
   };
   const key = (stage ?? "").trim().toLowerCase();
   return labels[key]?.[locale === "zh" ? 0 : 1] ?? (locale === "zh" ? "受控编排" : "controlled orchestration");
-}
-
-export function viewForRestoredRun(stage: string | null | undefined, artifactsHydrated: boolean): ContinuationView {
-  return artifactsHydrated ? viewForContinuationStage(stage) : "workflow";
 }
 
 export function viewForContinuationStage(stage: string | null | undefined): ContinuationView {

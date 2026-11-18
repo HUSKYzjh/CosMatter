@@ -168,21 +168,22 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = (init?.m
   const controller = new AbortController();
   let timedOut = false;
   const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
-  let response: Response;
   try {
-    response = await fetch(path, { ...init, cache: "no-store", signal: controller.signal });
-  } catch {
+    const response = await fetch(path, { ...init, cache: "no-store", signal: controller.signal });
+    if (!response.ok) {
+      // Provider and filesystem details are untrusted display data.
+      throw new LocalApiRequestError(localApiHttpFailure(init?.method, response.status));
+    }
+    return await response.json().catch((error) => {
+      if (controller.signal.aborted) throw error;
+      return {};
+    }) as T;
+  } catch (error) {
+    if (error instanceof LocalApiRequestError) throw error;
     throw new LocalApiRequestError(timedOut ? localApiTimeoutFailure(init?.method) : "transport");
   } finally {
     window.clearTimeout(timeout);
   }
-  const payload: unknown = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    // Provider and filesystem details are untrusted display data.  Callers
-    // receive only a neutral transport classification.
-    throw new LocalApiRequestError(localApiHttpFailure(init?.method, response.status));
-  }
-  return payload as T;
 }
 function jsonPost<T>(path: string, payload: unknown): Promise<T> { return request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
 export async function getRecentLocalRuns(): Promise<RecentLocalRun[]> {
@@ -380,7 +381,9 @@ export interface PdfRunResult extends LiveMission { document_id: string; candida
 export interface PdfTaskStatus { document_id: string; candidate_document_id?: string | null; audit_document_id: string; audit_state: "pending" | "running" | "done" | "failed"; file_name: string; state: PdfTaskState; doi: string | null; doi_status: PdfDoiStatus; markdown_ready: boolean; source_map_review_status: "absent" | "recorded" | "invalid"; source_map_segment_count: number; error?: string | null; trust_status: string; }
 export function createAutomaticMission(payload: { question: string; material: string; property: string; scope: string; sources: RetrievalSource[] }): Promise<AutoMissionResult> { return jsonPost<AutoMissionResult>("./api/missions/auto", { ...payload, consent: true }); }
 export function getRunStatus(runId: string): Promise<RunStatus> { return request<RunStatus>(`./api/runs/${encodeURIComponent(runId)}/status`); }
-export function getStageContract(runId: string): Promise<StageContract> { return request<StageContract>(`./api/runs/${encodeURIComponent(runId)}/stage-contract`); }
+export function getStageContract(runId: string, timeoutMs?: number): Promise<StageContract> {
+  return request<StageContract>(`./api/runs/${encodeURIComponent(runId)}/stage-contract`, undefined, timeoutMs);
+}
 export function getWorkflowDag(runId: string): Promise<WorkflowDag> { return request<WorkflowDag>(`./api/runs/${encodeURIComponent(runId)}/workflow-dag`); }
 export function getOperationalTelemetry(runId: string): Promise<OperationalTelemetry> { return request<OperationalTelemetry>(`./api/runs/${encodeURIComponent(runId)}/operational-telemetry`); }
 export function getReminderBoard(): Promise<ReminderBoard> { return request<ReminderBoard>("./api/reminder-board"); }
