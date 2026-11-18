@@ -80,7 +80,7 @@ DSH 执行已批准的书目检索后，结果卡显示本次返回的候选数�
 在「最近的本机任务」展开「在 DSH 查找最近任务」，可复制 `cosmatter dsh-recent-runs --port <本机端口>`。
 命令通过已安装的 observability 插件调用 `cosmatter_recent_runs`，无需事先知道运行 ID。它最多列出 12 条，只返回运行 ID、更新时间、停止状态和本机打开链接。研究对象和研究目标保留在浏览器列表中。
 已停止的任务可从最近任务的「查看记录」或 DSH 返回的链接打开。记录中可下载已保存的白名单工件。
-展开「在 DSH 查看工件目录」可复制 `cosmatter dsh-run-artifacts <run_id> --port <本机端口>`，通过 `cosmatter_artifact_manifest` 读取同一目录。
+在已保存工件目录点「复制 DSH 命令」可复制 `cosmatter dsh-run-artifacts <run_id> --port <本机端口>`，通过 `cosmatter_artifact_manifest` 读取同一目录。
 舰桥的「已保存工件」提供下载、生成时间和可复制的 SHA-256。从舰桥或只读目录都可使用「复制工件目录链接」。DSH 工具卡显示工件数量和本机链接，终端命令通过 `workbench_url` 返回同一目录。运行中的任务可从目录选择「打开任务」进入工作台。
 打开任务时，舰桥会核对本机阶段契约。处于候选筛选或之后且文献工件可用时，直接打开文献星图；
 等待计划审核或检索的任务从受控编排继续。阶段或工件待核对的任务也可从受控编排查看。
@@ -98,7 +98,7 @@ DSH 可以通过 `cosmatter_candidate_screening_template` 读取已登记决定�
 复核已登记的 Source Map 时，可用条目旁的「查看原文」跳到对应行并高亮范围。每次跳转和翻页都会核对当前 Markdown 与来源定位的绑定。
 已接受的 EvidenceCard 可从卡片旁的「核对原文」回到同一阅读面板。打开或翻页时，本机服务核对接受决定、引文、来源定位和 Markdown 指纹。
 DSH 的 `cosmatter_accepted_evidence_search` 会为可定位的结果返回本机 `workbench_url`。工作台核验卡片与目标论文的已审核关联后，在阅读页选中该卡片。
-阅读页可以复制证据链接，或从「在 DSH 查看证据」复制 `cosmatter dsh-evidence` 命令。命令使用链接中的本机端口，通过已安装的 graph 插件按完整 `evidence_id` 查找，并核对返回卡片的论文 ID。
+阅读页可直接复制证据链接或 `cosmatter dsh-evidence` 命令。剪贴板不可用时会展开命令预览。命令使用链接中的本机端口，通过已安装的 graph 插件按完整 `evidence_id` 查找，并核对返回卡片的论文 ID。DSH 工具结果卡逐条显示证据 ID、主张预览、来源定位和可用的本机阅读链接。
 进行中或已完成的解析会阻止同一候选重复上传 PDF。
 首次打开读取已有工件和保存的 PDF 状态；需要更新 PDF 状态时，可在舰桥手动刷新。
 从舰桥回到终端时，展开运行 ID 下方的「在 DSH 查看进度」，复制命令到 CosMatter 虚拟环境运行。

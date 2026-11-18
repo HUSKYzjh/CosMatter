@@ -83,6 +83,33 @@ test('exact evidence search submits only the selected identifier and rejects a d
   await assert.rejects(exact, /exact response is invalid/)
 })
 
+test('DSH presents accepted cards with bounded previews and verified reader links', async t => {
+  const hit = { evidence_id: "证据 + '1", document_id: '文献 & x=1', claim: 'Reviewed claim\n' + 'x'.repeat(200), locator: 'figure:2', source: 'fixture', score: 1 }
+  const response = { run_id: 'run_1', mission_id: 'mission_1', trust_status: 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion',
+    query_sha256: 'a'.repeat(64), match_mode: 'exact_id', results: [hit] }
+  t.mock.method(globalThis, 'fetch', async () => Response.json(response))
+  const tools = []
+  apply({ tools: { register: tool => tools.push(tool) }, emit() {}, effect() {} }, { baseUrl: 'http://127.0.0.1:8790' })
+  const tool = tools.find(item => item.name === 'cosmatter_accepted_evidence_search')
+  const args = { run_id: 'run_1', evidence_id: hit.evidence_id, limit: 1 }
+  const result = await tool.execute(args, { signal: new AbortController().signal })
+  const content = tool.output.render(args, result)
+  assert.equal(JSON.parse(content[0].text).results[0].claim, hit.claim)
+  const meta = tool.output.presentationMeta(args, result)
+  const card = tool.presentResult(args, { content, meta, isError: false })
+  assert.equal(card.title, 'Accepted CosMatter evidence')
+  const [id, preview, locator, url] = card.content[0].text.split('\n')
+  assert.equal(id, hit.evidence_id)
+  assert.match(preview, /^Reviewed claim x+…$/)
+  assert.equal(preview.length, 180)
+  assert.equal(locator, hit.locator)
+  assert.equal(url, result.results[0].workbench_url)
+  assert.equal(tool.presentResult(args, { content, meta: [{ ...meta[0], workbench_url: 'https://example.invalid/' }], isError: false }), undefined)
+  assert.equal(tool.presentResult({ ...args, evidence_id: 'different' }, { content, meta, isError: false }), undefined)
+  assert.equal(tool.presentResult(args, { content, meta, isError: true }), undefined)
+  assert.equal(tool.presentResult(args, { content, meta: [], isError: false }).content[0].text, 'No accepted evidence cards matched.')
+})
+
 test('DSH apply registers the bounded query and plan tools', async () => {
   const tools = []
   const events = []

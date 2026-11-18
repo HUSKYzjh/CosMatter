@@ -75,11 +75,8 @@ export class CosMatterLoopbackClient {
         if (evidenceId && (result.match_mode !== 'exact_id' || result.results.length > 1 || result.results.some(item => item.evidence_id !== evidenceId)))
             throw new Error('accepted-evidence exact response is invalid');
         const results = result.results.map(item => {
-            if (!canLinkIdentifier(item.document_id, 255) || !canLinkIdentifier(item.evidence_id, 200))
-                return item;
-            const workbench = new URL('/?api=local', this.config.baseUrl.origin);
-            workbench.hash = new URLSearchParams({ run: runIdValue, document: item.document_id, evidence: item.evidence_id }).toString();
-            return { ...item, workbench_url: workbench.href };
+            const link = acceptedEvidenceWorkbenchLink(this.config.baseUrl.origin, runIdValue, item.document_id, item.evidence_id);
+            return link ? { ...item, workbench_url: link } : item;
         });
         return { ...result, results };
     }
@@ -101,6 +98,13 @@ export class CosMatterLoopbackClient {
             throw new Error('CosMatter graph plan draft was rejected');
         return payload;
     }
+}
+export function acceptedEvidenceWorkbenchLink(origin, run, document, evidence) {
+    if (!runId.test(run) || run.length > 255 || !canLinkIdentifier(document, 255) || !canLinkIdentifier(evidence, 200))
+        return null;
+    const url = new URL('/?api=local', origin);
+    url.hash = new URLSearchParams({ run, document, evidence }).toString();
+    return url.href;
 }
 function canLinkIdentifier(value, maxLength) {
     return value.length > 0 && value.length <= maxLength && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);

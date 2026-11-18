@@ -599,6 +599,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .dsh-run-handoff code { display: block; box-sizing: border-box; max-width: 100%; padding: .35rem .45rem; border: 1px solid var(--line); border-radius: .22rem; color: var(--ink); background: var(--surface); font: max(.74rem, 12px)/1.45 ui-monospace, "Cascadia Mono", monospace; overflow-wrap: anywhere; user-select: all; }
 .recent-local-runs > .dsh-run-handoff { width: 100%; min-width: 0; }
 .dsh-linked-handoff { display: grid; justify-items: start; gap: .4rem; min-width: 0; margin-block: .45rem; }
+.dsh-linked-actions { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 100%; }
 .dsh-linked-handoff input { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: .36rem .45rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); font: max(.74rem, 12px) ui-monospace, monospace; }
 .dsh-linked-handoff details { width: 100%; min-width: 0; }
 @media (max-width: 520px) {
@@ -2241,7 +2242,11 @@ button.quiet-action:not(.cm-action):disabled,
 .evidence-queue button span { font-size: max(.78rem, 13px); }
 .evidence-queue button small { font-size: max(.7rem, 12px); }
 .source-reader blockquote { font-size: max(.86rem, 14px); }
+.reader-layout > * { min-width: 0; }
+.source-reader { overflow-wrap: anywhere; }
+.evidence-locator dd { margin-inline-start: 0; }
 @media (max-width: 560px) {
+  .reader-layout { grid-template-columns: minmax(0, 1fr); }
   .reader-empty .cm-action,
   .reader-selection > .cm-action,
   .reader-intake-note > .cm-action,

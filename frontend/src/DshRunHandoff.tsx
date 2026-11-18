@@ -59,7 +59,7 @@ export function DshRunArtifactsHandoff(props: { runId: string; locale: UiLocale 
     <DshLinkedHandoff locale={props.locale} link={link} linkLabel={x("工件目录链接", "Artifact list link")}
       copyLabel={x("复制工件目录链接", "Copy artifact list link")} copiedLabel={x("工件目录链接已复制。", "Artifact list link copied.")}
       command={`cosmatter dsh-run-artifacts ${props.runId} --port ${location?.port || "80"}`}
-      commandLabel={x("在 DSH 查看工件目录", "View artifact list in DSH")} />
+      commandLabel={x("查看工件目录命令", "View artifact list command")} />
   }</Show>;
 }
 
@@ -68,7 +68,7 @@ export function DshEvidenceHandoff(props: DshEvidenceTarget & { runId: string; l
   return <Show when={localEvidenceLink(props.runId, props)} keyed>{(link) =>
     <DshLinkedHandoff locale={props.locale} link={link} linkLabel={x("证据链接", "Evidence link")}
       copyLabel={x("复制证据链接", "Copy evidence link")} copiedLabel={x("证据链接已复制。", "Evidence link copied.")}
-      command={`cosmatter dsh-evidence '${link}'`} commandLabel={x("在 DSH 查看证据", "View evidence in DSH")} />
+      command={`cosmatter dsh-evidence '${link}'`} commandLabel={x("查看证据命令", "View evidence command")} />
   }</Show>;
 }
 
@@ -80,30 +80,47 @@ export function DshScreeningHandoff(props: { runId: string; revision: string; lo
   return <Show when={href()} keyed>{(link) =>
     <DshLinkedHandoff locale={props.locale} link={link} linkLabel={x("筛选清单链接", "Screening checklist link")}
       copyLabel={x("复制筛选链接", "Copy screening link")} copiedLabel={x("筛选链接已复制。", "Screening link copied.")}
-      command={`cosmatter dsh-screening '${link}'`} commandLabel={x("在 DSH 查看筛选清单", "View the screening checklist in DSH")}
+      command={`cosmatter dsh-screening '${link}'`} commandLabel={x("查看筛选清单命令", "View screening checklist command")}
       description={x("命令读取本机已保存的清单和决定。未提交的草稿保留在当前浏览器标签页。", "The command reads the saved checklist and decisions. Draft edits stay in this browser tab.")} />
   }</Show>;
 }
 
 function DshLinkedHandoff(props: { locale: UiLocale; link: string; linkLabel: string; copyLabel: string; copiedLabel: string; command: string; commandLabel: string; description?: string }) {
-  const [feedback, setFeedback] = createSignal<"copied" | "manual" | null>(null);
+  const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
+  const [feedback, setFeedback] = createSignal<{ target: "link" | "command"; copied: boolean } | null>(null);
+  let preview!: HTMLDetailsElement;
 
-  async function copyLink() {
+  async function copy(target: "link" | "command") {
     try {
-      await navigator.clipboard.writeText(props.link);
-      setFeedback("copied");
+      await navigator.clipboard.writeText(target === "link" ? props.link : props.command);
+      setFeedback({ target, copied: true });
     } catch {
-      setFeedback("manual");
+      if (target === "command") preview.open = true;
+      setFeedback({ target, copied: false });
     }
   }
 
+  const feedbackText = ({ target, copied }: NonNullable<ReturnType<typeof feedback>>) => {
+    if (target === "command") return copied ? x("DSH 命令已复制。", "DSH command copied.")
+      : x("剪贴板不可用，可在下方选中命令复制。", "Clipboard unavailable. Select the command below to copy it.");
+    return copied ? props.copiedLabel : x("剪贴板不可用，可选中链接复制。", "Clipboard unavailable. Select the link to copy it.");
+  };
+
   return <div class="dsh-linked-handoff">
-    <ActionButton size="sm" onClick={() => void copyLink()}>{props.copyLabel}</ActionButton>
+    <div class="dsh-linked-actions">
+      <ActionButton size="sm" onClick={() => void copy("link")}>{props.copyLabel}</ActionButton>
+      <ActionButton size="sm" onClick={() => void copy("command")}>{x("复制 DSH 命令", "Copy DSH command")}</ActionButton>
+    </div>
     <Show when={feedback()}>{(state) => <>
-      <p role="status">{state() === "copied" ? props.copiedLabel
-        : props.locale === "zh" ? "剪贴板不可用，可选中链接复制。" : "Clipboard unavailable. Select the link to copy it."}</p>
-      <Show when={state() === "manual"}><input aria-label={props.linkLabel} readOnly value={props.link} onFocus={(event) => event.currentTarget.select()} /></Show>
+      <p role="status">{feedbackText(state())}</p>
+      <Show when={state().target === "link" && !state().copied}><input aria-label={props.linkLabel} readOnly value={props.link} onFocus={(event) => event.currentTarget.select()} /></Show>
     </>}</Show>
-    <DshCommandHandoff locale={props.locale} command={props.command} label={props.commandLabel} description={props.description} />
+    <details ref={preview} class="harness-disclosure dsh-run-handoff">
+      <summary><span>{props.commandLabel}</span></summary>
+      <div>
+        <Show when={props.description}><p>{props.description}</p></Show>
+        <code>{props.command}</code>
+      </div>
+    </details>
   </div>;
 }

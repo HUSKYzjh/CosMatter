@@ -911,7 +911,7 @@ test("opens stopped runs as read-only records from DSH links and recent tasks", 
   const file = page.waitForEvent("download");
   await download.press("Enter");
   expect((await file).suggestedFilename()).toBe("workflow_readiness.json");
-  await record.locator(".dsh-run-handoff > summary").press("Enter");
+  await expect(record.locator(".dsh-run-handoff code")).not.toBeVisible();
   await record.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
   await expect(record.getByRole("status")).toHaveText("DSH 命令已复制。");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter dsh-run-artifacts ${runId} --port ${new URL(page.url()).port}`);
@@ -1426,11 +1426,21 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await evidenceCard.getByRole("button", { name: "复制证据链接" }).click();
   await expect(evidenceCard.getByText("证据链接已复制。", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(cardLink);
-  await evidenceCard.locator(".dsh-run-handoff > summary").press("Enter");
+  const commandPreview = evidenceCard.locator(".dsh-run-handoff code");
+  await expect(commandPreview).not.toBeVisible();
   await evidenceCard.getByRole("button", { name: "复制 DSH 命令" }).click();
   await expect(evidenceCard.getByText("DSH 命令已复制。", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter dsh-evidence '${cardLink}'`);
+  await expect(commandPreview).not.toBeVisible();
   await page.evaluate(() => Object.defineProperty(navigator.clipboard, "writeText", { value: () => Promise.reject(new DOMException("Clipboard access denied", "NotAllowedError")) }));
+  await evidenceCard.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
+  await expect(commandPreview).toBeVisible();
+  await expect(commandPreview).toHaveText(`cosmatter dsh-evidence '${cardLink}'`);
+  await expect(evidenceCard.getByText("剪贴板不可用，可在下方选中命令复制。", { exact: true })).toBeVisible();
+  expect(await evidenceCard.evaluate((element) => {
+    const { left, right } = element.getBoundingClientRect();
+    return left >= 0 && right <= document.documentElement.clientWidth && element.scrollWidth <= element.clientWidth;
+  })).toBe(true);
   await evidenceCard.getByRole("button", { name: "复制证据链接" }).click();
   await expect(evidenceCard.getByRole("textbox", { name: "证据链接", exact: true })).toHaveValue(cardLink);
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);

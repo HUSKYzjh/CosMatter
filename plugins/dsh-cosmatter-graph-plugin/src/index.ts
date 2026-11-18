@@ -3,7 +3,7 @@ import '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
-import { CosMatterLoopbackClient } from './client.js'
+import { CosMatterLoopbackClient, acceptedEvidenceWorkbenchLink } from './client.js'
 import type { CosMatterGraphConfig } from './config.js'
 
 export const name = 'cosmatter-graph'
@@ -14,6 +14,13 @@ declare module '@deepseek-ai/cordis' {
     'cosmatter-graph/query'(payload: { run_id: string; graph_id: string; node_count: number; edge_count: number }): void
     'cosmatter-graph/plan-created'(payload: { run_id: string; intent_length: number }): void
   }
+}
+
+function evidencePreview(value: JsonValue | undefined, maximum: number): string | null {
+  if (typeof value !== 'string') return null
+  const line = value.replace(/[\p{Cc}\p{Cf}\s]+/gu, ' ').trim()
+  const characters = [...line]
+  return characters.length > maximum ? characters.slice(0, maximum - 1).join('').trimEnd() + '…' : line
 }
 
 export function apply(ctx: Context, config: CosMatterGraphConfig = {}): void {
@@ -44,7 +51,41 @@ export function apply(ctx: Context, config: CosMatterGraphConfig = {}): void {
     name: 'cosmatter_accepted_evidence_search',
     description: 'Search human-accepted evidence-card metadata for this run. Provide a keyword query or one exact evidence_id. A result with a workbench_url opens the card in the local reader.',
     parameters: { run_id: { type: 'string', required: true }, query: { type: 'string' }, evidence_id: { type: 'string' }, limit: { type: 'integer' } },
-    output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+      presentationMeta: (_args, value) => Array.isArray(value.results) ? value.results.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+        return {
+          evidence_id: item.evidence_id ?? null, document_id: item.document_id ?? null, workbench_url: item.workbench_url ?? null,
+          claim: evidencePreview(item.claim, 180), locator: evidencePreview(item.locator, 100),
+        }
+      }) : null,
+    },
+    presentCall: ({ run_id, evidence_id }) => ({
+      card: 'generic', kind: evidence_id === undefined ? 'search' : 'read',
+      title: evidence_id === undefined ? 'Search accepted CosMatter evidence' : 'Find an accepted CosMatter evidence card',
+      rawInput: run_id,
+    }),
+    presentResult: ({ run_id, evidence_id: requestedEvidenceId }, { isError, meta }) => {
+      if (isError || !Array.isArray(meta) || meta.length > (requestedEvidenceId === undefined ? 12 : 1)) return
+      const entries = []
+      for (const item of meta) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return
+        const { evidence_id, document_id, workbench_url } = item
+        if (typeof evidence_id !== 'string' || typeof document_id !== 'string'
+          || (requestedEvidenceId !== undefined && requestedEvidenceId !== evidence_id)) return
+        const expectedLink = acceptedEvidenceWorkbenchLink(client.config.baseUrl.origin, run_id, document_id, evidence_id)
+        if (workbench_url !== null && workbench_url !== expectedLink) return
+        const title = evidencePreview(evidence_id, 200) || 'Evidence card'
+        const rows = [title, evidencePreview(item.claim, 180), evidencePreview(item.locator, 100),
+          workbench_url ?? 'Local reader link unavailable.']
+        entries.push(rows.filter(Boolean).join('\n'))
+      }
+      return { card: 'generic', title: 'Accepted CosMatter evidence', content: [
+        { type: 'text', text: entries.join('\n\n') || 'No accepted evidence cards matched.' },
+      ] }
+    },
     async execute(args, exec) {
       const query = typeof args.query === 'string' ? args.query : null
       const evidenceId = typeof args.evidence_id === 'string' ? args.evidence_id : null

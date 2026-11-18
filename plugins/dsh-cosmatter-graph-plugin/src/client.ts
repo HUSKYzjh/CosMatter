@@ -62,10 +62,8 @@ export class CosMatterLoopbackClient {
       || !Array.isArray(result.results) || result.results.length > limit || !result.results.every(safeEvidenceResult)) throw new Error('accepted-evidence search response is invalid')
     if (evidenceId && (result.match_mode !== 'exact_id' || result.results.length > 1 || result.results.some(item => item.evidence_id !== evidenceId))) throw new Error('accepted-evidence exact response is invalid')
     const results = result.results.map(item => {
-      if (!canLinkIdentifier(item.document_id, 255) || !canLinkIdentifier(item.evidence_id, 200)) return item
-      const workbench = new URL('/?api=local', this.config.baseUrl.origin)
-      workbench.hash = new URLSearchParams({ run: runIdValue, document: item.document_id, evidence: item.evidence_id }).toString()
-      return { ...item, workbench_url: workbench.href }
+      const link = acceptedEvidenceWorkbenchLink(this.config.baseUrl.origin, runIdValue, item.document_id, item.evidence_id)
+      return link ? { ...item, workbench_url: link } : item
     })
     return { ...result, results }
   }
@@ -85,6 +83,13 @@ export class CosMatterLoopbackClient {
     if (!response.ok || !payload || typeof payload !== 'object' || (payload as Record<string, unknown>).trust_status !== 'untrusted_graph_plan_draft_not_execution_or_evidence_acceptance') throw new Error('CosMatter graph plan draft was rejected')
     return payload as Record<string, unknown>
   }
+}
+
+export function acceptedEvidenceWorkbenchLink(origin: string, run: string, document: string, evidence: string): string | null {
+  if (!runId.test(run) || run.length > 255 || !canLinkIdentifier(document, 255) || !canLinkIdentifier(evidence, 200)) return null
+  const url = new URL('/?api=local', origin)
+  url.hash = new URLSearchParams({ run, document, evidence }).toString()
+  return url.href
 }
 
 function canLinkIdentifier(value: string, maxLength: number): boolean {

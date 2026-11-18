@@ -16,3 +16,4 @@ export declare class CosMatterLoopbackClient {
     requestReview(runIdValue: string, nodeIds: string[], rationale: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
     draftPlan(runIdValue: string, nodeIds: string[], intent: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
 }
+export declare function acceptedEvidenceWorkbenchLink(origin: string, run: string, document: string, evidence: string): string | null;
