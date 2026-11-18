@@ -65,8 +65,8 @@ $env:PYTHONPATH = 'src'
 在本机诊断安装环境时，先执行下面的无 key 命令。它会明确报告 DSH、Node、npm 或
 pnpm 缺失或版本不符。随后打包七个 bundle，在临时 `DSH_HOME` 中安装并核对组合配置。
 验收还会检查 headless 帮助入口，并在禁用任务运行器和模型适配器的 profile 中检查 19 个工具的注册。
-其中目录工具会向临时本机 HTTP 服务读取一次合成目录。
-整个检查使用临时 profile 和合成目录数据。
+DSH 原生工具执行器通过临时 CosMatter HTTP 服务读取正式契约目录、建立一个合成任务，再确认该任务的下一步为计划阶段。
+验收使用临时 profile 与任务目录，关闭提供方配置。舰桥的「查找 DSH 工具」提供工具名、所属包与授权要求。
 
 ```powershell
 Set-Location D:\CosMatter\development\CosMatter

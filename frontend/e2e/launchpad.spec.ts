@@ -215,6 +215,7 @@ test("keeps operational labels and evidence copy at a readable scale", async ({ 
 });
 
 test("shows the DSH contract bridge without presenting catalogue discovery as execution", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.route("**/api/status", async (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({
@@ -298,8 +299,33 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   expect(await activationTrack.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   expect(await activationVerdict.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   expect(await packageProof.locator("ul").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
+  const tools = deck.locator(".dsh-tool-catalogue");
+  await tools.locator(":scope > summary").press("Enter");
+  await expect(tools.getByRole("status")).toHaveText("显示 19/19 个工具");
+  const search = tools.getByRole("searchbox", { name: "搜索工具或插件包" });
+  const filter = tools.getByLabel("授权类型");
+  await filter.selectOption("external");
+  await expect(tools.getByRole("status")).toHaveText("显示 4/19 个工具");
+  await search.fill("书目查询");
+  const matching = tools.locator(".dsh-tool-item");
+  await expect(matching).toHaveCount(1);
+  await matching.locator("summary").press("Enter");
+  await expect(matching).toContainText("metadata_provider_consent");
+  await expect(matching).toContainText("安装文件已验证，待核验组合");
+  await matching.getByRole("button", { name: "复制工具名" }).click();
+  await expect(matching.getByRole("status")).toHaveText("工具名已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cosmatter_research_query_execute");
+  await page.evaluate(() => Object.defineProperty(navigator.clipboard, "writeText", {
+    value: () => Promise.reject(new DOMException("Clipboard access denied", "NotAllowedError")),
+  }));
+  await matching.getByRole("button", { name: "复制工具名" }).click();
+  await expect(matching.locator(".dsh-tool-manual-copy")).toHaveText("cosmatter_research_query_execute");
   expect(await deck.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await search.fill("nonexistent");
+  await expect(tools.getByRole("status")).toHaveText("显示 0/19 个工具");
+  await tools.getByRole("button", { name: "清除筛选" }).click();
+  await expect(tools.getByRole("status")).toHaveText("显示 19/19 个工具");
 });
 
 test("rechecks a missing DSH bundle while the catalogue is unavailable", async ({ page }) => {

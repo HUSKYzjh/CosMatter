@@ -3,8 +3,9 @@
 Default mode is deliberately local and keyless: it validates the compatibility
 matrix, every package manifest and published-file allowlist.  ``--profile-smoke``
 installs the packed tarballs in a temporary DSH home, checks profile
-composition and startup, and invokes an installed tool against a loopback
-fixture. It never loads ``.env`` or starts a provider-backed agent turn.
+composition and startup, and dispatches catalogue, mission creation, and
+workflow status through an isolated CosMatter loopback API. It never loads
+``.env`` or starts a provider-backed agent turn.
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 from typing import Any
@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.profile_smoke:
         report["registered_tool_count"] = _profile_smoke(compatibility, manifest, timeout_seconds=args.timeout_seconds)
         report["loopback_catalogue_verified"] = True
+        report["loopback_mission_roundtrip_verified"] = True
     print(json.dumps(report, ensure_ascii=False))
     return 0
 
@@ -145,38 +146,29 @@ def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, t
 def _verify_tool_registry(
     dsh: str, profile: str, manifest: dict[str, Any], temporary: Path, environment: dict[str, str], timeout_seconds: int,
 ) -> int:
-    catalogue = {
-        "catalogue_api_version": "2.0",
-        "trust_status": "static_catalogue_not_plugin_execution_or_evidence_acceptance",
-        "plugins": [{"plugin_id": "mission.define", "required_authorizations": [], "contract": {}}],
-    }
-    body = json.dumps(catalogue).encode("utf-8")
+    from cosmatter.local_api import LocalMissionApi
+    from cosmatter.ui_preview import build_ui_preview_server
 
-    class CatalogueFixture(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            if self.path != "/api/plugins":
-                self.send_error(404)
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+    def provider_settings_disabled() -> Any:
+        raise ReleaseGateError("provider settings are disabled for the DSH release probe")
 
-        def log_message(self, format: str, *args: object) -> None:
-            pass
+    api = LocalMissionApi(temporary / "probe-runs", settings_loader=provider_settings_disabled)
+    catalogue = api.plugin_catalogue()
+    web_dir = temporary / "probe-web"
+    web_dir.mkdir()
+    (web_dir / "index.html").write_text("<title>CosMatter DSH release probe</title>", encoding="utf-8")
 
     expected_tools = [tool for entry in manifest["packages"] for tool in entry["tools"]]
-    with ThreadingHTTPServer(("127.0.0.1", 0), CatalogueFixture) as server:
+    with build_ui_preview_server(0, web_dir, api=api) as server:
         patch = temporary / "registry-probe.json"
         shutil.copyfile(ROOT / "tools" / "verify_dsh_tool_registry.mjs", temporary / "registry-probe.mjs")
         patch.write_text(json.dumps([
             {"id": "headless-runner", "disabled": True},
             {"id": "llm-deepseek-account", "disabled": True},
-            {
-                "id": "cosmatter-policy",
+            *({
+                "id": f"cosmatter-{bundle}",
                 "config": {"baseUrl": f"http://127.0.0.1:{server.server_port}", "timeoutMs": 5000},
-            },
+            } for bundle in ("policy", "mission", "observability")),
             {"insert": [{
                 "id": "cosmatter-release-registry-probe",
                 "name": "./registry-probe.mjs",
@@ -193,7 +185,7 @@ def _verify_tool_registry(
         finally:
             server.shutdown()
             worker.join()
-    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue verified"
+    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue and mission verified"
     if probe.returncode or marker not in probe.stdout:
         raise ReleaseGateError(f"installed bundle tool registry failed: {probe.stderr.strip() or 'missing tool registry result'}")
     return len(expected_tools)

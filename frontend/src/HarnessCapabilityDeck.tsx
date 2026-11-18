@@ -4,6 +4,7 @@ import type { DshProfileHealth, DshProfileStatus, HarnessAuthorization, HarnessC
 import { ActionButton, StatusBadge } from "./uiPrimitives";
 import type { UiLocale } from "./fleetRegistry";
 import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
+import { DshToolCatalogue } from "./DshToolCatalogue";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
 const PROFILE_CHECK_COMMAND = "cosmatter check-dsh-profile";
@@ -229,7 +230,7 @@ export function HarnessCapabilityDeck(props: {
         </Show>
     </div>
     <Show when={props.profile?.installation_state !== "unavailable" && props.profile}>{(profile) =>
-      <details class="harness-package-proof" aria-busy={props.profileHealth === "loading" || undefined}>
+      <details class="harness-disclosure harness-package-proof" aria-busy={props.profileHealth === "loading" || undefined}>
         <summary>
           <span>{x("查看逐包检查结果", "Inspect bundle checks")}</span>
           <strong>{profile().installed_bundle_count}/{profile().expected_bundle_count}</strong>
@@ -255,6 +256,9 @@ export function HarnessCapabilityDeck(props: {
         )}</p>
       </details>
     }</Show>
+    <Show when={props.health !== "disabled" || props.profileHealth !== "disabled"}>
+      <DshToolCatalogue locale={props.locale} plugins={props.health === "ready" ? props.plugins ?? [] : []} profile={props.profile} profileHealth={props.profileHealth} />
+    </Show>
     <div class="harness-boundary-copy"><p>{props.health === "ready"
       ? x("目录已连接只证明 CosMatter 能读取本机静态契约；profile 依赖快照与运行回执分别证明不同层次，任何一层都不能代替工具结果。", "A connected catalogue proves only that CosMatter can read local static contracts. The profile dependency snapshot and runtime receipts prove separate layers; none can substitute for tool results.")
       : x("目录、profile 依赖快照与运行回执独立检查；其中一项不可用时，其余状态仍会如实显示，但不会据此开放执行权限。", "Catalogue, profile dependency snapshot, and runtime receipts are checked independently. When one is unavailable, the others remain visible without granting execution permission.")}</p><Show when={props.operationPending}><StatusBadge tone="active" pulse>{x("受控操作进行中", "Controlled operation in progress")}</StatusBadge></Show></div>
