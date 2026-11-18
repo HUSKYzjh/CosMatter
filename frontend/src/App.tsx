@@ -2,6 +2,8 @@ import { For, Show, Suspense, batch, createEffect, createMemo, createSignal, laz
 
 import { FleetDecoration } from "./FleetDecoration";
 import { DshRunHandoff } from "./DshRunHandoff";
+import type { StoppedRunIdentity } from "./StoppedRunRecord";
+import type { RunStatus } from "./localApi";
 import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget } from "./Launchpad";
 import { type LaunchPreviewStage } from "./launchStages";
 import { launchMissionMissingFields } from "./launchMissionValidation";
@@ -286,6 +288,7 @@ export function App() {
   const [rootPdfRetry, setRootPdfRetry] = createSignal<RootPdfRetry | null>(null);
   const [resumeSubmissionPending, setResumeSubmissionPending] = createSignal(false);
   const [existingRunReadPending, setExistingRunReadPending] = createSignal(false);
+  const [stoppedRun, setStoppedRun] = createSignal<StoppedRunIdentity | null>(null);
   const [uiImportPending, setUiImportPending] = createSignal(false);
   const [uiImportReceipt, setUiImportReceipt] = createSignal<LocalImportReceipt | null>(null);
   const [pdfTask, setPdfTask] = createSignal<PdfTaskStatus | null>(null);
@@ -508,6 +511,7 @@ export function App() {
     if (runId && currentView !== "launch" && !launchPreview()) lastActiveWorkspace = { runId, view: currentView };
     if (readLocalRunLink()) window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
     setLinkedLaunchRunId(undefined);
+    setStoppedRun(null);
     setLaunchPreview(false);
     setView("launch");
     setStatus(liveRunId()
@@ -795,8 +799,8 @@ export function App() {
     setCandidatePdfTarget(null);
   }
 
-  async function readLiveRunSnapshot(runId: string) {
-    const [rawBundle, status] = await Promise.all([fetchLiveUiBundle(runId), getRunStatus(runId)]);
+  async function readLiveRunSnapshot(runId: string, knownStatus?: RunStatus) {
+    const [rawBundle, status] = await Promise.all([fetchLiveUiBundle(runId), knownStatus ?? getRunStatus(runId)]);
     const imported = readBundle(rawBundle, "loopback");
     if (!liveBundleMatchesRun(runId, status, imported)) throw new Error("live run bundle identity mismatch");
     return { imported, status };
@@ -1613,17 +1617,31 @@ export function App() {
     const isLatest = existingRunReadGate.begin();
     const stillOnLaunch = () => isLatest() && isCurrentTask(previousEpoch) && view() === "launch" && !launchPreview();
     setLaunchNotice(null);
+    setStoppedRun(null);
     setExistingRunReadPending(true);
     try {
+      const status = await getRunStatus(runId);
+      if (!stillOnLaunch()) return;
+      if (status.run_id !== runId || typeof status.mission_id !== "string" || !status.mission_id) throw new Error("local run identity mismatch");
+      if (status.cancellation === "requested" || status.state === "CANCELLED") {
+        window.history.replaceState(window.history.state, "", localRunLink(window.location.origin, runId));
+        batch(() => {
+          if (liveRunId() === runId) {
+            supersedeActiveRun("keep");
+            clearRunScopedClientArtifacts();
+            setLiveRunId(null);
+            setCandidatePdfTarget(null);
+          }
+          setLinkedLaunchRunId(runId);
+          setStoppedRun({ runId, missionId: status.mission_id });
+        });
+        return;
+      }
       const [snapshot, stage] = await Promise.all([
-        readLiveRunSnapshot(runId),
+        readLiveRunSnapshot(runId, status),
         getStageContract(runId, CONTINUATION_STAGE_TIMEOUT_MS).catch(() => null),
       ]);
       if (!stillOnLaunch()) return;
-      if (snapshot.status.cancellation === "requested" || snapshot.status.state === "CANCELLED") {
-        setLaunchNotice(text("该运行已停止。请输入一个可续接的本机运行 ID。", "This run has been stopped. Enter the ID of a local run that can be continued."));
-        return;
-      }
       const landing = localRunLanding(runId, snapshot.imported, stage);
       const paper = documentId && landing.view === "graph" ? reviewablePaperForDocumentId(snapshot.imported.literatureGraph.nodes, documentId) : null;
       const requestedEvidence = paper && evidenceId
@@ -1671,6 +1689,15 @@ export function App() {
     } finally {
       if (isLatest()) setExistingRunReadPending(false);
     }
+  }
+
+  function closeStoppedRun() {
+    const record = stoppedRun();
+    if (record && readLocalRunLink()?.runId === record.runId) {
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
+      setLinkedLaunchRunId(undefined);
+    }
+    setStoppedRun(null);
   }
 
   function continuationLandingCopy(landing: ReturnType<typeof localRunLanding>) {
@@ -2061,7 +2088,7 @@ export function App() {
   });
 
   return <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} stoppedRun={stoppedRun()} onCloseStoppedRun={closeStoppedRun} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>

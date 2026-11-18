@@ -40,6 +40,7 @@ _REGISTRY_OUTPUT = "COSMATTER_TOOL_REGISTRY "
 _RUN_STATUS_OUTPUT = "COSMATTER_DSH_RUN_STATUS "
 _EVIDENCE_OUTPUT = "COSMATTER_DSH_EVIDENCE "
 _RECENT_RUNS_OUTPUT = "COSMATTER_DSH_RECENT_RUNS "
+_ARTIFACTS_OUTPUT = "COSMATTER_DSH_RUN_ARTIFACTS "
 _OBSERVABILITY_BUNDLE = "@cosmatter/dsh-observability-plugin"
 _GRAPH_BUNDLE = "@cosmatter/dsh-graph-plugin"
 _LOCAL_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,254}")
@@ -298,6 +299,25 @@ def read_dsh_recent_runs(*, port: int = 8765, executable: str = "dsh", dsh_home:
         if result.get("schema_version") == "cosmatter.recent-run-links/v1" and isinstance(result.get("runs"), list):
             return {**result, "checked_via": [tool]}
     raise DshCompositionCheckError("DSH could not read recent runs. Check that CosMatter is serving the local API on the requested port.")
+
+
+def read_dsh_run_artifacts(
+    run_id: str, *, port: int = 8765, executable: str = "dsh", dsh_home: Path | None = None,
+) -> dict[str, Any]:
+    """Read the same fixed artifact directory as the local workbench."""
+    if not _LOCAL_RUN_ID.fullmatch(run_id):
+        raise DshCompositionCheckError("Run ID must use letters, numbers, underscores, or hyphens.")
+    tool = "cosmatter_artifact_manifest"
+    config = {"tool": tool, "args": {"run_id": run_id}, "prefix": _ARTIFACTS_OUTPUT}
+    result = _read_through_bundle(_OBSERVABILITY_BUNDLE, executable, dsh_home, port, _TOOL_READ_PROBE, config, _ARTIFACTS_OUTPUT)
+    if isinstance(result, dict):
+        if result.get("error") == "not_registered":
+            raise DshCompositionCheckError("DSH did not register the CosMatter artifact manifest tool.")
+        if (result.get("schema_version") == "cosmatter.artifact/v1" and result.get("run_id") == run_id
+                and result.get("trust_status") == "allowlisted_artifact_index_not_scientific_evidence"):
+            origin = "http://127.0.0.1" if port == 80 else f"http://127.0.0.1:{port}"
+            return {**result, "workbench_url": f"{origin}/?api=local#run={run_id}", "checked_via": [tool]}
+    raise DshCompositionCheckError("DSH could not read the artifact list. Check the run ID and the local CosMatter service.")
 
 
 def _read_through_bundle(

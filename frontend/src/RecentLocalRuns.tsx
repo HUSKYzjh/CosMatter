@@ -12,7 +12,7 @@ export function RecentLocalRuns(props: {
   activeRunId?: string | null;
   openingRunId?: string;
   disabled: boolean;
-  onOpen: (runId: string) => void;
+  onOpen: (runId: string, stopped: boolean) => void;
 }) {
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const [requestNumber, setRequestNumber] = createSignal(props.listOnMount ? 1 : 0);
@@ -21,7 +21,8 @@ export function RecentLocalRuns(props: {
   const rows = createMemo(() => result.state === "ready" || result.state === "refreshing" ? result.latest ?? [] : []);
   const shown = () => expanded() ? rows() : rows().slice(0, FIRST_PAGE_SIZE);
   const dateFormat = createMemo(() => new Intl.DateTimeFormat(props.locale === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeStyle: "short" }));
-  const actionLabel = (run: RecentLocalRun) => run.run_id === props.activeRunId ? x("返回", "Return") : x("打开", "Open");
+  const actionLabel = (run: RecentLocalRun) => run.stopped ? x("查看记录", "View record")
+    : run.run_id === props.activeRunId ? x("返回", "Return") : x("打开", "Open");
 
   return <section class="recent-local-runs" aria-labelledby="recent-local-runs-title" aria-busy={result.loading || undefined}>
     <header>
@@ -44,14 +45,16 @@ export function RecentLocalRuns(props: {
             <strong>{run.material} · {run.property}</strong>
             <div><code>{run.run_id}</code><time dateTime={run.updated_at}>{dateFormat().format(new Date(run.updated_at))}</time></div>
           </div>
-          <Show when={!run.stopped} fallback={<StatusBadge tone="neutral">{x("已停止", "Stopped")}</StatusBadge>}>
+          <div class="recent-run-actions">
+            <Show when={run.stopped}><StatusBadge tone="neutral">{x("已停止", "Stopped")}</StatusBadge></Show>
             <ActionButton size="sm" disabled={props.disabled}
+              variant={run.stopped ? "quiet" : "secondary"}
               busy={props.openingRunId === run.run_id} busyLabel={x("正在打开…", "Opening…")}
               aria-label={`${props.openingRunId === run.run_id ? x("正在打开", "Opening") : actionLabel(run)} ${run.run_id}`}
-              onClick={() => props.onOpen(run.run_id)}>
+              onClick={() => props.onOpen(run.run_id, run.stopped)}>
               {actionLabel(run)}
             </ActionButton>
-          </Show>
+          </div>
         </li>}</For>
       </ul>
       <Show when={rows().length > FIRST_PAGE_SIZE}>

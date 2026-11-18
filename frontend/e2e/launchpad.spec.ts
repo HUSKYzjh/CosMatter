@@ -827,6 +827,68 @@ test("finds recent local missions without a run ID and reuses the selected run",
   expect(requests.every((request) => request.startsWith("GET "))).toBe(true);
 });
 
+test("opens stopped runs as read-only records from DSH links and recent tasks", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const runId = "archived_resume";
+  const missionId = "mission_archive";
+  const resource = `/api/runs/${runId}`;
+  const downloadPath = resource + "/artifacts/workflow_readiness";
+  const title = "工作流就绪度摘要";
+  let manifests = 0;
+  const calls: string[] = [];
+  await page.route("**/api/runs/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    calls.push(route.request().method() + " " + path);
+    if (path === resource + "/status") return route.fulfill({ json: { run_id: runId, mission_id: missionId, state: "CANCELLED" } });
+    if (path === resource + "/artifacts") {
+      manifests += 1;
+      return route.fulfill({ json: {
+        schema_version: "cosmatter.artifact/v1", run_id: runId, mission_id: missionId,
+        trust_status: "allowlisted_artifact_index_not_scientific_evidence", artifact_count: 1,
+        artifacts: [{ artifact_id: "workflow_readiness", title, generated_at: "2026-11-19T03:00:00Z",
+          media_type: "application/json; charset=utf-8", sha256: "a".repeat(64), trust_status: "derived_workflow_readiness_not_scientific_evidence",
+          download_path: manifests === 1 ? "https://example.invalid/escaped" : downloadPath }],
+      } });
+    }
+    if (path === downloadPath) return route.fulfill({ headers: { "Content-Disposition": 'attachment; filename="workflow_readiness.json"' }, json: { mission_id: missionId } });
+    return route.fulfill({ status: 404 });
+  });
+  await page.route("**/api/recent-runs", (route) => route.fulfill({ json: {
+    schema_version: "cosmatter.recent-local-runs/v1",
+    runs: [{ run_id: runId, material: "BiFeO3", property: "phase transitions", updated_at: "2026-11-19T03:00:00Z", stopped: true }],
+  } }));
+  await page.goto(`/?api=local#run=${runId}&document=paper_a&evidence=card_a`);
+  const record = page.getByRole("region", { name: "已停止的任务记录" });
+  await expect(record.getByRole("heading")).toBeFocused();
+  await expect(record.getByRole("status")).toHaveText("暂时无法核验工件目录。");
+  await expect(record.getByRole("link")).toHaveCount(0);
+  expect(new URL(page.url()).hash).toBe("#run=" + runId);
+  await record.getByRole("button", { name: "重试读取目录" }).press("Enter");
+  const download = record.getByRole("link", { name: "下载" + title });
+  await expect(download).toHaveAttribute("href", downloadPath);
+  const file = page.waitForEvent("download");
+  await download.press("Enter");
+  expect((await file).suggestedFilename()).toBe("workflow_readiness.json");
+  await record.locator(".dsh-run-handoff > summary").press("Enter");
+  await record.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
+  await expect(record.getByRole("status")).toHaveText("DSH 命令已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter dsh-run-artifacts ${runId} --port ${new URL(page.url()).port}`);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+  await record.getByRole("button", { name: "关闭记录" }).press("Enter");
+  await expect(record).toHaveCount(0);
+  await expect(page.getByLabel("现有运行 ID")).toBeFocused();
+  expect(new URL(page.url()).hash).toBe("");
+  const recent = page.getByRole("region", { name: "最近的本机任务" });
+  await recent.getByRole("button", { name: "查看最近任务" }).click();
+  await recent.getByRole("button", { name: "查看记录 " + runId }).press("Enter");
+  await expect(record.getByRole("link", { name: "下载" + title })).toBeVisible();
+  expect(calls).toEqual([
+    "GET " + resource + "/status", "GET " + resource + "/artifacts", "GET " + resource + "/artifacts", "GET " + downloadPath,
+    "GET " + resource + "/status", "GET " + resource + "/artifacts",
+  ]);
+});
+
 test("resumes browser screening drafts and requires the current checklist revision when recording", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 900 });
   const runId = "local_screening_draft";

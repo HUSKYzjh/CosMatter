@@ -55,6 +55,13 @@ export function DshRecentRunsHandoff(props: { locale: UiLocale }) {
       : "Run this in the CosMatter terminal environment to find recent run IDs and local workbench links."} />;
 }
 
+export function DshRunArtifactsHandoff(props: { runId: string; locale: UiLocale }) {
+  const location = localWorkbenchLocation();
+  if (!location || !isLocalRunId(props.runId)) return null;
+  return <DshCommandHandoff locale={props.locale} command={`cosmatter dsh-run-artifacts ${props.runId} --port ${location.port || "80"}`}
+    label={props.locale === "zh" ? "在 DSH 查看工件目录" : "View artifact list in DSH"} />;
+}
+
 export function DshEvidenceHandoff(props: { runId: string; documentId: string; evidenceId: string; locale: UiLocale }) {
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const href = () => {

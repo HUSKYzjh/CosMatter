@@ -389,6 +389,34 @@ export interface SavedSourceParseTask {
 export type SavedSourceParseHealth = "idle" | "loading" | "ready" | "unavailable";
 export function createAutomaticMission(payload: { question: string; material: string; property: string; scope: string; sources: RetrievalSource[] }): Promise<AutoMissionResult> { return jsonPost<AutoMissionResult>("./api/missions/auto", { ...payload, consent: true }); }
 export function getRunStatus(runId: string): Promise<RunStatus> { return request<RunStatus>(`./api/runs/${encodeURIComponent(runId)}/status`); }
+
+const approvedArtifactIds = new Set(["ui_bundle", "graph_snapshot", "workflow_readiness", "runtime_invariants", "mission_report", "research_report"]);
+export interface ApprovedRunArtifact { title: string; generated_at: string; download_path: string; }
+
+export async function getApprovedRunArtifacts(runId: string, missionId: string): Promise<ApprovedRunArtifact[]> {
+  if (!isLocalRunId(runId) || !missionId) throw new Error("Invalid artifact manifest identity");
+  const route = `/api/runs/${encodeURIComponent(runId)}/artifacts`;
+  const payload = await request<unknown>(`.${route}`, { credentials: "omit", redirect: "error" });
+  if (!exactObjectKeys(payload, ["schema_version", "trust_status", "run_id", "mission_id", "artifact_count", "artifacts"])) throw new Error("Invalid artifact manifest");
+  const { schema_version, trust_status, run_id, mission_id, artifact_count, artifacts } = payload as Record<string, unknown>;
+  if (schema_version !== "cosmatter.artifact/v1" || trust_status !== "allowlisted_artifact_index_not_scientific_evidence"
+    || run_id !== runId || mission_id !== missionId || !Array.isArray(artifacts) || artifacts.length !== artifact_count
+    || artifacts.length > approvedArtifactIds.size) throw new Error("Invalid artifact manifest");
+
+  const seen = new Set<string>();
+  return artifacts.map((artifact): ApprovedRunArtifact => {
+    if (!exactObjectKeys(artifact, ["artifact_id", "title", "media_type", "sha256", "generated_at", "trust_status", "download_path"])) throw new Error("Invalid artifact card");
+    const { artifact_id, title, generated_at, sha256, download_path } = artifact as Record<string, unknown>;
+    if (typeof artifact_id !== "string" || !approvedArtifactIds.has(artifact_id) || seen.has(artifact_id)
+      || typeof title !== "string" || !title.trim() || title.length > 200
+      || typeof generated_at !== "string" || generated_at.length > 40 || !Number.isFinite(Date.parse(generated_at))
+      || typeof sha256 !== "string" || !/^[a-f0-9]{64}$/.test(sha256)
+      || download_path !== `${route}/${artifact_id}`) throw new Error("Invalid artifact card");
+    seen.add(artifact_id);
+    return { title, generated_at, download_path };
+  });
+}
+
 export function getStageContract(runId: string, timeoutMs?: number): Promise<StageContract> {
   return request<StageContract>(`./api/runs/${encodeURIComponent(runId)}/stage-contract`, undefined, timeoutMs);
 }

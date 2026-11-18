@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from cosmatter.dsh_profile_status import (
     EXPECTED_DSH_PACKAGES, DshCompositionCheckError, _BUNDLE_TOOLS,
-    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_status,
+    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status,
 )
 
 
@@ -258,6 +258,33 @@ class DshProfileStatusTests(unittest.TestCase):
                     read_dsh_recent_runs(port=8789, dsh_home=home)
                 with self.assertRaisesRegex(DshCompositionCheckError, "Port"):
                     read_dsh_recent_runs(port=0, dsh_home=home)
+                self.assertEqual(launch.call_count, 2)
+
+
+    def test_run_artifacts_uses_the_installed_manifest_tool_and_rejects_the_wrong_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = "@cosmatter/dsh-observability-plugin"
+            self._write_bundle(profile, bundle)
+            payload = {
+                "schema_version": "cosmatter.artifact/v1", "run_id": "archived_1",
+                "trust_status": "allowlisted_artifact_index_not_scientific_evidence", "artifact_count": 0, "artifacts": [],
+            }
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=payload,
+            ) as launch:
+                self.assertEqual(read_dsh_run_artifacts("archived_1", port=8789, dsh_home=home), {
+                    **payload, "checked_via": ["cosmatter_artifact_manifest"], "workbench_url": "http://127.0.0.1:8789/?api=local#run=archived_1",
+                })
+                self.assertEqual(launch.call_args.args[1:3], (profile, {bundle: {"baseUrl": "http://127.0.0.1:8789"}}))
+                self.assertEqual(launch.call_args.args[-2], {
+                    "tool": "cosmatter_artifact_manifest", "args": {"run_id": "archived_1"}, "prefix": "COSMATTER_DSH_RUN_ARTIFACTS ",
+                })
+                with self.assertRaisesRegex(DshCompositionCheckError, "could not read the artifact list"):
+                    read_dsh_run_artifacts("archived_2", port=8789, dsh_home=home)
+                with self.assertRaisesRegex(DshCompositionCheckError, "Run ID"):
+                    read_dsh_run_artifacts("../private", port=8789, dsh_home=home)
                 self.assertEqual(launch.call_count, 2)
 
 
