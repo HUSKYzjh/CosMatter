@@ -35,6 +35,14 @@ const dagSpecs = {
 const artifactIds = new Set(['ui_bundle', 'graph_snapshot', 'workflow_readiness', 'runtime_invariants', 'mission_report', 'research_report']);
 const artifactTrust = new Set(['browser_safe_export_from_reviewed_artifacts', 'accepted_evidence_projection_not_scientific_conclusion', 'derived_workflow_readiness_not_scientific_evidence', 'runtime_relationship_audit_not_scientific_evidence_or_provider_status_verification', 'review_gated_evidence_manifest', 'review_gated_structured_report']);
 const sha256 = /^[a-f0-9]{64}$/;
+export function localWorkbenchUrl(baseUrl, id, artifactList = false) {
+    const url = new URL('/?api=local', baseUrl);
+    const selector = new URLSearchParams({ run: id });
+    if (artifactList)
+        selector.set('artifacts', '1');
+    url.hash = selector.toString();
+    return url.href;
+}
 export class CosMatterObservabilityClient {
     request;
     config;
@@ -196,9 +204,7 @@ function validateRecentRunLinks(value, baseUrl) {
             || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(updated_at) || !Number.isFinite(Date.parse(updated_at)))
             throw invalid();
         seen.add(run_id);
-        const workbench = new URL('/?api=local', baseUrl);
-        workbench.hash = new URLSearchParams({ run: run_id }).toString();
-        return { run_id, updated_at, stopped, workbench_url: workbench.href };
+        return { run_id, updated_at, stopped, workbench_url: localWorkbenchUrl(baseUrl, run_id) };
     });
     return { schema_version: 'cosmatter.recent-run-links/v1', runs };
 }

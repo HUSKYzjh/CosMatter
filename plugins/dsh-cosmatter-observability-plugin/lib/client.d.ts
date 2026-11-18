@@ -121,6 +121,7 @@ export interface RecentRunLinks {
     schema_version: 'cosmatter.recent-run-links/v1';
     runs: RecentRunLink[];
 }
+export declare function localWorkbenchUrl(baseUrl: string, id: string, artifactList?: boolean): string;
 export declare class CosMatterObservabilityClient {
     private readonly request;
     readonly config: NormalizedConfig;

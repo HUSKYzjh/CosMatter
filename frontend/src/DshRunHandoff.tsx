@@ -1,5 +1,5 @@
 import { Show, createSignal } from "solid-js";
-import { isLocalRunId, localRunScreeningLink } from "./liveRunIdentity";
+import { isLocalRunId, localRunArtifactsLink, localRunScreeningLink } from "./liveRunIdentity";
 import { localEvidenceLink, localWorkbenchLocation, type DshEvidenceTarget } from "./dshLocalCommands";
 import { ActionButton } from "./uiPrimitives";
 import type { UiLocale } from "./fleetRegistry";
@@ -52,10 +52,15 @@ export function DshRecentRunsHandoff(props: { locale: UiLocale }) {
 }
 
 export function DshRunArtifactsHandoff(props: { runId: string; locale: UiLocale }) {
+  const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const location = localWorkbenchLocation();
-  if (!location || !isLocalRunId(props.runId)) return null;
-  return <DshCommandHandoff locale={props.locale} command={`cosmatter dsh-run-artifacts ${props.runId} --port ${location.port || "80"}`}
-    label={props.locale === "zh" ? "在 DSH 查看工件目录" : "View artifact list in DSH"} />;
+  const href = () => location && isLocalRunId(props.runId) ? localRunArtifactsLink(location.origin, props.runId) : null;
+  return <Show when={href()} keyed>{(link) =>
+    <DshLinkedHandoff locale={props.locale} link={link} linkLabel={x("工件目录链接", "Artifact list link")}
+      copyLabel={x("复制工件目录链接", "Copy artifact list link")} copiedLabel={x("工件目录链接已复制。", "Artifact list link copied.")}
+      command={`cosmatter dsh-run-artifacts ${props.runId} --port ${location?.port || "80"}`}
+      commandLabel={x("在 DSH 查看工件目录", "View artifact list in DSH")} />
+  }</Show>;
 }
 
 export function DshEvidenceHandoff(props: DshEvidenceTarget & { runId: string; locale: UiLocale }) {

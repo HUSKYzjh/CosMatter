@@ -572,7 +572,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .saved-run-artifacts-deck { max-width: 76rem; margin: .2rem 0 1rem; }
 .saved-run-artifacts-deck > section { padding: .6rem .7rem; border-top: 1px solid var(--line); background: var(--surface); }
 .saved-run-artifacts-body { display: grid; justify-items: start; gap: .48rem; min-width: 0; }
-.saved-run-artifacts-body > .dsh-run-handoff { width: 100%; }
+.saved-run-artifacts-body > .dsh-linked-handoff { width: 100%; margin-block: 0; }
 .saved-run-artifacts { display: grid; width: 100%; min-width: 0; margin: 0; padding: 0; list-style: none; }
 .saved-run-artifacts li { padding-block: .42rem; border-top: 1px solid var(--line); }
 .saved-run-artifacts strong { font-size: max(.78rem, 13px); }

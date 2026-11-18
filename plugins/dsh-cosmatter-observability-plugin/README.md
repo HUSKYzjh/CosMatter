@@ -3,8 +3,10 @@
 `cosmatter_recent_runs` lists up to twelve recent local run IDs with their update
 times, stopped flags, and local workbench links. It takes no run ID and leaves
 research questions and labels in the browser. Open a `workbench_url` on the same
-machine to resume the run. In the CosMatter terminal, `cosmatter dsh-recent-runs`
-can read this list through an isolated, provider-free DSH invocation.
+machine to resume the run. DSH's result card lists each run, its state, its update
+time, and its workbench URL on a separate line. In the CosMatter terminal,
+`cosmatter dsh-recent-runs` can read the list through an isolated, provider-free
+DSH invocation.
 
 `cosmatter_workflow_status` exposes a read-only, count-only view of one local
 CosMatter run. `cosmatter_stage_contract` adds the same run's fixed completion
@@ -15,7 +17,8 @@ receipt/dispatch counts and fixed validation-rejection classes; rejection
 parameters and source content are never returned. It may show an already human-reviewed cost/latency
 disclosure; it is never a provider bill or benchmark. `cosmatter_artifact_manifest` lists only already
 generated, fixed allowlist outputs with title, SHA-256, generation time, trust
-status, and a fixed download route. None of these tools executes a provider,
+status, and a fixed download route. The DSH result card shows the artifact count
+and the same-machine URL of the saved artifact list. None of these tools executes a provider,
 reads source content, writes run artifacts, accepts evidence, changes consent,
 accepts arbitrary paths, or exposes PDFs, MinerU Markdown, source URLs, private paths,
 provider payloads, audit details, or credentials.

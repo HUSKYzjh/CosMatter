@@ -185,3 +185,45 @@ test('DSH apply registers only read-only observability tools', async () => {
   dispose()
   globalThis.fetch = originalFetch
 })
+
+test('DSH presents loopback links and concise summaries while preserving canonical results', async t => {
+  let runs = recent.runs
+  t.mock.method(globalThis, 'fetch', async url => {
+    const path = new URL(url).pathname
+    return Response.json(path === '/api/recent-run-links' ? { ...recent, runs } : artifacts)
+  })
+  const tools = new Map()
+  apply({ tools: { register: tool => tools.set(tool.name, tool) }, emit() {}, effect() {} }, { baseUrl: 'http://127.0.0.1:8791' })
+
+  async function execute(name, args) {
+    const tool = tools.get(name)
+    const value = await tool.execute(args, { signal: new AbortController().signal })
+    const content = tool.output.render(args, value)
+    assert.deepEqual(JSON.parse(content[0].text), value)
+    const meta = tool.output.presentationMeta(args, value)
+    return { tool, value, result: { content, meta, isError: false } }
+  }
+  const recentRunTool = await execute('cosmatter_recent_runs', {})
+  assert.deepEqual(recentRunTool.tool.presentCall({}), { card: 'generic', kind: 'read', title: 'Find recent CosMatter runs' })
+  const recentCard = recentRunTool.tool.presentResult({}, recentRunTool.result)
+  assert.equal(recentCard.content[0].text, [
+    'run_002 · Stopped · 2026-11-19T01:00:00Z', recentRunTool.value.runs[0].workbench_url, '',
+    'run_001 · Available · 2026-11-18T23:00:00Z', recentRunTool.value.runs[1].workbench_url,
+  ].join('\n'))
+  assert.equal(recentRunTool.tool.presentResult({}, { ...recentRunTool.result, isError: true }), undefined)
+  runs = []
+  const empty = await execute('cosmatter_recent_runs', {})
+  assert.equal(empty.tool.presentResult({}, empty.result).content[0].text, 'No local runs found.')
+
+  const args = { run_id: 'run_001' }
+  const manifestTool = await execute('cosmatter_artifact_manifest', args)
+  assert.equal(manifestTool.value.artifacts[0].sha256, 'a'.repeat(64))
+  assert.equal(manifestTool.tool.presentResult(args, manifestTool.result).content[0].text,
+    'run_001 · 1 saved artifact\nhttp://127.0.0.1:8791/?api=local#run=run_001&artifacts=1')
+  for (const workbench_url of ['https://example.org/?api=local#run=run_001&artifacts=1',
+    'http://127.0.0.1:8791/?api=local#run=other&artifacts=1', 'http://127.0.0.1:8791/?api=local#run=run_001']) {
+    assert.equal(manifestTool.tool.presentResult(args, {
+      ...manifestTool.result, meta: { artifact_count: 1, workbench_url },
+    }), undefined)
+  }
+})

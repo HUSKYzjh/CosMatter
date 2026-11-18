@@ -941,8 +941,12 @@ test("opens the active run artifact directory from the bridge and an exact DSH l
   await expect(directory.getByRole("status")).toHaveText("暂无可下载的工件。");
   await directory.getByRole("button", { name: "刷新工件目录" }).press("Enter");
   await expect(directory.getByRole("link", { name: "下载" + artifact.title })).toBeVisible();
+  await directory.getByRole("button", { name: "复制工件目录链接" }).press("Enter");
+  await expect(directory.getByText("工件目录链接已复制。", { exact: true })).toBeVisible();
+  const copiedLink = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copiedLink).toBe(new URL(`/?api=local#run=${runId}&artifacts=1`, page.url()).href);
   linkedReads = [];
-  await page.evaluate((hash) => { window.location.hash = hash; }, `run=${runId}&artifacts=1`);
+  await page.evaluate((link) => { window.location.href = link; }, copiedLink);
   await expect(directory.getByRole("heading", { name: "已保存工件" })).toBeFocused(workspaceLoad);
   await expect(directory.getByRole("button", { name: "打开任务" })).toBeVisible();
   await directory.locator(".saved-artifact-hash > summary").press("Enter");

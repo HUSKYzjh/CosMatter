@@ -53,6 +53,14 @@ export interface ArtifactManifest { schema_version: 'cosmatter.artifact/v1'; run
 export interface RecentRunLink { run_id: string; updated_at: string; stopped: boolean; workbench_url: string }
 export interface RecentRunLinks { schema_version: 'cosmatter.recent-run-links/v1'; runs: RecentRunLink[] }
 
+export function localWorkbenchUrl(baseUrl: string, id: string, artifactList = false): string {
+  const url = new URL('/?api=local', baseUrl)
+  const selector = new URLSearchParams({ run: id })
+  if (artifactList) selector.set('artifacts', '1')
+  url.hash = selector.toString()
+  return url.href
+}
+
 export class CosMatterObservabilityClient {
   readonly config: NormalizedConfig
   constructor(config: CosMatterObservabilityConfig = {}, private readonly request: typeof fetch = fetch) { this.config = normalizeConfig(config) }
@@ -161,9 +169,7 @@ function validateRecentRunLinks(value: unknown, baseUrl: string): RecentRunLinks
       || seen.has(run_id) || typeof stopped !== 'boolean' || typeof updated_at !== 'string'
       || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(updated_at) || !Number.isFinite(Date.parse(updated_at))) throw invalid()
     seen.add(run_id)
-    const workbench = new URL('/?api=local', baseUrl)
-    workbench.hash = new URLSearchParams({ run: run_id }).toString()
-    return { run_id, updated_at, stopped, workbench_url: workbench.href }
+    return { run_id, updated_at, stopped, workbench_url: localWorkbenchUrl(baseUrl, run_id) }
   })
   return { schema_version: 'cosmatter.recent-run-links/v1', runs }
 }
