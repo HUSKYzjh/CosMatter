@@ -1,8 +1,10 @@
 import { normalizeConfig, type CosMatterResearchConfig, type NormalizedConfig } from './config.js'
 
-const runId = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+const runId = /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/
 const authorization = /^[a-z][a-z0-9_-]{1,119}$/
 const sourceNames = new Set(['sciverse', 'openalex', 'crossref'])
+const reviewStages = new Set(['screening', 'parse', 'extraction', 'gap', 'report', 'evaluation', null])
+const screeningTrust = new Set(['blank_human_candidate_screening_template_not_a_result', 'human_reviewed_candidate_screening_not_scientific_evidence'])
 
 export interface ResearchPlan {
   subquestions: string[]
@@ -35,6 +37,20 @@ export interface QueryResult {
   candidate_count: number
   candidates: Array<Record<string, unknown>>
   idempotency_status?: 'duplicate_completed'
+  screening_revision?: string
+  workbench_url: string
+}
+
+export function queryWorkbenchLink(baseUrl: string, id: string, screeningRevision?: string): string {
+  const url = new URL('/?api=local', baseUrl)
+  const params = new URLSearchParams({ run: id })
+  if (screeningRevision) params.set('screening', screeningRevision)
+  url.hash = params.toString()
+  return url.href
+}
+
+export function isScreeningRevision(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
 }
 
 export class CosMatterResearchClient {
@@ -63,28 +79,61 @@ export class CosMatterResearchClient {
     assertRunAndAuthorizations(runIdValue, input.authorizations, ['mission_scoped_egress_consent', 'metadata_provider_consent'])
     if (!Number.isInteger(input.query_index) || input.query_index < 0 || input.query_index > 7 || (input.counter !== undefined && typeof input.counter !== 'boolean') || !validSources(input.sources)) throw new Error('CosMatter research query is invalid')
     assertDshCallId(dshCallId)
-    const value = await this.post(`/api/runs/${encodeURIComponent(runIdValue)}/authorized-execute-query`, { authorizations: input.authorizations, query_index: input.query_index, counter: input.counter ?? false, sources: input.sources, dsh_call_id: dshCallId }, signal)
-    if (!isObject(value) || value.run_id !== runIdValue || (value.query_kind !== 'primary' && value.query_kind !== 'counter') || !Number.isInteger(value.query_index) || !validSources(value.sources) || !safeCounts(value.source_counts) || typeof value.candidate_count !== 'number' || !Number.isInteger(value.candidate_count) || value.candidate_count < 0 || value.candidate_count > 60 || !Array.isArray(value.candidates) || value.candidates.length > 60 || !value.candidates.every(safeCandidate) || !validIdempotencyStatus(value.idempotency_status)) throw new Error('CosMatter research query response is invalid')
-    return value as unknown as QueryResult
+    const runPath = `/api/runs/${encodeURIComponent(runIdValue)}`
+    const value = await this.post(`${runPath}/authorized-execute-query`, { authorizations: input.authorizations, query_index: input.query_index, counter: input.counter ?? false, sources: input.sources, dsh_call_id: dshCallId }, signal)
+    if (!isObject(value) || value.run_id !== runIdValue || value.query_kind !== (input.counter ? 'counter' : 'primary') || value.query_index !== input.query_index
+      || !validSources(value.sources) || !safeCounts(value.source_counts) || !Array.isArray(value.candidates)
+      || value.candidates.length > 60 || value.candidate_count !== value.candidates.length || !value.candidates.every(safeCandidate)
+      || !validIdempotencyStatus(value.idempotency_status)) throw new Error('CosMatter research query response is invalid')
+    const revision = await this.screeningRevision(runIdValue, runPath, signal)
+    return {
+      run_id: runIdValue, query_kind: input.counter ? 'counter' : 'primary', query_index: input.query_index,
+      sources: value.sources, source_counts: value.source_counts, candidate_count: value.candidates.length,
+      candidates: value.candidates,
+      ...(value.idempotency_status === 'duplicate_completed' ? { idempotency_status: value.idempotency_status } : {}),
+      ...(revision ? { screening_revision: revision } : {}),
+      workbench_url: queryWorkbenchLink(this.config.baseUrl, runIdValue, revision),
+    }
+  }
+
+  private async screeningRevision(id: string, runPath: string, signal?: AbortSignal): Promise<string | undefined> {
+    const budget = AbortSignal.timeout(Math.min(1_500, this.config.timeoutMs))
+    const readSignal = signal ? AbortSignal.any([signal, budget]) : budget
+    try {
+      const stage = await this.requestJson(`${runPath}/stage-contract`, { method: 'GET' }, readSignal)
+      if (!isObject(stage) || stage.run_id !== id || stage.schema_version !== 'cosmatter.stage-contract/v1'
+        || stage.trust_status !== 'loopback_stage_contract_not_scientific_evidence_or_execution_authorization'
+        || stage.runtime_safety !== 'verified' || (typeof stage.next_stage !== 'string' && stage.next_stage !== null)
+        || !reviewStages.has(stage.next_stage)) return
+      const checklist = await this.requestJson(`${runPath}/candidate-screening`, { method: 'GET' }, readSignal)
+      if (isObject(checklist) && checklist.run_id === id && isScreeningRevision(checklist.checklist_revision)
+        && typeof checklist.trust_status === 'string' && screeningTrust.has(checklist.trust_status)
+        && Array.isArray(checklist.candidates) && checklist.candidates.length > 0 && checklist.candidate_count === checklist.candidates.length) {
+        return checklist.checklist_revision
+      }
+    } catch {
+      // A failed handoff lookup must preserve the completed query and its call ID.
+    }
   }
 
   private async post(path: string, body: object, signal?: AbortSignal): Promise<unknown> {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs)
-    const abort = () => controller.abort()
-    signal?.addEventListener('abort', abort, { once: true })
-    try {
-      const response = await this.request(new URL(path, this.config.baseUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body), signal: controller.signal })
-      if (!response.ok) throw new Error(`CosMatter research request failed with HTTP ${response.status}`)
-      const declared = Number(response.headers.get('content-length') ?? 0)
-      if (declared > this.config.maxResponseBytes) throw new Error('CosMatter research response exceeds configured size')
-      const text = await response.text()
-      if (new TextEncoder().encode(text).byteLength > this.config.maxResponseBytes) throw new Error('CosMatter research response exceeds configured size')
-      return JSON.parse(text)
-    } finally {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', abort)
-    }
+    const budget = AbortSignal.timeout(this.config.timeoutMs)
+    return this.requestJson(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body),
+    }, signal ? AbortSignal.any([signal, budget]) : budget)
+  }
+
+  private async requestJson(path: string, options: RequestInit, signal: AbortSignal): Promise<unknown> {
+    signal.throwIfAborted()
+    const response = await this.request(new URL(path, this.config.baseUrl), {
+      headers: { Accept: 'application/json' }, ...options, redirect: 'error', signal,
+    })
+    if (!response.ok) throw new Error(`CosMatter research request failed with HTTP ${response.status}`)
+    const declared = Number(response.headers.get('content-length') ?? 0)
+    if (declared > this.config.maxResponseBytes) throw new Error('CosMatter research response exceeds configured size')
+    const text = await response.text()
+    if (new TextEncoder().encode(text).byteLength > this.config.maxResponseBytes) throw new Error('CosMatter research response exceeds configured size')
+    return JSON.parse(text)
   }
 }
 

@@ -27,7 +27,11 @@ export interface QueryResult {
     candidate_count: number;
     candidates: Array<Record<string, unknown>>;
     idempotency_status?: 'duplicate_completed';
+    screening_revision?: string;
+    workbench_url: string;
 }
+export declare function queryWorkbenchLink(baseUrl: string, id: string, screeningRevision?: string): string;
+export declare function isScreeningRevision(value: unknown): value is string;
 export declare class CosMatterResearchClient {
     private readonly request;
     readonly config: NormalizedConfig;
@@ -40,5 +44,7 @@ export declare class CosMatterResearchClient {
         counter?: boolean;
         sources: string[];
     }, dshCallId: string, signal?: AbortSignal): Promise<QueryResult>;
+    private screeningRevision;
     private post;
+    private requestJson;
 }

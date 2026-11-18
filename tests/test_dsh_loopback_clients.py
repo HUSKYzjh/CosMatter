@@ -150,7 +150,10 @@ const client = new CosMatterResearchClient({{ baseUrl: process.env.COSMATTER_TES
 const draft = await client.draftPlan('research_client', ['mission_scoped_egress_consent', 'deepseek_request_consent'], 'research-call-0001');
 const plan = await client.approvePlan('research_client', {{ subquestions: ['Which conditions differ?'], queries: ['BiFeO3 phase stability'], counter_queries: ['BiFeO3 contradictory reports'] }});
 const query = await client.executeQuery('research_client', {{ authorizations: ['mission_scoped_egress_consent', 'metadata_provider_consent'], query_index: 0, sources: ['sciverse'] }}, 'research-call-0002');
-console.log(JSON.stringify({{ draft, plan, query }}));
+const counterInput = {{ authorizations: ['mission_scoped_egress_consent', 'metadata_provider_consent'], query_index: 0, counter: true, sources: ['sciverse'] }};
+const counter = await client.executeQuery('research_client', counterInput, 'research-call-0003');
+const repeated = await client.executeQuery('research_client', counterInput, 'research-call-0003');
+console.log(JSON.stringify({{ draft, plan, query, counter, repeated }}));
 '''
                     environment = {**os.environ, "COSMATTER_TEST_BASE_URL": f"http://127.0.0.1:{server.server_port}"}
                     result = subprocess.run(["node", "--input-type=module", "-e", script], cwd=root, env=environment, text=True, encoding="utf-8", capture_output=True, timeout=15)
@@ -160,6 +163,14 @@ console.log(JSON.stringify({{ draft, plan, query }}));
                     self.assertEqual(payload["draft"]["trust_status"], "untrusted_draft")
                     self.assertEqual(payload["plan"]["queries"], ["BiFeO3 phase stability"])
                     self.assertEqual(payload["query"]["candidate_count"], 1)
+                    launch = f'{environment["COSMATTER_TEST_BASE_URL"]}/?api=local#run=research_client'
+                    self.assertEqual(payload["query"]["workbench_url"], launch)
+                    self.assertNotIn("screening_revision", payload["query"])
+                    revision = api.candidate_screening_template("research_client")["checklist_revision"]
+                    self.assertEqual(payload["counter"]["screening_revision"], revision)
+                    self.assertEqual(payload["counter"]["workbench_url"], f"{launch}&screening={revision}")
+                    self.assertEqual(payload["repeated"]["workbench_url"], payload["counter"]["workbench_url"])
+                    self.assertEqual(payload["repeated"]["idempotency_status"], "duplicate_completed")
                     self.assertNotIn("test", json.dumps(payload))
                     events = (sandbox / "runs" / "research_client" / "events.jsonl").read_text(encoding="utf-8")
                     self.assertGreaterEqual(events.count('"event_type": "external_plugin_dispatch_authorized"'), 2)

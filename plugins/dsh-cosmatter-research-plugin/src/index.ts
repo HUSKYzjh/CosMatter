@@ -3,7 +3,7 @@ import '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
-import { CosMatterResearchClient } from './client.js'
+import { CosMatterResearchClient, isScreeningRevision, queryWorkbenchLink } from './client.js'
 import type { CosMatterResearchConfig } from './config.js'
 
 export const name = 'cosmatter-research'
@@ -43,9 +43,32 @@ export function apply(ctx: Context, config: CosMatterResearchConfig = {}): void 
   }))
   ctx.tools.register(defineTool({
     name: 'cosmatter_research_query_execute',
-    description: 'Execute one reviewed FlightPlan query against selected metadata providers through the local backend. Requires exactly mission_scoped_egress_consent and metadata_provider_consent. Results are candidates only, never full text or accepted evidence.',
+    description: 'Execute one reviewed FlightPlan query against selected metadata providers through the local backend. Requires exactly mission_scoped_egress_consent and metadata_provider_consent. Results are metadata candidates, with a workbench_url for the verified screening checklist or the run’s current stage.',
     parameters: { run_id: { type: 'string', required: true }, authorizations: { type: 'array', required: true, items: { type: 'string' } }, query_index: { type: 'number', required: true }, counter: { type: 'boolean' }, sources: { type: 'array', required: true, items: { type: 'string' } } },
-    output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+      presentationMeta: (_args, value) => ({
+        candidate_count: value.candidate_count ?? null, screening_revision: value.screening_revision ?? null,
+        workbench_url: value.workbench_url ?? null, resumed: value.idempotency_status === 'duplicate_completed',
+      }),
+    },
+    presentCall: ({ run_id, counter }) => ({
+      card: 'generic', kind: 'search', title: counter ? 'Find CosMatter counterevidence candidates' : 'Find CosMatter literature candidates',
+      rawInput: run_id,
+    }),
+    presentResult: ({ run_id }, { isError, meta }) => {
+      if (isError || !meta || typeof meta !== 'object' || Array.isArray(meta)) return
+      const { candidate_count, screening_revision, workbench_url, resumed } = meta
+      if (typeof candidate_count !== 'number' || !Number.isInteger(candidate_count) || candidate_count < 0 || candidate_count > 60
+        || (screening_revision !== null && !isScreeningRevision(screening_revision))) return
+      if (workbench_url !== queryWorkbenchLink(client.config.baseUrl, run_id, screening_revision ?? undefined)) return
+      const count = candidate_count === 1 ? '1 metadata candidate' : `${candidate_count} metadata candidates`
+      const action = screening_revision ? 'Open the screening checklist' : 'Open the run'
+      return { card: 'generic', title: 'CosMatter retrieval result', content: [
+        { type: 'text', text: `${count}${resumed === true ? ' · Previously completed' : ''}\n${action}\n${workbench_url}` },
+      ] }
+    },
     async execute(args, exec) {
       const result = await client.executeQuery(String(args.run_id), { authorizations: args.authorizations as string[], query_index: args.query_index as number, counter: args.counter as boolean | undefined, sources: args.sources as string[] }, String(exec.callId), exec.signal)
       ctx.emit('cosmatter-research/query-executed', { run_id: result.run_id, query_kind: result.query_kind, candidate_count: result.candidate_count })
