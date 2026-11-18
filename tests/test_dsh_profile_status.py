@@ -302,7 +302,7 @@ class DshProfileStatusTests(unittest.TestCase):
                 "cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=payload,
             ) as launch:
                 self.assertEqual(read_dsh_run_artifacts("archived_1", port=8789, dsh_home=home), {
-                    **payload, "checked_via": ["cosmatter_artifact_manifest"], "workbench_url": "http://127.0.0.1:8789/?api=local#run=archived_1",
+                    **payload, "checked_via": ["cosmatter_artifact_manifest"], "workbench_url": "http://127.0.0.1:8789/?api=local#run=archived_1&artifacts=1",
                 })
                 self.assertEqual(launch.call_args.args[1:3], (profile, {bundle: {"baseUrl": "http://127.0.0.1:8789"}}))
                 self.assertEqual(launch.call_args.args[-2], {

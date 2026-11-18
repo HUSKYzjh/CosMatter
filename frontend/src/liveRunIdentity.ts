@@ -5,7 +5,7 @@ export function isLocalRunId(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(value);
 }
 
-export interface LocalRunLinkTarget { runId: string; documentId: string | null; evidenceId: string | null; screeningRevision?: string; }
+export interface LocalRunLinkTarget { runId: string; documentId: string | null; evidenceId: string | null; screeningRevision?: string; artifactList?: true; }
 
 function validLinkIdentifier(value: string, maxLength: number): boolean {
   return value.length > 0 && value.length <= maxLength && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
@@ -19,11 +19,13 @@ export function parseLocalRunLink(hash: string): LocalRunLinkTarget | null {
   const documentId = params.get("document");
   const evidenceId = params.get("evidence");
   const screeningRevision = params.get("screening");
-  if (!isLocalRunId(runId) || new Set(keys).size !== keys.length || keys.some((key) => !["run", "document", "evidence", "screening"].includes(key))) return null;
+  const artifacts = params.get("artifacts");
+  if (!isLocalRunId(runId) || new Set(keys).size !== keys.length || keys.some((key) => !["run", "document", "evidence", "screening", "artifacts"].includes(key))) return null;
   if (documentId !== null && !validLinkIdentifier(documentId, 255)) return null;
   if (evidenceId !== null && (!documentId || !validLinkIdentifier(evidenceId, 200))) return null;
   if (screeningRevision !== null && (documentId !== null || evidenceId !== null || !/^[a-f0-9]{64}$/.test(screeningRevision))) return null;
-  return { runId, documentId, evidenceId, ...(screeningRevision === null ? {} : { screeningRevision }) };
+  if (artifacts !== null && (artifacts !== "1" || documentId !== null || evidenceId !== null || screeningRevision !== null)) return null;
+  return { runId, documentId, evidenceId, ...(screeningRevision === null ? {} : { screeningRevision }), ...(artifacts === "1" ? { artifactList: true } : {}) };
 }
 
 export function localRunLink(origin: string, runId: string, documentId: string | null = null, evidenceId: string | null = null): string {
@@ -40,6 +42,12 @@ export function localRunLink(origin: string, runId: string, documentId: string |
 export function localRunScreeningLink(origin: string, runId: string, screeningRevision: string): string {
   const url = new URL("/?api=local", origin);
   url.hash = new URLSearchParams({ run: runId, screening: screeningRevision }).toString();
+  return url.href;
+}
+
+export function localRunArtifactsLink(origin: string, runId: string): string {
+  const url = new URL("/?api=local", origin);
+  url.hash = new URLSearchParams({ run: runId, artifacts: "1" }).toString();
   return url.href;
 }
 

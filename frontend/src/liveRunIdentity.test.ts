@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { liveBundleMatchesRun, localRunLink, localRunScreeningLink, parseLocalRunLink, runtimeProjectionsMatchRun } from "./liveRunIdentity";
+import { liveBundleMatchesRun, localRunArtifactsLink, localRunLink, localRunScreeningLink, parseLocalRunLink, runtimeProjectionsMatchRun } from "./liveRunIdentity";
 import { demoBundle } from "./model";
 import type { OperationalTelemetry, RunStatus, StageContract, WorkflowDag } from "./localApi";
 
@@ -35,6 +35,14 @@ describe("live run identity fence", () => {
     expect(parseLocalRunLink(url.hash)).toEqual({ runId: "run_1", documentId: null, evidenceId: null, screeningRevision: revision });
     for (const suffix of ["&document=a", "&document=a&evidence=b", "&screening=" + revision]) expect(parseLocalRunLink(url.hash + suffix)).toBeNull();
     expect(parseLocalRunLink("#run=run_1&screening=bad")).toBeNull();
+  });
+
+  it("opens the artifact list only for an unambiguous local run selector", () => {
+    const url = new URL(localRunArtifactsLink("http://127.0.0.1:8790", "run_1"));
+    expect(url.href).toBe("http://127.0.0.1:8790/?api=local#run=run_1&artifacts=1");
+    expect(parseLocalRunLink(url.hash)).toEqual({ runId: "run_1", documentId: null, evidenceId: null, artifactList: true });
+    for (const suffix of ["&artifacts=1", "&document=p", "&screening=" + "a".repeat(64)]) expect(parseLocalRunLink(url.hash + suffix)).toBeNull();
+    expect(parseLocalRunLink("#run=run_1&artifacts=2")).toBeNull();
   });
 
   it("rejects mixed runtime projections", () => {

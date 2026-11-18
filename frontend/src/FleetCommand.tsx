@@ -21,6 +21,7 @@ import { facilityContractCoverage, facilityContractDeck } from "./facilityContra
 import { safeOperationFeedback } from "./importFeedback";
 import type { PdfTaskSnapshotFreshness } from "./pdfTaskFreshness";
 import { HarnessCapabilityDeck } from "./HarnessCapabilityDeck";
+import { SavedRunArtifactDisclosure } from "./SavedRunArtifacts";
 import { ActionButton, ActionLink } from "./uiPrimitives";
 
 type View = "discover" | "workflow" | "graph" | "reader" | "horizon";
@@ -190,6 +191,8 @@ export function FleetCommand(props: { bundle: ImportedBundle; locale: UiLocale; 
     </nav>
     <Show when={props.automaticMissionPending || props.automaticCancellationRequested}><section class="automatic-mission-pending" aria-live="polite"><small>{props.automaticCancellationRequested ? x("取消请求已登记", "CANCELLATION REQUEST RECORDED") : x("受控检索请求进行中", "CONTROLLED RETRIEVAL REQUEST IN PROGRESS")}</small><strong>{props.automaticCancellationRequested ? x("本机已阻止后续提供方调用", "The local service blocked later provider calls") : x("等待本机服务登记任务", "Waiting for the local service to register the task")}</strong><p>{props.automaticCancellationRequested ? x("取消标记是持久化的。已在途的 HTTP 请求不能被强制终止，但完成后不会写入候选、来源定位或 EvidenceCard。", "The cancellation marker is durable. An HTTP request already in flight cannot be force-stopped, but on completion it cannot write candidates, source locations, or EvidenceCards.") : x("当前只保留空任务壳，未返回任何论文、来源定位或 EvidenceCard。任务号返回前无法发起取消；若你改动任务边界，迟到结果会被忽略。", "Only an empty mission shell is present. No paper, source locator, or EvidenceCard has returned. The task cannot be cancelled until its local run ID is returned; if you change the mission boundary, late results will be ignored.")}</p><Show when={props.onCancelAutomaticMission}><ActionButton size="sm" variant="danger" onClick={() => void props.onCancelAutomaticMission?.()}>{x("取消本次自动检索", "Cancel this automatic retrieval")}</ActionButton></Show></section></Show>
     <HarnessCapabilityDeck locale={props.locale} health={props.harnessCatalogueHealth ?? "disabled"} plugins={props.harnessPlugins ?? null} authorization={props.automaticAuthorization ?? null} profile={props.dshProfile ?? null} profileHealth={props.dshProfileHealth ?? "disabled"} operationalTelemetry={props.operationalTelemetry ?? null} operationPending={props.automaticMissionPending} currentStage={props.dshCurrentStage} runId={props.dshRunId} onRefresh={props.onRefreshHarnessCatalogue} onRefreshProfile={props.onRefreshDshProfile} />
+    <Show when={props.dshRunId} keyed>{(runId) => <SavedRunArtifactDisclosure runId={runId} missionId={props.bundle.mission.missionId}
+      locale={props.locale} />}</Show>
     <section class="workflow-artifact-flow" aria-label={x("编排工件流", "Orchestration artifact flow")}>
       <article><small>01 / {x("输入", "INPUT")}</small><h2>{x("任务边界", "Mission boundary")}</h2><For each={inputs()}>{(item) => <span>{item}</span>}</For></article>
       <i aria-hidden="true">→</i>

@@ -171,6 +171,7 @@ test('DSH apply registers only read-only observability tools', async () => {
   assert.equal(events[0][0], 'cosmatter-observability/workflow-read')
   const manifest = await execute('cosmatter_artifact_manifest')
   assert.equal(manifest.artifact_count, 1)
+  assert.equal(manifest.workbench_url, 'http://127.0.0.1:8765/?api=local#run=run_001&artifacts=1')
   assert.equal(events[1][0], 'cosmatter-observability/artifact-read')
   const stageContract = await execute('cosmatter_stage_contract')
   assert.equal(stageContract.runtime_safety, 'verified')

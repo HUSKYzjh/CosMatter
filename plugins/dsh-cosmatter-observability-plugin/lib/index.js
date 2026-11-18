@@ -27,13 +27,15 @@ export function apply(ctx, config = {}) {
     }));
     ctx.tools.register(defineTool({
         name: 'cosmatter_artifact_manifest',
-        description: 'Read fixed, already-generated CosMatter artifact cards with title, SHA-256, time, trust status, and a fixed download route. It cannot read arbitrary paths, PDFs, MinerU Markdown, provider receipts, source URLs, credentials, or unaccepted evidence.',
+        description: 'Read fixed, already-generated CosMatter artifact cards with title, SHA-256, time, trust status, and fixed download routes. The workbench link opens the saved artifact list for this run.',
         parameters: { run_id: { type: 'string', required: true } },
         output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
         async execute(args, exec) {
             const result = await client.artifactManifest(String(args.run_id), exec.signal);
             ctx.emit('cosmatter-observability/artifact-read', { run_id: result.run_id, artifact_count: result.artifact_count });
-            return result;
+            const link = new URL('/?api=local', client.config.baseUrl);
+            link.hash = new URLSearchParams({ run: result.run_id, artifacts: '1' }).toString();
+            return { ...result, workbench_url: link.href };
         },
     }));
     ctx.tools.register(defineTool({

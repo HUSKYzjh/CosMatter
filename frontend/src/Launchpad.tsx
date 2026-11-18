@@ -8,7 +8,7 @@ import { bfoTaskFormation } from "./bfoTaskFormation";
 import { questionBoundFallbackCandidates } from "./launchQuestionCandidates";
 import { ActionButton } from "./uiPrimitives";
 import { RecentLocalRuns } from "./RecentLocalRuns";
-import { StoppedRunRecord, type StoppedRunIdentity } from "./StoppedRunRecord";
+import { RunArtifactRecord, type RunArtifactIdentity } from "./RunArtifactRecord";
 import type { RetrievalSource } from "./localApi";
 import { isLocalRunId } from "./liveRunIdentity";
 
@@ -46,7 +46,7 @@ const MODES: Array<{ id: LaunchMode; icon: string; zh: string; en: string; zhDet
   { id: "resume", icon: "↗", zh: "续航任务", en: "Resume", zhDetail: "本机运行 / 运行包", enDetail: "Local run / run package" },
 ];
 
-export function Launchpad(props: { onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; linkedRunId?: string; existingRunReadPending?: boolean; stoppedRun?: StoppedRunIdentity | null; onCloseStoppedRun: () => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
+export function Launchpad(props: { onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; linkedRunId?: string; existingRunReadPending?: boolean; runArtifactRecord?: RunArtifactIdentity | null; onCloseRunArtifactRecord: () => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
   const [foregroundIndex, setForegroundIndex] = createSignal(nextFleetIndex());
   const [mode, setMode] = createSignal<LaunchMode>(props.candidatePdfTarget ? "pdf" : props.linkedRunId ? "resume" : "question");
   const activeStage = () => stageForLaunchMode(mode());
@@ -256,8 +256,9 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission, executio
       <Show when={mode() === "resume"}>
         <section class="mode-panel run-continuation" aria-busy={props.resumeSubmissionPending || props.existingRunReadPending}>
           <h2>{copy("继续研究任务", "Continue a research run")}</h2>
-          <Show when={props.stoppedRun} keyed>{(run) => <StoppedRunRecord run={run} locale={props.language} onClose={() => {
-            props.onCloseStoppedRun();
+          <Show when={props.runArtifactRecord} keyed>{(run) => <RunArtifactRecord run={run} locale={props.language}
+            onOpenRun={props.onOpenExistingRun ? () => props.onOpenExistingRun?.(run.runId) : undefined} onClose={() => {
+            props.onCloseRunArtifactRecord();
             document.getElementById("continuation-run-id")?.focus();
           }} />}</Show>
           <Show when={props.onOpenExistingRun}>

@@ -339,7 +339,7 @@ def read_dsh_run_artifacts(
         if (result.get("schema_version") == "cosmatter.artifact/v1" and result.get("run_id") == run_id
                 and result.get("trust_status") == "allowlisted_artifact_index_not_scientific_evidence"):
             origin = "http://127.0.0.1" if port == 80 else f"http://127.0.0.1:{port}"
-            return {**result, "workbench_url": f"{origin}/?api=local#run={run_id}", "checked_via": [tool]}
+            return {**result, "workbench_url": f"{origin}/?api=local#run={run_id}&artifacts=1", "checked_via": [tool]}
     raise DshCompositionCheckError("DSH could not read the artifact list. Check the run ID and the local CosMatter service.")
 
 

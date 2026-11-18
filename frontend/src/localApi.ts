@@ -391,7 +391,7 @@ export function createAutomaticMission(payload: { question: string; material: st
 export function getRunStatus(runId: string): Promise<RunStatus> { return request<RunStatus>(`./api/runs/${encodeURIComponent(runId)}/status`); }
 
 const approvedArtifactIds = new Set(["ui_bundle", "graph_snapshot", "workflow_readiness", "runtime_invariants", "mission_report", "research_report"]);
-export interface ApprovedRunArtifact { title: string; generated_at: string; download_path: string; }
+export interface ApprovedRunArtifact { title: string; generated_at: string; download_path: string; sha256: string; }
 
 export async function getApprovedRunArtifacts(runId: string, missionId: string): Promise<ApprovedRunArtifact[]> {
   if (!isLocalRunId(runId) || !missionId) throw new Error("Invalid artifact manifest identity");
@@ -413,7 +413,7 @@ export async function getApprovedRunArtifacts(runId: string, missionId: string):
       || typeof sha256 !== "string" || !/^[a-f0-9]{64}$/.test(sha256)
       || download_path !== `${route}/${artifact_id}`) throw new Error("Invalid artifact card");
     seen.add(artifact_id);
-    return { title, generated_at, download_path };
+    return { title, generated_at, download_path, sha256 };
   });
 }
 

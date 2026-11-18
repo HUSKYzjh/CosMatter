@@ -902,6 +902,65 @@ test("opens stopped runs as read-only records from DSH links and recent tasks", 
   ]);
 });
 
+test("opens the active run artifact directory from the bridge and an exact DSH link", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const runId = "run_saved_outputs";
+  const { readFile } = await import("node:fs/promises");
+  const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
+  const missionId = bundle.mission.mission_id;
+  const prefix = `/api/runs/${runId}`;
+  const downloadPath = prefix + "/artifacts/workflow_readiness";
+  const artifact = { artifact_id: "workflow_readiness", title: "工作流就绪度摘要", generated_at: "2026-11-19T03:00:00Z",
+    media_type: "application/json; charset=utf-8", sha256: "ab".repeat(32), trust_status: "derived_workflow_readiness_not_scientific_evidence", download_path: downloadPath };
+  let artifactReads = 0;
+  let linkedReads: string[] | undefined;
+  const writes: string[] = [];
+  await page.route("**/api/runs/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    linkedReads?.push(path);
+    if (route.request().method() !== "GET") writes.push(path);
+    if (path === prefix + "/status") return route.fulfill({ json: { run_id: runId, mission_id: missionId, state: "INTAKE" } });
+    if (path === prefix + "/ui") return route.fulfill({ json: bundle });
+    if (path === prefix + "/stage-contract") return route.fulfill({ json: stageContractFixture(runId, missionId, "plan") });
+    if (path === prefix + "/artifacts") {
+      artifactReads += 1;
+      const artifacts = artifactReads > 1 ? [artifact] : [];
+      return route.fulfill({ json: { schema_version: "cosmatter.artifact/v1", run_id: runId, mission_id: missionId,
+        trust_status: "allowlisted_artifact_index_not_scientific_evidence", artifact_count: artifacts.length, artifacts } });
+    }
+    if (path === downloadPath) return route.fulfill({ headers: { "Content-Disposition": 'attachment; filename="workflow_readiness.json"' }, json: { mission_id: missionId } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto("/?api=local#run=" + runId);
+  const summary = page.locator(".saved-run-artifacts-deck > summary");
+  const directory = page.getByRole("region", { name: "已保存工件" });
+  await expect(summary).toBeVisible(workspaceLoad);
+  expect(artifactReads).toBe(0);
+  await summary.press("Enter");
+  await expect(directory.getByRole("status")).toHaveText("暂无可下载的工件。");
+  await directory.getByRole("button", { name: "刷新工件目录" }).press("Enter");
+  await expect(directory.getByRole("link", { name: "下载" + artifact.title })).toBeVisible();
+  linkedReads = [];
+  await page.evaluate((hash) => { window.location.hash = hash; }, `run=${runId}&artifacts=1`);
+  await expect(directory.getByRole("heading", { name: "已保存工件" })).toBeFocused(workspaceLoad);
+  await expect(directory.getByRole("button", { name: "打开任务" })).toBeVisible();
+  await directory.locator(".saved-artifact-hash > summary").press("Enter");
+  await expect(directory.locator(".saved-artifact-hash code")).toHaveText(artifact.sha256);
+  await directory.getByRole("button", { name: "复制 SHA-256" }).press("Enter");
+  await expect(directory.getByText("SHA-256 已复制。", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(artifact.sha256);
+  await directory.locator(".dsh-run-handoff > summary").press("Enter");
+  await expect(directory.locator(".dsh-run-handoff code")).toHaveText(`cosmatter dsh-run-artifacts ${runId} --port ${new URL(page.url()).port}`);
+  const file = page.waitForEvent("download");
+  await directory.getByRole("link", { name: "下载" + artifact.title }).press("Enter");
+  expect((await file).suggestedFilename()).toBe("workflow_readiness.json");
+  expect(artifactReads).toBe(3);
+  expect(linkedReads).toEqual([prefix + "/status", prefix + "/artifacts", downloadPath]);
+  expect(writes).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+});
+
 test("resumes browser screening drafts and requires the current checklist revision when recording", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 900 });
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
