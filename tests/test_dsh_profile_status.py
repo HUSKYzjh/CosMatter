@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from cosmatter.dsh_profile_status import (
     EXPECTED_DSH_PACKAGES, DshCompositionCheckError, _BUNDLE_TOOLS,
-    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool,
+    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
 )
 
 
@@ -259,6 +259,33 @@ class DshProfileStatusTests(unittest.TestCase):
                 with self.assertRaisesRegex(DshCompositionCheckError, "Port"):
                     read_dsh_recent_runs(port=0, dsh_home=home)
                 self.assertEqual(launch.call_count, 2)
+
+    def test_screening_link_requires_the_same_run_and_exact_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = "@cosmatter/dsh-review-plugin"
+            self._write_bundle(profile, bundle)
+            revision = "a" * 64
+            link = f"http://127.0.0.1:8789/?api=local#run=run_001&screening={revision}"
+            result = {"run_id": "run_001", "checklist_revision": revision, "decisions": []}
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=result,
+            ) as launch:
+                self.assertEqual(read_dsh_screening_link(link, dsh_home=home)["checked_via"], ["cosmatter_candidate_screening_template"])
+                self.assertEqual(launch.call_args.args[1:3], (profile, {bundle: {"baseUrl": "http://127.0.0.1:8789"}}))
+                self.assertEqual(launch.call_args.args[-2]["args"], {"run_id": "run_001"})
+                result["checklist_revision"] = "b" * 64
+                with self.assertRaisesRegex(DshCompositionCheckError, "Screening checklist changed"):
+                    read_dsh_screening_link(link, dsh_home=home)
+                result.pop("checklist_revision")
+                with self.assertRaisesRegex(DshCompositionCheckError, "versioned screening checklist"):
+                    read_dsh_screening_link(link, dsh_home=home)
+                for invalid in (link.replace("127.0.0.1", "example.org"), link + "&screening=" + revision, link.replace(revision, "bad"),
+                                link + "&document=paper_1", link.replace("run_001", "..%2Fother")):
+                    with self.assertRaises(DshCompositionCheckError):
+                        read_dsh_screening_link(invalid, dsh_home=home)
+                self.assertEqual(launch.call_count, 3)
 
 
     def test_run_artifacts_uses_the_installed_manifest_tool_and_rejects_the_wrong_run(self) -> None:

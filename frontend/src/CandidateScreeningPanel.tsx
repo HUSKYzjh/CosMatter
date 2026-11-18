@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 
 import type { CandidateScreening, CandidateScreeningDecision } from "./localApi";
+import { DshScreeningHandoff } from "./DshRunHandoff";
 import { hasScreeningDecision, isScreeningComplete, sameScreeningDecision, screeningDraftChanges, screeningDraftForCandidates, screeningSubmission, type ScreeningDraft } from "./candidateScreeningDraft";
 import { safeOperationFeedback } from "./importFeedback";
 import { ActionButton } from "./uiPrimitives";
@@ -40,6 +41,7 @@ export function CandidateScreeningPanel(props: {
   onClose: () => void;
   focusDocumentId?: string | null;
   linkedRevision?: string | null;
+  liveRunId?: string | null;
 }) {
   const [draft, setDraft] = createSignal<ScreeningDraft>({});
   const [activeDocumentId, setActiveDocumentId] = createSignal<string | null>(null);
@@ -59,6 +61,11 @@ export function CandidateScreeningPanel(props: {
   const includedCount = createMemo(() => Object.values(draft()).filter((item) => item.decision === "include_for_fulltext").length);
   const persistedReview = createMemo(() => props.screening?.trust_status === "human_reviewed_candidate_screening_not_scientific_evidence");
   const linkedRevisionChanged = () => props.linkedRevision !== props.screening?.checklist_revision;
+  const handoffRevision = createMemo(() => {
+    const screening = props.screening;
+    return screening && screening.run_id === props.liveRunId && candidates().length > 0 && hasRevision(screening)
+      ? screening.checklist_revision : null;
+  });
   const activeCandidate = createMemo(() => {
     const list = candidates();
     const current = activeDocumentId();
@@ -190,6 +197,7 @@ export function CandidateScreeningPanel(props: {
     <Show when={draftNotice()}>{(notice) => <p class="screening-notice" role="status">{notice() === "invalidated"
       ? t("清单或登记记录已更新，请按当前版本重新核对。", "The checklist or recorded review changed. Review the current version before submitting.")
       : t("当前浏览器无法暂存草稿，请在本面板完成筛选。", "This browser could not save the draft. Complete screening in this panel.")}</p>}</Show>
+    <Show when={handoffRevision()}>{(revision) => <DshScreeningHandoff runId={props.liveRunId!} revision={revision()} locale={props.locale} />}</Show>
     <Show when={props.screening && props.screening.candidates.length === 0}><p class="screening-empty">{t("当前检索没有返回可筛选的候选。", "This search returned no candidates to screen.")}</p></Show>
     <Show when={props.screening && props.screening.candidates.length > 0}><div class="screening-list">
       <section class="screening-progress" aria-live="polite">

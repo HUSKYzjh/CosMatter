@@ -904,6 +904,7 @@ test("opens stopped runs as read-only records from DSH links and recent tasks", 
 
 test("resumes browser screening drafts and requires the current checklist revision when recording", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 900 });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   const runId = "local_screening_draft";
   const { readFile } = await import("node:fs/promises");
   const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
@@ -993,6 +994,9 @@ test("resumes browser screening drafts and requires the current checklist revisi
   await page.goto(originalScreeningLink);
   await expect(panel.getByRole("heading")).toBeFocused();
   await expect(panel.locator(".screening-link-notice")).toHaveText("已从 DSH 打开同一版本的筛选清单。");
+  await panel.getByRole("button", { name: "复制筛选链接" }).press("Enter");
+  await expect(panel.getByText("筛选链接已复制。", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(page.url());
   await selectA();
   await expect(panel.getByText("已登记 0 篇 · 草稿修改 1 篇")).toBeVisible();
   await expect(panel.getByRole("button", { name: "提交人工筛选决定" })).toBeDisabled();
@@ -1010,6 +1014,15 @@ test("resumes browser screening drafts and requires the current checklist revisi
   screening = { ...screening, checklist_revision: "b".repeat(64) };
   await page.reload();
   await expect(panel.locator(".screening-link-notice")).toHaveText("DSH 链接中的清单已更新，请按当前版本重新核对。");
+  const currentLink = new URL(page.url());
+  currentLink.hash = new URLSearchParams({ run: runId, screening: screening.checklist_revision }).toString();
+  await panel.locator(".dsh-run-handoff > summary").press("Enter");
+  const screeningCommand = `cosmatter dsh-screening '${currentLink.href}'`;
+  await expect(panel.locator(".dsh-run-handoff code")).toHaveText(screeningCommand);
+  await panel.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
+  await expect(panel.getByText("DSH 命令已复制。", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(screeningCommand);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
   await expect(panel.getByText("清单或登记记录已更新，请按当前版本重新核对。", { exact: true })).toBeVisible();
   await expect(panel.locator(".screening-queue-card")).toContainText("Candidate A");
   await expect(panel.getByRole("button", { name: "提交人工筛选决定" })).toBeDisabled();

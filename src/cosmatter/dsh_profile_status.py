@@ -294,6 +294,21 @@ def read_dsh_evidence_link(link: str, *, executable: str = "dsh", dsh_home: Path
     raise DshCompositionCheckError("DSH could not find the accepted card for this link. Check the link and the local CosMatter service.")
 
 
+def read_dsh_screening_link(link: str, *, executable: str = "dsh", dsh_home: Path | None = None) -> dict[str, Any]:
+    """Read the screening snapshot identified by a local workbench link."""
+    fields, port = _parse_local_workbench_link(link, ("run", "screening"), "screening")
+    run_id, revision = fields["run"], fields["screening"]
+    if not _LOCAL_RUN_ID.fullmatch(run_id) or not re.fullmatch(r"[a-f0-9]{64}", revision):
+        raise DshCompositionCheckError("Screening link identifiers are invalid.")
+    result = read_dsh_run_tool("cosmatter_candidate_screening_template", run_id, port=port, executable=executable, dsh_home=dsh_home)
+    current = result.get("checklist_revision")
+    if not isinstance(current, str) or not re.fullmatch(r"[a-f0-9]{64}", current):
+        raise DshCompositionCheckError("DSH did not return a versioned screening checklist.")
+    if current != revision:
+        raise DshCompositionCheckError("Screening checklist changed. Refresh the workbench checklist and copy a new DSH command.")
+    return result
+
+
 def read_dsh_recent_runs(*, port: int = 8765, executable: str = "dsh", dsh_home: Path | None = None) -> dict[str, Any]:
     """Read a label-free local run index through the installed observability bundle."""
     tool = "cosmatter_recent_runs"
@@ -365,25 +380,31 @@ def _read_through_bundle(
 
 
 def _parse_evidence_link(link: str) -> tuple[str, str, str, int]:
-    if not isinstance(link, str) or len(link) > 4_850 or re.search(r"[\x00-\x20\x7f]", link):
-        raise DshCompositionCheckError("Expected a local CosMatter evidence link.")
-    try:
-        url = urlsplit(link)
-        port = url.port if url.port is not None else 80
-        fields = parse_qs(url.fragment, strict_parsing=True, keep_blank_values=True, errors="strict", max_num_fields=3)
-    except ValueError as exc:
-        raise DshCompositionCheckError("Expected a local CosMatter evidence link.") from exc
-    if (url.scheme != "http" or url.hostname not in {"127.0.0.1", "localhost"} or url.username is not None
-            or url.password is not None or url.path != "/" or url.query != "api=local" or not 1 <= port <= 65535
-            or set(fields) != {"run", "document", "evidence"} or any(len(values) != 1 for values in fields.values())):
-        raise DshCompositionCheckError("Expected a local CosMatter evidence link.")
-    run_id, document_id, evidence_id = (fields[key][0] for key in ("run", "document", "evidence"))
+    fields, port = _parse_local_workbench_link(link, ("run", "document", "evidence"), "evidence")
+    run_id, document_id, evidence_id = (fields[key] for key in ("run", "document", "evidence"))
     if not _LOCAL_RUN_ID.fullmatch(run_id) or any(
         not 1 <= len(value) <= limit or value.strip() != value or re.search(r"[\x00-\x1f\x7f]", value)
         for value, limit in ((document_id, 255), (evidence_id, 200))
     ):
         raise DshCompositionCheckError("Evidence link identifiers are invalid.")
     return run_id, document_id, evidence_id, port
+
+
+def _parse_local_workbench_link(link: str, selectors: tuple[str, ...], label: str) -> tuple[dict[str, str], int]:
+    message = f"Expected a local CosMatter {label} link."
+    if not isinstance(link, str) or len(link) > 4_850 or re.search(r"[\x00-\x20\x7f]", link):
+        raise DshCompositionCheckError(message)
+    try:
+        url = urlsplit(link)
+        port = url.port if url.port is not None else 80
+        fields = parse_qs(url.fragment, strict_parsing=True, keep_blank_values=True, errors="strict", max_num_fields=len(selectors))
+    except ValueError as exc:
+        raise DshCompositionCheckError(message) from exc
+    if (url.scheme != "http" or url.hostname not in {"127.0.0.1", "localhost"} or url.username is not None
+            or url.password is not None or url.path != "/" or url.query != "api=local" or not 1 <= port <= 65535
+            or set(fields) != set(selectors) or any(len(values) != 1 for values in fields.values())):
+        raise DshCompositionCheckError(message)
+    return {key: values[0] for key, values in fields.items()}, port
 
 
 def _run_isolated_dsh_probe(

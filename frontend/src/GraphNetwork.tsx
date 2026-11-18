@@ -301,7 +301,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     <Show when={hasReviewablePapers() && props.onLoadScreening && props.onSubmitScreening && screeningPanelOpen()}>
       <div class="graph-screening-drawer">
         <CandidateScreeningPanel locale={props.locale} screening={props.screening} load={props.onLoadScreening!} submit={props.onSubmitScreening!}
-          focusDocumentId={screeningFocusId()} linkedRevision={props.linkedScreeningRevision} onClose={() => setScreeningPanelOpen(false)} />
+          focusDocumentId={screeningFocusId()} linkedRevision={props.linkedScreeningRevision} liveRunId={props.runId} onClose={() => setScreeningPanelOpen(false)} />
       </div>
     </Show>
     <Show when={advanced()}><section class="advanced-filters"><div><strong>{t("节点类型", "Node types")}</strong><For each={NODE_GROUPS}>{(group) => <label><input type="checkbox" checked={nodeVisibility()[group.id]} onChange={() => setNodeVisibility((current) => ({ ...current, [group.id]: !current[group.id] }))} />{t(group.zh, group.en)}</label>}</For></div><div><strong>{t("关系类型", "Relation types")}</strong><For each={EDGE_GROUPS}>{(group) => <label><input type="checkbox" checked={edgeVisibility()[group.id]} onChange={() => setEdgeVisibility((current) => ({ ...current, [group.id]: !current[group.id] }))} />{t(group.zh, group.en)}</label>}</For></div></section></Show>

@@ -84,6 +84,7 @@ DSH 可以通过 `cosmatter_candidate_screening_template` 读取已登记决定�
 `checklist_revision` 与人工决定一并交给 `cosmatter_candidate_screening_record`。候选或已有决定更新后，
 服务器会要求重新读取清单，浏览器也会提示重新核对。
 筛选读取工具会在可用时返回本机 `workbench_url`。阶段与清单核验通过后，链接打开文献星图里的人工筛选面板。链接版本过期时，面板会显示最新清单并提示重新核对。
+筛选面板可复制当前清单链接和 `cosmatter dsh-screening '<链接>'`。命令通过已安装的 DSH 筛选工具读取已保存的清单，并核对版本。旧命令会提示刷新并重新复制。未提交的草稿保留在当前浏览器标签页。
 「全文核对队列」按已登记的纳入决定显示候选，合并本机 PDF 绑定与 DSH 来源解析状态。
 `cosmatter_mineru_source_submit` 和 `cosmatter_mineru_task_poll` 的 `workbench_url` 会定位到对应候选。阶段核验通过且候选已人工纳入、本机 Markdown 已就绪时，链接直接打开阅读页；解析中或等待关联原文件时，可在文献星图的该论文检查器继续。
 「刷新本机解析记录」只读取已保存的账本。首次取回使用 `mineru-fetch-markdown`。如果曾经取回并保留了原文件，
