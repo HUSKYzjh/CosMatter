@@ -808,7 +808,7 @@ export function App() {
     setCandidateScreening(screening);
   }
 
-  async function submitCandidateScreening(decisions: CandidateScreeningDecision[]) {
+  async function submitCandidateScreening(decisions: CandidateScreeningDecision[], revision?: string) {
     const runId = liveRunId();
     if (!runId) throw new Error(text("当前没有可提交的本地任务。", "There is no local task available for submission."));
     if (!candidateScreeningSubmissionGate.tryStart()) {
@@ -818,7 +818,7 @@ export function App() {
     const operationId = beginActiveOperation(text("正在登记候选筛选", "Recording candidate screening"), text("仅写入人工逐篇决定；“纳入”只开放后续受控全文流程。", "Only human paper-by-paper decisions are being recorded; inclusion only opens the later controlled full-text workflow."));
     const epoch = taskEpoch;
     try {
-      const result = await recordCandidateScreening(runId, decisions);
+      const result = await recordCandidateScreening(runId, decisions, revision);
       requireCurrentRun(runId, epoch);
       if (result.run_id !== runId) throw new Error("candidate screening result identity mismatch");
       const refreshedScreening = await getCandidateScreening(runId);

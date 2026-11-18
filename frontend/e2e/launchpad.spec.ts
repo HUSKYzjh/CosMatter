@@ -812,6 +812,74 @@ test("finds recent local missions without a run ID and reuses the selected run",
   expect(requests.every((request) => request.startsWith("GET "))).toBe(true);
 });
 
+test("resumes browser screening drafts and requires the current checklist revision when recording", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  const runId = "local_screening_draft";
+  const { readFile } = await import("node:fs/promises");
+  const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
+  const papers = [
+    { document_id: "paper_a", title: "Candidate A", source: "local fixture", publication_year: 2024 },
+    { document_id: "paper_b", title: "Candidate B with a long title for narrow layout validation".repeat(3), source: "local fixture", publication_year: 2025 },
+  ];
+  bundle.literature_graph = { trust_status: "human_reviewed_graph_projection", nodes: papers.map((paper) => ({
+    node_id: "paper:" + paper.document_id, kind: "candidate_paper", label: paper.title, trust_status: "candidate_metadata_not_scientific_evidence",
+  })), edges: [] };
+  let screening = {
+    run_id: runId, candidate_count: papers.length, candidates: papers, trust_status: "blank_human_candidate_screening_template_not_a_result",
+    checklist_revision: "a".repeat(64), decisions: papers.map(({ document_id }) => ({ document_id, decision: "unreviewed", reason_codes: [] as string[] })),
+  };
+  const submissions: unknown[] = [];
+  await page.route("**/api/runs/**", (route) => {
+    const path = new URL(route.request().url()).pathname.split("/").pop();
+    if (path === "ui") return route.fulfill({ json: bundle });
+    if (path === "status") return route.fulfill({ json: { run_id: runId, mission_id: bundle.mission.mission_id, state: "INTAKE" } });
+    if (path === "stage-contract") return route.fulfill({ json: stageContractFixture(runId, bundle.mission.mission_id, "screening") });
+    if (path === "candidate-screening") {
+      if (route.request().method() === "GET") return route.fulfill({ json: screening });
+      const body = route.request().postDataJSON();
+      submissions.push(body);
+      screening = { ...screening, decisions: body.decisions, trust_status: "human_reviewed_candidate_screening_not_scientific_evidence", checklist_revision: "c".repeat(64) };
+      return route.fulfill({ json: { run_id: runId, candidate_count: 2 } });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  const open = () => page.getByRole("button", { name: /^(开始人工筛选|载入筛选清单)$/ }).first().click();
+  const panel = page.getByRole("region", { name: "候选文献人工筛选" });
+  const selectA = async () => {
+    await panel.getByRole("combobox", { name: "决定", exact: true }).selectOption("include_for_fulltext");
+    await expect(panel.getByRole("combobox", { name: "理由", exact: true })).toHaveValue("");
+    await panel.getByRole("combobox", { name: "理由", exact: true }).selectOption("material_match");
+  };
+  await page.goto("/?api=local#run=" + runId);
+  await open();
+  await selectA();
+  await expect(panel.getByText("已登记 0 篇 · 草稿修改 1 篇")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "提交人工筛选决定" })).toBeDisabled();
+  expect(submissions).toEqual([]);
+  await panel.getByRole("button", { name: "下一待审" }).press("Enter");
+  await expect(panel.locator(".screening-queue-card")).toContainText("Candidate B");
+  await panel.getByRole("button", { name: "收起筛选" }).click();
+  await page.reload();
+  await open();
+  await expect(panel.locator(".screening-queue-card")).toContainText("Candidate B");
+  await expect(panel.getByText("已登记 0 篇 · 草稿修改 1 篇")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+
+  screening = { ...screening, checklist_revision: "b".repeat(64) };
+  await panel.getByRole("button", { name: "刷新筛选清单" }).click();
+  await expect(panel.getByRole("status")).toContainText("清单或登记记录已更新");
+  await panel.getByRole("button", { name: "上一篇" }).click();
+  await selectA();
+  await panel.getByRole("button", { name: "下一待审" }).click();
+  await panel.getByRole("combobox", { name: "决定", exact: true }).selectOption("exclude");
+  await panel.getByRole("combobox", { name: "理由", exact: true }).selectOption("out_of_scope_material");
+  await expect(panel.getByRole("button", { name: /为此候选选择授权 PDF/ })).toHaveCount(0);
+  await panel.getByRole("button", { name: "提交人工筛选决定" }).click();
+  await expect(panel.getByText("已登记 2 篇 · 草稿修改 0 篇")).toBeVisible();
+  await expect(panel.getByRole("button", { name: /为此候选选择授权 PDF/ })).toHaveCount(1);
+  expect(submissions).toEqual([{ checklist_revision: "b".repeat(64), decisions: screening.decisions }]);
+});
+
 test("opens local DSH links directly and keeps a failed linked run editable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const runId = "run_dsh_link_01";

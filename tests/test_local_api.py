@@ -877,14 +877,28 @@ class LocalMissionApiTests(unittest.TestCase):
             self.api.record_candidate_screening("live_001", {"decisions": []})
         result = self.api.record_candidate_screening(
             "live_001",
-            {"decisions": [{"document_id": "doc-1", "decision": "include_for_fulltext", "reason_codes": ["material_match"]}]},
+            {"decisions": [{"document_id": "doc-1", "decision": "include_for_fulltext", "reason_codes": ["material_match"]}], "checklist_revision": template["checklist_revision"]},
         )
         self.assertEqual(result["decision_counts"], {"include_for_fulltext": 1})
         artifact = json.loads((self.runs / "live_001" / "candidate_screening.json").read_text(encoding="utf-8"))
         self.assertEqual(artifact["trust_status"], "human_reviewed_candidate_screening_not_scientific_evidence")
         persisted = self.api.candidate_screening_template("live_001")
+        self.assertNotEqual(persisted["checklist_revision"], template["checklist_revision"])
         self.assertEqual(persisted["trust_status"], "human_reviewed_candidate_screening_not_scientific_evidence")
         self.assertEqual(persisted["decisions"][0]["decision"], "include_for_fulltext")
+        stale = {"decisions": [{"document_id": "doc-1", "decision": "exclude", "reason_codes": ["out_of_scope_material"]}], "checklist_revision": template["checklist_revision"]}
+        with self.assertRaises(LocalApiError) as conflict:
+            self.api.record_candidate_screening("live_001", stale)
+        self.assertEqual(conflict.exception.status, 409)
+        candidate_path = self.runs / "live_001" / "retrieval_candidates.json"
+        candidates = json.loads(candidate_path.read_text(encoding="utf-8"))
+        candidates["candidates"][0]["title"] = "Changed candidate with the same ID"
+        candidate_path.write_text(json.dumps(candidates), encoding="utf-8")
+        with self.assertRaises(LocalApiError) as changed:
+            self.api.record_candidate_screening("live_001", {**stale, "checklist_revision": persisted["checklist_revision"]})
+        self.assertEqual(changed.exception.status, 409)
+        self.assertEqual(self.api.candidate_screening_template("live_001")["decisions"][0]["decision"], "unreviewed")
+        self.assertEqual(json.loads((self.runs / "live_001" / "candidate_screening.json").read_text(encoding="utf-8")), artifact)
     def test_automatic_mission_reaches_success_terminal_with_metadata_only_candidates(self):
         payload = {
             "run_id": "auto_success_001",

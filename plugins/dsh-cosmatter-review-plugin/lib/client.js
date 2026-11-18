@@ -1,5 +1,8 @@
 import { normalizeConfig } from './config.js';
 const runId = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const revisionId = /^[a-f0-9]{64}$/;
+const blankStatus = 'blank_human_candidate_screening_template_not_a_result';
+const reviewedStatus = 'human_reviewed_candidate_screening_not_scientific_evidence';
 const decisionNames = new Set(['include_for_fulltext', 'exclude', 'needs_metadata_review']);
 const reasonNames = new Set(['material_match', 'property_match', 'scope_match', 'method_match', 'primary_evidence', 'counterevidence', 'out_of_scope_material', 'out_of_scope_property', 'review_or_protocol', 'duplicate_or_version', 'not_enough_metadata']);
 export class CosMatterReviewClient {
@@ -9,12 +12,43 @@ export class CosMatterReviewClient {
         this.request = request;
         this.config = normalizeConfig(config);
     }
-    async template(runIdValue, signal) { if (!runId.test(runIdValue))
-        throw new Error('run_id is invalid'); const value = await this.fetchJson(new URL(`/api/runs/${encodeURIComponent(runIdValue)}/candidate-screening`, this.config.baseUrl), { method: 'GET', headers: { Accept: 'application/json' }, signal }); if (!isObject(value) || value.run_id !== runIdValue || !Number.isInteger(value.candidate_count) || typeof value.candidate_count !== 'number' || value.candidate_count < 1 || value.candidate_count > 250 || !Array.isArray(value.candidates) || value.candidates.length !== value.candidate_count || !value.candidates.every(safeCandidate) || !Array.isArray(value.decisions) || value.decisions.length !== value.candidate_count || !value.decisions.every(safeTemplateDecision) || typeof value.trust_status !== 'string')
-        throw new Error('CosMatter screening template is invalid'); return value; }
-    async record(runIdValue, decisions, signal) { if (!runId.test(runIdValue) || !Array.isArray(decisions) || !decisions.length || decisions.length > 250 || !decisions.every(safeDecision) || new Set(decisions.map(item => item.document_id)).size !== decisions.length)
-        throw new Error('candidate screening review is invalid'); const value = await this.fetchJson(new URL(`/api/runs/${encodeURIComponent(runIdValue)}/candidate-screening`, this.config.baseUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ decisions }), signal }); if (!isObject(value) || value.run_id !== runIdValue || typeof value.candidate_count !== 'number' || !Number.isInteger(value.candidate_count) || !safeCounts(value.decision_counts) || value.trust_status !== 'human_reviewed_candidate_screening_not_scientific_evidence')
-        throw new Error('CosMatter screening record response is invalid'); return value; }
+    async template(runIdValue, signal) {
+        if (!runId.test(runIdValue))
+            throw new Error('run_id is invalid');
+        const url = new URL(`/api/runs/${encodeURIComponent(runIdValue)}/candidate-screening`, this.config.baseUrl);
+        const value = await this.fetchJson(url, { method: 'GET', headers: { Accept: 'application/json' }, signal });
+        if (!isObject(value) || value.run_id !== runIdValue
+            || Object.keys(value).some(key => !['run_id', 'trust_status', 'candidate_count', 'checklist_revision', 'candidates', 'decisions'].includes(key))
+            || typeof value.candidate_count !== 'number' || !Number.isInteger(value.candidate_count) || value.candidate_count < 0 || value.candidate_count > 250
+            || (value.checklist_revision !== undefined && (typeof value.checklist_revision !== 'string' || !revisionId.test(value.checklist_revision)))
+            || !Array.isArray(value.candidates) || value.candidates.length !== value.candidate_count || !value.candidates.every(safeCandidate)
+            || !Array.isArray(value.decisions) || value.decisions.length !== value.candidate_count
+            || (value.trust_status !== blankStatus && value.trust_status !== reviewedStatus)
+            || !value.decisions.every(value.trust_status === reviewedStatus ? safeDecision : safeTemplateDecision)) {
+            throw new Error('CosMatter screening template is invalid');
+        }
+        const ids = new Set(value.candidates.map(candidate => candidate.document_id));
+        if (ids.size !== value.candidate_count || !value.decisions.every(decision => ids.delete(decision.document_id))) {
+            throw new Error('CosMatter screening template candidate identities do not match');
+        }
+        return value;
+    }
+    async record(runIdValue, decisions, signal, revision) {
+        if (!runId.test(runIdValue) || !Array.isArray(decisions) || !decisions.length || decisions.length > 250 || !decisions.every(safeDecision)
+            || new Set(decisions.map(item => item.document_id)).size !== decisions.length || (revision !== undefined && !revisionId.test(revision))) {
+            throw new Error('candidate screening review is invalid');
+        }
+        const url = new URL(`/api/runs/${encodeURIComponent(runIdValue)}/candidate-screening`, this.config.baseUrl);
+        const value = await this.fetchJson(url, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ decisions, checklist_revision: revision }), signal,
+        });
+        if (!isObject(value) || value.run_id !== runIdValue || typeof value.candidate_count !== 'number'
+            || !Number.isInteger(value.candidate_count) || !safeCounts(value.decision_counts) || value.trust_status !== reviewedStatus) {
+            throw new Error('CosMatter screening record response is invalid');
+        }
+        return value;
+    }
     async fetchJson(url, init) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.config.timeoutMs); const outer = init.signal; const abort = () => controller.abort(); outer?.addEventListener('abort', abort, { once: true }); try {
         const response = await this.request(url, { ...init, signal: controller.signal });
         if (!response.ok)

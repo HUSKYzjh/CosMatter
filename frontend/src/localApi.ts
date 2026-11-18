@@ -232,7 +232,7 @@ export async function requestQuestionCandidates(question: string): Promise<Quest
 }
 export interface CandidateScreeningDecision { document_id: string; decision: string; reason_codes: string[]; }
 export interface CandidateScreeningCandidate { document_id: string; title: string; source: string; publication_year: number | null; }
-export interface CandidateScreening { run_id: string; trust_status: string; candidate_count: number; candidates: CandidateScreeningCandidate[]; decisions: CandidateScreeningDecision[]; }
+export interface CandidateScreening { run_id: string; trust_status: string; candidate_count: number; checklist_revision?: string; candidates: CandidateScreeningCandidate[]; decisions: CandidateScreeningDecision[]; }
 export interface CandidateScreeningResult { run_id: string; candidate_count: number; decision_counts: Record<string, number>; trust_status: string; }
 export interface AutomaticExecutionStatus { state: "queued" | "running" | "succeeded" | "failed" | "cancelled"; candidate_count: number; failure_count: number; failed_sources?: string[]; planning_warning: boolean; trust_status: string; }
 export interface RunStatus { run_id: string; mission_id: string; state: string; terminal?: boolean; cancellation?: "available" | "requested"; automatic_execution?: AutomaticExecutionStatus; }
@@ -388,7 +388,9 @@ export function getWorkflowDag(runId: string): Promise<WorkflowDag> { return req
 export function getOperationalTelemetry(runId: string): Promise<OperationalTelemetry> { return request<OperationalTelemetry>(`./api/runs/${encodeURIComponent(runId)}/operational-telemetry`); }
 export function getReminderBoard(): Promise<ReminderBoard> { return request<ReminderBoard>("./api/reminder-board"); }
 export function getCandidateScreening(runId: string): Promise<CandidateScreening> { return request<CandidateScreening>(`./api/runs/${encodeURIComponent(runId)}/candidate-screening`); }
-export function recordCandidateScreening(runId: string, decisions: CandidateScreeningDecision[]): Promise<CandidateScreeningResult> { return jsonPost<CandidateScreeningResult>(`./api/runs/${encodeURIComponent(runId)}/candidate-screening`, { decisions }); }
+export function recordCandidateScreening(runId: string, decisions: CandidateScreeningDecision[], revision?: string): Promise<CandidateScreeningResult> {
+  return jsonPost<CandidateScreeningResult>(`./api/runs/${encodeURIComponent(runId)}/candidate-screening`, { decisions, checklist_revision: revision });
+}
 export function cancelRun(runId: string): Promise<RunStatus> { return jsonPost<RunStatus>(`./api/runs/${encodeURIComponent(runId)}/cancel`, {}); }
 export function createPdfRun(file: File, mission: { missionId?: string; question: string; material: string; property: string; scope: string }, candidateTarget?: { runId: string; documentId: string }): Promise<PdfRunResult> { const form = new FormData(); form.append("payload", JSON.stringify(candidateTarget ? { run_id: candidateTarget.runId, candidate_document_id: candidateTarget.documentId, consent: true } : { ...mission, run_id: mission.missionId, consent: true })); form.append("file", file, file.name); return request<PdfRunResult>("./api/pdf-runs", { method: "POST", body: form }); }
 export interface PdfTaskRegistry { run_id: string; tasks: PdfTaskStatus[]; trust_status: "private_pdf_task_registry_metadata_only"; }

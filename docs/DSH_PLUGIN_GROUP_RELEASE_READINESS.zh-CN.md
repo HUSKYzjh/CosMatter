@@ -72,6 +72,10 @@ DSH 原生工具执行器通过临时 CosMatter HTTP 服务读取正式契约目
 近期列表显示研究对象、研究目标、运行 ID 与更新时间，按最近更新排列。已停止的任务会标明状态。
 打开任务时，舰桥会核对本机阶段契约。处于候选筛选或之后且文献工件可用时，直接打开文献星图；
 等待计划审核或检索的任务从受控编排继续。阶段或工件待核对的任务也可从受控编排查看。
+候选筛选草稿保留在当前浏览器标签页，重新打开时从第一篇未填完的候选继续。决定和理由均填写后才能登记完整清单。
+DSH 可以通过 `cosmatter_candidate_screening_template` 读取已登记决定。登记修改时，请把读取时的
+`checklist_revision` 与人工决定一并交给 `cosmatter_candidate_screening_record`。候选或已有决定更新后，
+服务器会要求重新读取清单，浏览器也会提示重新核对。
 首次打开读取已有工件和保存的 PDF 状态；需要更新 PDF 状态时，可在舰桥手动刷新。
 从舰桥回到终端时，展开运行 ID 下方的「在 DSH 查看进度」，复制命令到 CosMatter 虚拟环境运行。
 命令使用页面的本机端口和当前 `run_id`，由 DSH 调用 `cosmatter_workflow_status` 与 `cosmatter_stage_contract`，

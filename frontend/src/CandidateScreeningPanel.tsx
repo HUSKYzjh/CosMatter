@@ -1,7 +1,7 @@
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 
 import type { CandidateScreening, CandidateScreeningCandidate, CandidateScreeningDecision } from "./localApi";
-import { isScreeningComplete, recordedIncludedCandidates, screeningDraftForCandidates, screeningSubmission } from "./candidateScreeningDraft";
+import { hasScreeningDecision, isScreeningComplete, recordedIncludedCandidates, sameScreeningDecision, screeningDraftChanges, screeningDraftForCandidates, screeningSubmission, type ScreeningDraft } from "./candidateScreeningDraft";
 import { safeOperationFeedback } from "./importFeedback";
 import { ActionButton } from "./uiPrimitives";
 
@@ -20,24 +20,40 @@ const REASONS: Record<string, readonly [string, string, string][]> = {
   needs_metadata_review: [["not_enough_metadata", "元数据不足", "Insufficient metadata"]],
 };
 
+function savedScreeningDecision(value: unknown): value is CandidateScreeningDecision {
+  if (!value || typeof value !== "object") return false;
+  const { document_id, decision, reason_codes } = value as Record<string, unknown>;
+  if (typeof document_id !== "string" || typeof decision !== "string" || !Array.isArray(reason_codes) || reason_codes.length > 6) return false;
+  if (decision === "unreviewed") return reason_codes.length === 0;
+  return Object.hasOwn(REASONS, decision) && reason_codes.every((code) => REASONS[decision].some(([allowed]) => allowed === code))
+    && new Set(reason_codes).size === reason_codes.length;
+}
+
+const draftKey = (screening: CandidateScreening) => "cosmatter.screening-draft:v1:" + screening.run_id;
+const hasRevision = (screening: CandidateScreening) => typeof screening.checklist_revision === "string" && /^[a-f0-9]{64}$/.test(screening.checklist_revision);
+
 export function CandidateScreeningPanel(props: {
   locale: Locale;
   screening: CandidateScreening | null;
   load: () => Promise<void>;
-  submit: (decisions: CandidateScreeningDecision[]) => Promise<void>;
+  submit: (decisions: CandidateScreeningDecision[], revision?: string) => Promise<void>;
   onRequestFulltext?: (candidate: CandidateScreeningCandidate) => void;
+  onClose: () => void;
   focusDocumentId?: string | null;
-  autoOpen?: boolean;
 }) {
-  const [open, setOpen] = createSignal(false);
-  const [draft, setDraft] = createSignal<Record<string, CandidateScreeningDecision>>({});
+  const [draft, setDraft] = createSignal<ScreeningDraft>({});
   const [activeDocumentId, setActiveDocumentId] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [draftNotice, setDraftNotice] = createSignal<"invalidated" | "storage_unavailable" | null>(null);
+  let draftRevision: string | undefined;
   const t = (zh: string, en: string) => copy(props.locale, zh, en);
   const candidates = createMemo(() => props.screening?.candidates ?? []);
   const complete = createMemo(() => props.screening ? isScreeningComplete(props.screening.candidates, draft()) : false);
-  const reviewedCount = createMemo(() => candidates().filter((candidate) => (draft()[candidate.document_id]?.decision ?? "unreviewed") !== "unreviewed").length);
+  const pendingCandidates = createMemo(() => candidates().filter((candidate) => !hasScreeningDecision(draft()[candidate.document_id])));
+  const reviewedCount = () => candidates().length - pendingCandidates().length;
+  const changes = createMemo(() => props.screening ? screeningDraftChanges(props.screening, draft()) : []);
+  const editedIds = createMemo(() => new Set(changes().map((decision) => decision.document_id)));
   const includedCount = createMemo(() => Object.values(draft()).filter((item) => item.decision === "include_for_fulltext").length);
   const persistedReview = createMemo(() => props.screening?.trust_status === "human_reviewed_candidate_screening_not_scientific_evidence");
   const recordedIncluded = createMemo(() => recordedIncludedCandidates(props.screening));
@@ -45,7 +61,7 @@ export function CandidateScreeningPanel(props: {
     const list = candidates();
     const current = activeDocumentId();
     return list.find((candidate) => candidate.document_id === current)
-      ?? list.find((candidate) => (draft()[candidate.document_id]?.decision ?? "unreviewed") === "unreviewed")
+      ?? pendingCandidates()[0]
       ?? list[0]
       ?? null;
   });
@@ -62,43 +78,73 @@ export function CandidateScreeningPanel(props: {
 
   createEffect(() => {
     const screening = props.screening;
-    if (!screening) {
-      setDraft({});
-      setActiveDocumentId(null);
-      return;
+    if (!screening) return;
+    const revision = hasRevision(screening) ? screening.checklist_revision : undefined;
+    const draftIdentity = revision ? draftKey(screening) + ":" + revision : undefined;
+    if (draftIdentity && draftIdentity === draftRevision) return;
+    draftRevision = draftIdentity;
+    const restored = screeningDraftForCandidates(screening);
+    if (revision) {
+      try {
+        const raw = window.sessionStorage.getItem(draftKey(screening));
+        if (raw && raw.length <= 500_000) {
+          const saved = JSON.parse(raw) as { revision?: string; changes?: unknown };
+          const changes = Array.isArray(saved?.changes) && saved.changes.every(savedScreeningDecision) ? saved.changes : [];
+          if (saved?.revision !== revision) {
+            window.sessionStorage.removeItem(draftKey(screening));
+            if (changes.some((item) => !sameScreeningDecision(item, restored[item.document_id]))) setDraftNotice("invalidated");
+          } else if (changes.length <= screening.candidate_count) {
+            for (const change of changes) {
+              if (Object.hasOwn(restored, change.document_id)) restored[change.document_id] = change;
+            }
+          }
+        }
+      } catch {
+        setDraftNotice("storage_unavailable");
+      }
     }
-    setDraft(screeningDraftForCandidates(screening));
+    setDraft(restored);
     setActiveDocumentId((current) => screening.candidates.some((candidate) => candidate.document_id === current)
       ? current
-      : screening.candidates.find((candidate) => (screening.decisions.find((decision) => decision.document_id === candidate.document_id)?.decision ?? "unreviewed") === "unreviewed")?.document_id ?? screening.candidates[0]?.document_id ?? null);
+      : screening.candidates.find((candidate) => !hasScreeningDecision(restored[candidate.document_id]))?.document_id ?? screening.candidates[0]?.document_id ?? null);
   });
   createEffect(() => {
     const focus = props.focusDocumentId;
     if (focus && candidates().some((candidate) => candidate.document_id === focus)) setActiveDocumentId(focus);
   });
-  createEffect(() => {
-    if (!props.autoOpen && !props.focusDocumentId) return;
-    setOpen(true);
-    if (!props.screening && !busy()) void request();
-  });
+  onMount(() => { if (!props.screening) void request(); });
 
-  const updateDecision = (documentId: string, decision: string) => {
-    const firstReason = REASONS[decision]?.[0]?.[0] ?? "";
-    setDraft((current) => ({ ...current, [documentId]: { document_id: documentId, decision, reason_codes: firstReason ? [firstReason] : [] } }));
+  const updateDraft = (decision: CandidateScreeningDecision) => {
+    const next = { ...draft(), [decision.document_id]: decision };
+    setDraft(next);
+    const screening = props.screening;
+    if (!screening || !hasRevision(screening)) return;
+    const changed = screeningDraftChanges(screening, next);
+    try {
+      if (changed.length) window.sessionStorage.setItem(draftKey(screening), JSON.stringify({ revision: screening.checklist_revision, changes: changed }));
+      else window.sessionStorage.removeItem(draftKey(screening));
+      setDraftNotice(null);
+    } catch {
+      setDraftNotice("storage_unavailable");
+    }
   };
-  const updateReason = (documentId: string, reason: string) => setDraft((current) => ({ ...current, [documentId]: { ...current[documentId], reason_codes: reason ? [reason] : [] } }));
+  const updateDecision = (documentId: string, decision: string) => updateDraft({ document_id: documentId, decision, reason_codes: [] });
+  const updateReason = (documentId: string, reason: string) => updateDraft({ ...draft()[documentId], reason_codes: reason ? [reason] : [] });
   const moveCandidate = (offset: number) => {
     const list = candidates();
     if (!list.length) return;
     const current = Math.max(0, activeIndex());
     setActiveDocumentId(list[Math.max(0, Math.min(list.length - 1, current + offset))]?.document_id ?? null);
   };
+  const nextPending = () => {
+    const next = pendingCandidates().filter((candidate) => candidate !== activeCandidate());
+    return next.find((candidate) => candidates().indexOf(candidate) > activeIndex()) ?? next[0];
+  };
   const request = async () => {
     setBusy(true);
     setError(null);
     try {
       await props.load();
-      setOpen(true);
     } catch (cause) {
       setError(safeOperationFeedback(cause, t("无法载入候选筛选清单；当前决定未被修改。", "Unable to load the candidate-screening checklist; current decisions were not changed.")));
     } finally {
@@ -110,32 +156,75 @@ export function CandidateScreeningPanel(props: {
     setBusy(true);
     setError(null);
     try {
-      await props.submit(screeningSubmission(props.screening.candidates, draft()));
-      setOpen(false);
+      await props.submit(screeningSubmission(props.screening.candidates, draft()), props.screening.checklist_revision);
     } catch (cause) {
-      setError(safeOperationFeedback(cause, t("无法提交人工筛选决定；请检查每篇候选的决定与理由。", "Unable to submit human screening decisions. Check the decision and reason for every candidate.")));
+      setError(safeOperationFeedback(cause, t("无法登记人工筛选。请刷新清单，核对记录后再提交。", "Unable to record screening. Refresh the checklist and verify the record before submitting.")));
     } finally {
       setBusy(false);
     }
   };
 
   return <section class="candidate-screening" aria-label={t("候选文献人工筛选", "Candidate literature human screening")}>
-    <header><div><small>{t("步骤 01.5 / 人工门禁", "STEP 01.5 / HUMAN GATE")}</small><h2>{t("先筛选候选，再申请全文处理", "Screen candidates before requesting full-text work")}</h2><p>{t("候选论文只含书目信息。每篇候选都必须人工决定一次；“纳入”只允许后续受控全文流程，不产生 EvidenceCard。", "Candidate papers contain bibliographic metadata only. Every candidate needs one human decision; inclusion only permits a later controlled full-text flow and never creates an EvidenceCard.")}</p></div><ActionButton size="sm" variant="secondary" busy={busy()} busyLabel={t("处理中…", "Working…")} aria-expanded={open()} onClick={() => { if (props.screening && !open()) { setOpen(true); return; } void request(); }}>{!props.screening ? t("载入筛选清单", "Load screening checklist") : !open() ? persistedReview() ? t("查看或修改人工筛选", "View or revise human screening") : t(`开始人工筛选（${props.screening.candidate_count} 篇）`, `Start human screening (${props.screening.candidate_count})`) : t("刷新筛选清单", "Refresh checklist")}</ActionButton></header>
-    <Show when={error()}>{(message) => <p class="screening-error">{message()}</p>}</Show>
-    <Show when={open() && props.screening && props.screening.candidates.length === 0}><p class="screening-empty">{t("当前受控检索没有返回可供人工筛选的候选；无法申请全文处理。", "The controlled retrieval returned no candidates to screen; full-text intake is unavailable.")}</p></Show>
-    <Show when={open() && props.screening}>{(screening) => <div class="screening-list">
-      <p>{screening().trust_status === "human_reviewed_candidate_screening_not_scientific_evidence" ? t(`已登记 ${screening().candidate_count} 篇候选论文的人工筛选；修改后需重新提交完整清单。`, `A human screening review for ${screening().candidate_count} candidate paper(s) is recorded. Submit the complete checklist again after edits.`) : t(`本次必须审阅 ${screening().candidate_count} 篇候选论文。未完成时不会写入工件。`, `${screening().candidate_count} candidate paper(s) must be reviewed. Nothing is written until the checklist is complete.`)}</p>
-      <section class="screening-progress" aria-live="polite"><div><small>{t("人工筛选进度", "HUMAN SCREENING PROGRESS")}</small><strong>{t(`已审 ${reviewedCount()} / ${candidates().length}`, `Reviewed ${reviewedCount()} / ${candidates().length}`)}</strong><span>{complete() ? t("决定与理由已完整，可提交审计记录。", "Every decision and reason is complete; the audit record can be submitted.") : t(`尚余 ${Math.max(0, candidates().length - reviewedCount())} 篇待审。`, `${Math.max(0, candidates().length - reviewedCount())} paper(s) remain.`)}</span></div><progress max={candidates().length || 1} value={reviewedCount()} aria-label={t("候选筛选完成进度", "Candidate screening completion progress")} /></section>
-      <nav class="screening-contact-strip" aria-label={t("候选编队队列", "Candidate formation queue")}><For each={candidates()}>{(item, index) => { const itemDecision = () => draft()[item.document_id]?.decision ?? "unreviewed"; return <button type="button" class={`screening-contact state-${itemDecision()}`} classList={{ active: activeCandidate()?.document_id === item.document_id }} aria-pressed={activeCandidate()?.document_id === item.document_id} onClick={() => setActiveDocumentId(item.document_id)}><small>{String(index() + 1).padStart(2, "0")}</small><strong>{item.title}</strong><span>{decisionLabel(itemDecision())}</span></button>; }}</For></nav>
+    <header>
+      <h2>{t("候选文献人工筛选", "Human screening of candidate papers")}</h2>
+      <div class="screening-header-actions">
+        <ActionButton size="sm" busy={busy()} busyLabel={t("处理中…", "Working…")} onClick={() => void request()}>{t("刷新筛选清单", "Refresh checklist")}</ActionButton>
+        <ActionButton size="sm" variant="quiet" disabled={busy()} onClick={() => props.onClose()}>{t("收起筛选", "Hide screening")}</ActionButton>
+      </div>
+    </header>
+    <Show when={error()}>{(message) => <p class="screening-error" role="alert">{message()}</p>}</Show>
+    <Show when={draftNotice()}>{(notice) => <p class="screening-notice" role="status">{notice() === "invalidated"
+      ? t("清单或登记记录已更新，请按当前版本重新核对。", "The checklist or recorded review changed. Review the current version before submitting.")
+      : t("当前浏览器无法暂存草稿，请在本面板完成筛选。", "This browser could not save the draft. Complete screening in this panel.")}</p>}</Show>
+    <Show when={props.screening && props.screening.candidates.length === 0}><p class="screening-empty">{t("当前检索没有返回可筛选的候选。", "This search returned no candidates to screen.")}</p></Show>
+    <Show when={props.screening && props.screening.candidates.length > 0}><div class="screening-list">
+      <section class="screening-progress" aria-live="polite">
+        <div>
+          <strong>{t(`已填 ${reviewedCount()} / ${candidates().length}`, `Filled ${reviewedCount()} / ${candidates().length}`)}</strong>
+          <span>{t(`已登记 ${persistedReview() ? candidates().length : 0} 篇 · 草稿修改 ${changes().length} 篇`, `Recorded ${persistedReview() ? candidates().length : 0} · Edited locally ${changes().length}`)}</span>
+        </div>
+        <progress max={candidates().length || 1} value={reviewedCount()} aria-label={t("候选筛选填表进度", "Candidate screening form progress")} />
+      </section>
+      <nav class="screening-contact-strip" aria-label={t("候选队列", "Candidate queue")}>
+        <For each={candidates()}>{(item, index) => {
+          const itemDecision = () => draft()[item.document_id]?.decision ?? "unreviewed";
+          const caption = () => editedIds().has(item.document_id)
+            ? t("草稿 · ", "Draft · ") + (itemDecision() !== "unreviewed" && !hasScreeningDecision(draft()[item.document_id])
+              ? t("待填理由", "reason required") : decisionLabel(itemDecision()))
+            : decisionLabel(itemDecision());
+          return <button type="button" class={`screening-contact state-${itemDecision()}`}
+            classList={{ active: activeCandidate()?.document_id === item.document_id }}
+            aria-pressed={activeCandidate()?.document_id === item.document_id} onClick={() => setActiveDocumentId(item.document_id)}>
+            <small>{String(index() + 1).padStart(2, "0")}</small><strong>{item.title}</strong><span>{caption()}</span>
+          </button>;
+        }}</For>
+      </nav>
       <Show when={activeCandidate()}>{(candidate) => {
         const decision = () => draft()[candidate().document_id] ?? { document_id: candidate().document_id, decision: "unreviewed", reason_codes: [] };
         return <article class="screening-queue-card" classList={{ focused: candidate().document_id === props.focusDocumentId }}>
-          <header><div><small>{t("当前候选", "CURRENT CANDIDATE")} · {activeIndex() + 1} / {candidates().length}</small><strong>{candidate().title}</strong><span>{candidate().source}{candidate().publication_year ? ` · ${candidate().publication_year}` : ""}</span></div><nav aria-label={t("候选队列导航", "Candidate queue navigation")}><button type="button" onClick={() => moveCandidate(-1)} disabled={activeIndex() <= 0}>{t("上一篇", "Previous")}</button><button type="button" onClick={() => moveCandidate(1)} disabled={activeIndex() >= candidates().length - 1}>{t("下一篇", "Next")}</button></nav></header>
-          <div class="screening-decision-fields"><label>{t("决定", "Decision")}<select value={decision().decision} onChange={(event) => updateDecision(candidate().document_id, event.currentTarget.value)}><option value="unreviewed">{t("请选择", "Select")}</option><For each={DECISIONS}>{([value, zh, en]) => <option value={value}>{t(zh, en)}</option>}</For></select></label><Show when={decision().decision !== "unreviewed"}><label>{t("理由", "Reason")}<select value={decision().reason_codes[0] ?? ""} onChange={(event) => updateReason(candidate().document_id, event.currentTarget.value)}><For each={REASONS[decision().decision] ?? []}>{([value, zh, en]) => <option value={value}>{t(zh, en)}</option>}</For></select></label></Show></div>
+          <header>
+            <div><small>{t("当前候选", "CURRENT CANDIDATE")} · {activeIndex() + 1} / {candidates().length}</small><strong>{candidate().title}</strong><span>{candidate().source}{candidate().publication_year ? ` · ${candidate().publication_year}` : ""}</span></div>
+            <nav aria-label={t("候选队列导航", "Candidate queue navigation")}>
+              <ActionButton size="sm" onClick={() => moveCandidate(-1)} disabled={activeIndex() <= 0}>{t("上一篇", "Previous")}</ActionButton>
+              <ActionButton size="sm" onClick={() => moveCandidate(1)} disabled={activeIndex() >= candidates().length - 1}>{t("下一篇", "Next")}</ActionButton>
+              <ActionButton size="sm" onClick={() => setActiveDocumentId(nextPending()?.document_id ?? null)} disabled={!nextPending()}>{t("下一待审", "Next unfinished")}</ActionButton>
+            </nav>
+          </header>
+          <div class="screening-decision-fields">
+            <label>{t("决定", "Decision")}<select disabled={busy()} value={decision().decision} onChange={(event) => updateDecision(candidate().document_id, event.currentTarget.value)}><option value="unreviewed">{t("请选择", "Select")}</option><For each={DECISIONS}>{([value, zh, en]) => <option value={value}>{t(zh, en)}</option>}</For></select></label>
+            <Show when={decision().decision !== "unreviewed"}>
+              <label>{t("理由", "Reason")}<select disabled={busy()} value={decision().reason_codes[0] ?? ""} onChange={(event) => updateReason(candidate().document_id, event.currentTarget.value)}><option value="">{t("请选择理由", "Select reason")}</option><For each={REASONS[decision().decision] ?? []}>{([value, zh, en]) => <option value={value}>{t(zh, en)}</option>}</For></select></label>
+            </Show>
+          </div>
         </article>;
       }}</Show>
-      <footer><span>{complete() ? t(`筛选完整：${includedCount()} 篇已纳入后续受控全文流程；系统不会自动下载或解析全文。`, `Checklist complete: ${includedCount()} paper(s) are included for a later controlled full-text workflow; no full text is downloaded or parsed automatically.`) : t("请按队列为每篇候选填写决定与理由；可随时回看已审条目。", "Use the queue to record a decision and reason for every candidate; reviewed items remain editable.")}</span><ActionButton variant="primary" busy={busy()} busyLabel={t("提交中…", "Submitting…")} disabled={!complete()} onClick={() => void submit()}>{t("提交人工筛选决定", "Submit human screening decisions")}</ActionButton></footer>
-      <Show when={screening().trust_status === "human_reviewed_candidate_screening_not_scientific_evidence" && recordedIncluded().length > 0 && props.onRequestFulltext}><section class="screening-fulltext-intake"><small>{t("后续受控全文入口", "NEXT CONTROLLED FULL-TEXT STEP")}</small><p>{t("这里只显示已提交并重新载入的“纳入全文核对”决定。浏览器中的未提交修改不能申请 PDF 处理；提交完整清单后会再次核验本任务记录。", "Only persisted, reloaded include-for-full-text decisions appear here. Unsubmitted browser edits cannot request PDF processing; the current task record is checked again after a complete checklist is submitted.")}</p><For each={recordedIncluded()}>{(candidate) => <ActionButton size="sm" variant="secondary" onClick={() => props.onRequestFulltext?.(candidate)}>{t("为此候选选择授权 PDF", "Choose an authorized PDF for this candidate")} · {candidate.title}</ActionButton>}</For></section></Show>
-    </div>}</Show>
+      <footer>
+        <span>{!complete() ? t(`还有 ${pendingCandidates().length} 篇需要决定与理由。`, `${pendingCandidates().length} paper(s) still need a decision and reason.`)
+          : changes().length ? t(`草稿已填完，纳入 ${includedCount()} 篇。提交后登记完整清单。`, `Draft complete with ${includedCount()} included. Submit to record the checklist.`)
+          : t("完整清单已登记。", "The complete checklist is recorded.")}</span>
+        <ActionButton variant="primary" busy={busy()} busyLabel={t("处理中…", "Working…")} disabled={!complete() || !changes().length} onClick={() => void submit()}>{t("提交人工筛选决定", "Submit human screening decisions")}</ActionButton>
+      </footer>
+      <Show when={recordedIncluded().length > 0 && props.onRequestFulltext}><section class="screening-fulltext-intake"><small>{t("已登记的全文核对候选", "RECORDED FULL-TEXT CANDIDATES")}</small><For each={recordedIncluded()}>{(candidate) => <ActionButton size="sm" variant="secondary" disabled={busy()} onClick={() => props.onRequestFulltext?.(candidate)}>{t("为此候选选择授权 PDF", "Choose an authorized PDF for this candidate")} · {candidate.title}</ActionButton>}</For></section></Show>
+    </div></Show>
   </section>;
 }

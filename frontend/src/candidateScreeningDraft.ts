@@ -2,6 +2,15 @@ import type { CandidateScreening, CandidateScreeningCandidate, CandidateScreenin
 
 export type ScreeningDraft = Record<string, CandidateScreeningDecision>;
 
+export function hasScreeningDecision(decision?: CandidateScreeningDecision): boolean {
+  return Boolean(decision && decision.decision !== "unreviewed" && decision.reason_codes.length > 0);
+}
+
+export function sameScreeningDecision(a: CandidateScreeningDecision, b: CandidateScreeningDecision | undefined): boolean {
+  return Boolean(b && a.decision === b.decision && a.reason_codes.length === b.reason_codes.length
+    && a.reason_codes.every((code) => b.reason_codes.includes(code)));
+}
+
 export function screeningDraftForCandidates(screening: CandidateScreening): ScreeningDraft {
   const recorded = new Map(screening.decisions.map((item) => [item.document_id, item]));
   return Object.fromEntries(screening.candidates.map((candidate) => [candidate.document_id, recorded.get(candidate.document_id) ?? {
@@ -12,10 +21,12 @@ export function screeningDraftForCandidates(screening: CandidateScreening): Scre
 }
 
 export function isScreeningComplete(candidates: CandidateScreeningCandidate[], draft: ScreeningDraft): boolean {
-  return candidates.length > 0 && candidates.every((candidate) => {
-    const decision = draft[candidate.document_id];
-    return Boolean(decision && decision.decision !== "unreviewed" && decision.reason_codes.length > 0);
-  });
+  return candidates.length > 0 && candidates.every((candidate) => hasScreeningDecision(draft[candidate.document_id]));
+}
+
+export function screeningDraftChanges(screening: CandidateScreening, draft: ScreeningDraft): CandidateScreeningDecision[] {
+  const baseline = screeningDraftForCandidates(screening);
+  return screeningSubmission(screening.candidates, draft).filter((decision) => !sameScreeningDecision(decision, baseline[decision.document_id]));
 }
 
 /** Serialize exactly the candidates visible in this task, never stale decisions. */

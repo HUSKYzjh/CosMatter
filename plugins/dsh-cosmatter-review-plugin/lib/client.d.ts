@@ -8,6 +8,7 @@ export interface ScreeningTemplate {
     run_id: string;
     trust_status: string;
     candidate_count: number;
+    checklist_revision?: string;
     candidates: Array<Record<string, unknown>>;
     decisions: Array<Record<string, unknown>>;
 }
@@ -22,6 +23,6 @@ export declare class CosMatterReviewClient {
     readonly config: NormalizedConfig;
     constructor(config?: CosMatterReviewConfig, request?: typeof fetch);
     template(runIdValue: string, signal?: AbortSignal): Promise<ScreeningTemplate>;
-    record(runIdValue: string, decisions: CandidateDecision[], signal?: AbortSignal): Promise<ScreeningRecorded>;
+    record(runIdValue: string, decisions: CandidateDecision[], signal?: AbortSignal, revision?: string): Promise<ScreeningRecorded>;
     private fetchJson;
 }

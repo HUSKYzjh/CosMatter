@@ -126,6 +126,7 @@ class LocalMissionApi:
     _automatic_jobs: dict[str, Thread] = field(default_factory=dict, init=False, repr=False)
     _automatic_jobs_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _automatic_status_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    _candidate_screening_lock: Lock = field(default_factory=Lock, init=False, repr=False)
 
     @classmethod
     def from_project(cls) -> "LocalMissionApi":
@@ -875,8 +876,7 @@ class LocalMissionApi:
         run_dir, mission = self._active_mission(run_id)
         try:
             candidate_payload = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
-            existing = load_candidate_screening(run_dir / "candidate_screening.json", mission.mission_id)
-            template = existing if existing is not None and screening_matches_candidates(existing, candidate_payload) else candidate_screening_template(mission.mission_id, candidate_payload)
+            template = _current_screening(run_dir, mission.mission_id, candidate_payload)
             candidates = _screening_candidate_projection(candidate_payload)
         except (CandidateScreeningError, UiExportError, ValueError) as error:
             raise LocalApiError(str(error), 404) from error
@@ -884,6 +884,7 @@ class LocalMissionApi:
             "run_id": _api_safe_run_id(run_id),
             "trust_status": template["trust_status"],
             "candidate_count": len(candidates),
+            "checklist_revision": _screening_revision(template),
             "candidates": candidates,
             "decisions": template["decisions"],
         }
@@ -891,12 +892,23 @@ class LocalMissionApi:
     def record_candidate_screening(self, run_id: str, payload: object) -> dict[str, object]:
         """Persist a complete human screening review before full-text work."""
         run_dir, mission = self._active_mission(run_id)
-        try:
-            candidate_payload = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
-            artifact = candidate_screening_from_review(mission.mission_id, candidate_payload, _object_payload(payload))
-            write_candidate_screening(run_dir, artifact)
-        except (CandidateScreeningError, UiExportError, ValueError) as error:
-            raise LocalApiError(str(error)) from error
+        with self._candidate_screening_lock:
+            try:
+                candidate_payload = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
+                body = dict(_object_payload(payload))
+                if "checklist_revision" in body:
+                    revision = body.pop("checklist_revision")
+                    template = _current_screening(run_dir, mission.mission_id, candidate_payload)
+                    if revision != _screening_revision(template):
+                        raise LocalApiError("candidate screening checklist changed; reload it before reviewing", 409)
+                artifact = candidate_screening_from_review(mission.mission_id, candidate_payload, body)
+                write_candidate_screening(run_dir, artifact)
+            except LocalApiError:
+                raise
+            except ValueError as error:
+                raise LocalApiError(str(error)) from error
+            except OSError as error:
+                raise LocalApiError("candidate screening could not be saved locally", 503) from error
         counts: dict[str, int] = {}
         for decision in artifact["decisions"]:
             value = str(decision["decision"])
@@ -1840,6 +1852,18 @@ class LocalMissionApi:
             return run_dir, mission
         except (AuditPathError, UiExportError, RunControlError) as error:
             raise LocalApiError(str(error), 404) from error
+
+
+def _current_screening(run_dir: Path, mission_id: str, candidates: dict[str, Any]) -> dict[str, Any]:
+    existing = load_candidate_screening(run_dir / "candidate_screening.json", mission_id)
+    if existing is not None and screening_matches_candidates(existing, candidates):
+        return existing
+    return candidate_screening_template(mission_id, candidates)
+
+
+def _screening_revision(template: dict[str, Any]) -> str:
+    snapshot = {field: template[field] for field in ("mission_id", "candidate_fingerprint", "trust_status", "decisions")}
+    return hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def _recent_run_paths(root: Path) -> Iterator[tuple[int, str]]:
