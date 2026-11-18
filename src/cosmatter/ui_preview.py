@@ -134,6 +134,14 @@ def build_ui_preview_server(
             if run_id is not None:
                 self._api_json(lambda: api.source_parse_status(run_id) if api is not None else _api_disabled())
                 return
+            run_id = _api_run_id(path, "/api/runs/", "/source-markdown")
+            if run_id is not None:
+                self._api_artifact(lambda: api.fetched_source_markdown(run_id, _source_document_query(parsed.query)) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/source-map")
+            if run_id is not None:
+                self._api_json(lambda: api.fetched_source_map_context(run_id, _source_document_query(parsed.query)) if api is not None else _api_disabled())
+                return
             run_id = _api_run_id(path, "/api/runs/", "/pdf/tasks/cached")
             if run_id is not None:
                 self._api_json(lambda: api.pdf_tasks(run_id, refresh=False) if api is not None else _api_disabled())
@@ -213,13 +221,25 @@ def build_ui_preview_server(
             if run_id is not None:
                 self._api_json(lambda: api.record_pdf_source_map(run_id, self._json_body()) if api is not None else _api_disabled())
                 return
+            run_id = _api_run_id(path, "/api/runs/", "/source-map")
+            if run_id is not None:
+                self._api_json(lambda: api.record_fetched_source_map(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
             run_id = _api_run_id(path, "/api/runs/", "/pdf/material-facts")
             if run_id is not None:
                 self._api_json(lambda: api.record_pdf_material_facts(run_id, self._json_body()) if api is not None else _api_disabled())
                 return
+            run_id = _api_run_id(path, "/api/runs/", "/source-material-facts")
+            if run_id is not None:
+                self._api_json(lambda: api.record_pdf_material_facts(run_id, self._json_body(), fetched_source=True) if api is not None else _api_disabled())
+                return
             run_id = _api_run_id(path, "/api/runs/", "/pdf/evidence-card")
             if run_id is not None:
                 self._api_json(lambda: api.record_pdf_evidence_card(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/source-evidence-card")
+            if run_id is not None:
+                self._api_json(lambda: api.record_pdf_evidence_card(run_id, self._json_body(), fetched_source=True) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/pdf/doi")
             if run_id is not None:
@@ -456,6 +476,17 @@ def _api_disabled() -> object:
 
 def _legacy_external_dispatch_disabled() -> object:
     raise LocalApiError("legacy external dispatch is disabled; use the explicit authorization endpoint", 410)
+
+
+def _source_document_query(query: str) -> str:
+    try:
+        fields = parse_qs(query, strict_parsing=True, max_num_fields=1)
+    except ValueError as error:
+        raise LocalApiError("expected a source document identifier") from error
+    values = fields.get("document_id", [])
+    if len(values) != 1 or not values[0].strip() or len(values[0]) > 255:
+        raise LocalApiError("expected a source document identifier")
+    return values[0]
 
 
 def _api_run_id(path: str, prefix: str, suffix: str) -> str | None:

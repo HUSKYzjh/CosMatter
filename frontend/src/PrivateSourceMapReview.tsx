@@ -4,7 +4,7 @@ import { PrivateMaterialFactReview } from "./PrivateMaterialFactReview";
 import { PrivateEvidenceReview } from "./PrivateEvidenceReview";
 import { sourceMapTaskKey } from "./readerSourceIntake";
 import { shouldAutoLoadRecordedSourceMap } from "./sourceMapLoadRecovery";
-import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateSourceMapSegment, SourceMapRecordResult } from "./localApi";
+import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
 import { uiLanguage } from "./zh";
 import { safeOperationFeedback } from "./importFeedback";
 import { ActionButton, ActionLink } from "./uiPrimitives";
@@ -16,6 +16,7 @@ const emptySegment = (): DraftSegment => ({ locator: "", kind: "paragraph", quot
 
 export function PrivateSourceMapReview(props: {
   pdfTask: PdfTaskStatus | null;
+  fetchedSource?: SavedSourceParseTask | null;
   markdownUrl: string | null;
   onRecord?: (segments: PrivateSourceMapSegment[]) => Promise<SourceMapRecordResult>;
   onLoad?: () => Promise<SourceMapRecordResult>;
@@ -30,12 +31,14 @@ export function PrivateSourceMapReview(props: {
   const [loadingRecorded, setLoadingRecorded] = createSignal(false);
   const [loadAttemptedFor, setLoadAttemptedFor] = createSignal<string | null>(null);
   const [message, setMessage] = createSignal<string | null>(null);
-  let activeTaskKey = sourceMapTaskKey(props.pdfTask);
-  const ready = () => Boolean(props.pdfTask?.markdown_ready && props.pdfTask.audit_state === "done" && props.markdownUrl);
-  const sourceMapRecorded = () => Boolean(recorded() || props.pdfTask?.source_map_review_status === "recorded");
+  const reviewKey = () => props.fetchedSource ? props.markdownUrl : sourceMapTaskKey(props.pdfTask);
+  let activeTaskKey = reviewKey();
+  const ready = () => Boolean(props.markdownUrl && (props.fetchedSource?.markdown_ready || (props.pdfTask?.markdown_ready && props.pdfTask.audit_state === "done")));
+  const savedSegmentCount = () => props.fetchedSource ? props.fetchedSource.source_map_segment_count ?? 0 : props.pdfTask?.source_map_segment_count ?? 0;
+  const sourceMapRecorded = () => Boolean(recorded() || (props.fetchedSource ? savedSegmentCount() > 0 : props.pdfTask?.source_map_review_status === "recorded"));
   const valid = () => segments().length > 0 && segments().every((segment) => segment.locator.trim() && segment.quote.trim()) && confirmed() && Boolean(props.onRecord);
   const completeDraftSegmentCount = () => segments().filter((segment) => Boolean(segment.locator.trim() && segment.quote.trim())).length;
-  const recordedSegmentCount = () => recorded()?.segments.length ?? props.pdfTask?.source_map_segment_count ?? 0;
+  const recordedSegmentCount = () => recorded()?.segments.length ?? savedSegmentCount();
   const sourceMapVector = () => [
     { id: "markdown", label: tr("私有 Markdown", "PRIVATE MARKDOWN"), value: ready() ? tr("已就绪", "ready") : tr("等待解析", "waiting"), ready: ready(), detail: ready() ? tr("仅在本机人工核对", "reviewed locally only") : tr("需等待私有解析完成", "wait for private parsing") },
     { id: "draft", label: tr("来源泊位", "SOURCE BERTHS"), value: sourceMapRecorded() ? `${recordedSegmentCount()}` : `${completeDraftSegmentCount()}/${segments().length}`, ready: sourceMapRecorded() || (segments().length > 0 && completeDraftSegmentCount() === segments().length), detail: sourceMapRecorded() ? tr("已登记来源定位", "registered source locations") : tr("定位符和短引文需逐条核对", "verify locator and short quote for each") },
@@ -45,7 +48,7 @@ export function PrivateSourceMapReview(props: {
   const update = (index: number, field: keyof DraftSegment, value: string) => setSegments((current) => current.map((segment, itemIndex) => itemIndex === index ? { ...segment, [field]: value } : segment));
 
   createEffect(() => {
-    const nextTaskKey = sourceMapTaskKey(props.pdfTask);
+    const nextTaskKey = reviewKey();
     if (nextTaskKey === activeTaskKey) return;
     activeTaskKey = nextTaskKey;
     setSegments([emptySegment()]);
@@ -59,42 +62,42 @@ export function PrivateSourceMapReview(props: {
 
   const loadRecordedSourceMap = async () => {
     const load = props.onLoad;
-    const taskKey = sourceMapTaskKey(props.pdfTask);
+    const taskKey = reviewKey();
     if (!load || !taskKey || !ready() || !sourceMapRecorded() || recorded() || loadingRecorded()) return;
     setLoadAttemptedFor(taskKey);
     setMessage(null);
     setLoadingRecorded(true);
     try {
       const result = await load();
-      if (taskKey === sourceMapTaskKey(props.pdfTask)) setRecorded(result);
+      if (taskKey === reviewKey()) setRecorded(result);
     } catch (error) {
-      if (taskKey === sourceMapTaskKey(props.pdfTask)) setMessage(safeOperationFeedback(error, tr("无法读取已登记的 Source Map；当前输入未被修改。", "Unable to load the recorded Source Map; current input was not changed.")));
+      if (taskKey === reviewKey()) setMessage(safeOperationFeedback(error, tr("无法读取已登记的 Source Map；当前输入未被修改。", "Unable to load the recorded Source Map; current input was not changed.")));
     } finally {
-      if (taskKey === sourceMapTaskKey(props.pdfTask)) setLoadingRecorded(false);
+      if (taskKey === reviewKey()) setLoadingRecorded(false);
     }
   };
 
   createEffect(() => {
-    const taskKey = sourceMapTaskKey(props.pdfTask);
+    const taskKey = reviewKey();
     if (!shouldAutoLoadRecordedSourceMap({ taskKey, hasLoader: Boolean(props.onLoad), ready: ready(), sourceMapRecorded: sourceMapRecorded(), hasRecordedSegments: Boolean(recorded()), loading: loadingRecorded(), attemptedFor: loadAttemptedFor() })) return;
     void loadRecordedSourceMap();
   });
 
   const submit = async () => {
     if (busy() || !valid() || !props.onRecord) return;
-    const taskKey = sourceMapTaskKey(props.pdfTask);
+    const taskKey = reviewKey();
     if (!taskKey) return;
     setBusy(true);
     setMessage(null);
     try {
       const result = await props.onRecord(segments().map((segment) => ({ locator: segment.locator.trim(), kind: segment.kind, quote: segment.quote.trim() })));
-      if (taskKey !== sourceMapTaskKey(props.pdfTask)) return;
+      if (taskKey !== reviewKey()) return;
       setRecorded(result);
       setMessage(tr("已登记 Source Map。它是人工核对后的来源定位，不是 EvidenceCard；现在可登记与其绑定的材料事实。", "Source Map recorded. It is human-reviewed provenance, not an EvidenceCard; you may now register material facts bound to it."));
     } catch (error) {
-      if (taskKey === sourceMapTaskKey(props.pdfTask)) setMessage(safeOperationFeedback(error, tr("无法登记来源定位；请检查段落范围、短片段和人工确认。", "Unable to record source locations. Check the locator range, short excerpts, and human confirmation.")));
+      if (taskKey === reviewKey()) setMessage(safeOperationFeedback(error, tr("无法登记来源定位；请检查段落范围、短片段和人工确认。", "Unable to record source locations. Check the locator range, short excerpts, and human confirmation.")));
     } finally {
-      if (taskKey === sourceMapTaskKey(props.pdfTask)) setBusy(false);
+      if (taskKey === reviewKey()) setBusy(false);
     }
   };
 
@@ -111,7 +114,7 @@ export function PrivateSourceMapReview(props: {
         <div class="source-map-controls"><ActionButton class="quiet-action" size="sm" variant="quiet" disabled={segments().length >= 12} onClick={() => setSegments((current) => [...current, emptySegment()])}>{tr("添加片段", "Add excerpt")}</ActionButton><label class="source-map-confirm"><input type="checkbox" checked={confirmed()} onChange={(event) => setConfirmed(event.currentTarget.checked)} />{tr("我已在本地 Markdown 中核对以上定位符和短引文，且同意仅将它们写入本地审计工件。", "I verified these locators and excerpts in local Markdown and consent to writing only them to the local audit artifact.")}</label><ActionButton class="primary-action" variant="primary" busy={busy()} busyLabel={tr("登记中…", "Recording…")} disabled={!valid()} onClick={() => void submit()}>{tr("登记人工 Source Map", "Record human Source Map")}</ActionButton></div>
       </></Show>
       <Show when={message()}>{(value) => <p class="source-map-message">{value()}</p>}</Show>
-      <Show when={sourceMapRecorded()}><section class="source-map-recorded"><small>{tr("已登记来源定位", "RECORDED SOURCE LOCATIONS")}</small><p>{tr(`服务端已确认 ${props.pdfTask?.source_map_segment_count ?? 0} 条来源定位；仅显示定位符和类型，不显示全文或短引文。`, `${props.pdfTask?.source_map_segment_count ?? 0} source locations are confirmed by the service. Only locators and kinds are shown; full text and excerpts stay private.`)}</p><Show when={loadingRecorded()}><p class="empty-copy">{tr("正在读取已登记片段…", "Loading recorded segments…")}</p></Show><Show when={sourceMapRecorded() && !recorded() && !loadingRecorded()}><section class="source-map-recovery"><strong>{tr("已登记的来源定位尚未载入", "Recorded source locations are not loaded")}</strong><p>{tr("在来源定位重新载入前，材料事实与 EvidenceCard 登记保持锁定，避免以不完整工件继续核对。", "Material-fact and EvidenceCard registration stay locked until the recorded source locations are reloaded, preventing review from incomplete artifacts.")}</p><ActionButton class="quiet-action" size="sm" variant="secondary" busy={loadingRecorded()} busyLabel={tr("正在重新读取…", "Reloading…")} disabled={!props.onLoad} onClick={() => { setLoadAttemptedFor(null); void loadRecordedSourceMap(); }}>{tr("重新读取已登记定位", "Reload recorded locations")}</ActionButton></section></Show><Show when={recorded()}>{(result) => <><dl class="recorded-source-map"><For each={result().segments}>{(segment) => <div><dt>{segment.segment_id}</dt><dd>{segment.kind} · {segment.locator}</dd></div>}</For></dl><section class="source-map-followups" aria-label={tr("后续人工核对步骤", "Follow-up human review steps")}><details class="source-map-followup" open><summary><span>{tr("步骤 02 / 登记结构化材料事实（建议）", "STEP 02 / Register structured material facts (recommended)")}</span><small>{tr("仅登记来源片段明确支持的观察", "Record only observations explicitly supported by source excerpts")}</small></summary><PrivateMaterialFactReview segments={result().segments} onRecord={props.onRecordFacts} /></details><details class="source-map-followup" open={props.materialFactsRecorded}><summary><span>{tr("步骤 03 / 人工接受 EvidenceCard", "STEP 03 / Human acceptance of an EvidenceCard")}</span><small>{props.materialFactsRecorded ? tr("已登记材料事实；可继续核对本条证据", "Material facts are recorded; continue to verify this evidence") : tr("可在核对主张与六项条件后继续；不会推断缺失事实", "Continue only after checking the claim and six conditions; missing facts are never inferred")}</small></summary><PrivateEvidenceReview pdfTask={props.pdfTask} segments={result().segments} onRecord={props.onRecordEvidence} /></details></section></>}</Show></section></Show>
+      <Show when={sourceMapRecorded()}><section class="source-map-recorded"><small>{tr("已登记来源定位", "RECORDED SOURCE LOCATIONS")}</small><p>{tr(`服务端已确认 ${recordedSegmentCount()} 条来源定位；仅显示定位符和类型，不显示全文或短引文。`, `${recordedSegmentCount()} source locations are confirmed by the service. Only locators and kinds are shown; full text and excerpts stay private.`)}</p><Show when={loadingRecorded()}><p class="empty-copy">{tr("正在读取已登记片段…", "Loading recorded segments…")}</p></Show><Show when={sourceMapRecorded() && !recorded() && !loadingRecorded()}><section class="source-map-recovery"><strong>{tr("已登记的来源定位尚未载入", "Recorded source locations are not loaded")}</strong><p>{tr("在来源定位重新载入前，材料事实与 EvidenceCard 登记保持锁定，避免以不完整工件继续核对。", "Material-fact and EvidenceCard registration stay locked until the recorded source locations are reloaded, preventing review from incomplete artifacts.")}</p><ActionButton class="quiet-action" size="sm" variant="secondary" busy={loadingRecorded()} busyLabel={tr("正在重新读取…", "Reloading…")} disabled={!props.onLoad} onClick={() => { setLoadAttemptedFor(null); void loadRecordedSourceMap(); }}>{tr("重新读取已登记定位", "Reload recorded locations")}</ActionButton></section></Show><Show when={recorded()}>{(result) => <><dl class="recorded-source-map"><For each={result().segments}>{(segment) => <div><dt>{segment.segment_id}</dt><dd>{segment.kind} · {segment.locator}</dd></div>}</For></dl><section class="source-map-followups" aria-label={tr("后续人工核对步骤", "Follow-up human review steps")}><details class="source-map-followup" open><summary><span>{tr("步骤 02 / 登记结构化材料事实（建议）", "STEP 02 / Register structured material facts (recommended)")}</span><small>{tr("仅登记来源片段明确支持的观察", "Record only observations explicitly supported by source excerpts")}</small></summary><PrivateMaterialFactReview segments={result().segments} onRecord={props.onRecordFacts} /></details><details class="source-map-followup" open={props.materialFactsRecorded}><summary><span>{tr("步骤 03 / 人工接受 EvidenceCard", "STEP 03 / Human acceptance of an EvidenceCard")}</span><small>{props.materialFactsRecorded ? tr("已登记材料事实；可继续核对本条证据", "Material facts are recorded; continue to verify this evidence") : tr("可在核对主张与六项条件后继续；不会推断缺失事实", "Continue only after checking the claim and six conditions; missing facts are never inferred")}</small></summary><PrivateEvidenceReview pdfTask={props.pdfTask} fetchedSourceLinked={Boolean(props.fetchedSource)} segments={result().segments} onRecord={props.onRecordEvidence} /></details></section></>}</Show></section></Show>
     </Show>
   </section>;
 }

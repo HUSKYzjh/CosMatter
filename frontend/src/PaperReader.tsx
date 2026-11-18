@@ -12,7 +12,7 @@ import { paperPdfIntake } from "./paperPdfIntake";
 import { materialFactsForSelectedPaper } from "./readerMaterialFacts";
 import { researchExtensionReadiness } from "./researchExtensionReadiness";
 import { ReadOnlyPreviewContext } from "./ReadOnlyPreviewContext";
-import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateSourceMapSegment, SourceMapRecordResult } from "./localApi";
+import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
 import { ActionButton } from "./uiPrimitives";
 import { uiLanguage } from "./zh";
 
@@ -27,7 +27,7 @@ const EN: Record<string, string> = {
   "当前已接受 EvidenceCard 尚未全部通过精确来源映射审计。": "Accepted EvidenceCards have not all passed the exact source-map provenance audit yet.",
   "证据核对": "Evidence verification",
   "从文献选择到来源定位": "From paper selection to source location",
-  "本页不加载全文或调用模型；仅在已筛选候选、已定位片段与人工确认同时满足时，才可在本机接受 EvidenceCard。": "This page neither loads full text nor calls a model. An EvidenceCard can be accepted locally only after candidate screening, source location, and human confirmation.",
+  "下载本机 Markdown，核对短引文和行号，再人工确认来源定位。": "Download local Markdown, check the excerpts and line numbers, and confirm the source locations.",
   "证据核对步骤": "Evidence-verification steps",
   "选择文献": "Select paper",
   "尚未选择": "Not selected",
@@ -70,13 +70,15 @@ const EN: Record<string, string> = {
 };
 const tr = (zhText: string, enText?: string) => uiLanguage() === "zh" ? zhText : enText ?? EN[zhText] ?? zhText;
 
-export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSession; pdfTask: PdfTaskStatus | null; screeningAllowsSourceReview: boolean; markdownUrl: string | null; onRecordSourceMap?: (segments: PrivateSourceMapSegment[]) => Promise<SourceMapRecordResult>; onLoadSourceMap?: () => Promise<SourceMapRecordResult>; onRecordMaterialFacts?: (facts: HumanMaterialFactInput[]) => Promise<void>; onRecordEvidence?: (input: HumanEvidenceReviewInput) => Promise<EvidenceReviewResult>; readOnlyPreview?: boolean; onExitPreview?: () => void; onNavigate: (view: View) => void; onSelectEvidence: (evidence: EvidenceCard) => boolean }) {
+export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSession; pdfTask: PdfTaskStatus | null; fetchedSource?: SavedSourceParseTask | null; screeningAllowsSourceReview: boolean; markdownUrl: string | null; onRecordSourceMap?: (segments: PrivateSourceMapSegment[]) => Promise<SourceMapRecordResult>; onLoadSourceMap?: () => Promise<SourceMapRecordResult>; onRecordMaterialFacts?: (facts: HumanMaterialFactInput[]) => Promise<void>; onRecordEvidence?: (input: HumanEvidenceReviewInput) => Promise<EvidenceReviewResult>; readOnlyPreview?: boolean; onExitPreview?: () => void; onNavigate: (view: View) => void; onSelectEvidence: (evidence: EvidenceCard) => boolean }) {
   const [note, setNote] = createSignal("");
   const selected = createMemo(() => selectedEvidence(props.bundle, props.session));
   const linkedEvidence = createMemo(() => evidenceForPaper(props.bundle, props.session.selectedNode));
   const intake = createMemo(() => readerSourceIntake(props.bundle, props.session, props.pdfTask));
   const currentMaterialFacts = createMemo(() => materialFactsForSelectedPaper(props.bundle, props.session));
-  const privatePdfState = createMemo(() => paperPdfIntake(props.pdfTask, props.session.selectedNode).state);
+  const privatePdfState = createMemo(() => props.fetchedSource
+    ? props.fetchedSource.source_map_segment_count ? "evidence-review" : "source-map"
+    : paperPdfIntake(props.pdfTask, props.session.selectedNode).state);
   const sourceAction = createMemo(() => readerSourceAction({ hasLinkedEvidence: intake().hasLinkedEvidence, hasMatchingPrivatePdf: ["source-map", "evidence-review"].includes(privatePdfState()), privatePdfParsing: privatePdfState() === "parsing", privatePdfFailed: privatePdfState() === "failed", hasOtherPaperPdf: Boolean(intake().attachedDocumentId) && !intake().matchingPrivatePdf, screeningAllowsSourceReview: props.screeningAllowsSourceReview }));
   const linkedSelected = createMemo(() => evidenceMatchesPaper(props.bundle, props.session.selectedNode, selected()) ? selected() : null);
   const gate = createMemo(() => evidenceGate(props.bundle, props.session));
@@ -84,14 +86,15 @@ export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSe
   const reason = createMemo(() => ({ paper: tr("先从文献星图选择一篇论文。"), evidence: linkedEvidence().length ? tr("从与当前论文显式关联的已接受 EvidenceCard 中选择一张。") : tr("该论文尚无已审核的来源映射与 EvidenceCard 关联。"), "source-link": tr("所选 EvidenceCard 没有与当前论文对应的已审核来源映射。"), locator: tr("所选 EvidenceCard 缺少 document ID 或来源定位。"), "source-map": tr("所选 EvidenceCard 对应文献尚无可审计的来源映射片段。"), "provenance-audit": tr("当前已接受 EvidenceCard 尚未全部通过精确来源映射审计。") }[gate().reason ?? "evidence"]));
   const proofChain = createMemo(() => {
     const selectedPaper = props.session.selectedNode;
-    const hasSourceAnchor = intake().hasLinkedEvidence || intake().sourceMapRecorded;
+    const sourceMapRecorded = intake().sourceMapRecorded || Boolean(props.fetchedSource?.source_map_segment_count);
+    const hasSourceAnchor = intake().hasLinkedEvidence || sourceMapRecorded;
     const sourceRoute = sourceAction();
     const sourceTarget: View | null = sourceRoute === "await_private_parsing" ? "workflow" : ["choose_authorized_pdf", "retry_authorized_pdf"].includes(sourceRoute) ? "graph" : null;
-    const sourceValue = intake().hasLinkedEvidence ? tr("导入溯源", "imported link") : intake().sourceMapRecorded ? tr("已登记", "recorded") : sourceRoute === "await_private_parsing" ? tr("解析中", "parsing") : sourceRoute === "record_source_locations" ? tr("待定位", "locate") : tr("待接入", "pending");
-    const sourceDetail = intake().hasLinkedEvidence ? tr("图谱已登记论文—来源关系", "graph records paper-to-source relation") : intake().sourceMapRecorded ? tr("人工来源定位已登记", "human source locations recorded") : sourceRoute === "await_private_parsing" ? tr("返回舰桥查看私有解析", "return to bridge for private parsing") : sourceRoute === "record_source_locations" ? tr("在本页登记人工来源定位", "record human source locations on this page") : tr("需先在星图完成授权全文路线", "complete authorised full-text route in map first");
+    const sourceValue = intake().hasLinkedEvidence ? tr("导入溯源", "imported link") : sourceMapRecorded ? tr("已登记", "recorded") : sourceRoute === "await_private_parsing" ? tr("解析中", "parsing") : sourceRoute === "record_source_locations" ? tr("待定位", "locate") : tr("待接入", "pending");
+    const sourceDetail = intake().hasLinkedEvidence ? tr("图谱已登记论文—来源关系", "graph records paper-to-source relation") : sourceMapRecorded ? tr("人工来源定位已登记", "human source locations recorded") : sourceRoute === "await_private_parsing" ? tr("返回舰桥查看私有解析", "return to bridge for private parsing") : sourceRoute === "record_source_locations" ? tr("在本页登记人工来源定位", "record human source locations on this page") : tr("需先在星图完成授权全文路线", "complete authorised full-text route in map first");
     return [
       { id: "paper", label: tr("论文舰位", "PAPER STATION"), value: selectedPaper ? tr("已选择", "selected") : tr("待选择", "pending"), detail: selectedPaper?.label ?? tr("从文献星图选择候选论文", "select a candidate paper in the map"), ready: Boolean(selectedPaper), target: "graph" as View },
-      { id: "fulltext", label: tr("授权全文", "AUTHORISED FULL TEXT"), value: props.screeningAllowsSourceReview ? tr("已纳入", "included") : intake().hasLinkedEvidence ? tr("导入工件", "imported") : tr("待人工筛选", "screening pending"), detail: props.screeningAllowsSourceReview ? tr("可走受控私有 PDF 路线", "eligible for controlled private PDF route") : tr("筛选决定不是科学证据", "screening is not scientific evidence"), ready: props.screeningAllowsSourceReview || intake().hasLinkedEvidence, target: props.screeningAllowsSourceReview ? "graph" as View : null },
+      { id: "fulltext", label: tr("授权全文", "AUTHORISED FULL TEXT"), value: props.screeningAllowsSourceReview ? tr("已纳入", "included") : intake().hasLinkedEvidence ? tr("导入工件", "imported") : tr("待人工筛选", "screening pending"), detail: props.fetchedSource ? tr("本机 Markdown 已就绪", "local Markdown ready") : props.screeningAllowsSourceReview ? tr("可关联授权 PDF", "can link an authorised PDF") : tr("在文献星图登记筛选决定", "record the screening decision in the map"), ready: props.screeningAllowsSourceReview || intake().hasLinkedEvidence, target: props.screeningAllowsSourceReview ? "graph" as View : null },
       { id: "source", label: tr("来源泊位", "SOURCE BERTH"), value: sourceValue, detail: sourceDetail, ready: hasSourceAnchor, target: sourceTarget },
       { id: "evidence", label: tr("EvidenceCard", "EVIDENCECARD"), value: linkedSelected() ? linkedSelected()!.evidenceId : linkedEvidence().length ? tr("待选择", "choose") : tr("待接受", "pending"), detail: linkedSelected() ? `${linkedSelected()!.provenance.documentId} · ${linkedSelected()!.provenance.locator}` : tr("仅显示与当前论文显式关联的已接受卡片", "only accepted cards explicitly linked to this paper appear"), ready: Boolean(linkedSelected()), target: null },
       { id: "horizon", label: tr("研究拓展门", "HORIZON GATE"), value: gate().ready ? tr("可进入", "ready") : tr("未解锁", "locked"), detail: gate().ready ? comparison().ready ? tr("可继续查看跨文献比较边界", "may inspect cross-paper comparison boundary") : tr("来源链已完整；跨文献比较另有门禁", "source chain is complete; cross-paper comparison has a separate gate") : reason(), ready: gate().ready, target: gate().ready ? "horizon" as View : null },
@@ -100,7 +103,7 @@ export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSe
 
   return <main class="discovery-stage reader-stage">
     <FleetDecoration kind="reader" state={fleetVisualState(props.bundle, "reader")} />
-    <header class="stage-header"><div><p class="stage-kicker">COSMATTER / {tr("证据核对")}</p><h1>{tr("从文献选择到来源定位")}</h1><p>{tr("本页不加载全文或调用模型；仅在已筛选候选、已定位片段与人工确认同时满足时，才可在本机接受 EvidenceCard。")}</p></div></header>
+    <header class="stage-header"><div><p class="stage-kicker">COSMATTER / {tr("证据核对")}</p><h1>{tr("从文献选择到来源定位")}</h1><p>{tr("下载本机 Markdown，核对短引文和行号，再人工确认来源定位。")}</p></div></header>
     <Show when={props.readOnlyPreview}><ReadOnlyPreviewContext locale={uiLanguage()} onExit={props.onExitPreview} /></Show>
     <ol class="verification-steps" aria-label={tr("证据核对步骤")}><li classList={{ complete: Boolean(props.session.selectedNode) }}><span>01</span><strong>{tr("选择文献")}</strong><small>{props.session.selectedNode ? props.session.selectedNode.label : tr("尚未选择")}</small></li><li classList={{ complete: intake().sourceMapRecorded || intake().hasLinkedEvidence }}><span>02</span><strong>{tr("登记来源定位")}</strong><small>{intake().hasLinkedEvidence ? tr("已存在图谱溯源关联") : intake().sourceMapRecorded ? tr("来源定位已登记，待人工登记材料事实与 EvidenceCard") : sourceAction() === "await_private_parsing" ? tr("当前授权 PDF 正在私有解析；请在舰桥查看状态", "The authorised PDF is parsing privately; inspect status in the bridge") : sourceAction() === "retry_authorized_pdf" ? tr("当前授权 PDF 解析失败；请返回星图重新选择", "The authorised PDF failed to parse; choose it again in the map") : sourceAction() === "record_source_locations" ? tr("当前授权 PDF 已关联，等待人工登记来源定位") : sourceAction() === "choose_authorized_pdf" ? tr("已纳入全文核对；请在星图选择授权 PDF", "Included for full-text review; choose an authorised PDF in the map") : props.session.selectedNode ? tr("等待与当前论文匹配的授权 PDF 或导入证据") : tr("先选择论文")}</small></li><li classList={{ complete: gate().ready }}><span>03</span><strong>{tr("选择并核对 EvidenceCard")}</strong><small>{gate().ready ? comparison().ready ? tr("当前会话可进入研究拓展") : tr("当前证据链已就绪；跨文献比较另有门禁", "Current evidence chain is ready; cross-paper comparison has a separate gate.") : reason()}</small></li></ol>
     <section class="reader-proof-chain" aria-label={tr("当前论文的证明链", "Proof chain for the current paper")}>
@@ -111,10 +114,10 @@ export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSe
     <Show when={props.session.selectedNode} fallback={<section class="reader-empty"><h2>{tr("尚未选择待核对论文")}</h2><p>{tr("先在文献星图选择一篇候选论文；独立 PDF 可用于私有 Markdown 与书目导航，但未与人工筛选候选关联时，不能登记 Source Map 或 EvidenceCard。")}</p><ActionButton variant="primary" onClick={() => props.onNavigate("graph")}>{tr("返回文献星图")}</ActionButton></section>}>
       <section class="reader-selection"><div><small>{tr("当前论文")}</small><strong>{props.session.selectedNode!.label}</strong><span>{props.session.selectedNode!.source ?? tr("本地工件")}</span></div><ActionButton size="sm" variant="secondary" onClick={() => props.onNavigate("graph")}>{tr("更换论文")}</ActionButton></section>
       <Show when={props.bundle.materialFacts && !currentMaterialFacts()}><section class="reader-intake-note"><small>{tr("其他文献的事实已隐藏", "FACTS FOR ANOTHER PAPER HIDDEN")}</small><p>{tr("本任务存在与当前论文不匹配的已登记材料事实；为避免跨文献混用，本页不会显示它们。请在星图选择对应论文后再核对。", "This mission has recorded material facts for a paper other than the current selection. They are hidden here to prevent cross-paper mixing; select the matching paper in the map to review them.")}</p><ActionButton size="sm" variant="secondary" onClick={() => props.onNavigate("graph")}>{tr("返回文献星图", "Return to literature map")}</ActionButton></section></Show>
-      <Show when={sourceAction() === "record_source_locations"}>
+      <Show when={sourceAction() === "record_source_locations" || Boolean(props.fetchedSource)}>
         <details class="reader-source-intake" open={!intake().hasLinkedEvidence}>
-          <summary>{tr("步骤 02 / 从当前授权 PDF 登记来源、材料事实与 EvidenceCard", "STEP 02 / Register source, material facts, and EvidenceCard from the current authorised PDF")}</summary>
-          <PrivateSourceMapReview pdfTask={props.pdfTask} markdownUrl={props.markdownUrl} onRecord={props.onRecordSourceMap} onLoad={props.onLoadSourceMap} onRecordFacts={props.onRecordMaterialFacts} materialFactsRecorded={Boolean(currentMaterialFacts()?.facts.length)} onRecordEvidence={props.onRecordEvidence} />
+          <summary>{tr("步骤 02 / 从本机 Markdown 登记来源、材料事实与 EvidenceCard", "STEP 02 / Register source locations, material facts and EvidenceCards from local Markdown")}</summary>
+          <PrivateSourceMapReview pdfTask={props.pdfTask} fetchedSource={props.fetchedSource} markdownUrl={props.markdownUrl} onRecord={props.onRecordSourceMap} onLoad={props.onLoadSourceMap} onRecordFacts={props.onRecordMaterialFacts} materialFactsRecorded={Boolean(currentMaterialFacts()?.facts.length)} onRecordEvidence={props.onRecordEvidence} />
         </details>
       </Show>
       <Show when={sourceAction() === "await_private_parsing"}>

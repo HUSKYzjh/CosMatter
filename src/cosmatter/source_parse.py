@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 from .mineru import MinerUTask
@@ -97,6 +98,47 @@ def private_task_id_for_document(run_dir: Path, *, mission_id: str, document_id:
     if not task_id or _task_digest(task_id) != task["task_id"]:
         raise SourceParseArtifactError("private MinerU task identifier does not match the run hash")
     return task_id
+
+
+def fetched_markdown_receipt(task: dict[str, Any], receipts: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Find the latest successful output receipt for this exact source task."""
+    document_digest = hashlib.sha256(task["document_id"].strip().encode("utf-8")).hexdigest()
+    return next((receipt for receipt in reversed(receipts)
+                 if receipt["operation"] == "source_parse_output_fetch"
+                 and 200 <= receipt["status_code"] < 300
+                 and receipt["document_id_sha256"] == document_digest
+                 and receipt["task_id_sha256"] == task["task_id"]
+                 and receipt["source_url_sha256"] == task["source_url_sha256"]
+                 and receipt["model_version"] == task["model_version"].strip()), None)
+
+
+def fetched_markdown_path(run_dir: Path, mission_id: str, receipt: dict[str, Any]) -> Path:
+    identity = (run_dir.name, mission_id, receipt["document_id_sha256"], receipt["source_url_sha256"],
+                receipt["task_id_sha256"], receipt["source_markdown_sha256"])
+    key = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return private_root() / "mineru_fetched_markdown" / f"{key}.md"
+
+
+def write_fetched_markdown(run_dir: Path, mission_id: str, receipt: dict[str, Any], content: bytes) -> None:
+    """Publish a private local copy atomically, before recording its receipt."""
+    path = fetched_markdown_path(run_dir, mission_id, receipt)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = NamedTemporaryFile(dir=path.parent, delete=False)
+    staged = Path(handle.name)
+    try:
+        with handle:
+            handle.write(content)
+        staged.replace(path)
+    finally:
+        staged.unlink(missing_ok=True)
+
+
+def read_fetched_markdown(path: Path, receipt: dict[str, Any]) -> bytes:
+    with path.open("rb") as handle:
+        content = handle.read(receipt["source_markdown_byte_count"] + 1)
+    if len(content) != receipt["source_markdown_byte_count"] or hashlib.sha256(content).hexdigest() != receipt["source_markdown_sha256"]:
+        raise SourceParseArtifactError("fetched Markdown does not match its provider receipt")
+    return content
 
 
 def migrate_legacy_source_parse_task_ids(run_dir: Path, *, mission_id: str) -> int:

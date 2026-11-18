@@ -645,7 +645,8 @@ class LocalMissionApiTests(unittest.TestCase):
                 ledger.write_text(json.dumps(payload), encoding="utf-8")
                 snapshot = self.api.source_parse_status("live_001")
                 self.assertEqual(snapshot["mission_id"], mission["mission_id"])
-                self.assertEqual(snapshot["tasks"], [{"document_id": "doc-1", "state": state}])
+                self.assertEqual(snapshot["tasks"], [{"document_id": "doc-1", "state": state,
+                                                      "markdown_ready": False, "source_map_segment_count": 0}])
                 with self.assertRaises(LocalApiError) as rejected:
                     self.api.create_pdf_run({"run_id": "live_001", "candidate_document_id": "doc-1", "consent": True},
                                             "authorized.pdf", b"%PDF-1.7 synthetic")

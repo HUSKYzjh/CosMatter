@@ -45,15 +45,18 @@ export function CandidateFulltextQueue(props: {
             choose_pdf: t("待选择 PDF", "PDF needed"),
             retry_pdf: t("上次解析失败", "Previous parse failed"),
             open_reader: t("本机 Markdown 就绪", "Local Markdown ready"),
+            recorded_reader: row.saved?.source_map_segment_count ? t("已登记来源定位", "Source locations recorded") : t("本机 Markdown 就绪", "Local Markdown ready"),
             open_bridge: t("本机 PDF 已关联", "Local PDF linked"),
             recorded_active: row.saved?.state === "running" ? t("来源解析中", "Source parsing") : t("来源解析排队中", "Source parse pending"),
             recorded_done: t("来源解析完成", "Source parse complete"),
           };
+          const readerAction = { label: t("进入阅读页", "Open reader"), run: () => { if (row.paper) props.openReader(row.paper); } };
           const actions = {
             choose_pdf: { label: t("选择授权 PDF", "Choose authorised PDF"), run: () => props.choosePdf(row.candidate) },
             retry_pdf: { label: t("重新选择授权 PDF", "Choose authorised PDF again"), run: () => props.choosePdf(row.candidate) },
             open_bridge: { label: t("查看 PDF 状态", "View PDF status"), run: () => { if (row.paper) props.openBridge(row.paper); } },
-            open_reader: { label: t("进入阅读页", "Open reader"), run: () => { if (row.paper) props.openReader(row.paper); } },
+            open_reader: readerAction,
+            recorded_reader: readerAction,
           };
           const availableAction = row.action === "recorded_active" || row.action === "recorded_done" ? null : actions[row.action];
           return <li>

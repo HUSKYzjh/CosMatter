@@ -18,6 +18,7 @@ const numericOrBlank = (value: string): number | "" => {
 
 export function PrivateEvidenceReview(props: {
   pdfTask: PdfTaskStatus | null;
+  fetchedSourceLinked?: boolean;
   segments: RecordedSourceMapSegment[];
   onRecord?: (input: HumanEvidenceReviewInput) => Promise<EvidenceReviewResult>;
 }) {
@@ -29,7 +30,7 @@ export function PrivateEvidenceReview(props: {
   const [confirmed, setConfirmed] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [message, setMessage] = createSignal<string | null>(null);
-  const candidateLinked = () => Boolean(props.pdfTask?.candidate_document_id);
+  const candidateLinked = () => Boolean(props.fetchedSourceLinked || props.pdfTask?.candidate_document_id);
   const conditionsText = createMemo(() => JSON.stringify({
     sample_form: conditions().sample_form.trim(),
     strain_percent: numericOrBlank(conditions().strain_percent),

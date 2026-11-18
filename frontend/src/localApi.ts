@@ -379,7 +379,12 @@ export const PDF_DOI_STATUSES = ["pending", "resolved", "needs_human_doi", "huma
 export type PdfDoiStatus = typeof PDF_DOI_STATUSES[number];
 export interface PdfRunResult extends LiveMission { document_id: string; candidate_document_id?: string | null; doi_status: PdfDoiStatus; state: PdfTaskState; }
 export interface PdfTaskStatus { document_id: string; candidate_document_id?: string | null; audit_document_id: string; audit_state: "pending" | "running" | "done" | "failed"; file_name: string; state: PdfTaskState; doi: string | null; doi_status: PdfDoiStatus; markdown_ready: boolean; source_map_review_status: "absent" | "recorded" | "invalid"; source_map_segment_count: number; error?: string | null; trust_status: string; }
-export interface SavedSourceParseTask { document_id: string; state: "pending" | "running" | "done" | "failed"; }
+export interface SavedSourceParseTask {
+  document_id: string;
+  state: "pending" | "running" | "done" | "failed";
+  markdown_ready?: boolean;
+  source_map_segment_count?: number;
+}
 export type SavedSourceParseHealth = "idle" | "loading" | "ready" | "unavailable";
 export function createAutomaticMission(payload: { question: string; material: string; property: string; scope: string; sources: RetrievalSource[] }): Promise<AutoMissionResult> { return jsonPost<AutoMissionResult>("./api/missions/auto", { ...payload, consent: true }); }
 export function getRunStatus(runId: string): Promise<RunStatus> { return request<RunStatus>(`./api/runs/${encodeURIComponent(runId)}/status`); }
@@ -440,26 +445,35 @@ export async function getSavedSourceParses(runId: string, missionId: string): Pr
     || !Array.isArray(data.tasks) || data.tasks.length > 12) throw new LocalApiRequestError("transport");
   const seen = new Set<string>();
   for (const task of data.tasks) {
-    if (!exactObjectKeys(task, ["document_id", "state"]) || !boundedString(task.document_id, 255)
+    const legacy = exactObjectKeys(task, ["document_id", "state"]);
+    if ((!legacy && !exactObjectKeys(task, ["document_id", "state", "markdown_ready", "source_map_segment_count"])) || !boundedString(task.document_id, 255)
       || typeof task.state !== "string" || !["pending", "running", "done", "failed"].includes(task.state)
       || seen.has(task.document_id)) throw new LocalApiRequestError("transport");
+    if (!legacy && (typeof task.markdown_ready !== "boolean" || (task.markdown_ready && task.state !== "done")
+      || typeof task.source_map_segment_count !== "number" || !Number.isInteger(task.source_map_segment_count)
+      || task.source_map_segment_count < 0 || task.source_map_segment_count > (task.markdown_ready ? 12 : 0))) throw new LocalApiRequestError("transport");
     seen.add(task.document_id);
   }
   return data.tasks;
 }
 export async function getPdfStatus(runId: string, documentId: string): Promise<PdfTaskStatus> { const task = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/status`); if (!isPdfTaskStatus(task)) throw new LocalApiRequestError("transport"); return task; }
 export function privateMarkdownUrl(runId: string, documentId: string): string { return `./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/markdown`; }
+export function fetchedMarkdownUrl(runId: string, documentId: string): string { return `./api/runs/${encodeURIComponent(runId)}/source-markdown?document_id=${encodeURIComponent(documentId)}`; }
 export interface PrivateSourceMapSegment { locator: string; kind: "paragraph" | "table" | "formula" | "figure_caption"; quote: string; }
 export interface RecordedSourceMapSegment { segment_id: string; locator: string; kind: PrivateSourceMapSegment["kind"]; }
 export interface SourceMapRecordResult { run_id: string; document_id: string; segment_count: number; segments: RecordedSourceMapSegment[]; trust_status: string; }
 export type MaterialFactCategory = "composition" | "structure" | "property" | "processing" | "experimental_condition" | "simulation_method";
 export interface HumanMaterialFactInput { fact_id: string; segment_id: string; category: MaterialFactCategory; name: string; value: string | number | null; unit: string | null; normalized_value: string | number | null; normalized_unit: string | null; qualifiers: Record<string, string | number | null>; }
-export function getPdfSourceMapContext(runId: string, documentId: string): Promise<SourceMapRecordResult> { return request<SourceMapRecordResult>(`./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/source-map`); }
-export function recordPdfSourceMap(runId: string, documentId: string, segments: PrivateSourceMapSegment[]): Promise<SourceMapRecordResult> { return jsonPost(`./api/runs/${encodeURIComponent(runId)}/pdf/source-map`, { document_id: documentId, human_confirmed: true, segments }); }
-export function recordPdfMaterialFacts(runId: string, documentId: string, facts: HumanMaterialFactInput[]): Promise<{ run_id: string; document_id: string; fact_count: number; trust_status: string }> { return jsonPost(`./api/runs/${encodeURIComponent(runId)}/pdf/material-facts`, { document_id: documentId, human_confirmed: true, facts }); }
+export function getPdfSourceMapContext(runId: string, documentId: string, fetched = false): Promise<SourceMapRecordResult> {
+  const id = encodeURIComponent(documentId);
+  const suffix = fetched ? `source-map?document_id=${id}` : `pdf/${id}/source-map`;
+  return request<SourceMapRecordResult>(`./api/runs/${encodeURIComponent(runId)}/${suffix}`);
+}
+export function recordPdfSourceMap(runId: string, documentId: string, segments: PrivateSourceMapSegment[], fetched = false): Promise<SourceMapRecordResult> { return jsonPost(`./api/runs/${encodeURIComponent(runId)}/${fetched ? "source-map" : "pdf/source-map"}`, { document_id: documentId, human_confirmed: true, segments }); }
+export function recordPdfMaterialFacts(runId: string, documentId: string, facts: HumanMaterialFactInput[], fetched = false): Promise<{ run_id: string; document_id: string; fact_count: number; trust_status: string }> { return jsonPost(`./api/runs/${encodeURIComponent(runId)}/${fetched ? "source-material-facts" : "pdf/material-facts"}`, { document_id: documentId, human_confirmed: true, facts }); }
 export interface HumanEvidenceReviewInput { segment_id: string; claim: string; stance: "support" | "contradict" | "context"; conditions: Record<string, string | number | null>; reviewer_confidence: number; }
 export interface EvidenceReviewResult { run_id: string; evidence_id: string; document_id: string; locator: string; review_status: "accepted"; trust_status: string; }
-export function recordPdfEvidenceCard(runId: string, documentId: string, input: HumanEvidenceReviewInput): Promise<EvidenceReviewResult> { return jsonPost(`./api/runs/${encodeURIComponent(runId)}/pdf/evidence-card`, { document_id: documentId, human_confirmed: true, ...input }); }
+export function recordPdfEvidenceCard(runId: string, documentId: string, input: HumanEvidenceReviewInput, fetched = false): Promise<EvidenceReviewResult> { return jsonPost(`./api/runs/${encodeURIComponent(runId)}/${fetched ? "source-evidence-card" : "pdf/evidence-card"}`, { document_id: documentId, human_confirmed: true, ...input }); }
 export function confirmPdfDoi(runId: string, documentId: string, doi: string): Promise<PdfTaskStatus> { return jsonPost<PdfTaskStatus>(`./api/runs/${encodeURIComponent(runId)}/pdf/doi`, { document_id: documentId, doi, human_confirmed: true }); }
 export function expandAuthorizedPdfCitations(runId: string, documentId: string, dshCallId: string): Promise<{ node_count: number; edge_count: number; failure_count: number; trust_status: string }> { return jsonPost(`./api/runs/${encodeURIComponent(runId)}/authorized-citation-expansion`, { document_id: documentId, authorizations: ["mission_scoped_egress_consent", "metadata_provider_consent"], actor: "human_bibliography_review", dsh_call_id: dshCallId }); }
 export function diagnoseConditions(runId: string): Promise<{ run_id: string; matrix_row_count: number; trust_status: string }> { return jsonPost(`./api/runs/${encodeURIComponent(runId)}/condition-diagnostics`, {}); }

@@ -76,7 +76,7 @@ from .reading_guide import ReadingGuideError, build_reading_guide, write_reading
 from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError
 from .mineru_local_review import MinerULocalReviewError, load_mineru_markdown_review_pool, prepare_mineru_markdown_review_pool, source_map_pool_review_template, source_map_selection_from_pool_review, write_source_map_pool_review_selection, write_source_map_pool_review_template
 from .mcp_server import serve_stdio
-from .source_parse import SourceParseArtifactError, load_source_parse_tasks, migrate_legacy_source_parse_task_ids, private_task_id_for_document, record_source_parse_task, task_for_document, update_source_parse_task
+from .source_parse import SourceParseArtifactError, load_source_parse_tasks, migrate_legacy_source_parse_task_ids, private_task_id_for_document, record_source_parse_task, task_for_document, update_source_parse_task, write_fetched_markdown
 from .source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_pool_review, source_map_from_review, source_map_from_sciverse_context_review, write_source_map_for_document
 from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexRequestError
@@ -961,9 +961,8 @@ def command_poll_mineru_source(args: argparse.Namespace) -> int:
 def command_fetch_mineru_markdown(args: argparse.Namespace) -> int:
     """Fetch completed MinerU Markdown to a new private path outside a run.
 
-    The completed archive URL and Markdown body remain process-local except for
-    the caller-selected private file. Mission artifacts receive only a
-    hash-only provider receipt and a bounded audit event.
+    Keep the Markdown in the caller-selected file and in the workbench's private
+    cache. Mission artifacts receive a hash-only receipt and a bounded event.
     """
     run_dir = _run_dir(args.run_id)
     output_path = Path(args.output).resolve()
@@ -983,8 +982,6 @@ def command_fetch_mineru_markdown(args: argparse.Namespace) -> int:
         task_id = private_task_id_for_document(run_dir, mission_id=mission.mission_id, document_id=args.document_id)
         settings = Settings.load()
         result = MinerUAdapter(settings).download_completed_markdown(task_id)
-        with output_path.open("xb") as handle:
-            handle.write(result.content)
         receipt = mineru_output_receipt(
             document_id=args.document_id,
             source_url_sha256=stored_task["source_url_sha256"],
@@ -994,6 +991,9 @@ def command_fetch_mineru_markdown(args: argparse.Namespace) -> int:
             status_code=result.status_code,
             request_id=result.request_id,
         )
+        with output_path.open("xb") as handle:
+            handle.write(result.content)
+        write_fetched_markdown(run_dir, mission.mission_id, receipt, result.content)
         append_provider_receipt(run_dir, receipt)
     except (OSError, UiExportError, RunControlError, MinerUConfigurationError, MinerURequestError, MinerULocalReviewError, SourceParseArtifactError, ProviderReceiptError, ValueError) as error:
         _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})

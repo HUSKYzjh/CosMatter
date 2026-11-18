@@ -23,6 +23,7 @@ export function paperWorkflowState(
   const local = pdfTaskForPaper(tasks, node);
   const action = candidatePdfAction(local, recordedTask?.document_id === documentId ? recordedTask : null);
   if (action === "recorded_done") return "source_recorded";
+  if (action === "recorded_reader") return recordedTask?.source_map_segment_count ? "evidence_review" : "source_map";
   if (action === "recorded_active" || action === "open_bridge") return "parsing";
   if (action === "retry_pdf") return "failed";
   const intake = paperPdfIntake(local, node).state;

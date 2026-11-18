@@ -3,7 +3,7 @@ import { documentIdForReviewablePaper } from "./evidenceLinking";
 import type { LiteratureGraphNode } from "./model";
 
 export type PaperPdfIntakeState = "none" | "parsing" | "failed" | "source-map" | "evidence-review";
-export type CandidatePdfAction = "open_reader" | "open_bridge" | "recorded_done" | "recorded_active" | "choose_pdf" | "retry_pdf";
+export type CandidatePdfAction = "open_reader" | "open_bridge" | "recorded_reader" | "recorded_done" | "recorded_active" | "choose_pdf" | "retry_pdf";
 
 export interface PaperPdfIntake {
   state: PaperPdfIntakeState;
@@ -15,7 +15,8 @@ export function candidatePdfAction(local: PdfTaskStatus | null, recorded: SavedS
     return local.markdown_ready && local.audit_state === "done" ? "open_reader" : "open_bridge";
   }
   if (recorded && recorded.state !== "failed") {
-    return recorded.state === "done" ? "recorded_done" : "recorded_active";
+    if (recorded.state !== "done") return "recorded_active";
+    return recorded.markdown_ready ? "recorded_reader" : "recorded_done";
   }
   return local?.state === "failed" || recorded?.state === "failed" ? "retry_pdf" : "choose_pdf";
 }

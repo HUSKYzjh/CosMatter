@@ -38,7 +38,7 @@ from .planning import (
 )
 from .retrieval import RetrievalArtifactError, candidates_from_sciverse, write_candidate_artifact
 from .candidate_screening import CandidateScreeningError, candidate_screening_from_review, candidate_screening_template, load_candidate_screening, require_document_screened_for_fulltext, screening_matches_candidates, write_candidate_screening
-from .provider_receipts import ProviderReceiptError, append_provider_receipt, mineru_task_receipt, sciverse_search_receipt
+from .provider_receipts import ProviderReceiptError, append_provider_receipt, load_provider_receipts, mineru_task_receipt, sciverse_search_receipt
 from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .operation_parameter_contracts import operation_parameter_contracts
@@ -49,11 +49,11 @@ from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexReque
 from .crossref import CrossrefAdapter, CrossrefRequestError
 from .citation_expansion import CitationExpansionError, build_citation_expansion, validate_citation_expansion, write_citation_expansion
 from .run_package import RunPackageError, export_run_package, restore_run_package
-from .source_map import SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_review, write_source_map_for_document
+from .source_map import HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_pool_review, source_map_from_review, write_source_map_for_document
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, write_evidence_provenance_audit
 from .material_extraction import MaterialExtractionError, material_facts_from_review, write_material_facts_for_document
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
-from .source_parse import SourceParseArtifactError, load_source_parse_tasks, private_task_id_for_document, record_source_parse_task, task_for_document, update_source_parse_task
+from .source_parse import SourceParseArtifactError, fetched_markdown_path, fetched_markdown_receipt, load_source_parse_tasks, private_task_id_for_document, read_fetched_markdown, record_source_parse_task, task_for_document, update_source_parse_task
 from .pdf_task_registry import PdfTaskRegistryError, assert_pdf_task_slot, load_pdf_tasks, task_for_pdf_document, write_pdf_task
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
 from .facilities import DiscrepancyMatrix, DiscrepancyRow, FacilityGateError, condition_differential, write_condition_matrix
@@ -1065,17 +1065,83 @@ class LocalMissionApi:
         run_dir, mission = self._active_mission(run_id, require_active=False)
         try:
             ledger = load_source_parse_tasks(run_dir / "source_parse_tasks.json", mission.mission_id)
+            tasks = []
+            if ledger:
+                receipts = load_provider_receipts(run_dir) if any(item["state"] == "done" for item in ledger["tasks"]) else []
+                for item in ledger["tasks"]:
+                    if len(item["document_id"]) > 255:
+                        continue
+                    receipt = fetched_markdown_receipt(item, receipts) if item["state"] == "done" else None
+                    ready = bool(receipt and fetched_markdown_path(run_dir, mission.mission_id, receipt).is_file())
+                    source_map = _fetched_source_map(run_dir, mission.mission_id, item, receipt) if receipt and ready else None
+                    tasks.append({"document_id": item["document_id"], "state": item["state"],
+                                  "markdown_ready": ready, "source_map_segment_count": len(source_map["segments"]) if source_map else 0})
         except (OSError, ValueError) as error:
             raise LocalApiError("saved source parse status is unavailable", 404) from error
         return {
             "run_id": _api_safe_run_id(run_id),
             "mission_id": mission.mission_id,
             "trust_status": "saved_source_parse_state_not_scientific_evidence",
-            "tasks": [
-                {"document_id": item["document_id"], "state": item["state"]}
-                for item in ledger["tasks"] if len(item["document_id"]) <= 255
-            ] if ledger else [],
+            "tasks": tasks,
         }
+
+    def fetched_source_markdown(self, run_id: str, document_id: str) -> ArtifactDownload:
+        run_dir, mission, _, receipt = self._fetched_source_context(run_id, document_id)
+        content = _read_fetched_source(run_dir, mission.mission_id, receipt)
+        return ArtifactDownload(content, "text/markdown; charset=utf-8", "private-mineru-markdown.md")
+
+    def fetched_source_map_context(self, run_id: str, document_id: str) -> dict[str, object]:
+        run_dir, mission, task, receipt = self._fetched_source_context(run_id, document_id)
+        try:
+            source_map = _fetched_source_map(run_dir, mission.mission_id, task, receipt)
+        except (OSError, SourceMapError) as error:
+            raise LocalApiError("reviewed source locations could not be loaded", 404) from error
+        return _source_map_response(run_id, document_id, source_map)
+
+    def record_fetched_source_map(self, run_id: str, payload: object) -> dict[str, object]:
+        body = _object_payload(payload)
+        if set(body) != {"document_id", "human_confirmed", "segments"} or body["human_confirmed"] is not True:
+            raise LocalApiError("Source Map recording requires explicit human confirmation and reviewed excerpts")
+        document_id = _bounded_text(body, "document_id", 255)
+        with self._candidate_screening_lock:
+            run_dir, mission, task, receipt = self._fetched_source_context(run_id, document_id)
+            content = _read_fetched_source(run_dir, mission.mission_id, receipt)
+            try:
+                selection = _source_map_selection_from_private_markdown(body, content, document_id)
+                source_map = source_map_from_pool_review(
+                    mission_id=mission.mission_id, document_id=document_id, source_task=task,
+                    selection=selection, source_markdown_sha256=receipt["source_markdown_sha256"],
+                )
+                existing = load_source_map_for_document(run_dir, mission.mission_id, document_id)
+                if existing is not None:
+                    if existing != source_map:
+                        raise LocalApiError("this candidate already has a reviewed Source Map", 409)
+                    return _source_map_response(run_id, document_id, existing)
+                write_source_map_for_document(run_dir, source_map)
+            except (OSError, UnicodeDecodeError, SourceMapError) as error:
+                raise LocalApiError("could not record the reviewed source locations") from error
+        FlightRecorder(self.runs_dir, run_id).record(
+            event_type="source_map_reviewed", actor="human_source_reviewer", state=MissionState.EXTRACT,
+            payload={"document_id": document_id, "segment_count": len(source_map["segments"]),
+                     "access_mode": "screened_candidate", "trust_status": "human_reviewed_parser_selection_not_evidence_card"},
+        )
+        return _source_map_response(run_id, document_id, source_map)
+
+    def _fetched_source_context(self, run_id: str, document_id: str) -> tuple[Path, MissionBrief, dict[str, Any], dict[str, Any]]:
+        run_dir, mission = self._active_mission(run_id)
+        try:
+            candidates = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
+            require_document_screened_for_fulltext(run_dir, mission.mission_id, candidates, document_id)
+        except (OSError, UiExportError, CandidateScreeningError) as error:
+            raise LocalApiError("Markdown review requires a current human inclusion decision", 403) from error
+        try:
+            task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=document_id)
+            receipt = fetched_markdown_receipt(task, load_provider_receipts(run_dir)) if task["state"] == "done" else None
+            if receipt and fetched_markdown_path(run_dir, mission.mission_id, receipt).is_file():
+                return run_dir, mission, task, receipt
+        except (OSError, ValueError) as error:
+            raise LocalApiError("fetched Markdown is unavailable", 404) from error
+        raise LocalApiError("fetched Markdown is unavailable", 404)
 
     def pdf_tasks(self, run_id: str, *, refresh: bool = True) -> dict[str, object]:
         """Return public status projections for every private document task."""
@@ -1107,24 +1173,7 @@ class LocalMissionApi:
         intake = _pdf_intake(run_dir, mission.mission_id, document_id)
         audit_document_id = _pdf_audit_document_id(intake)
         source_map = load_source_map_for_document(run_dir, mission.mission_id, audit_document_id)
-        if source_map is None:
-            return {
-                "run_id": run_id,
-                "document_id": audit_document_id,
-                "segment_count": 0,
-                "segments": [],
-                "trust_status": "no_human_reviewed_source_map",
-            }
-        return {
-            "run_id": run_id,
-            "document_id": audit_document_id,
-            "segment_count": len(source_map["segments"]),
-            "segments": [
-                {"segment_id": item["segment_id"], "locator": item["locator"], "kind": item["kind"]}
-                for item in source_map["segments"]
-            ],
-            "trust_status": "human_reviewed_parser_selection_not_evidence_card",
-        }
+        return _source_map_response(run_id, audit_document_id, source_map)
     def record_pdf_source_map(self, run_id: str, payload: object) -> dict[str, object]:
         """Keep only human-confirmed bounded excerpts from private Markdown."""
         body = _object_payload(payload)
@@ -1165,7 +1214,7 @@ class LocalMissionApi:
                     task=_mineru_task_from_pdf_batch(str(intake["batch_id"]), str(intake["state"])),
                 )
                 task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=audit_document_id)
-            selection = _source_map_selection_from_private_markdown(body, intake, audit_document_id)
+            selection = _source_map_selection_from_private_markdown(body, read_markdown(str(intake["document_id"])), audit_document_id)
             source_map = source_map_from_review(
                 mission_id=mission.mission_id,
                 document_id=audit_document_id,
@@ -1188,8 +1237,8 @@ class LocalMissionApi:
                 "trust_status": "human_reviewed_parser_selection_not_evidence_card",
             },
         )
-        return {"run_id": run_id, "document_id": audit_document_id, "segment_count": len(source_map["segments"]), "segments": [{"segment_id": item["segment_id"], "locator": item["locator"], "kind": item["kind"]} for item in source_map["segments"]], "trust_status": "human_reviewed_parser_selection_not_evidence_card"}
-    def record_pdf_material_facts(self, run_id: str, payload: object) -> dict[str, object]:
+        return _source_map_response(run_id, audit_document_id, source_map)
+    def record_pdf_material_facts(self, run_id: str, payload: object, *, fetched_source: bool = False) -> dict[str, object]:
         """Persist human-reviewed structured facts tied to an existing Source Map."""
         body = _object_payload(payload)
         if body.get("human_confirmed") is not True:
@@ -1197,9 +1246,14 @@ class LocalMissionApi:
         run_dir, mission = self._active_mission(run_id)
         try:
             require_active_run(run_dir, mission.mission_id)
-            intake = _pdf_intake(run_dir, mission.mission_id, _pdf_document_id_from_payload(body))
-            document_id = _pdf_audit_document_id(intake)
-            source_map = load_source_map_for_document(run_dir, mission.mission_id, document_id)
+            if fetched_source:
+                document_id = _bounded_text(body, "document_id", 255)
+                _, _, task, receipt = self._fetched_source_context(run_id, document_id)
+                source_map = _fetched_source_map(run_dir, mission.mission_id, task, receipt)
+            else:
+                intake = _pdf_intake(run_dir, mission.mission_id, _pdf_document_id_from_payload(body))
+                document_id = _pdf_audit_document_id(intake)
+                source_map = load_source_map_for_document(run_dir, mission.mission_id, document_id)
             if source_map is None:
                 raise MaterialExtractionError("material fact recording requires a reviewed Source Map")
             artifact = material_facts_from_review(
@@ -1208,6 +1262,8 @@ class LocalMissionApi:
                 selection={"document_id": document_id, "facts": body.get("facts")},
             )
             write_material_facts_for_document(run_dir, artifact)
+        except LocalApiError:
+            raise
         except (RunControlError, SourceMapError, MaterialExtractionError, ValueError) as error:
             raise LocalApiError(str(error)) from error
         FlightRecorder(self.runs_dir, run_id).record(
@@ -1217,7 +1273,7 @@ class LocalMissionApi:
             payload={"document_id": document_id, "fact_count": len(artifact["facts"]), "trust_status": artifact["trust_status"]},
         )
         return {"run_id": run_id, "document_id": document_id, "fact_count": len(artifact["facts"]), "trust_status": artifact["trust_status"]}
-    def record_pdf_evidence_card(self, run_id: str, payload: object) -> dict[str, object]:
+    def record_pdf_evidence_card(self, run_id: str, payload: object, *, fetched_source: bool = False) -> dict[str, object]:
         """Accept one human-reviewed EvidenceCard from an existing Source Map segment.
 
         The browser may submit only the claim, stance, structured conditions, a
@@ -1262,15 +1318,24 @@ class LocalMissionApi:
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1:
             raise LocalApiError("reviewer confidence must be between 0 and 1")
         run_dir, mission = self._active_mission(run_id)
-        intake = _pdf_intake(run_dir, mission.mission_id, _pdf_document_id_from_payload(body))
-        candidate_document_id = intake.get("candidate_document_id")
-        if not isinstance(candidate_document_id, str) or not candidate_document_id.strip():
-            raise LocalApiError("evidence acceptance requires a PDF attached to a human-screened candidate")
-        document_id = _pdf_audit_document_id(intake)
-        if document_id != candidate_document_id:
-            raise LocalApiError("evidence acceptance requires the candidate-linked audit document")
         try:
-            source_map = load_source_map_for_document(run_dir, mission.mission_id, document_id)
+            if fetched_source:
+                document_id = _bounded_text(body, "document_id", 255)
+                _, _, task, receipt = self._fetched_source_context(run_id, document_id)
+                source_map = _fetched_source_map(run_dir, mission.mission_id, task, receipt)
+                doi = None
+                markdown_sha256 = receipt["source_markdown_sha256"]
+            else:
+                intake = _pdf_intake(run_dir, mission.mission_id, _pdf_document_id_from_payload(body))
+                candidate_document_id = intake.get("candidate_document_id")
+                if not isinstance(candidate_document_id, str) or not candidate_document_id.strip():
+                    raise LocalApiError("evidence acceptance requires a PDF attached to a human-screened candidate")
+                document_id = _pdf_audit_document_id(intake)
+                if document_id != candidate_document_id:
+                    raise LocalApiError("evidence acceptance requires the candidate-linked audit document")
+                source_map = load_source_map_for_document(run_dir, mission.mission_id, document_id)
+                doi = intake.get("doi") if intake.get("doi_status") in {"resolved", "human_confirmed"} else None
+                markdown_sha256 = intake.get("markdown_sha256")
             if source_map is None:
                 raise EvidenceIngestionError("evidence acceptance requires a reviewed Source Map")
             segment = next((item for item in source_map["segments"] if item["segment_id"] == segment_id), None)
@@ -1292,8 +1357,8 @@ class LocalMissionApi:
                     "document_id": document_id,
                     "locator": segment["locator"],
                     "source": "human-reviewed MinerU source map",
-                    "doi": intake.get("doi") if intake.get("doi_status") in {"resolved", "human_confirmed"} else None,
-                    "content_hash": intake.get("markdown_sha256"),
+                    "doi": doi,
+                    "content_hash": markdown_sha256,
                     "access_policy": "authorized",
                 },
                 "extractor_confidence": float(confidence),
@@ -1309,6 +1374,8 @@ class LocalMissionApi:
                 source_maps=iter_source_maps(run_dir, mission.mission_id),
             )
             write_evidence_provenance_audit(run_dir, provenance_audit)
+        except LocalApiError:
+            raise
         except (EvidenceIngestionError, SourceMapError, ProvenanceAuditError, ValueError, OSError) as error:
             raise LocalApiError(str(error)) from error
         FlightRecorder(self.runs_dir, run_id).record(
@@ -2260,12 +2327,34 @@ def _mineru_task_from_pdf_batch(batch_id: str, state: str) -> MinerUTask:
 _PRIVATE_MARKDOWN_LOCATOR = re.compile(r"markdown_line:(\d+)-(\d+)(?::part:\d+)?$")
 
 
-def _source_map_selection_from_private_markdown(body: dict[str, Any], intake: dict[str, object], document_id: str) -> dict[str, object]:
+def _fetched_source_map(run_dir: Path, mission_id: str, task: dict[str, Any], receipt: dict[str, Any]) -> dict[str, Any] | None:
+    source_map = load_source_map_for_document(run_dir, mission_id, task["document_id"])
+    if (source_map and source_map["trust_status"] == HUMAN_SOURCE_MAP_TRUST_STATUS
+            and source_map.get("task_id_sha256") == task["task_id"]
+            and source_map.get("source_markdown_sha256") == receipt["source_markdown_sha256"]):
+        return source_map
+    return None
+
+
+def _read_fetched_source(run_dir: Path, mission_id: str, receipt: dict[str, Any]) -> bytes:
+    try:
+        return read_fetched_markdown(fetched_markdown_path(run_dir, mission_id, receipt), receipt)
+    except (OSError, SourceParseArtifactError) as error:
+        raise LocalApiError("fetched Markdown could not be verified", 404) from error
+
+
+def _source_map_response(run_id: str, document_id: str, source_map: dict[str, Any] | None) -> dict[str, object]:
+    segments = [{"segment_id": item["segment_id"], "locator": item["locator"], "kind": item["kind"]}
+                for item in source_map["segments"]] if source_map else []
+    return {"run_id": run_id, "document_id": document_id, "segment_count": len(segments), "segments": segments,
+            "trust_status": "human_reviewed_parser_selection_not_evidence_card" if source_map else "no_human_reviewed_source_map"}
+
+
+def _source_map_selection_from_private_markdown(body: dict[str, Any], content: bytes, document_id: str) -> dict[str, object]:
     raw_segments = body.get("segments")
     if not isinstance(raw_segments, list) or not 1 <= len(raw_segments) <= 12:
         raise LocalApiError("Source Map must contain 1 to 12 reviewed excerpts")
-    content = read_markdown(str(intake["document_id"])).decode("utf-8")
-    lines = content.splitlines()
+    lines = content.decode("utf-8").splitlines()
     segments: list[dict[str, str]] = []
     for index, raw in enumerate(raw_segments, 1):
         if not isinstance(raw, dict) or set(raw) != {"locator", "kind", "quote"}:
