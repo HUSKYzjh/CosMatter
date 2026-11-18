@@ -51,6 +51,18 @@ const ACCESS_LABELS: Record<Access, readonly [string, string]> = {
   external: ["需逐任务授权", "Mission authorization required"],
 };
 const ACCESS_TYPES = Object.keys(ACCESS_LABELS) as Access[];
+const ACCESS_FILTER_EN: Partial<Record<Access, string>> = { review: "Human review", external: "Mission consent" };
+const STAGE_FILTER_EN: Record<WorkflowStageName, string> = {
+  intake: "Mission setup",
+  plan: "Plan review",
+  retrieval: "Retrieval",
+  screening: "Screening",
+  parse: "Source parsing",
+  extraction: "Extraction",
+  gap: "Gap review",
+  report: "Report",
+  evaluation: "Evaluation",
+};
 
 export interface DshToolCatalogueProps {
   locale: UiLocale;
@@ -142,13 +154,17 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
         <label><span>{x("研究阶段", "Research stage")}</span>
           <select value={stageFilter()} onChange={(event) => setStageFilter(event.currentTarget.value as WorkflowStageName | "all")}>
             <option value="all">{x("全部阶段", "All stages")}</option>
-            <For each={Object.keys(DSH_STAGE_TOOLS) as WorkflowStageName[]}>{(stage) => <option value={stage}>{continuationStageLabel(stage, props.locale)}</option>}</For>
+            <For each={Object.keys(DSH_STAGE_TOOLS) as WorkflowStageName[]}>{(stage) =>
+              <option value={stage}>{x(continuationStageLabel(stage, "zh"), STAGE_FILTER_EN[stage])}</option>
+            }</For>
           </select>
         </label>
         <label><span>{x("授权类型", "Authorization type")}</span>
           <select value={filter()} onChange={(event) => setFilter(event.currentTarget.value as Access | "all")}>
             <option value="all">{x("全部类型", "All types")}</option>
-            <For each={ACCESS_TYPES}>{(access) => <option value={access}>{x(...ACCESS_LABELS[access])}</option>}</For>
+            <For each={ACCESS_TYPES}>{(access) =>
+              <option value={access}>{x(ACCESS_LABELS[access][0], ACCESS_FILTER_EN[access] ?? ACCESS_LABELS[access][1])}</option>
+            }</For>
           </select>
         </label>
       </div>
