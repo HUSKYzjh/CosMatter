@@ -20,14 +20,15 @@ const operationContracts = {
   },
 };
 const dshProfileSnapshot = {
-  schema_version: "cosmatter.dsh-profile-status/v1",
+  schema_version: "cosmatter.dsh-profile-status/v2",
   profile_name: "tui",
   installation_state: "installed",
   expected_bundle_count: 7,
+  declared_bundle_count: 7,
   installed_bundle_count: 7,
-  packages: ["mission", "observability", "policy", "research", "review", "document", "graph"].map((name) => ({ package: `@cosmatter/dsh-${name}-plugin`, installed: true, dependency_kind: "local_link" })),
+  packages: ["mission", "observability", "policy", "research", "review", "document", "graph"].map((name) => ({ package: `@cosmatter/dsh-${name}-plugin`, install_status: "verified", dependency_kind: "local_link" })),
   composition_status: "not_checked_by_http_api",
-  trust_status: "local_dependency_snapshot_not_profile_boot_or_plugin_execution",
+  trust_status: "local_installation_snapshot_not_profile_boot_or_plugin_execution",
 };
 
 async function openEditableTaskDefinition(page: Page) {
@@ -257,13 +258,13 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   const deck = page.locator(".harness-capability-deck");
   await expect(deck).toHaveClass(/state-ready/, workspaceLoad);
   await expect(deck).toContainText("本机目录已连接");
-  await expect(deck).toContainText("依赖已安装 7/7");
-  await expect(deck).toContainText("HTTP API 不启动 profile");
+  await expect(deck.locator(".harness-installation-card")).toContainText("已验证 7/7");
+  await expect(deck.locator(".harness-installation-card")).toContainText("已声明 7 个依赖");
   await expect(deck).toContainText("尚无派发回执");
   await expect(deck).toContainText("任何一层都不能代替工具结果");
   const activationTrack = deck.locator(".harness-activation-track");
   await expect(activationTrack).toContainText("01 / INSTALL");
-  await expect(activationTrack).toContainText("7/7 包已安装");
+  await expect(activationTrack).toContainText("已验证 7/7");
   await expect(activationTrack).toContainText("02 / COMPOSE");
   await expect(activationTrack).toContainText("配置组合与启动未核验");
   await expect(activationTrack).toContainText("03 / CONTRACT");
@@ -275,11 +276,10 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   const activationVerdict = deck.locator(".harness-activation-verdict");
   await expect(activationVerdict).toHaveClass(/state-partial/);
   await expect(activationVerdict).toContainText("安装与契约已就绪，profile 启动未核验");
-  await expect(activationVerdict).toContainText("配置组合与 profile 启动仍是独立缺口");
-  await expect(activationVerdict).toContainText("只有运行回执能证明实际派发");
+  await expect(activationVerdict).toContainText("任务派发结果见本次运行回执");
   await expect(deck.locator(".harness-capability-metrics strong").first()).toHaveText("1");
   const packageProof = deck.locator(".harness-package-proof");
-  await expect(packageProof.locator("summary")).toContainText("查看逐包依赖证明");
+  await expect(packageProof.locator("summary")).toContainText("查看逐包检查结果");
   await expect(packageProof.locator("summary strong")).toHaveText("7/7");
   await expect(packageProof.locator("ul")).not.toBeVisible();
   await packageProof.locator("summary").click();
@@ -287,7 +287,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(packageProof).toContainText("任务建立");
   await expect(packageProof).toContainText("@cosmatter/dsh-mission-plugin");
   await expect(packageProof).toContainText("本地链接");
-  await expect(packageProof).toContainText("不返回依赖值、本机路径、配置或凭据");
+  await expect(packageProof.locator(".harness-package-state b").first()).toHaveText("已验证");
   if (process.platform === "win32") {
     await deck.screenshot({ animations: "disabled" });
     expect(await deck.screenshot({ animations: "disabled" })).toMatchSnapshot("dsh-profile-proof.png");
@@ -302,7 +302,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test("keeps the verified DSH profile visible when catalogue discovery fails", async ({ page }) => {
+test("rechecks a missing DSH bundle while the catalogue is unavailable", async ({ page }) => {
   await page.route("**/api/status", async (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({
@@ -312,7 +312,18 @@ test("keeps the verified DSH profile visible when catalogue discovery fails", as
     }),
   }));
   await page.route("**/api/plugins", async (route) => route.fulfill({ status: 503, body: "catalogue unavailable" }));
-  await page.route("**/api/dsh-profile", async (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(dshProfileSnapshot) }));
+  let repaired = false;
+  let finishCheck: () => void = () => {};
+  const checkInProgress = new Promise<void>((resolve) => { finishCheck = resolve; });
+  await page.route("**/api/dsh-profile", async (route) => {
+    if (repaired) await checkInProgress;
+    return route.fulfill({ json: repaired ? dshProfileSnapshot : {
+      ...dshProfileSnapshot,
+      installed_bundle_count: 6,
+      installation_state: "partial",
+      packages: [{ ...dshProfileSnapshot.packages[0], install_status: "missing_bundle" }, ...dshProfileSnapshot.packages.slice(1)],
+    } });
+  });
   await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /BFO-01/ }).click();
   await page.getByRole("button", { name: "确认任务并进入编排" }).click();
@@ -320,8 +331,25 @@ test("keeps the verified DSH profile visible when catalogue discovery fails", as
   const deck = page.locator(".harness-capability-deck");
   await expect(deck).toHaveClass(/state-unavailable/, workspaceLoad);
   await expect(deck).toContainText("目录不可用");
-  await expect(deck).toContainText("依赖已安装 7/7");
+  const installationCard = deck.locator(".harness-installation-card");
+  await expect(installationCard).toContainText("已验证 6/7");
+  await expect(installationCard).toContainText("已声明 7 个依赖");
   await expect(deck).toContainText("目录、profile 依赖快照与运行回执独立检查");
+  const packageProof = deck.locator(".harness-package-proof");
+  await packageProof.locator("summary").press("Enter");
+  await expect(packageProof.locator("li").first()).toContainText("文件缺失");
+
+  repaired = true;
+  await installationCard.getByRole("button", { name: "重新检查 profile" }).click();
+  try {
+    const busy = installationCard.getByRole("button", { name: "正在检查…" });
+    await expect(busy).toHaveAttribute("aria-busy", "true");
+    await expect(busy).toBeDisabled();
+  } finally {
+    finishCheck();
+  }
+  await expect(installationCard).toContainText("已验证 7/7");
+  await expect(packageProof.locator("li").first().locator(".harness-package-state b")).toHaveText("已验证");
 });
 
 test("wraps narrow rail handoffs and manifest counts without collisions", async ({ page }) => {

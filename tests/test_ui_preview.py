@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 from cosmatter.cli import main
 from cosmatter.config import Settings
 from cosmatter.deepseek import DraftCompletion
+from cosmatter.dsh_profile_status import EXPECTED_DSH_PACKAGES, dsh_profile_status
 from cosmatter.local_api import LocalMissionApi
 from cosmatter.mineru import MinerUBatch
 from cosmatter.models import AccessPolicy, EvidenceCard, Provenance, ReviewStatus, Stance
@@ -56,24 +57,24 @@ class UiPreviewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             web = Path(directory)
             (web / "index.html").write_text("<h1>preview</h1>", encoding="utf-8")
+            dsh_home = web / "private-dsh"
+            profile = dsh_home / "profiles" / "tui"
+            profile.mkdir(parents=True)
+            (profile / "package.json").write_text(json.dumps({
+                "dependencies": {EXPECTED_DSH_PACKAGES[0]: "link:D:/private-do-not-return"},
+            }), encoding="utf-8")
             api = Mock()
-            api.dsh_profile_status.return_value = {
-                "schema_version": "cosmatter.dsh-profile-status/v1",
-                "profile_name": "tui",
-                "installation_state": "installed",
-                "expected_bundle_count": 7,
-                "installed_bundle_count": 7,
-                "packages": [],
-                "composition_status": "not_checked_by_http_api",
-                "trust_status": "local_dependency_snapshot_not_profile_boot_or_plugin_execution",
-            }
+            api.dsh_profile_status.return_value = dsh_profile_status(dsh_home=dsh_home)
             server = build_ui_preview_server(0, web, api=api)
             thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
             try:
                 with urlopen(f"http://127.0.0.1:{server.server_port}/api/dsh-profile", timeout=2) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(payload["profile_name"], "tui")
-                self.assertNotIn("path", json.dumps(payload).casefold())
+                self.assertEqual(payload["declared_bundle_count"], 1)
+                self.assertEqual(payload["installed_bundle_count"], 0)
+                self.assertEqual(payload["packages"][0]["install_status"], "missing_bundle")
+                self.assertNotIn("private-do-not-return", json.dumps(payload))
                 api.dsh_profile_status.assert_called_once_with()
             finally:
                 server.shutdown(); server.server_close(); thread.join(timeout=2)

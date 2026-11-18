@@ -24,6 +24,13 @@ const dependencyKindLabel = (locale: UiLocale, kind: DshProfileStatus["packages"
   return t(locale, "未登记", "Absent");
 };
 
+const installStatusLabel = (locale: UiLocale, state: DshProfileStatus["packages"][number]["install_status"]) => {
+  if (state === "verified") return t(locale, "已验证", "Verified");
+  if (state === "missing_bundle") return t(locale, "文件缺失", "Files missing");
+  if (state === "invalid_bundle") return t(locale, "包结构异常", "Invalid bundle");
+  return t(locale, "未声明依赖", "Undeclared");
+};
+
 export function HarnessCapabilityDeck(props: {
   locale: UiLocale;
   health: HarnessCatalogueHealth;
@@ -42,18 +49,32 @@ export function HarnessCapabilityDeck(props: {
   const externalCount = createMemo(() => (props.plugins ?? []).filter((plugin) => plugin.automation_class === "external_authorized").length);
   const humanGateCount = createMemo(() => (props.plugins ?? []).filter((plugin) => plugin.requires_human_review || plugin.automation_class === "human_gate").length);
   const runtime = createMemo(() => harnessRuntimeSummary(props.operationalTelemetry));
+  const profileBadge = createMemo(() => {
+    const profile = props.profile;
+    if (props.profileHealth === "loading") return { tone: "active" as const, copy: x("检查中", "Checking") };
+    if (props.profileHealth === "disabled") return { tone: "neutral" as const, copy: x("只读预览未检查", "Not checked in preview") };
+    if (!profile || profile.installation_state === "unavailable") return { tone: "attention" as const, copy: x("状态不可用", "Status unavailable") };
+    const count = `${profile.installed_bundle_count}/${profile.expected_bundle_count}`;
+    return { tone: profile.installation_state === "installed" ? "ready" as const : "attention" as const, copy: x(`已验证 ${count}`, `Verified ${count}`) };
+  });
   const activation = createMemo(() => {
     if (props.profileHealth === "loading" || props.health === "loading") return {
       state: "checking",
       title: x("正在核验 DSH 启用条件", "Checking DSH enablement conditions"),
-      detail: x("等待 profile 依赖快照与插件契约目录同时返回。", "Waiting for both the profile dependency snapshot and plugin contract catalogue."),
+      detail: x("正在读取本机安装状态和插件契约。", "Reading the local installation status and plugin contracts."),
     };
     const profileReady = props.profileHealth === "ready" && props.profile?.installation_state === "installed";
     const adapterReady = props.health === "ready";
     if (profileReady && adapterReady) return {
       state: "partial",
       title: x("安装与契约已就绪，profile 启动未核验", "Installation and contracts ready; profile startup unverified"),
-      detail: x("七个包的依赖与本机契约目录均已核验；配置组合与 profile 启动仍是独立缺口，只有运行回执能证明实际派发。", "All seven dependencies and the local contract catalogue are verified. Configuration composition and profile startup remain a separate gap; only runtime receipts prove actual dispatch."),
+      detail: x("已核对七个本机插件包与契约目录。任务派发结果见本次运行回执。", "All seven local bundles and the contract catalogue have been checked. See this mission’s receipts for dispatch results."),
+    };
+    const profile = props.profileHealth === "ready" ? props.profile : null;
+    if (profile && profile.declared_bundle_count > profile.installed_bundle_count) return {
+      state: "partial",
+      title: x("部分依赖缺少有效安装", "Some dependencies have no valid installation"),
+      detail: x("展开逐包检查结果，定位缺失或异常的插件包。", "Open the bundle checks to find missing or invalid installations."),
     };
     if (profileReady || adapterReady) return {
       state: "partial",
@@ -81,11 +102,9 @@ export function HarnessCapabilityDeck(props: {
       <StatusBadge tone={badge().tone} pulse={props.health === "loading" || Boolean(props.operationPending)}>{badge().copy}</StatusBadge>
     </header>
     <section class="harness-activation-track" aria-label={x("DSH 启用层次", "DSH activation layers")}>
-      <div classList={{ ready: props.profileHealth === "ready" && props.profile?.installation_state === "installed", attention: props.profileHealth === "unavailable" || props.profile?.installation_state === "partial" }}>
+      <div classList={{ ready: profileBadge().tone === "ready", attention: profileBadge().tone === "attention", active: profileBadge().tone === "active" }}>
         <small>01 / INSTALL</small>
-        <strong>{props.profileHealth === "ready" && props.profile
-          ? x(`${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count} 包已安装`, `${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count} bundles installed`)
-          : x("依赖未核验", "Dependencies not checked")}</strong>
+        <strong>{profileBadge().copy}</strong>
       </div>
       <i aria-hidden="true">≠</i>
       <div class="attention">
@@ -124,19 +143,24 @@ export function HarnessCapabilityDeck(props: {
       </div>
     </Show>
     <div class="harness-state-ledger">
-        <section>
-          <div><small>{x("安装证明 / 依赖快照", "INSTALL PROOF / DEPENDENCY SNAPSHOT")}</small><strong>{props.profile?.profile_name ?? "tui"}</strong></div>
-          <StatusBadge tone={props.profile?.installation_state === "installed" ? "ready" : props.profileHealth === "unavailable" || props.profile?.installation_state === "partial" ? "attention" : "neutral"} pulse={props.profileHealth === "loading"}>{props.profileHealth === "loading"
-            ? x("检查中", "Checking")
-            : props.profileHealth === "disabled" ? x("只读预览未检查", "Not checked in preview")
-            : props.profileHealth === "unavailable" ? x("状态不可用", "Status unavailable")
-              : props.profile?.installation_state === "installed" ? x(`依赖已安装 ${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count}`, `Dependencies installed ${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count}`)
-                : props.profile?.installation_state === "partial" ? x(`部分安装 ${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count}`, `Partially installed ${props.profile.installed_bundle_count}/${props.profile.expected_bundle_count}`)
-                  : x("未安装", "Not installed")}</StatusBadge>
-          <p>{props.profileHealth === "disabled"
-            ? x("只读预览不会读取本机 DSH profile；进入真实本地任务后才显示脱敏依赖快照。", "Read-only preview does not inspect the local DSH profile. A redacted dependency snapshot appears only in a live local mission.")
-            : x("安装证明只来自固定 tui profile 的脱敏依赖名称；配置组合未由 HTTP 核验。HTTP API 不启动 profile，也不读取插件配置或凭据。", "Installation proof comes only from redacted dependency names in the fixed TUI profile; configuration composition is not verified over HTTP. The HTTP API neither boots the profile nor reads plugin configuration or credentials.")}</p>
-          <Show when={props.profileHealth !== "disabled" && props.profileHealth !== "loading" && (props.profileHealth === "unavailable" || props.profile?.installation_state !== "installed") && props.onRefreshProfile}><ActionButton size="sm" variant="secondary" onClick={() => props.onRefreshProfile?.()}>{x("重新检查 profile", "Recheck profile")}</ActionButton></Show>
+        <section class="harness-installation-card">
+          <div>
+            <small>{x("本机安装", "LOCAL INSTALLATION")}</small>
+            <strong>DSH · {props.profile?.profile_name ?? "tui"}</strong>
+          </div>
+          <StatusBadge tone={profileBadge().tone} pulse={props.profileHealth === "loading"}>{profileBadge().copy}</StatusBadge>
+          <div class="harness-installation-footer">
+            <p><Show when={props.profileHealth !== "disabled" && props.profile?.installation_state !== "unavailable" && props.profile} fallback={props.profileHealth === "disabled"
+              ? x("进入本机任务后可检查插件包。", "Open a local mission to check installed bundles.")
+              : x("检查范围为 tui 的依赖声明和本机安装文件。", "This check covers TUI dependency declarations and local installation files.")}>
+              {(profile) => x(`已声明 ${profile().declared_bundle_count} 个依赖。核对包清单，并确认入口与补丁文件存在。`, `${profile().declared_bundle_count} dependencies declared. Checks verify the manifest and the presence of the entry and patch files.`)}
+            </Show></p>
+            <Show when={props.profileHealth !== "disabled" && props.onRefreshProfile}>
+              <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在检查…", "Checking…")} onClick={() => props.onRefreshProfile?.()}>
+                {x("重新检查 profile", "Recheck profile")}
+              </ActionButton>
+            </Show>
+          </div>
         </section>
         <section>
           <div><small>{x("执行证明 / 当前任务回执", "EXECUTION PROOF / CURRENT MISSION RECEIPTS")}</small><strong>{runtime().dispatchCount ? `${runtime().completedCount}/${runtime().dispatchCount}` : "—"}</strong></div>
@@ -151,28 +175,30 @@ export function HarnessCapabilityDeck(props: {
             : x("没有运行级派发记录；目录与安装状态不会被当作执行证明。", "No runtime dispatch is recorded. Catalogue and installation status are never treated as proof of execution.")}</p>
         </section>
     </div>
-    <Show when={props.profileHealth === "ready" && props.profile}>{(profile) =>
-      <details class="harness-package-proof">
+    <Show when={props.profile?.installation_state !== "unavailable" && props.profile}>{(profile) =>
+      <details class="harness-package-proof" aria-busy={props.profileHealth === "loading" || undefined}>
         <summary>
-          <span>{x("查看逐包依赖证明", "Inspect bundle dependency proof")}</span>
+          <span>{x("查看逐包检查结果", "Inspect bundle checks")}</span>
           <strong>{profile().installed_bundle_count}/{profile().expected_bundle_count}</strong>
         </summary>
         <ul>
           <For each={profile().packages}>{(packageStatus) => {
             const role = () => BUNDLE_ROLES[packageStatus.package] ?? [packageStatus.package, packageStatus.package] as const;
-            return <li classList={{ installed: packageStatus.installed }}>
+            return <li classList={{ installed: packageStatus.install_status === "verified" }}>
               <i aria-hidden="true" />
               <div>
                 <strong>{props.locale === "zh" ? role()[0] : role()[1]}</strong>
                 <code>{packageStatus.package}</code>
               </div>
-              <span>{dependencyKindLabel(props.locale, packageStatus.dependency_kind)}</span>
+              <span class="harness-package-state"><b>{installStatusLabel(props.locale, packageStatus.install_status)}</b>
+                <Show when={packageStatus.dependency_kind !== "absent"}><small>{dependencyKindLabel(props.locale, packageStatus.dependency_kind)}</small></Show>
+              </span>
             </li>;
           }}</For>
         </ul>
         <p>{x(
-          "清单只显示固定包名、职责与依赖类型；不返回依赖值、本机路径、配置或凭据。",
-          "The list exposes only fixed package names, roles, and dependency kinds. It never returns dependency values, local paths, configuration, or credentials.",
+          "此处检查安装文件。配置组合、profile 启动和派发由各自的检查确认。",
+          "These checks cover installed files. Profile composition, startup, and dispatch have separate checks.",
         )}</p>
       </details>
     }</Show>

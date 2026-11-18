@@ -156,7 +156,7 @@ class LocalMissionApi:
         }
 
     def dsh_profile_status(self) -> dict[str, object]:
-        """Return a redacted dependency snapshot for the fixed local TUI profile."""
+        """Return a redacted installation snapshot for the fixed local TUI profile."""
         return dsh_profile_status()
 
     def facility_contract_catalogue(self) -> dict[str, object]:

@@ -30,16 +30,21 @@ export interface HarnessPluginCatalogue {
 }
 export type HarnessCatalogueHealth = "disabled" | "loading" | "ready" | "unavailable";
 export type DshProfileInstallationState = "installed" | "partial" | "not_installed" | "unavailable";
-export interface DshProfilePackageStatus { package: string; installed: boolean; dependency_kind: "local_link" | "registry_reference" | "remote_reference" | "absent"; }
+export interface DshProfilePackageStatus {
+  package: string;
+  dependency_kind: "local_link" | "registry_reference" | "remote_reference" | "absent";
+  install_status: "verified" | "missing_bundle" | "invalid_bundle" | "not_declared";
+}
 export interface DshProfileStatus {
-  schema_version: "cosmatter.dsh-profile-status/v1";
+  schema_version: "cosmatter.dsh-profile-status/v2";
   profile_name: "tui";
   installation_state: DshProfileInstallationState;
   expected_bundle_count: 7;
+  declared_bundle_count: number;
   installed_bundle_count: number;
   packages: DshProfilePackageStatus[];
   composition_status: "not_checked_by_http_api";
-  trust_status: "local_dependency_snapshot_not_profile_boot_or_plugin_execution";
+  trust_status: "local_installation_snapshot_not_profile_boot_or_plugin_execution";
 }
 export type DshProfileHealth = "disabled" | "loading" | "ready" | "unavailable";
 
@@ -215,31 +220,32 @@ const LOCAL_API_PROVIDER_KEYS = ["deepseek", "sciverse", "mineru", "openalex", "
 const DSH_PACKAGE_NAMES = ["@cosmatter/dsh-mission-plugin", "@cosmatter/dsh-observability-plugin", "@cosmatter/dsh-policy-plugin", "@cosmatter/dsh-research-plugin", "@cosmatter/dsh-review-plugin", "@cosmatter/dsh-document-plugin", "@cosmatter/dsh-graph-plugin"] as const;
 const exactObjectKeys = (value: unknown, keys: readonly string[]) => Boolean(value && typeof value === "object" && !Array.isArray(value) && (() => { const actual = Object.keys(value as Record<string, unknown>); return actual.length === keys.length && actual.every((key) => keys.includes(key)); })());
 
-/** Accept only the redacted fixed-profile dependency snapshot. */
+/** Accept the redacted fixed-profile snapshot only when the package states agree. */
 export function isDshProfileStatus(value: unknown): value is DshProfileStatus {
-  if (!exactObjectKeys(value, ["schema_version", "profile_name", "installation_state", "expected_bundle_count", "installed_bundle_count", "packages", "composition_status", "trust_status"])) return false;
+  if (!exactObjectKeys(value, ["schema_version", "profile_name", "installation_state", "expected_bundle_count", "declared_bundle_count", "installed_bundle_count", "packages", "composition_status", "trust_status"])) return false;
   const status = value as Record<string, unknown>;
-  if (status.schema_version !== "cosmatter.dsh-profile-status/v1"
+  if (status.schema_version !== "cosmatter.dsh-profile-status/v2"
     || status.profile_name !== "tui"
-    || !["installed", "partial", "not_installed", "unavailable"].includes(String(status.installation_state))
-    || status.expected_bundle_count !== 7
-    || typeof status.installed_bundle_count !== "number"
-    || !Number.isInteger(status.installed_bundle_count)
-    || status.installed_bundle_count < 0
-    || status.installed_bundle_count > 7
+    || status.expected_bundle_count !== DSH_PACKAGE_NAMES.length
     || status.composition_status !== "not_checked_by_http_api"
-    || status.trust_status !== "local_dependency_snapshot_not_profile_boot_or_plugin_execution"
+    || status.trust_status !== "local_installation_snapshot_not_profile_boot_or_plugin_execution"
     || !Array.isArray(status.packages)
-    || status.packages.length !== 7) return false;
-  const installedCount = status.packages.filter((item) => Boolean(item && typeof item === "object" && !Array.isArray(item) && (item as Record<string, unknown>).installed)).length;
-  return installedCount === status.installed_bundle_count && status.packages.every((item, index) => {
-    if (!exactObjectKeys(item, ["package", "installed", "dependency_kind"])) return false;
+    || status.packages.length !== DSH_PACKAGE_NAMES.length) return false;
+  const packagesAreValid = status.packages.every((item, index) => {
+    if (!exactObjectKeys(item, ["package", "dependency_kind", "install_status"])) return false;
     const packageStatus = item as Record<string, unknown>;
-    return packageStatus.package === DSH_PACKAGE_NAMES[index]
-      && typeof packageStatus.installed === "boolean"
-      && ["local_link", "registry_reference", "remote_reference", "absent"].includes(String(packageStatus.dependency_kind))
-      && (packageStatus.installed ? packageStatus.dependency_kind !== "absent" : packageStatus.dependency_kind === "absent");
+    if (packageStatus.package !== DSH_PACKAGE_NAMES[index]) return false;
+    if (packageStatus.dependency_kind === "absent") return packageStatus.install_status === "not_declared";
+    return ["local_link", "registry_reference", "remote_reference"].some((kind) => kind === packageStatus.dependency_kind)
+      && ["verified", "missing_bundle", "invalid_bundle"].some((state) => state === packageStatus.install_status);
   });
+  if (!packagesAreValid) return false;
+  const declaredCount = status.packages.filter((item) => item.dependency_kind !== "absent").length;
+  const installedCount = status.packages.filter((item) => item.install_status === "verified").length;
+  const installationState = installedCount === DSH_PACKAGE_NAMES.length ? "installed" : installedCount ? "partial" : "not_installed";
+  return declaredCount === status.declared_bundle_count
+    && installedCount === status.installed_bundle_count
+    && (status.installation_state === installationState || (status.installation_state === "unavailable" && declaredCount === 0));
 }
 
 /** Accept only the fixed, presence-only local API capability surface. */

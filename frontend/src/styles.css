@@ -705,10 +705,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-state-ledger { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .36rem; }
 .harness-state-ledger > section { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .28rem .65rem; min-width: 0; padding: .5rem .58rem; border: 1px solid color-mix(in srgb, var(--line) 76%, transparent); background: color-mix(in srgb, var(--surface) 52%, transparent); }
 .harness-state-ledger section > div { display: grid; gap: .08rem; min-width: 0; }
-.harness-state-ledger small { overflow: hidden; color: var(--signal-blue); font: 700 max(.64rem, 11px)/1.3 ui-monospace, "Cascadia Mono", monospace; letter-spacing: .055em; text-overflow: ellipsis; white-space: nowrap; }
+.harness-state-ledger small { color: var(--signal-blue); font: 700 max(.66rem, 12px)/1.3 ui-monospace, "Cascadia Mono", monospace; letter-spacing: .055em; overflow-wrap: anywhere; }
 .harness-state-ledger strong { font: 740 max(.76rem, 13px)/1.2 Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
 .harness-state-ledger p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: max(.68rem, 12px); line-height: 1.5; }
-.harness-state-ledger .cm-action { grid-column: 1 / -1; justify-self: start; }
+.harness-state-ledger .harness-installation-footer { display: flex; grid-column: 1 / -1; flex-wrap: wrap; align-items: center; gap: .4rem .65rem; }
+.harness-installation-footer > p { flex: 1 1 12rem; }
+.harness-installation-footer > .cm-action { flex: 0 0 auto; white-space: nowrap; }
 .harness-package-proof { border: 1px solid color-mix(in srgb, var(--signal-blue) 28%, var(--line)); background: color-mix(in srgb, var(--surface) 66%, transparent); }
 .harness-package-proof > summary { display: flex; min-height: 2.3rem; align-items: center; justify-content: space-between; gap: .6rem; padding: .42rem .58rem; color: var(--ink); font-size: max(.7rem, 12px); line-height: 1.35; cursor: pointer; list-style: none; transition: border-color 150ms ease, background 150ms ease, color 150ms ease; }
 .harness-package-proof > summary::-webkit-details-marker { display: none; }
@@ -724,9 +726,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-package-proof li > i { width: .4rem; height: .4rem; background: var(--signal-amber); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
 .harness-package-proof li.installed > i { background: var(--signal-teal); }
 .harness-package-proof li > div { display: grid; gap: .06rem; min-width: 0; }
-.harness-package-proof li strong { overflow: hidden; font-size: max(.68rem, 12px); line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.harness-package-proof li strong { overflow-wrap: anywhere; font-size: max(.68rem, 12px); line-height: 1.25; }
 .harness-package-proof li code { overflow-wrap: anywhere; color: var(--muted); font-size: max(.63rem, 11px); line-height: 1.35; }
-.harness-package-proof li > span { color: var(--signal-teal); font: 680 max(.63rem, 11px)/1.3 ui-monospace, "Cascadia Mono", monospace; text-align: right; }
+.harness-package-state { display: grid; gap: .08rem; color: var(--signal-teal); font: 680 max(.66rem, 12px)/1.3 ui-monospace, "Cascadia Mono", monospace; text-align: right; }
+.harness-package-state small { color: var(--muted); font-size: inherit; font-weight: 500; }
 .harness-package-proof li:not(.installed) > span { color: var(--signal-amber); }
 .harness-package-proof > p { margin: 0; padding: .42rem .58rem .5rem; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); color: var(--muted); font-size: max(.68rem, 12px); line-height: 1.45; }
 .harness-boundary-copy { display: flex; align-items: start; justify-content: space-between; gap: .5rem 1rem; }

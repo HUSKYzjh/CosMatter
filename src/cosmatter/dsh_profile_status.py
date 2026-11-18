@@ -1,4 +1,4 @@
-"""Redacted, read-only dependency status for the fixed local DSH profile."""
+"""Redacted, read-only bundle installation status for the local DSH profile."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 
-DSH_PROFILE_STATUS_SCHEMA = "cosmatter.dsh-profile-status/v1"
-DSH_PROFILE_STATUS_TRUST = "local_dependency_snapshot_not_profile_boot_or_plugin_execution"
+DSH_PROFILE_STATUS_SCHEMA = "cosmatter.dsh-profile-status/v2"
+DSH_PROFILE_STATUS_TRUST = "local_installation_snapshot_not_profile_boot_or_plugin_execution"
 EXPECTED_DSH_PACKAGES = (
     "@cosmatter/dsh-mission-plugin",
     "@cosmatter/dsh-observability-plugin",
@@ -21,58 +21,92 @@ EXPECTED_DSH_PACKAGES = (
     "@cosmatter/dsh-graph-plugin",
 )
 _PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+_MAX_MANIFEST_BYTES = 128_000
+_ENTRY = "lib/index.js"
+_PATCH = "cordis.patch.yml"
 
 
 def dsh_profile_status(profile_name: str = "tui", *, dsh_home: Path | None = None) -> dict[str, Any]:
-    """Return package-name presence only; never expose dependency values or paths.
-
-    A dependency snapshot proves that the profile references the expected local
-    bundles.  It deliberately does not invoke ``dsh``, compose the profile, read
-    plugin configuration, inspect environment values, or claim tool execution.
-    """
+    """Check declared bundles and their fixed installation files without loading them."""
     if not isinstance(profile_name, str) or not _PROFILE_NAME.fullmatch(profile_name):
         raise ValueError("DSH profile name is invalid")
-    home = (dsh_home or _default_dsh_home()).resolve()
-    package_file = home / "profiles" / profile_name / "package.json"
+    profile = (dsh_home or _default_dsh_home()) / "profiles" / profile_name
     dependencies: dict[str, object] = {}
-    snapshot_state = "not_installed"
-    if package_file.is_file():
-        try:
-            if package_file.stat().st_size > 128_000:
-                raise ValueError("DSH profile package manifest is too large")
-            payload = json.loads(package_file.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict):
-                raise ValueError("DSH profile package manifest is invalid")
-            raw_dependencies = payload.get("dependencies")
-            if raw_dependencies is not None and not isinstance(raw_dependencies, dict):
-                raise ValueError("DSH profile dependencies are invalid")
-            dependencies = raw_dependencies or {}
-        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
-            snapshot_state = "unavailable"
-            dependencies = {}
+    unavailable = False
+    try:
+        payload = _read_manifest(profile.resolve())
+        raw_dependencies = payload.get("dependencies")
+        if raw_dependencies is not None and not isinstance(raw_dependencies, dict):
+            raise ValueError("DSH profile dependencies are invalid")
+        dependencies = raw_dependencies or {}
+    except FileNotFoundError:
+        pass
+    except (OSError, RuntimeError, ValueError):
+        unavailable = True
 
     packages = []
     for package_name in EXPECTED_DSH_PACKAGES:
         raw_reference = dependencies.get(package_name)
-        installed = isinstance(raw_reference, str) and 0 < len(raw_reference) <= 500
+        declared = isinstance(raw_reference, str) and 0 < len(raw_reference) <= 500 and bool(raw_reference.strip())
         packages.append({
             "package": package_name,
-            "installed": installed,
-            "dependency_kind": _dependency_kind(raw_reference) if installed else "absent",
+            "dependency_kind": _dependency_kind(raw_reference) if declared else "absent",
+            "install_status": _bundle_status(profile / "node_modules" / package_name, package_name) if declared else "not_declared",
         })
-    installed_count = sum(1 for item in packages if item["installed"])
-    if snapshot_state != "unavailable":
-        snapshot_state = "installed" if installed_count == len(packages) else "partial" if installed_count else "not_installed"
+    declared_count = sum(item["dependency_kind"] != "absent" for item in packages)
+    installed_count = sum(item["install_status"] == "verified" for item in packages)
+    snapshot_state = "unavailable" if unavailable else (
+        "installed" if installed_count == len(packages) else "partial" if installed_count else "not_installed"
+    )
     return {
         "schema_version": DSH_PROFILE_STATUS_SCHEMA,
         "profile_name": profile_name,
         "installation_state": snapshot_state,
         "expected_bundle_count": len(packages),
+        "declared_bundle_count": declared_count,
         "installed_bundle_count": installed_count,
         "packages": packages,
         "composition_status": "not_checked_by_http_api",
         "trust_status": DSH_PROFILE_STATUS_TRUST,
     }
+
+
+def _bundle_status(directory: Path, package_name: str) -> str:
+    try:
+        root = directory.resolve(strict=True)
+        manifest = _read_manifest(root)
+        dsh = manifest.get("dsh")
+        bundle = dsh.get("bundle") if isinstance(dsh, dict) else None
+        if (
+            manifest.get("name") != package_name
+            or manifest.get("main") != f"./{_ENTRY}"
+            or not isinstance(bundle, dict)
+            or bundle.get("patch") != f"./{_PATCH}"
+        ):
+            return "invalid_bundle"
+        for filename in (_ENTRY, _PATCH):
+            entry = (root / filename).resolve(strict=True)
+            if not entry.is_relative_to(root) or not entry.is_file():
+                return "invalid_bundle"
+    except FileNotFoundError:
+        return "missing_bundle"
+    except (OSError, RuntimeError, ValueError):
+        return "invalid_bundle"
+    return "verified"
+
+
+def _read_manifest(root: Path) -> dict[str, Any]:
+    manifest = (root / "package.json").resolve(strict=True)
+    if not manifest.is_relative_to(root) or not manifest.is_file():
+        raise ValueError("DSH package manifest is outside its package or is not a file")
+    with manifest.open("rb") as stream:
+        data = stream.read(_MAX_MANIFEST_BYTES + 1)
+    if len(data) > _MAX_MANIFEST_BYTES:
+        raise ValueError("DSH package manifest is too large")
+    payload = json.loads(data.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("DSH package manifest is invalid")
+    return payload
 
 
 def _default_dsh_home() -> Path:
