@@ -38,3 +38,17 @@ it("keeps all declared dependencies distinct from physically verified bundles", 
   expect(isDshProfileStatus({ ...partial, installation_state: "installed" })).toBe(false);
   expect(isDshProfileStatus({ ...partial, declared_bundle_count: 6 })).toBe(false);
 });
+
+it("validates a redacted historical composition check independently of install state", () => {
+  const composition_check = {
+    schema_version: "cosmatter.dsh-composition-check/v1",
+    checked_at: "2026-11-18T03:00:00Z",
+    dsh_version: "0.2.2-rc.3",
+    bundles: [packages[0].package],
+    matches_local_files: false,
+  };
+  expect(isDshProfileStatus({ ...snapshot(), composition_check })).toBe(true);
+  expect(isDshProfileStatus({ ...snapshot(), composition_check: { ...composition_check, bundles: [packages[0].package, packages[0].package] } })).toBe(false);
+  expect(isDshProfileStatus({ ...snapshot(), composition_check: { ...composition_check, checked_at: "2026-11-31T03:00:00Z" } })).toBe(false);
+  expect(isDshProfileStatus({ ...snapshot(), composition_check: { ...composition_check, configuration_stamp: "private" } })).toBe(false);
+});

@@ -7,8 +7,11 @@ import { bfoTaskPresets, isBfoTaskPresetId } from "./bfoTaskPresets";
 import { bfoTaskFormation } from "./bfoTaskFormation";
 import { questionBoundFallbackCandidates } from "./launchQuestionCandidates";
 import { ActionButton } from "./uiPrimitives";
+import type { RetrievalSource } from "./localApi";
 
 export type LaunchMode = "question" | "pdf" | "resume";
+export type LaunchExecution = { kind: "local" } | { kind: "authorized-retrieval"; sources: RetrievalSource[] };
+type LaunchExecutionMode = LaunchExecution["kind"];
 export interface LaunchCandidate { id: string; question: string; material: string; property: string; scope: string; kind: "survey" | "contrast" | "mechanism"; }
 export interface LaunchMission { question: string; material: string; property: string; scope: string; templateId?: string; }
 export interface LaunchPdfCandidateTarget { runId: string; documentId: string; title: string; }
@@ -40,7 +43,7 @@ const MODES: Array<{ id: LaunchMode; icon: string; zh: string; en: string; zhDet
   { id: "resume", icon: "↗", zh: "续航任务", en: "Resume", zhDetail: "运行包 → 未完成阶段", enDetail: "Run package → unfinished stage" },
 ];
 
-export function Launchpad(props: { onQuestion: (mission: LaunchMission) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionAvailable?: boolean; automaticExecutionSources?: string[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
+export function Launchpad(props: { onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
   const [foregroundIndex, setForegroundIndex] = createSignal(nextFleetIndex());
   const [mode, setMode] = createSignal<LaunchMode>("question");
   const activeStage = () => stageForLaunchMode(mode());
@@ -51,7 +54,9 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission) => void;
   const [candidateOrigin, setCandidateOrigin] = createSignal<CandidateOrigin>(null);
   const [candidateAttempt, setCandidateAttempt] = createSignal(0);
   const [selected, setSelected] = createSignal<LaunchCandidate | null>(null);
-  const [jumping, setJumping] = createSignal(false);
+  const [launchExecution, setLaunchExecution] = createSignal<LaunchExecutionMode | null>(null);
+  const jumping = () => launchExecution() !== null;
+  const automaticExecutionAvailable = () => Boolean(props.automaticExecutionSources?.length);
   const [pdf, setPdf] = createSignal<File | null>(null);
   const [pdfConsent, setPdfConsent] = createSignal(false);
   const [automaticConsent, setAutomaticConsent] = createSignal(false);
@@ -148,12 +153,15 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission) => void;
     setSelected({ ...candidate });
     setAutomaticConsent(false);
   }
-  function beginQuestion() {
+  function beginQuestion(execution: LaunchExecutionMode) {
     if (jumping()) return;
     const candidate = selected();
-    if (!candidate || !isLaunchMissionReady(candidate) || (props.automaticExecutionAvailable && !automaticConsent())) return;
-    setJumping(true);
-    window.setTimeout(() => props.onQuestion({ ...candidate, templateId: isBfoTaskPresetId(candidate.id) ? candidate.id : undefined }), 680);
+    if (!candidate || !isLaunchMissionReady(candidate)) return;
+    const sources = props.automaticExecutionSources?.map(({ id }) => id) ?? [];
+    if (execution === "authorized-retrieval" && (!sources.length || !automaticConsent())) return;
+    const authorizedExecution: LaunchExecution = execution === "local" ? { kind: "local" } : { kind: execution, sources };
+    setLaunchExecution(execution);
+    window.setTimeout(() => props.onQuestion({ ...candidate, templateId: isBfoTaskPresetId(candidate.id) ? candidate.id : undefined }, authorizedExecution), 680);
   }
   function resizeQuestionInput(textarea: HTMLTextAreaElement) {
     textarea.style.height = "auto";
@@ -201,7 +209,30 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission) => void;
           <Show when={candidates().length > 0}><section class="candidate-handoff" aria-live="polite"><div><p>{copy("下一步 / 选择一个候选航向", "NEXT / SELECT A CANDIDATE ROUTE")}</p><strong>{selected() ? copy("已选择候选航向；请在下方核对并编辑任务边界。", "Candidate selected; review and edit the task boundary below.") : copy("候选已生成；请选择一条航向以打开可编辑的任务简报。", "Candidate routes are ready; select one to open an editable mission brief.")}</strong><span>{copy("选择不会检索、上传全文或创建任务。", "Selection does not retrieve, upload full text, or create a task.")}</span></div><b>{selected() ? copy("已选择", "SELECTED") : copy("待选择", "SELECT")}</b></section></Show>
           <Show when={candidateOrigin()}>{(origin) => <section classList={{ "candidate-origin": true, warning: origin() !== "deepseek" }} role="status" aria-label={copy("候选生成来源", "Candidate generation source")}><div><strong>{origin() === "deepseek" ? copy("DeepSeek 候选生成 · 已通过问题锚点校验", "DeepSeek candidate generation · question anchors validated") : copy("本地问题绑定回退", "Question-bound local fallback")}</strong><span>{origin() === "deepseek" ? copy("每条可见问题均保留原问题中的材料与目标性质；候选仍是未受信建议。", "Every visible question retains the material and target property from the original question; candidates remain untrusted suggestions.") : origin() === "local_after_failure" ? copy("模型请求失败或输出未通过相关性校验；失配结果未显示，当前候选由本机规则生成。", "The model request failed or its output did not pass relevance validation. The mismatched result was withheld and these routes were generated locally.") : copy("当前页面未连接本机候选生成 API；这些候选由本机规则生成，不是模型回答。", "This page is not connected to the local candidate-generation API. These routes were generated locally and are not a model response.")}</span></div><Show when={origin() === "local_after_failure" && props.onCandidates}><button type="button" disabled={candidatePending()} onClick={() => setCandidateAttempt((value) => value + 1)}>{copy("重新请求模型", "Retry model")}</button></Show></section>}</Show>
           <div classList={{ "candidate-orbits": true, ready: candidates().length > 0 }}><Show when={candidates().length > 0} fallback={<p class="launch-empty" role="status">{candidatePending() ? copy("正在生成未受信候选航向；不会创建任务或调用检索。", "Generating untrusted candidate routes; no task or retrieval is started.") : props.onCandidates && prompt().trim().length >= 12 && !candidateConsent() ? copy("请先授权候选生成模型，再发送研究问题形成候选航向。", "Authorize the candidate-generation model before sending the research question for route suggestions.") : copy("等待研究信号。", "Waiting for a research signal.")}</p>}><For each={candidates()}>{(candidate, index) => <button type="button" aria-pressed={selected()?.id === candidate.id} disabled={jumping()} classList={{ "candidate-planet": true, selected: selected()?.id === candidate.id, [`planet-${candidate.kind}`]: true }} style={{ "--orbit-delay": `${index() * 110}ms` }} onClick={() => { setSelected({ ...candidate }); setAutomaticConsent(false); }}><small>{selected()?.id === candidate.id ? copy("已选航向", "SELECTED") : `0${index() + 1}`}</small><strong>{candidate.question}</strong><span>{candidate.kind === "survey" ? copy("全景梳理", "Landscape") : candidate.kind === "contrast" ? copy("条件分歧", "Contrast") : copy("机制核验", "Mechanism")}</span><em>{selected()?.id === candidate.id ? copy("继续：核对任务边界", "Next: review boundary") : copy("点击选择此航向", "Select this route")}</em></button>}</For></Show></div>
-          <Show when={selected()}>{(candidate) => <section class="launch-brief-editor" aria-labelledby="mission-brief-heading"><div><p id="mission-brief-heading">{copy("下一步 / 任务简报与可编辑边界", "NEXT / MISSION BRIEF AND EDITABLE BOUNDARY")}</p><label>{copy("任务简报研究问题", "Mission-brief research question")}<input value={candidate().question} onInput={(event) => updateCandidate("question", event.currentTarget.value)} /></label><label>{copy("研究对象", "Research objects")}<input value={candidate().material} onInput={(event) => updateCandidate("material", event.currentTarget.value)} /></label><label>{copy("研究目标", "Research target")}<input value={candidate().property} onInput={(event) => updateCandidate("property", event.currentTarget.value)} /></label><label>{copy("比较范围", "Comparison scope")}<input value={candidate().scope} onInput={(event) => updateCandidate("scope", event.currentTarget.value)} /></label></div><div class="launch-confirmation"><Show when={selectedMissing().length}><p class="launch-brief-warning">{copy("仍需人工确认：", "Still requires human confirmation: ")}<For each={selectedMissing()}>{(field, index) => <>{index() ? "、" : ""}{fieldLabel(field)}</>}</For>{copy("。候选航向不会直接成为检索任务。", ". A candidate route cannot directly become a retrieval task.")}</p></Show><Show when={props.automaticExecutionAvailable}><p class="launch-auto-sources" role="status">{copy("本次元数据将发送至：", "Metadata will be sent to: ")}<strong>{props.automaticExecutionSources?.join(copy("、", ", "))}</strong></p><label class="consent launch-auto-consent"><input type="checkbox" checked={automaticConsent()} onChange={(event) => setAutomaticConsent(event.currentTarget.checked)} />{copy("我确认本次任务可向上列书目服务发送问题、对象、目标与范围，用于受控元数据检索；单一来源失败时其余来源仍可安全完成。该授权不接受 EvidenceCard，也不上传全文。", "I authorize this task to send its question, objects, target, and scope to the bibliographic services listed above for controlled metadata retrieval. Other sources may safely complete if one source fails. This does not accept EvidenceCards or upload full text.")}</label></Show><ActionButton class="launch-primary" variant="primary" size="lg" busy={jumping()} busyLabel={copy("正在进入编排…", "Entering orchestration…")} disabled={!selectedReady() || (props.automaticExecutionAvailable && !automaticConsent())} onClick={beginQuestion}>{props.automaticExecutionAvailable ? copy("确认并授权元数据检索", "Confirm and authorize metadata retrieval") : copy("确认任务并进入编排", "Confirm and enter orchestration")}</ActionButton></div></section>}</Show>
+          <Show when={selected()}>{(candidate) => <section class="launch-brief-editor" aria-labelledby="mission-brief-heading"><div><p id="mission-brief-heading">{copy("下一步 / 任务简报与可编辑边界", "NEXT / MISSION BRIEF AND EDITABLE BOUNDARY")}</p><label>{copy("任务简报研究问题", "Mission-brief research question")}<input value={candidate().question} onInput={(event) => updateCandidate("question", event.currentTarget.value)} /></label><label>{copy("研究对象", "Research objects")}<input value={candidate().material} onInput={(event) => updateCandidate("material", event.currentTarget.value)} /></label><label>{copy("研究目标", "Research target")}<input value={candidate().property} onInput={(event) => updateCandidate("property", event.currentTarget.value)} /></label><label>{copy("比较范围", "Comparison scope")}<input value={candidate().scope} onInput={(event) => updateCandidate("scope", event.currentTarget.value)} /></label></div><div class="launch-confirmation"><Show when={selectedMissing().length}><p class="launch-brief-warning">{copy("仍需人工确认：", "Still requires human confirmation: ")}<For each={selectedMissing()}>{(field, index) => <>{index() ? "、" : ""}{fieldLabel(field)}</>}</For>{copy("。候选航向不会直接成为检索任务。", ". A candidate route cannot directly become a retrieval task.")}</p></Show><Show when={automaticExecutionAvailable()}><p class="launch-auto-sources" role="status">{copy("本次元数据将发送至：", "Metadata will be sent to: ")}<strong>{props.automaticExecutionSources?.map(({ label }) => label).join(copy("、", ", "))}</strong></p><label class="consent launch-auto-consent"><input type="checkbox" checked={automaticConsent()} onChange={(event) => setAutomaticConsent(event.currentTarget.checked)} />{copy("我确认本次任务可向上列书目服务发送问题、对象、目标与范围，用于受控元数据检索；单一来源失败时其余来源仍可安全完成。该授权不接受 EvidenceCard，也不上传全文。", "I authorize this task to send its question, objects, target, and scope to the bibliographic services listed above for controlled metadata retrieval. Other sources may safely complete if one source fails. This does not accept EvidenceCards or upload full text.")}</label></Show>
+            <div class="launch-confirm-actions">
+              <ActionButton
+                class={automaticExecutionAvailable() ? undefined : "launch-primary"}
+                variant={automaticExecutionAvailable() ? "secondary" : "primary"}
+                size="lg"
+                disabled={!selectedReady() || jumping()}
+                busy={launchExecution() === "local"}
+                busyLabel={copy("正在进入编排…", "Entering orchestration…")}
+                onClick={() => beginQuestion("local")}
+              >{automaticExecutionAvailable() ? copy("仅进入本机编排", "Enter local orchestration") : copy("确认任务并进入编排", "Confirm and enter orchestration")}</ActionButton>
+              <Show when={automaticExecutionAvailable()}>
+                <ActionButton
+                  class="launch-primary"
+                  variant="primary"
+                  size="lg"
+                  disabled={!selectedReady() || !automaticConsent() || jumping()}
+                  busy={launchExecution() === "authorized-retrieval"}
+                  busyLabel={copy("正在进入编排…", "Entering orchestration…")}
+                  onClick={() => beginQuestion("authorized-retrieval")}
+                >{copy("确认并授权元数据检索", "Confirm and authorize metadata retrieval")}</ActionButton>
+              </Show>
+            </div>
+          </div></section>}</Show>
           <Show when={selectedBfoFormation().length}><section class="bfo-formation-brief" aria-label={copy("BFO 计划编队", "BFO planned formation")}><header><small>{copy("计划编队契约 / 尚未执行", "PLANNED FORMATION CONTRACT / NOT EXECUTING")}</small><span>{copy("每一舰位都写明输入、输出与人工门禁。选择模板或确认任务均不会启动工具。", "Every station names its input, output, and human gate. Selecting or confirming a template does not start a tool.")}</span></header><div role="list"><For each={selectedBfoFormation()}>{(station, index) => <div role="listitem"><span>{String(index() + 1).padStart(2, "0")}</span><strong>{station.fleetLabel}</strong><em>{station.role}</em><small class="formation-intake">{copy("输入", "INPUT")}: {station.intake}</small><small class="formation-artifact">{copy("输出", "OUTPUT")}: {station.artifact}</small><small class="formation-gate">{copy("门禁", "GATE")}: {station.acceptanceGate}</small></div>}</For></div></section></Show>
         </section>
       </Show>

@@ -4,8 +4,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import patch
 
-from cosmatter.dsh_profile_status import EXPECTED_DSH_PACKAGES, dsh_profile_status
+from cosmatter.dsh_profile_status import EXPECTED_DSH_PACKAGES, check_dsh_composition, dsh_profile_status
 
 
 class DshProfileStatusTests(unittest.TestCase):
@@ -79,6 +81,51 @@ class DshProfileStatusTests(unittest.TestCase):
     def test_rejects_an_unbounded_profile_name(self) -> None:
         with self.assertRaises(ValueError):
             dsh_profile_status("../private")
+
+    def test_terminal_check_records_only_enabled_exact_package_pairs_and_detects_profile_edits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            profile.mkdir(parents=True)
+            (profile / "package.json").write_text("{}", encoding="utf-8")
+            generated_config = profile / "cordis.yml"
+            generated_config.write_text("# generated profile\n", encoding="utf-8")
+            config = """
+- id: cosmatter-mission
+  name: '@cosmatter/dsh-mission-plugin'
+  config:
+    private: raw-value-must-not-be-saved
+- id: cosmatter-graph
+  name: '@cosmatter/dsh-graph-plugin'
+  disabled: true
+- id: cosmatter-policy
+  name: '@cosmatter/dsh-review-plugin'
+- id: cosmatter-document
+  name: '@cosmatter/dsh-document-plugin'
+- id: cosmatter-document
+  name: '@cosmatter/dsh-document-plugin'
+"""
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status.subprocess.run",
+                side_effect=[
+                    CompletedProcess([], 0, b"0.2.2-rc.3\n"),
+                    CompletedProcess([], 0, config.encode("utf-8")),
+                ],
+            ) as run:
+                receipt = check_dsh_composition(dsh_home=home)
+                self.assertEqual([call.args[0] for call in run.call_args_list], [
+                    ["local-dsh", "--version"], ["local-dsh", "--profile", "tui", "--dump-config"],
+                ])
+                self.assertTrue(all(call.kwargs["env"]["DSH_HOME"] == str(home.resolve()) for call in run.call_args_list))
+            self.assertEqual(receipt["bundles"], [EXPECTED_DSH_PACKAGES[0]])
+            receipt_text = (profile / ".cosmatter-composition-check.json").read_text(encoding="utf-8")
+            self.assertNotIn("raw-value-must-not-be-saved", receipt_text)
+            self.assertEqual(dsh_profile_status(dsh_home=home)["composition_check"], receipt)
+            self.assertNotIn("configuration_stamp", receipt)
+            generated_config.write_text("# generated profile\n", encoding="utf-8")
+            self.assertTrue(dsh_profile_status(dsh_home=home)["composition_check"]["matches_local_files"])
+            (profile / "cordis.patch.yml").write_text("# local edit\n", encoding="utf-8")
+            self.assertFalse(dsh_profile_status(dsh_home=home)["composition_check"]["matches_local_files"])
 
 
 if __name__ == "__main__":

@@ -73,6 +73,12 @@ Set-Location D:\CosMatter\development\CosMatter
 .\.venv\Scripts\python.exe tools\verify_dsh_plugin_release.py --profile-smoke
 ```
 
+要在舰桥查看本机 `tui` 的组合结果，请先在 CosMatter 虚拟环境中运行
+`cosmatter check-dsh-profile`，再点安装卡片的「重新检查 profile」。
+如果终端找不到 DSH，可加上 `--dsh-executable <本机启动器路径>`。
+命令只保存核验时间、DSH 版本、匹配的插件名和本机配置文件的变更检测信息。
+页面显示上一次配置组合结果，profile 启动与任务派发仍有各自的状态。
+
 ## 回滚
 
 移除一个 bundle 只影响指定 profile：

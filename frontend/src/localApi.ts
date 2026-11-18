@@ -35,6 +35,13 @@ export interface DshProfilePackageStatus {
   dependency_kind: "local_link" | "registry_reference" | "remote_reference" | "absent";
   install_status: "verified" | "missing_bundle" | "invalid_bundle" | "not_declared";
 }
+export interface DshCompositionCheck {
+  schema_version: "cosmatter.dsh-composition-check/v1";
+  checked_at: string;
+  dsh_version: string;
+  bundles: string[];
+  matches_local_files: boolean;
+}
 export interface DshProfileStatus {
   schema_version: "cosmatter.dsh-profile-status/v2";
   profile_name: "tui";
@@ -44,6 +51,7 @@ export interface DshProfileStatus {
   installed_bundle_count: number;
   packages: DshProfilePackageStatus[];
   composition_status: "not_checked_by_http_api";
+  composition_check?: DshCompositionCheck;
   trust_status: "local_installation_snapshot_not_profile_boot_or_plugin_execution";
 }
 export type DshProfileHealth = "disabled" | "loading" | "ready" | "unavailable";
@@ -222,13 +230,16 @@ const exactObjectKeys = (value: unknown, keys: readonly string[]) => Boolean(val
 
 /** Accept the redacted fixed-profile snapshot only when the package states agree. */
 export function isDshProfileStatus(value: unknown): value is DshProfileStatus {
-  if (!exactObjectKeys(value, ["schema_version", "profile_name", "installation_state", "expected_bundle_count", "declared_bundle_count", "installed_bundle_count", "packages", "composition_status", "trust_status"])) return false;
+  const keys = ["schema_version", "profile_name", "installation_state", "expected_bundle_count", "declared_bundle_count", "installed_bundle_count", "packages", "composition_status", "trust_status"];
+  const hasCheck = exactObjectKeys(value, [...keys, "composition_check"]);
+  if (!hasCheck && !exactObjectKeys(value, keys)) return false;
   const status = value as Record<string, unknown>;
   if (status.schema_version !== "cosmatter.dsh-profile-status/v2"
     || status.profile_name !== "tui"
     || status.expected_bundle_count !== DSH_PACKAGE_NAMES.length
     || status.composition_status !== "not_checked_by_http_api"
     || status.trust_status !== "local_installation_snapshot_not_profile_boot_or_plugin_execution"
+    || (hasCheck && !isDshCompositionCheck(status.composition_check))
     || !Array.isArray(status.packages)
     || status.packages.length !== DSH_PACKAGE_NAMES.length) return false;
   const packagesAreValid = status.packages.every((item, index) => {
@@ -246,6 +257,23 @@ export function isDshProfileStatus(value: unknown): value is DshProfileStatus {
   return declaredCount === status.declared_bundle_count
     && installedCount === status.installed_bundle_count
     && (status.installation_state === installationState || (status.installation_state === "unavailable" && declaredCount === 0));
+}
+
+function isDshCompositionCheck(value: unknown): value is DshCompositionCheck {
+  if (!exactObjectKeys(value, ["schema_version", "checked_at", "dsh_version", "bundles", "matches_local_files"])) return false;
+  const check = value as Record<string, unknown>;
+  if (check.schema_version !== "cosmatter.dsh-composition-check/v1"
+    || typeof check.checked_at !== "string"
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(check.checked_at)
+    || typeof check.dsh_version !== "string"
+    || !/^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[a-z0-9.]{1,24})?$/.test(check.dsh_version)
+    || typeof check.matches_local_files !== "boolean"
+    || !Array.isArray(check.bundles) || check.bundles.length > DSH_PACKAGE_NAMES.length) return false;
+  const timestamp = new Date(check.checked_at);
+  if (!Number.isFinite(timestamp.getTime()) || timestamp.toISOString() !== check.checked_at.replace("Z", ".000Z")) return false;
+  const bundles = check.bundles;
+  const ordered = DSH_PACKAGE_NAMES.filter((name) => bundles.includes(name));
+  return ordered.length === bundles.length && ordered.every((name, index) => name === bundles[index]);
 }
 
 /** Accept only the fixed, presence-only local API capability surface. */

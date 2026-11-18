@@ -303,6 +303,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
 });
 
 test("rechecks a missing DSH bundle while the catalogue is unavailable", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.route("**/api/status", async (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({
@@ -313,11 +314,21 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   }));
   await page.route("**/api/plugins", async (route) => route.fulfill({ status: 503, body: "catalogue unavailable" }));
   let repaired = false;
+  let filesChanged = false;
   let finishCheck: () => void = () => {};
   const checkInProgress = new Promise<void>((resolve) => { finishCheck = resolve; });
   await page.route("**/api/dsh-profile", async (route) => {
     if (repaired) await checkInProgress;
-    return route.fulfill({ json: repaired ? dshProfileSnapshot : {
+    return route.fulfill({ json: repaired ? {
+      ...dshProfileSnapshot,
+      composition_check: {
+        schema_version: "cosmatter.dsh-composition-check/v1",
+        checked_at: "2026-11-18T03:00:00Z",
+        dsh_version: "0.2.2-rc.3",
+        bundles: dshProfileSnapshot.packages.map(({ package: name }) => name),
+        matches_local_files: !filesChanged,
+      },
+    } : {
       ...dshProfileSnapshot,
       installed_bundle_count: 6,
       installation_state: "partial",
@@ -338,6 +349,10 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   const packageProof = deck.locator(".harness-package-proof");
   await packageProof.locator("summary").press("Enter");
   await expect(packageProof.locator("li").first()).toContainText("文件缺失");
+  const composition = deck.getByRole("region", { name: "配置组合核验" });
+  await composition.getByRole("button", { name: "复制核验命令" }).click();
+  await expect(composition.getByRole("status")).toHaveText("已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cosmatter check-dsh-profile");
 
   repaired = true;
   await installationCard.getByRole("button", { name: "重新检查 profile" }).click();
@@ -350,6 +365,11 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   }
   await expect(installationCard).toContainText("已验证 7/7");
   await expect(packageProof.locator("li").first().locator(".harness-package-state b")).toHaveText("已验证");
+  await expect(composition).toContainText("上次组合 7/7");
+  await expect(composition).toContainText("启动未核验");
+  filesChanged = true;
+  await installationCard.getByRole("button", { name: "重新检查 profile" }).click();
+  await expect(composition).toContainText("文件已变化，待复核");
 });
 
 test("wraps narrow rail handoffs and manifest counts without collisions", async ({ page }) => {
@@ -532,7 +552,12 @@ test("keeps manual API execution explicitly staged and readable on a narrow view
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test("discloses every available automatic metadata destination before consent", async ({ page }) => {
+test("discloses metadata destinations and allows local orchestration without consent", async ({ page }) => {
+  let automaticRequests = 0;
+  await page.route("**/api/missions/auto", (route) => {
+    automaticRequests++;
+    return route.abort();
+  });
   await page.route("**/api/status", async (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -547,6 +572,25 @@ test("discloses every available automatic metadata destination before consent", 
   await expect(destinations).toContainText("Sciverse、OpenAlex、Crossref");
   await expect(page.getByLabel(/我确认本次任务可向上列书目服务发送/)).toBeVisible();
   await expect(page.getByRole("button", { name: "确认并授权元数据检索" })).toBeDisabled();
+  await page.getByRole("button", { name: /BFO-01/ }).click();
+  await page.getByRole("button", { name: "仅进入本机编排" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  expect(automaticRequests).toBe(0);
+});
+
+test("dispatches an automatic metadata mission only from the authorized action", async ({ page }) => {
+  await page.route("**/api/status", (route) => route.fulfill({ json: {
+    api_mode: "loopback_only",
+    providers: { deepseek: false, sciverse: true, mineru: false, openalex: false, crossref: true, crossref_polite_contact: true },
+    operation_contracts: operationContracts,
+  } }));
+  await page.route("**/api/missions/auto", (route) => route.fulfill({ status: 503 }));
+  await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /BFO-01/ }).click();
+  await page.getByLabel(/我确认本次任务可向上列书目服务发送/).check();
+  const request = page.waitForRequest("**/api/missions/auto");
+  await page.getByRole("button", { name: "确认并授权元数据检索" }).click();
+  expect((await request).postDataJSON()).toMatchObject({ consent: true, sources: ["sciverse", "crossref"] });
 });
 
 test("activates a BFO task template through the keyboard with an explicit pressed state", async ({ page }) => {

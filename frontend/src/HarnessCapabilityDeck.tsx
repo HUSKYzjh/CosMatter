@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
 
 import type { DshProfileHealth, DshProfileStatus, HarnessAuthorization, HarnessCatalogueHealth, HarnessPluginDescriptor, OperationalTelemetry } from "./localApi";
 import { ActionButton, StatusBadge } from "./uiPrimitives";
@@ -6,6 +6,7 @@ import type { UiLocale } from "./fleetRegistry";
 import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
+const PROFILE_CHECK_COMMAND = "cosmatter check-dsh-profile";
 
 const BUNDLE_ROLES: Record<string, readonly [string, string]> = {
   "@cosmatter/dsh-mission-plugin": ["任务建立", "Mission intake"],
@@ -49,6 +50,26 @@ export function HarnessCapabilityDeck(props: {
   const externalCount = createMemo(() => (props.plugins ?? []).filter((plugin) => plugin.automation_class === "external_authorized").length);
   const humanGateCount = createMemo(() => (props.plugins ?? []).filter((plugin) => plugin.requires_human_review || plugin.automation_class === "human_gate").length);
   const runtime = createMemo(() => harnessRuntimeSummary(props.operationalTelemetry));
+  const [copyFeedback, setCopyFeedback] = createSignal<"copied" | "manual" | null>(null);
+  const copyCheckCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(PROFILE_CHECK_COMMAND);
+      setCopyFeedback("copied");
+    } catch {
+      setCopyFeedback("manual");
+    }
+  };
+  const composition = () => props.profile?.composition_check;
+  const compositionLabel = createMemo(() => {
+    const check = composition();
+    if (!check) return { tone: "neutral" as const, text: x("配置组合与启动未核验", "Composition and startup unverified") };
+    if (!check.matches_local_files) return { tone: "attention" as const, text: x("文件已变化，待复核", "Files changed; recheck needed") };
+    const count = check.bundles.length;
+    return {
+      tone: count === props.profile?.expected_bundle_count ? "ready" as const : "attention" as const,
+      text: x(`上次组合 ${count}/7`, `Last composed ${count}/7`),
+    };
+  });
   const profileBadge = createMemo(() => {
     const profile = props.profile;
     if (props.profileHealth === "loading") return { tone: "active" as const, copy: x("检查中", "Checking") };
@@ -65,6 +86,16 @@ export function HarnessCapabilityDeck(props: {
     };
     const profileReady = props.profileHealth === "ready" && props.profile?.installation_state === "installed";
     const adapterReady = props.health === "ready";
+    if (profileReady && adapterReady && compositionLabel().tone === "ready") return {
+      state: "partial",
+      title: x("最近一次配置组合完整，等待启动核验", "Last composition complete; startup unverified"),
+      detail: x("上次核验包含全部七个插件。当前任务派发状态见运行回执。", "The last check included all seven bundles. See the runtime receipts for this mission."),
+    };
+    if (profileReady && adapterReady && compositionLabel().tone === "attention") return {
+      state: "partial",
+      title: compositionLabel().text,
+      detail: x("可在终端重新核验 tui 配置组合。", "Recheck the TUI composition in the terminal."),
+    };
     if (profileReady && adapterReady) return {
       state: "partial",
       title: x("安装与契约已就绪，profile 启动未核验", "Installation and contracts ready; profile startup unverified"),
@@ -107,9 +138,9 @@ export function HarnessCapabilityDeck(props: {
         <strong>{profileBadge().copy}</strong>
       </div>
       <i aria-hidden="true">≠</i>
-      <div class="attention">
+      <div classList={{ ready: compositionLabel().tone === "ready", attention: compositionLabel().tone === "attention" }}>
         <small>02 / COMPOSE</small>
-        <strong>{x("配置组合与启动未核验", "Composition and startup unverified")}</strong>
+        <strong>{compositionLabel().text}</strong>
       </div>
       <i aria-hidden="true">≠</i>
       <div classList={{ ready: props.health === "ready", attention: props.health === "unavailable" }}>
@@ -174,6 +205,28 @@ export function HarnessCapabilityDeck(props: {
             ? x(`已登记 ${runtime().dispatchCount} 次派发：完成 ${runtime().completedCount}，未完成 ${runtime().incompleteCount}，结果未知 ${runtime().unknownCount}。`, `${runtime().dispatchCount} dispatch(es) recorded: ${runtime().completedCount} completed, ${runtime().incompleteCount} incomplete, ${runtime().unknownCount} unknown.`)
             : x("没有运行级派发记录；目录与安装状态不会被当作执行证明。", "No runtime dispatch is recorded. Catalogue and installation status are never treated as proof of execution.")}</p>
         </section>
+        <Show when={props.profileHealth !== "disabled" && props.onRefreshProfile}>
+          <section class="harness-composition-card" aria-label={x("配置组合核验", "Profile composition check")}>
+            <div>
+              <small>{x("配置组合核验", "PROFILE COMPOSITION CHECK")}</small>
+              <strong>{x("终端检查 DSH · tui", "Terminal check · DSH tui")}</strong>
+            </div>
+            <StatusBadge tone={compositionLabel().tone}>{compositionLabel().text}</StatusBadge>
+            <p>{x("在 CosMatter 环境运行命令，再点「重新检查 profile」查看结果。", "Run the command in the CosMatter environment, then select Recheck profile to see the result.")}</p>
+            <Show when={composition()}>{(check) => <p class="harness-composition-result">
+              <time dateTime={check().checked_at}>{new Intl.DateTimeFormat(props.locale === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(check().checked_at))}</time>
+              <span>DSH {check().dsh_version}</span>
+              <span>{x("启动未核验", "Startup unverified")}</span>
+            </p>}</Show>
+            <div class="harness-installation-footer harness-copy-row">
+              <code>{PROFILE_CHECK_COMMAND}</code>
+              <ActionButton size="sm" onClick={() => void copyCheckCommand()}>{x("复制核验命令", "Copy check command")}</ActionButton>
+            </div>
+            <Show when={copyFeedback()}>{(feedback) => <p role="status">{feedback() === "copied"
+              ? x("已复制。", "Copied.")
+              : x("剪贴板不可用，请选中命令手动复制。", "Clipboard unavailable. Select the command and copy it manually.")}</p>}</Show>
+          </section>
+        </Show>
     </div>
     <Show when={props.profile?.installation_state !== "unavailable" && props.profile}>{(profile) =>
       <details class="harness-package-proof" aria-busy={props.profileHealth === "loading" || undefined}>

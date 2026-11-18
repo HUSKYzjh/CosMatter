@@ -1,7 +1,7 @@
 import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount, untrack } from "solid-js";
 
 import { FleetDecoration } from "./FleetDecoration";
-import { Launchpad, type LaunchMission, type LaunchPdfCandidateTarget } from "./Launchpad";
+import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget } from "./Launchpad";
 import { type LaunchPreviewStage } from "./launchStages";
 import { launchMissionMissingFields } from "./launchMissionValidation";
 import { continuationStageLabel, reconcileRestoredStage, viewForRestoredRun } from "./continuationStage";
@@ -1355,7 +1355,7 @@ export function App() {
     const timer = window.setInterval(() => setRuntimeFreshnessNow(Date.now()), 5_000);
     onCleanup(() => window.clearInterval(timer));
   });
-  function beginLaunchMission(mission: LaunchMission) {
+  function beginLaunchMission(mission: LaunchMission, execution: LaunchExecution) {
     const nextMission = {
       missionId: newLocalMissionId(),
       question: mission.question.trim(),
@@ -1365,21 +1365,24 @@ export function App() {
     };
     const missingBoundary = launchMissionMissingFields(nextMission).map((field) => ({ question: text("研究问题", "research question"), material: text("研究对象", "research objects"), property: text("研究目标／比较维度", "research targets / comparison dimensions"), scope: text("研究边界／比较范围", "research boundaries / comparison scope") } as const)[field]);
     if (missingBoundary.length) { setStatus(text(`请先补齐或替换待确认内容：${missingBoundary.join("、")}。`, `Complete or replace unconfirmed content: ${missingBoundary.join(", ")}.`)); return; }
-    const automaticAvailable = localApiUsable() && retrievalSources().length > 0;
+    const eligibleSources = localApiUsable() ? retrievalSources() : [];
+    const authorizedSources = execution.kind === "authorized-retrieval"
+      ? execution.sources.filter((source) => eligibleSources.includes(source))
+      : [];
     const missionEpoch = supersedeActiveRun();
     clearRunScopedClientArtifacts();
     setLiveRunId(null);
     applyImportedBundle(emptyBundleForMission(nextMission));
     setBfoFormationLink(bfoTemplateLink(nextMission.missionId, mission.templateId));
-    setStatus(automaticAvailable
+    setStatus(authorizedSources.length
       ? text("任务已确认；正在登记一次已授权的自动元数据检索。完成前仅显示空任务壳，候选元数据仍不是证据。", "Mission confirmed; registering the one-time authorised metadata retrieval. Until it finishes, only an empty task shell is shown and candidate metadata is not evidence.")
-      : text("任务已确认；当前仅建立空任务壳。可连接的本机 API 与至少一个书目来源可用后，才可进行受控检索或导入工件。", "Mission confirmed; only an empty task shell exists. Controlled retrieval or artifact import is available only after a reachable local API and at least one bibliographic source are available."));
-    if (automaticAvailable) {
+      : text("已进入本机编排。可检查插件状态、导入工件或设置检索计划。", "Local orchestration is open. Check plugin status, import artifacts, or set up a retrieval plan."));
+    if (authorizedSources.length) {
       setAutomaticCancellationRequested(false);
       setAutomaticMissionPending(true);
       setAutomaticGraphHandoffPending(true);
       startAutomaticOperation();
-      void createAutomaticMission({ question: nextMission.question, material: nextMission.material, property: nextMission.property, scope: nextMission.scope, sources: retrievalSources() }).then((result) => {
+      void createAutomaticMission({ question: nextMission.question, material: nextMission.material, property: nextMission.property, scope: nextMission.scope, sources: authorizedSources }).then((result) => {
         if (!isCurrentTask(missionEpoch)) { void cancelRun(result.run_id).catch(() => undefined); return; }
         const authorization = result.harness_authorization;
         if (!authorization || authorization.trust_status !== "authorization_checked_before_automatic_dispatch") {
@@ -1839,7 +1842,7 @@ export function App() {
   });
 
   return <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionAvailable={localApiUsable() && retrievalSources().length > 0} automaticExecutionSources={SOURCES.filter((source) => retrievalSources().includes(source.id)).map((source) => source.label)} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>

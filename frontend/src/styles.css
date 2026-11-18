@@ -497,6 +497,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .launch-confirmation .launch-auto-sources { margin: 0; padding: .5rem .58rem; border-left: 2px solid var(--signal-teal); color: var(--muted); background: color-mix(in srgb, var(--signal-teal) 7%, transparent); font: .7rem/1.5 ui-sans-serif, system-ui, sans-serif; }
 .launch-confirmation .launch-auto-sources strong { display: block; margin-top: .12rem; color: var(--ink); font-weight: 720; }
 .launch-confirmation .launch-primary { justify-self: end; }
+.launch-confirm-actions { display: grid; gap: .4rem; min-width: 0; }
+.launch-confirm-actions > .cm-action { width: 100%; }
 @media (max-width: 880px) { .launch-confirmation .launch-primary { width: 100%; justify-self: stretch; } }
 
 /* Graph evidence route: a thin state readout, not a completion claim. */
@@ -711,6 +713,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-state-ledger .harness-installation-footer { display: flex; grid-column: 1 / -1; flex-wrap: wrap; align-items: center; gap: .4rem .65rem; }
 .harness-installation-footer > p { flex: 1 1 12rem; }
 .harness-installation-footer > .cm-action { flex: 0 0 auto; white-space: nowrap; }
+.harness-state-ledger > .harness-composition-card { grid-column: 1 / -1; }
+.harness-composition-result { display: flex; flex-wrap: wrap; gap: .2rem .65rem; }
+.harness-copy-row > code { min-width: 0; max-width: 100%; overflow-wrap: anywhere; font: max(.73rem, 12px)/1.45 ui-monospace, "Cascadia Mono", monospace; color: var(--ink); user-select: all; }
 .harness-package-proof { border: 1px solid color-mix(in srgb, var(--signal-blue) 28%, var(--line)); background: color-mix(in srgb, var(--surface) 66%, transparent); }
 .harness-package-proof > summary { display: flex; min-height: 2.3rem; align-items: center; justify-content: space-between; gap: .6rem; padding: .42rem .58rem; color: var(--ink); font-size: max(.7rem, 12px); line-height: 1.35; cursor: pointer; list-style: none; transition: border-color 150ms ease, background 150ms ease, color 150ms ease; }
 .harness-package-proof > summary::-webkit-details-marker { display: none; }
