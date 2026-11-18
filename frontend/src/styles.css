@@ -580,6 +580,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .rail-run-id { display: grid; gap: .15rem; flex: 1 1 7rem; min-width: 0; }
 .rail-run-id span { color: var(--muted); font-size: max(.7rem, 12px); }
 .rail-run-actions { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 100%; }
+.rail-dsh-tools { width: 100%; min-width: 0; }
 .rail-run-identity code { color: var(--ink); font: max(.72rem, 12px)/1.4 ui-monospace, "Cascadia Mono", monospace; overflow-wrap: anywhere; user-select: all; }
 .rail-run-identity > p { flex: 1 0 100%; margin: 0; }
 .rail-run-entry-note { color: var(--muted); font-size: max(.72rem, 12px); line-height: 1.45; overflow-wrap: anywhere; }
@@ -832,6 +833,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-package-state small { color: var(--muted); font-size: inherit; font-weight: 500; }
 .harness-package-proof li:not(.installed) > span { color: var(--signal-amber); }
 .harness-package-proof > p { margin: 0; padding: .42rem .58rem .5rem; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); color: var(--muted); font-size: max(.68rem, 12px); line-height: 1.45; }
+.dsh-tool-dialog { box-sizing: border-box; width: min(46rem, calc(100% - 1rem)); max-width: none; max-height: calc(100dvh - 1rem); margin: auto; padding: 0; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: .4rem; color: var(--ink); background: var(--surface); box-shadow: 0 .75rem 3rem rgb(5 14 26 / 30%); }
+.dsh-tool-dialog::backdrop { background: rgb(5 14 26 / 58%); }
+.dsh-tool-dialog > header { position: sticky; z-index: 1; top: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .45rem .7rem; padding: .62rem .7rem; border-bottom: 1px solid var(--line); background: var(--surface); }
+.dsh-tool-dialog h2 { min-width: 0; margin: 0; font-size: max(.95rem, 15px); overflow-wrap: anywhere; }
+.dsh-tool-dialog h2:focus-visible { outline: 2px solid var(--signal-blue); outline-offset: 3px; }
+.dsh-tool-dialog > .dsh-tool-body { border-top: 0; }
+html:has(.dsh-tool-dialog[open]) { overflow: hidden; }
 .dsh-tool-body { display: grid; gap: .6rem; min-width: 0; padding: .65rem; border-top: 1px solid var(--line); }
 .dsh-tool-body p { margin: 0; color: var(--muted); font-size: max(.73rem, 12px); line-height: 1.5; overflow-wrap: anywhere; }
 .dsh-current-stage { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .45rem .65rem; padding: .45rem .55rem; border: 1px solid var(--line); background: color-mix(in srgb, var(--signal-blue) 6%, var(--surface)); }

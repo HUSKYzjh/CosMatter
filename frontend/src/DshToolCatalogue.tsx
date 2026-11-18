@@ -51,17 +51,26 @@ const ACCESS_LABELS: Record<Access, readonly [string, string]> = {
 };
 const ACCESS_TYPES = Object.keys(ACCESS_LABELS) as Access[];
 
-export function DshToolCatalogue(props: {
+export interface DshToolCatalogueProps {
   locale: UiLocale;
   plugins: readonly HarnessPluginDescriptor[];
   profile: DshProfileStatus | null;
   profileHealth: DshProfileHealth;
   currentStage?: WorkflowStageName | null;
-}) {
+}
+
+export function DshToolCatalogue(props: DshToolCatalogueProps) {
+  return <details class="harness-disclosure dsh-tool-catalogue" aria-live="off">
+    <summary><span>{props.locale === "zh" ? "查找 DSH 工具" : "Find DSH tools"}</span><strong>{TOOLS.length}</strong></summary>
+    <DshToolCatalogueContent {...props} />
+  </details>;
+}
+
+export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initialStage?: WorkflowStageName | null }) {
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const [query, setQuery] = createSignal("");
   const [filter, setFilter] = createSignal<Access | "all">("all");
-  const [stageFilter, setStageFilter] = createSignal<WorkflowStageName | "all">("all");
+  const [stageFilter, setStageFilter] = createSignal<WorkflowStageName | "all">(props.initialStage ?? "all");
   const [clipboard, setClipboard] = createSignal<{ name: string; copied: boolean } | null>(null);
   const pluginById = createMemo(() => new Map(props.plugins.map((plugin) => [plugin.plugin_id, plugin])));
   const registry = createMemo(() => {
@@ -106,9 +115,7 @@ export function DshToolCatalogue(props: {
     }
   };
 
-  return <details class="harness-disclosure dsh-tool-catalogue" aria-live="off">
-    <summary><span>{x("查找 DSH 工具", "Find DSH tools")}</span><strong>{TOOLS.length}</strong></summary>
-    <div class="dsh-tool-body">
+  return <div class="dsh-tool-body">
       <p>{x("按阶段、工具名、插件包或授权类型查找。目录仅供查阅，运行前仍须核对阶段要求。", "Find tools by stage, name, bundle, or authorization. Check the stage requirements before running a tool.")}</p>
       <Show when={props.currentStage}>{(stage) => <div class="dsh-current-stage">
         <p><span>{x("本机已核验阶段", "Locally verified stage")}</span><strong>{continuationStageLabel(stage(), props.locale)}</strong></p>
@@ -179,6 +186,5 @@ export function DshToolCatalogue(props: {
           }}</For>
         </ul>
       </Show>
-    </div>
-  </details>;
+    </div>;
 }
