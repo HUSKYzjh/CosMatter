@@ -676,7 +676,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-capability-deck > header { display: flex; align-items: end; justify-content: space-between; gap: .55rem 1rem; }
 .harness-capability-deck header small, .harness-permission-list > small { color: var(--signal-blue); font: 700 max(.68rem, 11px)/1.3 ui-monospace, "Cascadia Mono", monospace; letter-spacing: .08em; }
 .harness-capability-deck h2 { margin: .15rem 0 0; font: 750 max(.92rem, 15px)/1.25 Bahnschrift, "Aptos Display", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
-.harness-activation-track { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: stretch; gap: .3rem; }
+.harness-activation-track { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr) auto) minmax(0, 1fr); align-items: stretch; gap: .3rem; }
 .harness-activation-track > div { --activation-signal: var(--muted); display: grid; gap: .08rem; min-width: 0; padding: .42rem .52rem; border-top: 1px solid color-mix(in srgb, var(--activation-signal) 44%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--activation-signal) 6%, transparent), transparent 78%); }
 .harness-activation-track > div.ready { --activation-signal: var(--signal-teal); }
 .harness-activation-track > div.active { --activation-signal: var(--signal-blue); }

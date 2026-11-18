@@ -51,9 +51,9 @@ export function HarnessCapabilityDeck(props: {
     const profileReady = props.profileHealth === "ready" && props.profile?.installation_state === "installed";
     const adapterReady = props.health === "ready";
     if (profileReady && adapterReady) return {
-      state: "ready",
-      title: x("DSH 安装面与契约桥已就绪", "DSH installation and contract bridge ready"),
-      detail: x("七个包的 profile 依赖与本机契约目录均已核验；HTTP 未核验配置组合或启动，且只有运行回执能证明实际派发。", "All seven profile dependencies and the local contract catalogue are verified. HTTP does not verify configuration composition or startup, and only runtime receipts prove actual dispatch."),
+      state: "partial",
+      title: x("安装与契约已就绪，profile 启动未核验", "Installation and contracts ready; profile startup unverified"),
+      detail: x("七个包的依赖与本机契约目录均已核验；配置组合与 profile 启动仍是独立缺口，只有运行回执能证明实际派发。", "All seven dependencies and the local contract catalogue are verified. Configuration composition and profile startup remain a separate gap; only runtime receipts prove actual dispatch."),
     };
     if (profileReady || adapterReady) return {
       state: "partial",
@@ -88,13 +88,18 @@ export function HarnessCapabilityDeck(props: {
           : x("依赖未核验", "Dependencies not checked")}</strong>
       </div>
       <i aria-hidden="true">≠</i>
+      <div class="attention">
+        <small>02 / COMPOSE</small>
+        <strong>{x("配置组合与启动未核验", "Composition and startup unverified")}</strong>
+      </div>
+      <i aria-hidden="true">≠</i>
       <div classList={{ ready: props.health === "ready", attention: props.health === "unavailable" }}>
-        <small>02 / CONTRACT</small>
+        <small>03 / CONTRACT</small>
         <strong>{props.health === "ready" ? x("契约目录已连接", "Contract catalogue connected") : props.health === "loading" ? x("正在连接目录", "Connecting catalogue") : x("目录未连接", "Catalogue disconnected")}</strong>
       </div>
       <i aria-hidden="true">≠</i>
       <div classList={{ ready: runtime().state === "completed", attention: runtime().state === "unknown" || runtime().state === "incomplete", active: Boolean(props.operationPending) }}>
-        <small>03 / RUNTIME</small>
+        <small>04 / RUNTIME</small>
         <strong>{props.operationPending
           ? x("受控操作进行中", "Controlled operation active")
           : runtime().dispatchCount ? x(`${runtime().completedCount}/${runtime().dispatchCount} 派发完成`, `${runtime().completedCount}/${runtime().dispatchCount} dispatches complete`)
@@ -120,7 +125,7 @@ export function HarnessCapabilityDeck(props: {
     </Show>
     <div class="harness-state-ledger">
         <section>
-          <div><small>{x("DSH PROFILE / 依赖快照", "DSH PROFILE / DEPENDENCY SNAPSHOT")}</small><strong>{props.profile?.profile_name ?? "tui"}</strong></div>
+          <div><small>{x("安装证明 / 依赖快照", "INSTALL PROOF / DEPENDENCY SNAPSHOT")}</small><strong>{props.profile?.profile_name ?? "tui"}</strong></div>
           <StatusBadge tone={props.profile?.installation_state === "installed" ? "ready" : props.profileHealth === "unavailable" || props.profile?.installation_state === "partial" ? "attention" : "neutral"} pulse={props.profileHealth === "loading"}>{props.profileHealth === "loading"
             ? x("检查中", "Checking")
             : props.profileHealth === "disabled" ? x("只读预览未检查", "Not checked in preview")
@@ -134,7 +139,7 @@ export function HarnessCapabilityDeck(props: {
           <Show when={props.profileHealth !== "disabled" && props.profileHealth !== "loading" && (props.profileHealth === "unavailable" || props.profile?.installation_state !== "installed") && props.onRefreshProfile}><ActionButton size="sm" variant="secondary" onClick={() => props.onRefreshProfile?.()}>{x("重新检查 profile", "Recheck profile")}</ActionButton></Show>
         </section>
         <section>
-          <div><small>{x("运行回执 / 当前任务", "RUNTIME RECEIPTS / CURRENT MISSION")}</small><strong>{runtime().dispatchCount ? `${runtime().completedCount}/${runtime().dispatchCount}` : "—"}</strong></div>
+          <div><small>{x("执行证明 / 当前任务回执", "EXECUTION PROOF / CURRENT MISSION RECEIPTS")}</small><strong>{runtime().dispatchCount ? `${runtime().completedCount}/${runtime().dispatchCount}` : "—"}</strong></div>
           <StatusBadge tone={runtime().state === "completed" ? "ready" : runtime().state === "unknown" || runtime().state === "incomplete" ? "attention" : props.operationPending ? "active" : "neutral"} pulse={Boolean(props.operationPending)}>{props.operationPending
             ? x("操作进行中", "Operation in progress")
             : runtime().state === "completed" ? x("派发均已完成", "All dispatches completed")
