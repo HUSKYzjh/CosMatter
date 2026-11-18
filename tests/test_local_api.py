@@ -646,7 +646,10 @@ class LocalMissionApiTests(unittest.TestCase):
                 snapshot = self.api.source_parse_status("live_001")
                 self.assertEqual(snapshot["mission_id"], mission["mission_id"])
                 self.assertEqual(snapshot["tasks"], [{"document_id": "doc-1", "state": state,
-                                                      "markdown_ready": False, "source_map_segment_count": 0}])
+                                                      "markdown_ready": False, "can_link_markdown": False, "source_map_segment_count": 0}])
+                with self.assertRaises(LocalApiError) as no_receipt:
+                    self.api.link_fetched_source_markdown("live_001", "doc-1", b"Synthetic without a receipt")
+                self.assertEqual(no_receipt.exception.status, 404)
                 with self.assertRaises(LocalApiError) as rejected:
                     self.api.create_pdf_run({"run_id": "live_001", "candidate_document_id": "doc-1", "consent": True},
                                             "authorized.pdf", b"%PDF-1.7 synthetic")

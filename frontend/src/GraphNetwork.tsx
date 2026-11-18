@@ -3,6 +3,7 @@ import { ErrorBoundary, For, Show, Suspense, createEffect, createMemo, createSig
 import { FleetDecoration } from "./FleetDecoration";
 import { CandidateScreeningPanel } from "./CandidateScreeningPanel";
 import { CandidateFulltextQueue } from "./CandidateFulltextQueue";
+import { SourceMarkdownLinkButton } from "./SourceMarkdownLinkButton";
 import { EvidenceGraphExplorer } from "./EvidenceGraphExplorer";
 import { fleetVisualState } from "./fleetVisualState";
 import type { GraphCanvasControls, LiteratureGraphCanvasProps } from "./LiteratureGraphCanvas";
@@ -68,7 +69,7 @@ function edgeGroup(edge: LiteratureGraphEdge): EdgeGroup {
   return "structure";
 }
 
-export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; locale: "zh" | "en"; runId?: string | null; selectedDocumentId?: string | null; pdfTask: PdfTaskStatus | null; pdfTasks?: PdfTaskStatus[]; sourceTasks?: SavedSourceParseTask[]; sourceHealth?: SavedSourceParseHealth; onRefreshSourceParses?: () => void; screening: CandidateScreening | null; onLoadScreening?: () => Promise<void>; onSubmitScreening?: (decisions: CandidateScreeningDecision[], revision?: string) => Promise<void>; onRequestFulltext?: (candidate: CandidateScreeningCandidate) => void; readOnlyPreview?: boolean; onExitPreview?: () => void; onNavigate: (view: NavigateView) => void; onSelectPaper: (node: LiteratureGraphNode) => boolean; onSelectEvidence: (evidence: EvidenceCard) => boolean }) {
+export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; locale: "zh" | "en"; runId?: string | null; selectedDocumentId?: string | null; pdfTask: PdfTaskStatus | null; pdfTasks?: PdfTaskStatus[]; sourceTasks?: SavedSourceParseTask[]; sourceHealth?: SavedSourceParseHealth; onRefreshSourceParses?: () => void; onLinkSourceMarkdown?: (runId: string, documentId: string, file: File) => Promise<void>; screening: CandidateScreening | null; onLoadScreening?: () => Promise<void>; onSubmitScreening?: (decisions: CandidateScreeningDecision[], revision?: string) => Promise<void>; onRequestFulltext?: (candidate: CandidateScreeningCandidate) => void; readOnlyPreview?: boolean; onExitPreview?: () => void; onNavigate: (view: NavigateView) => void; onSelectPaper: (node: LiteratureGraphNode) => boolean; onSelectEvidence: (evidence: EvidenceCard) => boolean }) {
   const [query, setQuery] = createSignal("");
   const [selectedTopic, setSelectedTopic] = createSignal<TopicKey | "all">("all");
   const [advanced, setAdvanced] = createSignal(false);
@@ -126,6 +127,11 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
   const matchingPdfTask = createMemo(() => pdfTaskForPaper(props.pdfTasks ?? (props.pdfTask ? [props.pdfTask] : []), selectedNode()));
   const paperPdf = createMemo(() => paperPdfIntake(matchingPdfTask(), selectedNode()));
   const inspectedSource = createMemo(() => props.sourceTasks?.find((task) => task.document_id === paperPdf().documentId) ?? null);
+  const linkSourceMarkdown = createMemo(() => {
+    const runId = props.runId;
+    const link = props.onLinkSourceMarkdown;
+    return runId && link ? (documentId: string, file: File) => link(runId, documentId, file) : undefined;
+  });
   const inspectedPdfAction = createMemo(() => candidatePdfAction(matchingPdfTask(), inspectedSource()));
   const hasInspectedSavedParse = () => inspectedPdfAction() === "recorded_active" || inspectedPdfAction() === "recorded_done" || inspectedPdfAction() === "recorded_reader";
   const paperDocumentId = (node: LiteratureGraphNode | null): string | null => documentIdForReviewablePaper(node);
@@ -276,7 +282,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     <Show when={props.onRequestFulltext && props.onRefreshSourceParses}>
       <CandidateFulltextQueue locale={props.locale} screening={props.screening} nodes={graph().nodes}
         pdfTasks={props.pdfTasks ?? []} sourceTasks={props.sourceTasks ?? []} sourceHealth={props.sourceHealth ?? "idle"}
-        refresh={props.onRefreshSourceParses!} choosePdf={props.onRequestFulltext!} openReader={openReaderForPaper}
+        refresh={props.onRefreshSourceParses!} choosePdf={props.onRequestFulltext!} openReader={openReaderForPaper} linkMarkdown={linkSourceMarkdown()}
         openBridge={(paper) => { if (props.onSelectPaper(paper)) props.onNavigate("workflow"); }} />
     </Show>
     <Show when={hasReviewablePapers() && props.onLoadScreening && props.onSubmitScreening && screeningPanelOpen()}>
@@ -291,11 +297,16 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
   <Show when={linkedEvidence().length}><><p>{t("当前论文已有显式来源映射的已接受 EvidenceCard。进入阅读页核对定位符和条件字段；书目关系本身不构成材料事实。", "This paper already has an accepted EvidenceCard with an explicit source-map link. Open the reader to verify its locator and conditions; bibliography alone is not a material fact.")}</p><ActionButton variant="primary" onClick={() => openReaderForPaper(node())}>{t("在阅读页核对来源", "Verify source in reader")}</ActionButton></></Show>
   <Show when={!linkedEvidence().length && hasInspectedSavedParse()}>
     <Show when={inspectedPdfAction() === "recorded_reader" && screeningDecision() === "include_for_fulltext"} fallback={<>
-      <p>{inspectedPdfAction() === "recorded_done"
-        ? t("来源解析已完成。请在终端取回 Markdown，再刷新解析记录。", "Source parsing is complete. Retrieve Markdown in the terminal, then refresh the parse record.")
-        : inspectedPdfAction() === "recorded_reader"
-        ? t("本机已有解析结果。请先完成当前候选的人工筛选。", "The local parsed result is ready. Complete human screening for this candidate first.")
-        : t("解析账本已有该篇论文的进度。DSH 轮询后可刷新查看。", "The parse ledger already tracks this paper. Refresh after polling through DSH.")}</p>
+      <Show when={inspectedPdfAction() === "recorded_done" && screeningDecision() === "include_for_fulltext" && inspectedSource()?.can_link_markdown && linkSourceMarkdown()} fallback={
+        <p>{inspectedPdfAction() === "recorded_active"
+          ? t("DSH 轮询后可刷新进度。", "Refresh after polling through DSH.")
+          : screeningDecision() !== "include_for_fulltext"
+          ? t("请先完成当前候选的人工筛选。", "Complete human screening for this candidate first.")
+          : t("来源解析已完成。请在终端取回 Markdown，再刷新解析记录。", "Source parsing is complete. Retrieve Markdown in the terminal, then refresh the parse record.")}</p>
+      }>{(link) => <Show when={inspectedSource()?.document_id} keyed>{(documentId) =>
+        <><p>{t("可关联之前取回的 Markdown 原文件。", "You can link the original saved Markdown file.")}</p>
+          <SourceMarkdownLinkButton locale={props.locale} paperTitle={node().label} onLink={(file) => link()(documentId, file)} /></>
+      }</Show>}</Show>
       <Show when={props.onRefreshSourceParses}><ActionButton size="sm" busy={props.sourceHealth === "loading"} busyLabel={t("正在读取…", "Reading…")} onClick={() => props.onRefreshSourceParses?.()}>{t("刷新该篇记录", "Refresh this record")}</ActionButton></Show>
     </>}>
       <p>{t("本机 Markdown 已与这篇论文关联，可进入阅读页核对原文和来源定位。", "Local Markdown is linked to this paper. Open the reader to verify its text and source locations.")}</p>

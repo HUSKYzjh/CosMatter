@@ -481,6 +481,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .candidate-fulltext-queue li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .5rem 1rem; padding: .55rem 0; border-top: 1px solid var(--line); }
 .fulltext-queue-paper { display: grid; justify-items: start; min-width: 0; gap: .2rem; overflow-wrap: anywhere; font-size: max(.76rem, 13px); }
 .fulltext-queue-paper > span:not(.cm-status-badge) { color: var(--muted); font-size: max(.72rem, 12px); }
+.source-markdown-link { display: grid; justify-items: start; gap: .3rem; min-width: 0; max-width: 16rem; }
+.source-markdown-link p { overflow-wrap: anywhere; }
 .candidate-fulltext-queue > .cm-action { justify-self: start; }
 @media (max-width: 520px) {
   .candidate-fulltext-queue li { grid-template-columns: minmax(0, 1fr); }

@@ -13,6 +13,7 @@ from .private_storage import private_root
 
 
 SOURCE_PARSE_SCHEMA_VERSION = "1.0"
+MAX_FETCHED_MARKDOWN_BYTES = 5 * 1024 * 1024
 _TASK_FIELDS = {"document_id", "provider", "source_url_sha256", "task_id", "state", "model_version"}
 _ARTIFACT_FIELDS = {"schema_version", "mission_id", "tasks"}
 
@@ -120,7 +121,12 @@ def fetched_markdown_path(run_dir: Path, mission_id: str, receipt: dict[str, Any
 
 
 def write_fetched_markdown(run_dir: Path, mission_id: str, receipt: dict[str, Any], content: bytes) -> None:
-    """Publish a private local copy atomically, before recording its receipt."""
+    """Publish only an exact, UTF-8 copy of the receipted Markdown."""
+    _verify_fetched_markdown(content, receipt)
+    try:
+        content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise SourceParseArtifactError("fetched Markdown must be UTF-8") from error
     path = fetched_markdown_path(run_dir, mission_id, receipt)
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = NamedTemporaryFile(dir=path.parent, delete=False)
@@ -136,9 +142,13 @@ def write_fetched_markdown(run_dir: Path, mission_id: str, receipt: dict[str, An
 def read_fetched_markdown(path: Path, receipt: dict[str, Any]) -> bytes:
     with path.open("rb") as handle:
         content = handle.read(receipt["source_markdown_byte_count"] + 1)
+    _verify_fetched_markdown(content, receipt)
+    return content
+
+
+def _verify_fetched_markdown(content: bytes, receipt: dict[str, Any]) -> None:
     if len(content) != receipt["source_markdown_byte_count"] or hashlib.sha256(content).hexdigest() != receipt["source_markdown_sha256"]:
         raise SourceParseArtifactError("fetched Markdown does not match its provider receipt")
-    return content
 
 
 def migrate_legacy_source_parse_task_ids(run_dir: Path, *, mission_id: str) -> int:

@@ -829,8 +829,10 @@ test("resumes browser screening drafts and requires the current checklist revisi
     checklist_revision: "a".repeat(64), decisions: papers.map(({ document_id }) => ({ document_id, decision: "unreviewed", reason_codes: [] as string[] })),
   };
   const submissions: unknown[] = [];
-  let sourceTasks: { document_id: string; state: string; markdown_ready?: boolean; source_map_segment_count?: number }[] = [];
+  let sourceTasks: { document_id: string; state: string; markdown_ready?: boolean; can_link_markdown?: boolean; source_map_segment_count?: number }[] = [];
   const reviewedExcerpt = "Synthetic checked source excerpt.";
+  const originalMarkdown = Buffer.from(`# Candidate A\n${reviewedExcerpt}\n`);
+  const markdownLinkAttempts: string[] = [];
   const sourceMapPosts: unknown[] = [];
   const sourceMap = { run_id: runId, document_id: "paper_a", segment_count: 1, trust_status: "human_reviewed_parser_selection_not_evidence_card",
     segments: [{ segment_id: "private_md_001", locator: "markdown_line:2-2", kind: "paragraph" }] };
@@ -844,6 +846,15 @@ test("resumes browser screening drafts and requires the current checklist revisi
       run_id: runId, mission_id: bundle.mission.mission_id,
       trust_status: "saved_source_parse_state_not_scientific_evidence", tasks: sourceTasks,
     } });
+    if (path === "source-markdown-link" && route.request().method() === "POST") {
+      const documentId = url.searchParams.get("document_id");
+      if (documentId !== "paper_a" || route.request().headers()["content-type"] !== "application/octet-stream") return route.fulfill({ status: 400 });
+      const data = route.request().postDataBuffer();
+      markdownLinkAttempts.push(data?.toString() ?? "");
+      if (!data?.equals(originalMarkdown)) return route.fulfill({ status: 422 });
+      sourceTasks = [{ document_id: documentId, state: "done", markdown_ready: true, can_link_markdown: false, source_map_segment_count: 0 }];
+      return route.fulfill({ json: { run_id: runId, document_id: documentId, markdown_ready: true } });
+    }
     if (path === "source-map") {
       if (route.request().method() === "POST") {
         sourceMapPosts.push(route.request().postDataJSON());
@@ -906,9 +917,22 @@ test("resumes browser screening drafts and requires the current checklist revisi
   await queue.getByRole("button", { name: "刷新本机解析记录" }).click();
   await expect(queue.getByText("来源解析完成", { exact: true })).toBeVisible();
   await expect(queue.getByRole("button", { name: /选择授权 PDF|进入阅读页/ })).toHaveCount(0);
-  sourceTasks = [{ document_id: "paper_a", state: "done", markdown_ready: true, source_map_segment_count: 0 }];
+  await expect(queue.getByRole("button", { name: /关联本机 Markdown/ })).toHaveCount(0);
+  sourceTasks = [{ document_id: "paper_a", state: "done", markdown_ready: false, can_link_markdown: true, source_map_segment_count: 0 }];
   await queue.getByRole("button", { name: "刷新本机解析记录" }).click();
+  await expect(queue.getByText("等待关联原文件", { exact: true })).toBeVisible();
+  const linkFile = async (buffer: Buffer) => {
+    const chooser = page.waitForEvent("filechooser");
+    await queue.getByRole("button", { name: "关联本机 Markdown · Candidate A" }).press("Enter");
+    await (await chooser).setFiles({ name: "original.md", mimeType: "text/markdown", buffer });
+  };
+  await linkFile(Buffer.from("wrong candidate file"));
+  await expect(queue.getByRole("status")).toContainText("文件与该候选的 MinerU 回执不匹配");
+  await expect(queue.getByRole("button", { name: /进入阅读页/ })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+  await linkFile(originalMarkdown);
   await expect(queue.getByText("本机 Markdown 就绪", { exact: true })).toBeVisible();
+  expect(markdownLinkAttempts).toEqual(["wrong candidate file", originalMarkdown.toString()]);
   await queue.getByRole("button", { name: "进入阅读页 · Candidate A" }).press("Enter");
   await expect(page.locator(".reader-selection")).toContainText("Candidate A");
   const markdownLink = page.getByRole("link", { name: "下载私有 Markdown" });

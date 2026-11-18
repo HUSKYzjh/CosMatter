@@ -145,7 +145,7 @@ export type LocalApiRequestFailure = "read_timeout" | "write_outcome_unknown" | 
 /** Safe, display-neutral request failure classification for the loopback API. */
 export class LocalApiRequestError extends Error {
   readonly failure: LocalApiRequestFailure;
-  constructor(failure: LocalApiRequestFailure) {
+  constructor(failure: LocalApiRequestFailure, readonly httpStatus?: number) {
     super(failure === "write_outcome_unknown" ? "local API write outcome is unknown" : "local API request is unavailable");
     this.name = "LocalApiRequestError";
     this.failure = failure;
@@ -172,7 +172,7 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = (init?.m
     const response = await fetch(path, { ...init, cache: "no-store", signal: controller.signal });
     if (!response.ok) {
       // Provider and filesystem details are untrusted display data.
-      throw new LocalApiRequestError(localApiHttpFailure(init?.method, response.status));
+      throw new LocalApiRequestError(localApiHttpFailure(init?.method, response.status), response.status);
     }
     return await response.json().catch((error) => {
       if (controller.signal.aborted) throw error;
@@ -383,6 +383,7 @@ export interface SavedSourceParseTask {
   document_id: string;
   state: "pending" | "running" | "done" | "failed";
   markdown_ready?: boolean;
+  can_link_markdown?: boolean;
   source_map_segment_count?: number;
 }
 export type SavedSourceParseHealth = "idle" | "loading" | "ready" | "unavailable";
@@ -446,12 +447,15 @@ export async function getSavedSourceParses(runId: string, missionId: string): Pr
   const seen = new Set<string>();
   for (const task of data.tasks) {
     const legacy = exactObjectKeys(task, ["document_id", "state"]);
-    if ((!legacy && !exactObjectKeys(task, ["document_id", "state", "markdown_ready", "source_map_segment_count"])) || !boundedString(task.document_id, 255)
+    const cachedKeys = ["document_id", "state", "markdown_ready", "source_map_segment_count"];
+    const linkable = exactObjectKeys(task, [...cachedKeys, "can_link_markdown"]);
+    if ((!legacy && !linkable && !exactObjectKeys(task, cachedKeys)) || !boundedString(task.document_id, 255)
       || typeof task.state !== "string" || !["pending", "running", "done", "failed"].includes(task.state)
       || seen.has(task.document_id)) throw new LocalApiRequestError("transport");
     if (!legacy && (typeof task.markdown_ready !== "boolean" || (task.markdown_ready && task.state !== "done")
       || typeof task.source_map_segment_count !== "number" || !Number.isInteger(task.source_map_segment_count)
       || task.source_map_segment_count < 0 || task.source_map_segment_count > (task.markdown_ready ? 12 : 0))) throw new LocalApiRequestError("transport");
+    if (linkable && (typeof task.can_link_markdown !== "boolean" || (task.can_link_markdown && (task.state !== "done" || task.markdown_ready)))) throw new LocalApiRequestError("transport");
     seen.add(task.document_id);
   }
   return data.tasks;
@@ -459,6 +463,14 @@ export async function getSavedSourceParses(runId: string, missionId: string): Pr
 export async function getPdfStatus(runId: string, documentId: string): Promise<PdfTaskStatus> { const task = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/status`); if (!isPdfTaskStatus(task)) throw new LocalApiRequestError("transport"); return task; }
 export function privateMarkdownUrl(runId: string, documentId: string): string { return `./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/markdown`; }
 export function fetchedMarkdownUrl(runId: string, documentId: string): string { return `./api/runs/${encodeURIComponent(runId)}/source-markdown?document_id=${encodeURIComponent(documentId)}`; }
+export async function linkFetchedMarkdown(runId: string, documentId: string, file: File): Promise<void> {
+  const response = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/source-markdown-link?document_id=${encodeURIComponent(documentId)}`, {
+    method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file, redirect: "error",
+  });
+  if (!exactObjectKeys(response, ["run_id", "document_id", "markdown_ready"])) throw new LocalApiRequestError("write_outcome_unknown");
+  const data = response as Record<string, unknown>;
+  if (data.run_id !== runId || data.document_id !== documentId || data.markdown_ready !== true) throw new LocalApiRequestError("write_outcome_unknown");
+}
 export interface PrivateSourceMapSegment { locator: string; kind: "paragraph" | "table" | "formula" | "figure_caption"; quote: string; }
 export interface RecordedSourceMapSegment { segment_id: string; locator: string; kind: PrivateSourceMapSegment["kind"]; }
 export interface SourceMapRecordResult { run_id: string; document_id: string; segment_count: number; segments: RecordedSourceMapSegment[]; trust_status: string; }

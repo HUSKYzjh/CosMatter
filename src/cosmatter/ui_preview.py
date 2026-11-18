@@ -13,6 +13,7 @@ from .config import AGENT_ROOT
 from .harness_autorun import HarnessAutoRunError, run_authorized_automatic_mission
 from .local_api import LocalApiError, LocalMissionApi
 from .artifact_contract import ArtifactDownload
+from .source_parse import MAX_FETCHED_MARKDOWN_BYTES
 
 
 class UiPreviewError(ValueError):
@@ -184,7 +185,8 @@ def build_ui_preview_server(
             super().do_GET()
 
         def do_POST(self) -> None:
-            path = urlsplit(self.path).path
+            parsed = urlsplit(self.path)
+            path = parsed.path
             if path == "/api/question-candidates":
                 self._api_json(lambda: api.question_candidates(self._json_body()) if api is not None else _api_disabled())
                 return
@@ -224,6 +226,10 @@ def build_ui_preview_server(
             run_id = _api_run_id(path, "/api/runs/", "/source-map")
             if run_id is not None:
                 self._api_json(lambda: api.record_fetched_source_map(run_id, self._json_body()) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/source-markdown-link")
+            if run_id is not None:
+                self._api_json(lambda: api.link_fetched_source_markdown(run_id, _source_document_query(parsed.query), self._markdown_link_body()) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/pdf/material-facts")
             if run_id is not None:
@@ -335,6 +341,20 @@ def build_ui_preview_server(
                 return json.loads(self.rfile.read(size).decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 raise LocalApiError("request body must be valid UTF-8 JSON") from error
+
+        def _markdown_link_body(self) -> bytes:
+            if self.headers.get("Content-Type") != "application/octet-stream":
+                raise LocalApiError("Markdown linking requires an octet-stream file body", 415)
+            try:
+                size = int(self.headers.get("Content-Length") or "0")
+            except ValueError as error:
+                raise LocalApiError("Content-Length must be an integer") from error
+            if not 0 < size <= MAX_FETCHED_MARKDOWN_BYTES:
+                raise LocalApiError("Markdown file must be nonempty and at most 5 MiB", 413)
+            content = self.rfile.read(size)
+            if len(content) != size:
+                raise LocalApiError("Markdown file body is incomplete")
+            return content
 
         def _discard_legacy_request_body(self) -> None:
             """Consume a bounded body before rejecting a removed POST endpoint.

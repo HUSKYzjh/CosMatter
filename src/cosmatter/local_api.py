@@ -53,7 +53,7 @@ from .source_map import HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_sour
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, write_evidence_provenance_audit
 from .material_extraction import MaterialExtractionError, material_facts_from_review, write_material_facts_for_document
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
-from .source_parse import SourceParseArtifactError, fetched_markdown_path, fetched_markdown_receipt, load_source_parse_tasks, private_task_id_for_document, read_fetched_markdown, record_source_parse_task, task_for_document, update_source_parse_task
+from .source_parse import SourceParseArtifactError, fetched_markdown_path, fetched_markdown_receipt, load_source_parse_tasks, private_task_id_for_document, read_fetched_markdown, record_source_parse_task, task_for_document, update_source_parse_task, write_fetched_markdown
 from .pdf_task_registry import PdfTaskRegistryError, assert_pdf_task_slot, load_pdf_tasks, task_for_pdf_document, write_pdf_task
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
 from .facilities import DiscrepancyMatrix, DiscrepancyRow, FacilityGateError, condition_differential, write_condition_matrix
@@ -1075,7 +1075,8 @@ class LocalMissionApi:
                     ready = bool(receipt and fetched_markdown_path(run_dir, mission.mission_id, receipt).is_file())
                     source_map = _fetched_source_map(run_dir, mission.mission_id, item, receipt) if receipt and ready else None
                     tasks.append({"document_id": item["document_id"], "state": item["state"],
-                                  "markdown_ready": ready, "source_map_segment_count": len(source_map["segments"]) if source_map else 0})
+                                  "markdown_ready": ready, "can_link_markdown": bool(receipt and not ready),
+                                  "source_map_segment_count": len(source_map["segments"]) if source_map else 0})
         except (OSError, ValueError) as error:
             raise LocalApiError("saved source parse status is unavailable", 404) from error
         return {
@@ -1089,6 +1090,18 @@ class LocalMissionApi:
         run_dir, mission, _, receipt = self._fetched_source_context(run_id, document_id)
         content = _read_fetched_source(run_dir, mission.mission_id, receipt)
         return ArtifactDownload(content, "text/markdown; charset=utf-8", "private-mineru-markdown.md")
+
+    def link_fetched_source_markdown(self, run_id: str, document_id: str, content: bytes) -> dict[str, object]:
+        """Restore a local copy using the candidate's existing output receipt."""
+        with self._candidate_screening_lock:
+            run_dir, mission, _, receipt = self._fetched_source_receipt_context(run_id, document_id)
+            try:
+                write_fetched_markdown(run_dir, mission.mission_id, receipt, content)
+            except SourceParseArtifactError as error:
+                raise LocalApiError("selected Markdown does not match the saved MinerU output", 422) from error
+            except OSError as error:
+                raise LocalApiError("could not store the private Markdown", 500) from error
+        return {"run_id": run_id, "document_id": document_id, "markdown_ready": True}
 
     def fetched_source_map_context(self, run_id: str, document_id: str) -> dict[str, object]:
         run_dir, mission, task, receipt = self._fetched_source_context(run_id, document_id)
@@ -1128,6 +1141,15 @@ class LocalMissionApi:
         return _source_map_response(run_id, document_id, source_map)
 
     def _fetched_source_context(self, run_id: str, document_id: str) -> tuple[Path, MissionBrief, dict[str, Any], dict[str, Any]]:
+        run_dir, mission, task, receipt = self._fetched_source_receipt_context(run_id, document_id)
+        try:
+            if fetched_markdown_path(run_dir, mission.mission_id, receipt).is_file():
+                return run_dir, mission, task, receipt
+        except OSError as error:
+            raise LocalApiError("fetched Markdown is unavailable", 404) from error
+        raise LocalApiError("fetched Markdown is unavailable", 404)
+
+    def _fetched_source_receipt_context(self, run_id: str, document_id: str) -> tuple[Path, MissionBrief, dict[str, Any], dict[str, Any]]:
         run_dir, mission = self._active_mission(run_id)
         try:
             candidates = _load_object(run_dir / "retrieval_candidates.json", "retrieval candidate artifact")
@@ -1137,7 +1159,7 @@ class LocalMissionApi:
         try:
             task = task_for_document(run_dir, mission_id=mission.mission_id, document_id=document_id)
             receipt = fetched_markdown_receipt(task, load_provider_receipts(run_dir)) if task["state"] == "done" else None
-            if receipt and fetched_markdown_path(run_dir, mission.mission_id, receipt).is_file():
+            if receipt:
                 return run_dir, mission, task, receipt
         except (OSError, ValueError) as error:
             raise LocalApiError("fetched Markdown is unavailable", 404) from error

@@ -128,6 +128,18 @@ class CliMinerUTests(unittest.TestCase):
             self.assertNotIn(source_url, receipt_log + event_log + output.getvalue())
             self.assertNotIn(task_id, receipt_log + event_log + output.getvalue())
             self.assertIn("source_parse_output_fetch", receipt_log)
+            cache_file = next((Path(directory) / "private-cache" / "mineru_fetched_markdown").glob("*.md"))
+            cache_file.unlink()  # Simulate an output fetched before the workbench kept a private copy.
+            self.assertTrue(api.source_parse_status(run_id)["tasks"][0]["can_link_markdown"])
+            with self.assertRaises(LocalApiError) as mismatched_file:
+                api.link_fetched_source_markdown(run_id, "doc_1", b"x" * len(private_markdown))
+            self.assertEqual(mismatched_file.exception.status, 422)
+            self.assertFalse(cache_file.exists())
+            linked = api.link_fetched_source_markdown(run_id, "doc_1", output_path.read_bytes())
+            self.assertEqual(linked, {"run_id": run_id, "document_id": "doc_1", "markdown_ready": True})
+            self.assertEqual(api.link_fetched_source_markdown(run_id, "doc_1", private_markdown), linked)
+            self.assertEqual((run_dir / "provider_receipts.jsonl").read_text(encoding="utf-8"), receipt_log)
+            self.assertFalse(api.source_parse_status(run_id)["tasks"][0]["can_link_markdown"])
             output_path.unlink()
             self.assertEqual(api.fetched_source_markdown(run_id, "doc_1").data, markdown)
             self.assertTrue(api.source_parse_status(run_id)["tasks"][0]["markdown_ready"])
@@ -156,7 +168,6 @@ class CliMinerUTests(unittest.TestCase):
             self.assertEqual(provenance["exact_reviewed_source_map_match_count"], 1)
             self.assertFalse((run_dir / "pdf_intake.json").exists())
 
-            cache_file = next((Path(directory) / "private-cache" / "mineru_fetched_markdown").glob("*.md"))
             cache_file.write_bytes(b"x" * len(markdown))
             with self.assertRaisesRegex(LocalApiError, "could not be verified"):
                 api.fetched_source_markdown(run_id, "doc_1")
@@ -167,6 +178,9 @@ class CliMinerUTests(unittest.TestCase):
             with self.assertRaises(LocalApiError) as excluded_document:
                 api.fetched_source_markdown(run_id, "doc_1")
             self.assertEqual(excluded_document.exception.status, 403)
+            with self.assertRaises(LocalApiError) as excluded_link:
+                api.link_fetched_source_markdown(run_id, "doc_1", markdown)
+            self.assertEqual(excluded_link.exception.status, 403)
 
     def test_source_map_requires_completed_task_and_keeps_quote_out_of_audit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
