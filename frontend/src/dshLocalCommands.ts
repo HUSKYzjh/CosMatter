@@ -1,4 +1,5 @@
 import { isLocalRunId, localRunLink, parseLocalRunLink } from "./liveRunIdentity";
+import { localApiEnabled } from "./localApi";
 
 const runReadTools = new Set([
   "cosmatter_workflow_status",
@@ -25,9 +26,10 @@ export function localEvidenceLink(runId: string, evidence: DshEvidenceTarget): s
 
 export function dshCatalogueCommand(tool: string, runId?: string | null, evidence?: DshEvidenceTarget | null): string | null {
   const location = localWorkbenchLocation();
-  if (!location || !runId || !isLocalRunId(runId)) return null;
+  if (!location || !localApiEnabled()) return null;
   const port = location.port || "80";
   if (tool === "cosmatter_recent_runs") return `cosmatter dsh-recent-runs --port ${port}`;
+  if (!runId || !isLocalRunId(runId)) return null;
   if (tool === "cosmatter_artifact_manifest") return `cosmatter dsh-run-artifacts ${runId} --port ${port}`;
   if (tool === "cosmatter_accepted_evidence_search" && evidence) {
     const link = localEvidenceLink(runId, evidence);

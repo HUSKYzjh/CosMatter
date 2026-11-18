@@ -588,8 +588,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .rail-run-identity { display: flex; flex-wrap: wrap; align-items: center; gap: .38rem .5rem; padding: .35rem 0; }
 .rail-run-id { display: grid; gap: .15rem; flex: 1 1 7rem; min-width: 0; }
 .rail-run-id span { color: var(--muted); font-size: max(.7rem, 12px); }
-.rail-run-actions { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 100%; }
-.rail-dsh-tools { width: 100%; min-width: 0; }
+.rail-run-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1 0 100%; gap: .25rem .35rem; min-width: 0; }
+.rail-run-actions > .rail-dsh-tools { grid-column: 1 / -1; }
 .rail-run-identity code { color: var(--ink); font: max(.72rem, 12px)/1.4 ui-monospace, "Cascadia Mono", monospace; overflow-wrap: anywhere; user-select: all; }
 .rail-run-identity > p { flex: 1 0 100%; margin: 0; }
 .rail-run-entry-note { color: var(--muted); font-size: max(.72rem, 12px); line-height: 1.45; overflow-wrap: anywhere; }

@@ -334,7 +334,7 @@ export function App() {
   const selectedDocumentId = createMemo(() => documentIdForReviewablePaper(researchSession().selectedNode));
   const localApiUsable = createMemo(() => localApiEnabled() && apiCapabilityHealth() === "ready");
   const previewCanActOnRun = createMemo(() => previewAllowsRunAction(launchPreview(), liveRunId()));
-  const canOpenDshToolDialog = createMemo(() => localApiEnabled() && previewCanActOnRun() && (view() === "graph" || view() === "reader"));
+  const canOpenDshToolDialog = createMemo(() => localApiEnabled() && previewCanActOnRun() && view() !== "launch");
   const dshEvidenceTarget = createMemo(() => {
     if (view() !== "reader" || !previewCanActOnRun()) return null;
     const session = researchSession();
@@ -2147,12 +2147,12 @@ export function App() {
           <p class="rail-run-entry-note" role="status">{text("暂时无法打开链接指定的筛选清单，可先核对本机阶段与候选工件。", "The linked screening checklist is unavailable. Check the local stage and candidate artifacts.")}</p>
         </Show>
         <div class="rail-run-actions">
-          <ActionButton size="sm" onClick={() => void copyCurrentRun(runId(), "id")}>{text("复制运行 ID", "Copy run ID")}</ActionButton>
-          <ActionButton size="sm" onClick={() => void copyCurrentRun(runId(), "link")}>{text("复制任务链接", "Copy run link")}</ActionButton>
+          <Show when={canOpenDshToolDialog()}>
+            <ActionButton class="rail-dsh-tools" size="sm" aria-haspopup="dialog" onClick={() => setDshToolsOpen(true)}>{text("查找 DSH 工具", "Find DSH tools")}</ActionButton>
+          </Show>
+          <ActionButton size="sm" variant="quiet" onClick={() => void copyCurrentRun(runId(), "id")}>{text("复制运行 ID", "Copy run ID")}</ActionButton>
+          <ActionButton size="sm" variant="quiet" onClick={() => void copyCurrentRun(runId(), "link")}>{text("复制任务链接", "Copy run link")}</ActionButton>
         </div>
-        <Show when={canOpenDshToolDialog()}>
-          <div class="rail-dsh-tools"><ActionButton size="sm" aria-haspopup="dialog" onClick={() => setDshToolsOpen(true)}>{text("查找 DSH 工具", "Find DSH tools")}</ActionButton></div>
-        </Show>
         <Show when={runCopyFeedback()?.runId === runId() ? runCopyFeedback() : null}>{(feedback) => <p role="status">
           {feedback().copied ? (feedback().format === "id" ? text("运行 ID 已复制。", "Run ID copied.") : text("本机任务链接已复制。", "Local run link copied.")) : text("剪贴板不可用。", "Clipboard unavailable.")}
           <Show when={!feedback().copied && feedback().format === "link"}> <a href={localRunLink(window.location.origin, runId())} target="_blank" rel="noopener">{text("打开本机任务链接", "Open the local run link")}</a></Show>

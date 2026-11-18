@@ -282,7 +282,7 @@ export function HarnessCapabilityDeck(props: {
         )}</p>
       </details>
     }</Show>
-    <Show when={props.health !== "disabled" || props.profileHealth !== "disabled"}>
+    <Show when={!props.runId && (props.health !== "disabled" || props.profileHealth !== "disabled")}>
       <DshToolCatalogue locale={props.locale} plugins={props.health === "ready" ? props.plugins ?? [] : []} profile={props.profile} profileHealth={props.profileHealth}
         currentStage={props.currentStage} runId={props.runId} />
     </Show>
