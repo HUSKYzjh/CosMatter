@@ -552,6 +552,71 @@ test("keeps synthetic launch-preview papers out of the real research route", asy
   expect(await returnToBridge.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(13);
 });
 
+test("keeps one reachable PDF refresh or citation action on the bridge", async ({ page }) => {
+  const trustStatus = "private_markdown_outside_run_not_scientific_evidence";
+  const pdf = {
+    document_id: "test-doc", candidate_document_id: null, audit_document_id: "test-doc",
+    file_name: `${"long-research-file-name-".repeat(6)}.pdf`, state: "running",
+    audit_state: "running", doi: null, doi_status: "pending", markdown_ready: false,
+    source_map_review_status: "absent", source_map_segment_count: 0, error: null, trust_status: trustStatus,
+  };
+  let parsed = false;
+  let statusUnavailable = false;
+  let releaseCitation: () => void = () => {};
+  const pendingCitation = new Promise<void>((resolve) => { releaseCitation = resolve; });
+  await page.route("**/api/status", (route) => route.fulfill({ json: {
+    api_mode: "loopback_only",
+    providers: { deepseek: false, sciverse: false, mineru: true, openalex: false, crossref: true, crossref_polite_contact: false },
+    operation_contracts: operationContracts,
+  } }));
+  await page.route("**/api/pdf-runs", (route) => route.fulfill({ json: {
+    run_id: "test-run", mission_id: "test-run", document_id: pdf.document_id, state: pdf.state, doi_status: pdf.doi_status,
+  } }));
+  await page.route("**/api/runs/test-run/pdf/test-doc/status", (route) => statusUnavailable
+    ? route.fulfill({ status: 503 })
+    : route.fulfill({ json: parsed
+    ? { ...pdf, state: "done", audit_state: "done", doi: "10.1234/example", doi_status: "resolved", markdown_ready: true }
+    : pdf,
+  }));
+  await page.route("**/api/runs/test-run/authorized-citation-expansion", async (route) => {
+    await pendingCitation;
+    await route.fulfill({ status: 503 });
+  });
+
+  await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^文献入港/ }).click();
+  await page.getByLabel("选择 PDF").setInputFiles({ name: pdf.file_name, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.7\n") });
+  await page.getByLabel(/我确认有权处理该 PDF/).check();
+  await page.getByRole("button", { name: "创建解析任务" }).click();
+
+  const next = page.locator(".workflow-next");
+  const refresh = page.getByRole("button", { name: "刷新解析状态", exact: true });
+  await expect(refresh).toHaveCount(1, workspaceLoad);
+  await expect(next.getByRole("button", { name: "刷新解析状态" })).toBeEnabled();
+  statusUnavailable = true;
+  await refresh.click();
+  await expect(next.getByRole("status")).toContainText("无法刷新本机 PDF 状态");
+  statusUnavailable = false;
+  parsed = true;
+  await refresh.click();
+  const citation = page.getByRole("button", { name: "构建双向两层引文图", exact: true });
+  await expect(citation).toHaveCount(1);
+  await expect(next.getByRole("button", { name: "构建双向两层引文图" })).toHaveClass(/cm-action--primary/);
+  expect(await page.locator(".pdf-task-progress").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await citation.click();
+  try {
+    const busy = next.getByRole("button", { name: "正在构建引文图…" });
+    await expect(busy).toBeDisabled();
+    await expect(busy).toHaveAttribute("aria-busy", "true");
+  } finally {
+    releaseCitation();
+  }
+  await expect(citation).toBeEnabled();
+});
+
 test("keeps the bridge artifact flow readable beside its research rail", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 900 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
