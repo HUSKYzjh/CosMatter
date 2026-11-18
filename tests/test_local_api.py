@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import tempfile
 import time
 import threading
@@ -113,6 +114,34 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertEqual(created["run_id"], "live_001")
         self.assertTrue((self.runs / "live_001" / "mission.json").is_file())
         self.assertNotIn("test", json.dumps({"status": status, "created": created}))
+
+    def test_recent_runs_orders_limits_and_redacts_saved_missions(self):
+        self.assertEqual(self.api.recent_runs()["runs"], [])
+        for index in range(14):
+            run_id = f"saved_{index:02d}"
+            self.api.create_mission({
+                "run_id": run_id, "question": "private research question",
+                "material": "BiFeO3", "property": "phase stability", "scope": "private scope",
+            })
+        self.api.cancel("saved_13")
+        # Old runs may contain just the cancellation event.
+        self.api.cancel("saved_12")
+        (self.runs / "saved_12" / "run_control.json").unlink()
+        for index in range(14):
+            timestamp = 1_790_000_000 + index
+            for path in (self.runs / f"saved_{index:02d}").iterdir():
+                os.utime(path, (timestamp, timestamp))
+        invalid = self.runs / "malformed"
+        invalid.mkdir()
+        (invalid / "mission.json").write_text("{}", encoding="utf-8")
+        before = {path: path.read_bytes() for path in self.runs.rglob("*") if path.is_file()}
+        with patch.object(self.api, "settings_loader", side_effect=AssertionError("unexpected provider configuration")):
+            index = self.api.recent_runs()
+        self.assertEqual([run["run_id"] for run in index["runs"]], [f"saved_{index:02d}" for index in reversed(range(2, 14))])
+        self.assertEqual({run["run_id"] for run in index["runs"] if run["stopped"]}, {"saved_12", "saved_13"})
+        self.assertEqual(set(index["runs"][0]), {"run_id", "material", "property", "updated_at", "stopped"})
+        self.assertNotIn("private", json.dumps(index))
+        self.assertEqual({path: path.read_bytes() for path in self.runs.rglob("*") if path.is_file()}, before)
 
     def test_imported_run_package_resumes_the_audited_stage(self):
         mission = self._mission()

@@ -11,11 +11,14 @@ import json
 import hashlib
 import math
 import re
+from datetime import datetime, timezone
+from heapq import nlargest
+from stat import S_ISREG
 from threading import Lock, Thread
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.request import Request, urlopen
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from .audit import AuditPathError, FlightRecorder, safe_run_id
 from .config import AGENT_ROOT, Settings, data_root
@@ -96,6 +99,8 @@ def _runs_dir() -> Path:
 
 
 _RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+_RECENT_RUN_LIMIT = 12
+_RECENT_METADATA_BYTES = 32_768
 
 
 def _api_safe_run_id(value: str) -> str:
@@ -1484,6 +1489,51 @@ class LocalMissionApi:
             summary["automatic_execution"] = automatic
         return summary
 
+    def recent_runs(self) -> dict[str, object]:
+        """Return a bounded local index of saved task labels and IDs."""
+        runs: list[dict[str, object]] = []
+        try:
+            root = self.runs_dir.resolve()
+            newest = nlargest(_RECENT_RUN_LIMIT * 4, _recent_run_paths(root))
+        except FileNotFoundError:
+            newest = []
+        except (OSError, RuntimeError) as error:
+            raise LocalApiError("recent local runs are unavailable", 503) from error
+        for updated_ns, run_id in newest:
+            run_dir = root / run_id
+            try:
+                if run_dir.resolve(strict=True) != run_dir:
+                    continue
+                mission_path = run_dir / "mission.json"
+                if not S_ISREG(mission_path.lstat().st_mode):
+                    continue
+                with mission_path.open("rb") as stream:
+                    data = stream.read(_RECENT_METADATA_BYTES + 1)
+                if len(data) > _RECENT_METADATA_BYTES:
+                    continue
+                payload = json.loads(data)
+                if not isinstance(payload, dict) or not all(isinstance(payload.get(key), str) for key in ("material", "property_name", "mission_id")):
+                    continue
+                mission = _mission_from_payload(payload)
+                stopped = _recent_run_stopped(run_dir, mission.mission_id)
+                timestamp = datetime.fromtimestamp(updated_ns // 1_000_000_000, tz=timezone.utc)
+                material = " ".join(mission.material.split())[:120]
+                property_name = " ".join(mission.property_name.split())[:120]
+                material.encode("utf-8")
+                property_name.encode("utf-8")
+            except (OSError, RuntimeError, ValueError, OverflowError):
+                continue
+            runs.append({
+                "run_id": run_id,
+                "material": material,
+                "property": property_name,
+                "updated_at": timestamp.isoformat(timespec="seconds").replace("+00:00", "Z"),
+                "stopped": stopped,
+            })
+            if len(runs) == _RECENT_RUN_LIMIT:
+                break
+        return {"schema_version": "cosmatter.recent-local-runs/v1", "runs": runs}
+
     def workflow_status(self, run_id: str) -> dict[str, object]:
         """Return a count-only workflow projection for loopback harness adapters.
 
@@ -1790,6 +1840,66 @@ class LocalMissionApi:
             return run_dir, mission
         except (AuditPathError, UiExportError, RunControlError) as error:
             raise LocalApiError(str(error), 404) from error
+
+
+def _recent_run_paths(root: Path) -> Iterator[tuple[int, str]]:
+    for directory in root.iterdir():
+        run_id = directory.name
+        if len(run_id) > 255 or not _RUN_ID_PATTERN.fullmatch(run_id):
+            continue
+        try:
+            if not directory.is_dir() or directory.resolve(strict=True) != directory:
+                continue
+            mission = (directory / "mission.json").lstat()
+            if not S_ISREG(mission.st_mode) or mission.st_size > _RECENT_METADATA_BYTES:
+                continue
+            newest = mission.st_mtime_ns
+            for name in ("events.jsonl", "run_control.json"):
+                try:
+                    artifact = (directory / name).lstat()
+                except FileNotFoundError:
+                    continue
+                if not S_ISREG(artifact.st_mode):
+                    break
+                newest = max(newest, artifact.st_mtime_ns)
+            else:
+                yield newest, run_id
+        except (OSError, RuntimeError):
+            continue
+
+
+def _recent_run_stopped(run_dir: Path, mission_id: str) -> bool:
+    control = run_dir / "run_control.json"
+    try:
+        control_stat = control.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        if not S_ISREG(control_stat.st_mode) or control_stat.st_size > _RECENT_METADATA_BYTES:
+            raise RunControlError("run control is unavailable")
+        return load_run_control(control, mission_id) is not None
+
+    # Older cancelled runs may have only an audit event. Read a bounded tail.
+    path = run_dir / "events.jsonl"
+    try:
+        event_stat = path.lstat()
+    except FileNotFoundError:
+        return False
+    if not S_ISREG(event_stat.st_mode):
+        raise RunControlError("run activity is unavailable")
+    start = max(0, event_stat.st_size - _RECENT_METADATA_BYTES)
+    with path.open("rb") as stream:
+        stream.seek(start)
+        lines = stream.read(_RECENT_METADATA_BYTES).splitlines()
+    for line in reversed(lines[1:] if start else lines):
+        try:
+            event = json.loads(line)
+        except (UnicodeError, ValueError):
+            continue
+        state = event.get("state") if isinstance(event, dict) else None
+        if isinstance(state, str) and state in MissionState._value2member_map_:
+            return state == MissionState.CANCELLED.value
+    return False
 
 
 def _graph_plan_draft_by_id(run_dir: Path, plan_id: str) -> dict[str, object] | None:

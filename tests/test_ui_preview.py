@@ -53,6 +53,31 @@ class _HttpFakeMinerU:
 
 
 class UiPreviewTests(unittest.TestCase):
+    def test_recent_runs_route_rejects_foreign_host_and_cross_site_browser(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            web = Path(directory)
+            (web / "index.html").write_text("<h1>preview</h1>", encoding="utf-8")
+            api = Mock()
+            snapshot = {"schema_version": "cosmatter.recent-local-runs/v1", "runs": []}
+            api.recent_runs.return_value = snapshot
+            with build_ui_preview_server(0, web, api=api) as server:
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    url = f"http://127.0.0.1:{server.server_port}/api/recent-runs"
+                    for headers in ({"Host": "remote.invalid"}, {"Sec-Fetch-Site": "cross-site"}, {"Origin": "http://remote.invalid"}):
+                        with self.assertRaises(HTTPError) as context:
+                            urlopen(Request(url, headers=headers), timeout=2)
+                        self.assertEqual(context.exception.code, 403)
+                        context.exception.close()
+                    with urlopen(Request(url, headers={"Sec-Fetch-Site": "same-origin"}), timeout=2) as response:
+                        self.assertEqual(response.headers["Cache-Control"], "no-store")
+                        self.assertEqual(json.loads(response.read()), snapshot)
+                    api.recent_runs.assert_called_once_with()
+                finally:
+                    server.shutdown()
+                    thread.join(timeout=2)
+
     def test_dsh_profile_route_exposes_only_the_redacted_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             web = Path(directory)

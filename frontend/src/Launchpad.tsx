@@ -7,6 +7,7 @@ import { bfoTaskPresets, isBfoTaskPresetId } from "./bfoTaskPresets";
 import { bfoTaskFormation } from "./bfoTaskFormation";
 import { questionBoundFallbackCandidates } from "./launchQuestionCandidates";
 import { ActionButton } from "./uiPrimitives";
+import { RecentLocalRuns } from "./RecentLocalRuns";
 import type { RetrievalSource } from "./localApi";
 import { isLocalRunId } from "./liveRunIdentity";
 
@@ -63,6 +64,7 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission, executio
   const [automaticConsent, setAutomaticConsent] = createSignal(false);
   const [resume, setResume] = createSignal<File | null>(null);
   const [existingRunId, setExistingRunId] = createSignal(props.linkedRunId ?? "");
+  const [recentOpeningId, setRecentOpeningId] = createSignal<string>();
   const continuationBusy = () => Boolean(props.existingRunReadPending || props.resumeSubmissionPending);
   const bfoPresets = () => bfoTaskPresets(props.language);
   const selectedBfoFormation = () => {
@@ -250,9 +252,22 @@ export function Launchpad(props: { onQuestion: (mission: LaunchMission, executio
       <Show when={mode() === "resume"}>
         <section class="mode-panel run-continuation" aria-busy={props.resumeSubmissionPending || props.existingRunReadPending}>
           <h2>{copy("继续研究任务", "Continue a research run")}</h2>
+          <Show when={props.onOpenExistingRun}>
+            <RecentLocalRuns locale={props.language} listOnMount={!props.linkedRunId} activeRunId={props.activeRunId} disabled={continuationBusy()}
+              openingRunId={props.existingRunReadPending ? recentOpeningId() : undefined}
+              onOpen={(runId) => {
+                setExistingRunId(runId);
+                if (runId === props.activeRunId && props.onReturnToActiveRun) props.onReturnToActiveRun();
+                else {
+                  setRecentOpeningId(runId);
+                  props.onOpenExistingRun?.(runId);
+                }
+              }} />
+          </Show>
           <div class="run-continuation-options">
             <form class="run-continuation-card" onSubmit={(event) => {
               event.preventDefault();
+              setRecentOpeningId(undefined);
               if (!continuationBusy() && isLocalRunId(existingRunId().trim())) props.onOpenExistingRun?.(existingRunId());
             }}>
               <h3>{copy("按运行 ID 打开", "Open by run ID")}</h3>

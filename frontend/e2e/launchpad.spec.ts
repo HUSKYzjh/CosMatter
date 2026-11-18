@@ -741,6 +741,66 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   expect(requests.every((request) => request.startsWith("GET "))).toBe(true);
 });
 
+test("finds recent local missions without a run ID and reuses the selected run", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  const runId = "saved_run_05";
+  const { readFile } = await import("node:fs/promises");
+  const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/")) requests.push(request.method() + " " + path);
+  });
+  let count = 0;
+  let releaseStatus: () => void = () => {};
+  const statusAllowed = new Promise<void>((resolve) => { releaseStatus = resolve; });
+  await page.route("**/api/recent-runs", (route) => {
+    count += 1;
+    if (count === 1) return route.fulfill({ status: 503, json: {} });
+    return route.fulfill({ json: {
+      schema_version: "cosmatter.recent-local-runs/v1",
+      runs: Array.from({ length: 5 }, (_, index) => ({
+        run_id: "saved_run_0" + (index + 1), material: "BiFeO3", property: "phase stability under epitaxial strain".repeat(3),
+        updated_at: "2026-11-18T03:00:05Z", stopped: index === 1,
+      })),
+    } });
+  });
+  await page.route("**/api/runs/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/runs/" + runId + "/ui") return route.fulfill({ json: bundle });
+    if (path === "/api/runs/" + runId + "/status") {
+      await statusAllowed;
+      return route.fulfill({ json: { run_id: runId, mission_id: bundle.mission.mission_id, state: "INTAKE" } });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto("/?api=local");
+  await expect(page.locator(".workbench")).toHaveClass(/view-launch/);
+  expect(count).toBe(0);
+  await page.getByRole("button", { name: /^续航任务/ }).click();
+  const list = page.getByRole("region", { name: "最近的本机任务" });
+  await expect(list.getByRole("status")).toHaveText(/无法读取最近任务/);
+  await list.getByRole("button", { name: "刷新列表" }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(4);
+  await expect(list.getByText("已停止", { exact: true })).toBeVisible();
+  await expect(list.getByRole("button", { name: "打开 saved_run_02" })).toHaveCount(0);
+  await list.getByRole("button", { name: "查看全部 5 条" }).press("Enter");
+  await expect(list.getByRole("listitem")).toHaveCount(5);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+  await list.getByRole("button", { name: "打开 " + runId }).press("Enter");
+  try {
+    const opening = list.getByRole("button", { name: "正在打开 " + runId });
+    await expect(opening).toHaveAttribute("aria-busy", "true");
+    await expect(opening).toBeDisabled();
+  } finally {
+    releaseStatus();
+  }
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await expect(page.locator(".rail-run-id code")).toHaveText(runId);
+  expect(requests.filter((request) => request === "GET /api/runs/" + runId + "/ui")).toHaveLength(1);
+  expect(requests.every((request) => request.startsWith("GET "))).toBe(true);
+});
+
 test("opens local DSH links directly and keeps a failed linked run editable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const runId = "run_dsh_link_01";
@@ -748,9 +808,11 @@ test("opens local DSH links directly and keeps a failed linked run editable", as
   const { readFile } = await import("node:fs/promises");
   const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
   const runRequests: string[] = [];
+  let recentRequests = 0;
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
     if (path.startsWith("/api/runs/")) runRequests.push(`${request.method()} ${path}`);
+    if (path === "/api/recent-runs") recentRequests += 1;
   });
   await page.route("**/api/runs/**", (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -776,6 +838,7 @@ test("opens local DSH links directly and keeps a failed linked run editable", as
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
   await expect(page.locator(".rail-run-id code")).toHaveText(runId);
   await cached;
+  expect(recentRequests).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
   expect(runRequests.every((request) => request.startsWith("GET "))).toBe(true);
   expect(runRequests.filter((request) => request.includes("/pdf/"))).toEqual([`GET /api/runs/${runId}/pdf/tasks/cached`]);

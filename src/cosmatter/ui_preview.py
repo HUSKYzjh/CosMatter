@@ -74,6 +74,18 @@ def build_ui_preview_server(
             if path == "/api/reminder-board":
                 self._api_json(lambda: api.reminder_board() if api is not None else _api_disabled())
                 return
+            if path == "/api/recent-runs":
+                host = self.headers.get("Host", "").lower()
+                port = self.server.server_port
+                if (host not in {f"127.0.0.1:{port}", f"localhost:{port}"}
+                    or self.headers.get("Sec-Fetch-Site") not in {None, "same-origin", "none"}
+                    or self.headers.get("Origin") not in {None, f"http://{host}"}):
+                    self._api_error(403, "recent runs are available only in the local workbench")
+                elif parsed.query:
+                    self._api_error(400, "recent runs do not accept query parameters")
+                else:
+                    self._api_json(lambda: api.recent_runs() if api is not None else _api_disabled())
+                return
             run_id = _api_run_id(path, "/api/runs/", "/status")
             if run_id is not None:
                 self._api_json(lambda: api.run_status(run_id) if api is not None else _api_disabled())

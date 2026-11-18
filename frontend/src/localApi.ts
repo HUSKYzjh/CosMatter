@@ -1,4 +1,5 @@
 import { packages as dshBundles } from "../../plugins/dsh-plugin-group.json";
+import { isLocalRunId } from "./liveRunIdentity";
 
 export interface LocalApiStatus {
   api_mode: "loopback_only";
@@ -125,6 +126,13 @@ export function isHarnessPluginCatalogue(value: unknown): value is HarnessPlugin
 }
 
 export interface LiveMission { run_id: string; mission_id: string; fleet_type: string; mission_type: string; state: string; }
+export interface RecentLocalRun {
+  run_id: string;
+  material: string;
+  property: string;
+  updated_at: string;
+  stopped: boolean;
+}
 export interface DraftPlan { run_id: string; trust_status: "untrusted_draft"; content: string; }
 export interface ApprovedPlan { run_id: string; plan_id: string; queries: string[]; counter_queries: string[]; query_track_counts?: { exact_material: number; mechanism_analogue: number; algorithm: number }; query_track_planning_status?: "approved_independent_tracks" | "legacy_unclassified"; }
 export interface SearchResult { run_id: string; candidate_count: number; sources: string[]; source_counts: Record<string, number>; }
@@ -177,6 +185,27 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = (init?.m
   return payload as T;
 }
 function jsonPost<T>(path: string, payload: unknown): Promise<T> { return request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
+export async function getRecentLocalRuns(): Promise<RecentLocalRun[]> {
+  const payload = await request<unknown>("./api/recent-runs", { credentials: "omit", redirect: "error" });
+  if (!exactObjectKeys(payload, ["schema_version", "runs"])) throw new LocalApiRequestError("transport");
+  const { schema_version, runs } = payload as { schema_version: unknown; runs: unknown };
+  if (schema_version !== "cosmatter.recent-local-runs/v1" || !Array.isArray(runs) || runs.length > 12
+    || !runs.every(isRecentLocalRun) || new Set(runs.map(({ run_id }) => run_id)).size !== runs.length) {
+    throw new LocalApiRequestError("transport");
+  }
+  return runs;
+}
+
+function isRecentLocalRun(value: unknown): value is RecentLocalRun {
+  if (!exactObjectKeys(value, ["run_id", "material", "property", "updated_at", "stopped"])) return false;
+  const { run_id, material, property, updated_at, stopped } = value as Record<string, unknown>;
+  return typeof run_id === "string" && isLocalRunId(run_id)
+    && typeof material === "string" && material.trim().length > 0 && material.length <= 240
+    && typeof property === "string" && property.trim().length > 0 && property.length <= 240
+    && typeof stopped === "boolean" && typeof updated_at === "string"
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(updated_at) && Number.isFinite(Date.parse(updated_at))
+    && new Date(updated_at).toISOString() === updated_at.replace("Z", ".000Z");
+}
 export function getLocalApiStatus(): Promise<LocalApiStatus> { return request<LocalApiStatus>("./api/status"); }
 export function getFacilityContractCatalogue(): Promise<FacilityContractCatalogue> { return request<FacilityContractCatalogue>("./api/facility-contracts"); }
 export function getHarnessPluginCatalogue(): Promise<HarnessPluginCatalogue> { return request<HarnessPluginCatalogue>("./api/plugins"); }
