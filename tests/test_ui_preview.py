@@ -60,7 +60,8 @@ class UiPreviewTests(unittest.TestCase):
             (web / "index.html").write_text("<h1>preview</h1>", encoding="utf-8")
             api = Mock()
             snapshot = {"schema_version": "cosmatter.recent-local-runs/v1", "runs": []}
-            api.recent_runs.return_value = snapshot
+            links = {"schema_version": "cosmatter.recent-run-links/v1", "runs": []}
+            api.recent_runs.side_effect = lambda include_labels=True: snapshot if include_labels else links
             with build_ui_preview_server(0, web, api=api) as server:
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
@@ -75,6 +76,16 @@ class UiPreviewTests(unittest.TestCase):
                         self.assertEqual(response.headers["Cache-Control"], "no-store")
                         self.assertEqual(json.loads(response.read()), snapshot)
                     api.recent_runs.assert_called_once_with()
+                    links_url = f"http://127.0.0.1:{server.server_port}/api/recent-run-links"
+                    for blocked in (Request(links_url, headers={"Sec-Fetch-Site": "cross-site"}), Request(links_url + "?include_labels=true")):
+                        with self.assertRaises(HTTPError) as context:
+                            urlopen(blocked, timeout=2)
+                        self.assertIn(context.exception.code, {400, 403})
+                        context.exception.close()
+                    with urlopen(links_url, timeout=2) as response:
+                        self.assertEqual(response.headers["Cache-Control"], "no-store")
+                        self.assertEqual(json.loads(response.read()), links)
+                    api.recent_runs.assert_called_with(include_labels=False)
                 finally:
                     server.shutdown()
                     thread.join(timeout=2)

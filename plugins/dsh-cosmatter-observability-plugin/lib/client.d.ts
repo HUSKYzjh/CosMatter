@@ -111,10 +111,21 @@ export interface ArtifactManifest {
     artifact_count: number;
     artifacts: ArtifactCard[];
 }
+export interface RecentRunLink {
+    run_id: string;
+    updated_at: string;
+    stopped: boolean;
+    workbench_url: string;
+}
+export interface RecentRunLinks {
+    schema_version: 'cosmatter.recent-run-links/v1';
+    runs: RecentRunLink[];
+}
 export declare class CosMatterObservabilityClient {
     private readonly request;
     readonly config: NormalizedConfig;
     constructor(config?: CosMatterObservabilityConfig, request?: typeof fetch);
+    recentRunLinks(signal?: AbortSignal): Promise<RecentRunLinks>;
     workflowStatus(runIdValue: string, signal?: AbortSignal): Promise<WorkflowStatus>;
     artifactManifest(runIdValue: string, signal?: AbortSignal): Promise<ArtifactManifest>;
     stageContract(runIdValue: string, signal?: AbortSignal): Promise<StageContract>;

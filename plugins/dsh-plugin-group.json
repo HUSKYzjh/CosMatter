@@ -14,7 +14,7 @@
       "package": "@cosmatter/dsh-observability-plugin",
       "path": "dsh-cosmatter-observability-plugin",
       "plugin_id": "cosmatter-observability",
-      "tools": ["cosmatter_workflow_status", "cosmatter_stage_contract", "cosmatter_operational_telemetry", "cosmatter_workflow_dag", "cosmatter_artifact_manifest"],
+      "tools": ["cosmatter_recent_runs", "cosmatter_workflow_status", "cosmatter_stage_contract", "cosmatter_operational_telemetry", "cosmatter_workflow_dag", "cosmatter_artifact_manifest"],
       "automation_boundary": "loopback_only_count_based_status_fixed_nonexecuting_stage_contract_aggregate_operational_telemetry_declared_dag_readiness_and_fixed_allowlisted_artifact_cards"
     },
     {

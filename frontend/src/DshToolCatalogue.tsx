@@ -14,6 +14,7 @@ type ToolCopy = {
 
 const TOOL_COPY: Readonly<Partial<Record<string, ToolCopy>>> = {
   cosmatter_mission_create: { label: ["建立本机任务", "Create a local mission"], access: "local" },
+  cosmatter_recent_runs: { label: ["查找最近的本机任务", "Find recent local runs"], access: "read" },
   cosmatter_workflow_status: { label: ["读取任务进度", "Read workflow status"], access: "read" },
   cosmatter_stage_contract: { label: ["读取阶段门禁", "Read stage requirements"], access: "read" },
   cosmatter_operational_telemetry: { label: ["读取派发回执摘要", "Read dispatch receipt summary"], access: "read" },

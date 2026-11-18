@@ -50,10 +50,25 @@ export interface WorkflowDagStage { stage: string; depends_on: string[]; status:
 export interface WorkflowDag { schema_version: 'cosmatter.workflow-dag/v1'; run_id: string; mission_id: string; trust_status: 'loopback_declared_dag_readiness_projection_not_execution_authorization'; dag_id: 'cosmatter_review_gated_linear_workflow'; max_concurrency: 1; scheduler_status: 'declarative_only_no_execution_authorization'; runtime_safety: string; eligible_stages: string[]; blocked_stage_count: number; human_review_required: boolean; stages: WorkflowDagStage[] }
 export interface ArtifactCard { artifact_id: string; title: string; media_type: string; sha256: string; generated_at: string; trust_status: string; download_path: string }
 export interface ArtifactManifest { schema_version: 'cosmatter.artifact/v1'; run_id: string; mission_id: string; trust_status: 'allowlisted_artifact_index_not_scientific_evidence'; artifact_count: number; artifacts: ArtifactCard[] }
+export interface RecentRunLink { run_id: string; updated_at: string; stopped: boolean; workbench_url: string }
+export interface RecentRunLinks { schema_version: 'cosmatter.recent-run-links/v1'; runs: RecentRunLink[] }
 
 export class CosMatterObservabilityClient {
   readonly config: NormalizedConfig
   constructor(config: CosMatterObservabilityConfig = {}, private readonly request: typeof fetch = fetch) { this.config = normalizeConfig(config) }
+
+  async recentRunLinks(signal?: AbortSignal): Promise<RecentRunLinks> {
+    const timeout = AbortSignal.timeout(this.config.timeoutMs)
+    const response = await this.request(new URL('/api/recent-run-links', this.config.baseUrl), {
+      method: 'GET', redirect: 'error', headers: { Accept: 'application/json' },
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    })
+    if (!response.ok) throw new Error(`CosMatter recent runs request failed with HTTP ${response.status}`)
+    if (Number(response.headers.get('content-length') ?? 0) > this.config.maxResponseBytes) throw new Error('CosMatter recent runs response exceeds configured size')
+    const text = await response.text()
+    if (new TextEncoder().encode(text).byteLength > this.config.maxResponseBytes) throw new Error('CosMatter recent runs response exceeds configured size')
+    return validateRecentRunLinks(JSON.parse(text), this.config.baseUrl)
+  }
 
   async workflowStatus(runIdValue: string, signal?: AbortSignal): Promise<WorkflowStatus> {
     if (!runId.test(runIdValue)) throw new Error('run_id is invalid')
@@ -129,6 +144,28 @@ export class CosMatterObservabilityClient {
       return validateWorkflowDag(JSON.parse(text), runIdValue)
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
   }
+}
+
+function validateRecentRunLinks(value: unknown, baseUrl: string): RecentRunLinks {
+  const invalid = () => new Error('CosMatter recent runs response is invalid')
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid()
+  const result = value as Record<string, unknown>
+  if (Object.keys(result).length !== 2 || result.schema_version !== 'cosmatter.recent-run-links/v1'
+    || !Array.isArray(result.runs) || result.runs.length > 12) throw invalid()
+
+  const seen = new Set<string>()
+  const runs = result.runs.map((item: unknown): RecentRunLink => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw invalid()
+    const { run_id, updated_at, stopped } = item as Record<string, unknown>
+    if (Object.keys(item).length !== 3 || typeof run_id !== 'string' || run_id.length > 255 || !runId.test(run_id)
+      || seen.has(run_id) || typeof stopped !== 'boolean' || typeof updated_at !== 'string'
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(updated_at) || !Number.isFinite(Date.parse(updated_at))) throw invalid()
+    seen.add(run_id)
+    const workbench = new URL('/?api=local', baseUrl)
+    workbench.hash = new URLSearchParams({ run: run_id }).toString()
+    return { run_id, updated_at, stopped, workbench_url: workbench.href }
+  })
+  return { schema_version: 'cosmatter.recent-run-links/v1', runs }
 }
 
 export function validateWorkflowStatus(value: unknown, expectedRunId: string): WorkflowStatus {

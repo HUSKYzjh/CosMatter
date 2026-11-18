@@ -1,7 +1,7 @@
 # CosMatter DSH 插件组：兼容性、升级与发布就绪度
 
 > 状态：本地开发/隔离 profile 已验收；**尚未批准公开发布**。
-> 更新：2026-11-18。
+> 更新：2026-11-19。
 
 本文件是 `plugins/dsh-plugin-group.json` 的运行与发布补充。CosMatter 的
 Python 领域层仍是任务、来源、人工门禁和审计的唯一真相源；DSH bundle 只经
@@ -18,12 +18,12 @@ Python 领域层仍是任务、来源、人工门禁和审计的唯一真相源�
 | SciVerse Python SDK | 0.7.1 | `AgentToolsClient` 适配器单测、editable 安装与 loopback 调研回归。 |
 | DSH CLI | 0.2.2-rc.3 | 隔离 headless profile 安装、配置组合与启动检查。 |
 | Cordis | 4.1.0 | 七个 bundle 的构建与真实 Cordis 工具注册。 |
-| `@deepseek-ai/dsh-tools` | 0.2.2-rc.3 | 检查全部 19 个已注册工具，调用一次本地目录工具。 |
+| `@deepseek-ai/dsh-tools` | 0.2.2-rc.3 | 核验 20 个工具的注册，并用原生工具读取本机目录和任务。 |
 
 | bundle | DSH 工具 | 外部能力与不可越过的边界 |
 | --- | --- | --- |
 | `@cosmatter/dsh-mission-plugin` | `cosmatter_mission_create` | 仅建立本地任务与 fleet 分派。 |
-| `@cosmatter/dsh-observability-plugin` | `cosmatter_workflow_status`、`cosmatter_artifact_manifest` | 只读流程状态与固定 allowlist Artifact 卡片；只返回标题、SHA-256、生成时间、信任状态和固定下载路由，不读任意路径、PDF、MinerU Markdown 或 provider 内容。 |
+| `@cosmatter/dsh-observability-plugin` | `cosmatter_recent_runs`、`cosmatter_workflow_status`、`cosmatter_artifact_manifest` | 读取本机任务链接、流程状态和固定工件卡片。任务链接只含运行 ID、更新时间、停止状态与本机打开地址。 |
 | `@cosmatter/dsh-policy-plugin` | `cosmatter_plugin_catalogue`、`cosmatter_plugin_authorization_plan` | 只读目录与非执行授权判断。 |
 | `@cosmatter/dsh-research-plugin` | `cosmatter_research_plan_draft`、`cosmatter_research_plan_approve`、`cosmatter_research_query_execute` | DeepSeek 草案与元数据检索均须精确的任务范围同意并由后端先写入授权回执；不处理全文、MinerU 或证据接受。 |
 | `@cosmatter/dsh-review-plugin` | `cosmatter_candidate_screening_template`、`cosmatter_candidate_screening_record` | 只读候选安全元数据，并为全部当前候选记录完整人工筛选决定；不调用提供商或接受证据。 |
@@ -64,12 +64,14 @@ $env:PYTHONPATH = 'src'
 
 在本机诊断安装环境时，先执行下面的无 key 命令。它会明确报告 DSH、Node、npm 或
 pnpm 缺失或版本不符。随后打包七个 bundle，在临时 `DSH_HOME` 中安装并核对组合配置。
-验收还会检查 headless 帮助入口，并在禁用任务运行器和模型适配器的 profile 中检查 19 个工具的注册。
+验收还会检查 headless 帮助入口，并在禁用任务运行器和模型适配器的 profile 中检查 20 个工具的注册。
 DSH 原生工具执行器通过临时 CosMatter HTTP 服务读取正式契约目录、建立一个合成任务，再确认该任务的下一步为计划阶段。
 验收使用临时 profile 与任务目录，关闭提供方配置。舰桥的「查找 DSH 工具」提供工具名、所属包与授权要求。
 `cosmatter_mission_create` 会返回 `workbench_url`。在运行 CosMatter 的同一台机器打开这个链接，即可直接进入任务。
 也可以在「续航任务」选择近期本机任务，或在「按运行 ID 打开」粘贴 `run_id`。任务页可以复制本机链接。
 近期列表显示研究对象、研究目标、运行 ID 与更新时间，按最近更新排列。已停止的任务会标明状态。
+在「最近的本机任务」展开「在 DSH 查找最近任务」，可复制 `cosmatter dsh-recent-runs --port <本机端口>`。
+命令通过已安装的 observability 插件调用 `cosmatter_recent_runs`，无需事先知道运行 ID。它最多列出 12 条，只返回运行 ID、更新时间、停止状态和本机打开链接。研究对象和研究目标保留在浏览器列表中。
 打开任务时，舰桥会核对本机阶段契约。处于候选筛选或之后且文献工件可用时，直接打开文献星图；
 等待计划审核或检索的任务从受控编排继续。阶段或工件待核对的任务也可从受控编排查看。
 候选筛选草稿保留在当前浏览器标签页，重新打开时从第一篇未填完的候选继续。决定和理由均填写后才能登记完整清单。

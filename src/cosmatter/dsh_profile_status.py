@@ -39,6 +39,7 @@ _DSH_VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-[a-z0-9.]{1,24
 _REGISTRY_OUTPUT = "COSMATTER_TOOL_REGISTRY "
 _RUN_STATUS_OUTPUT = "COSMATTER_DSH_RUN_STATUS "
 _EVIDENCE_OUTPUT = "COSMATTER_DSH_EVIDENCE "
+_RECENT_RUNS_OUTPUT = "COSMATTER_DSH_RECENT_RUNS "
 _OBSERVABILITY_BUNDLE = "@cosmatter/dsh-observability-plugin"
 _GRAPH_BUNDLE = "@cosmatter/dsh-graph-plugin"
 _LOCAL_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,254}")
@@ -48,7 +49,7 @@ _BOOTSTRAP_ENV = {
 }
 _BUNDLE_TOOLS = dict(zip(EXPECTED_DSH_PACKAGES, (
     ("cosmatter_mission_create",),
-    ("cosmatter_workflow_status", "cosmatter_stage_contract", "cosmatter_operational_telemetry", "cosmatter_workflow_dag", "cosmatter_artifact_manifest"),
+    ("cosmatter_recent_runs", "cosmatter_workflow_status", "cosmatter_stage_contract", "cosmatter_operational_telemetry", "cosmatter_workflow_dag", "cosmatter_artifact_manifest"),
     ("cosmatter_plugin_catalogue", "cosmatter_plugin_authorization_plan"),
     ("cosmatter_research_plan_draft", "cosmatter_research_plan_approve", "cosmatter_research_query_execute"),
     ("cosmatter_candidate_screening_template", "cosmatter_candidate_screening_record"),
@@ -105,26 +106,25 @@ export async function apply(ctx, { runId }) {
   }
 }
 """
-_EVIDENCE_PROBE = """
-export const name = 'cosmatter-accepted-evidence-reader'
+_TOOL_READ_PROBE = """
+export const name = 'cosmatter-tool-reader'
 export const inject = ['tools']
-export async function apply(ctx, { runId, evidenceId }) {
-  const send = value => process.stdout.write('COSMATTER_DSH_EVIDENCE ' + JSON.stringify(value) + '\\n', () => process.exit(0))
-  const name = 'cosmatter_accepted_evidence_search'
+export async function apply(ctx, { tool, args, prefix }) {
+  const send = value => process.stdout.write(prefix + JSON.stringify(value) + '\\n', () => process.exit(0))
   try {
     const deadline = Date.now() + 5000
-    while (!ctx.tools.definitions().some(tool => tool.name === name)) {
+    while (!ctx.tools.definitions().some(({name}) => name === tool)) {
       if (Date.now() >= deadline) return send({error: 'not_registered'})
       await new Promise(resolve => setTimeout(resolve, 50))
     }
     const execution = await ctx.tools.execute({
-      calls: [{type: 'tool-call', id: name, name, arguments: JSON.stringify({run_id: runId, evidence_id: evidenceId, limit: 1})}],
+      calls: [{type: 'tool-call', id: tool, name: tool, arguments: JSON.stringify(args)}],
       signal: AbortSignal.timeout(8000),
     })
-    const result = execution.results.find(({callId}) => callId === name)?.result
-    return send(result && !result.isError ? result.value : {error: 'evidence_unavailable'})
+    const result = execution.results.find(({callId}) => callId === tool)?.result
+    return send(result && !result.isError ? result.value : {error: 'tool_unavailable'})
   } catch {
-    return send({error: 'evidence_unavailable'})
+    return send({error: 'tool_unavailable'})
   }
 }
 """
@@ -247,16 +247,8 @@ def read_dsh_run_status(
     """Read one existing run through the installed DSH observability tools."""
     if not _LOCAL_RUN_ID.fullmatch(run_id):
         raise DshCompositionCheckError("Run ID must use letters, numbers, underscores, or hyphens.")
-    if not 1 <= port <= 65535:
-        raise DshCompositionCheckError("Port must be between 1 and 65535.")
-    dsh = shutil.which(executable)
-    if not dsh:
-        raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
-    profile = (dsh_home or _default_dsh_home()).resolve() / "profiles" / "tui"
-    if _bundle_status(profile / "node_modules" / _OBSERVABILITY_BUNDLE, _OBSERVABILITY_BUNDLE) != "verified":
-        raise DshCompositionCheckError("The local tui profile has no valid CosMatter observability bundle.")
-    result = _run_isolated_dsh_probe(
-        dsh, profile, {_OBSERVABILITY_BUNDLE: {"baseUrl": f"http://127.0.0.1:{port}"}},
+    result = _read_through_bundle(
+        _OBSERVABILITY_BUNDLE, executable, dsh_home, port,
         _RUN_STATUS_PROBE, {"runId": run_id}, _RUN_STATUS_OUTPUT,
     )
     if isinstance(result, dict):
@@ -275,15 +267,11 @@ def read_dsh_run_status(
 def read_dsh_evidence_link(link: str, *, executable: str = "dsh", dsh_home: Path | None = None) -> dict[str, Any]:
     """Read the accepted card in a local workbench link through the installed DSH graph tool."""
     run_id, document_id, evidence_id, port = _parse_evidence_link(link)
-    dsh = shutil.which(executable)
-    if not dsh:
-        raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
-    profile = (dsh_home or _default_dsh_home()).resolve() / "profiles" / "tui"
-    if _bundle_status(profile / "node_modules" / _GRAPH_BUNDLE, _GRAPH_BUNDLE) != "verified":
-        raise DshCompositionCheckError("The local tui profile has no valid CosMatter graph bundle.")
-    result = _run_isolated_dsh_probe(
-        dsh, profile, {_GRAPH_BUNDLE: {"baseUrl": f"http://127.0.0.1:{port}"}},
-        _EVIDENCE_PROBE, {"runId": run_id, "evidenceId": evidence_id}, _EVIDENCE_OUTPUT,
+    tool = "cosmatter_accepted_evidence_search"
+    result = _read_through_bundle(
+        _GRAPH_BUNDLE, executable, dsh_home, port,
+        _TOOL_READ_PROBE, {"tool": tool, "args": {"run_id": run_id, "evidence_id": evidence_id, "limit": 1}, "prefix": _EVIDENCE_OUTPUT},
+        _EVIDENCE_OUTPUT,
     )
     if isinstance(result, dict):
         if result.get("error") == "not_registered":
@@ -293,8 +281,40 @@ def read_dsh_evidence_link(link: str, *, executable: str = "dsh", dsh_home: Path
                 and result.get("trust_status") == "accepted_evidence_search_not_new_evidence_or_scientific_conclusion"
                 and isinstance(hits, list) and len(hits) == 1 and isinstance(hits[0], dict)
                 and hits[0].get("evidence_id") == evidence_id and hits[0].get("document_id") == document_id):
-            return {**result, "checked_via": ["cosmatter_accepted_evidence_search"]}
+            return {**result, "checked_via": [tool]}
     raise DshCompositionCheckError("DSH could not find the accepted card for this link. Check the link and the local CosMatter service.")
+
+
+def read_dsh_recent_runs(*, port: int = 8765, executable: str = "dsh", dsh_home: Path | None = None) -> dict[str, Any]:
+    """Read a label-free local run index through the installed observability bundle."""
+    tool = "cosmatter_recent_runs"
+    result = _read_through_bundle(
+        _OBSERVABILITY_BUNDLE, executable, dsh_home, port,
+        _TOOL_READ_PROBE, {"tool": tool, "args": {}, "prefix": _RECENT_RUNS_OUTPUT}, _RECENT_RUNS_OUTPUT,
+    )
+    if isinstance(result, dict):
+        if result.get("error") == "not_registered":
+            raise DshCompositionCheckError("DSH did not register the CosMatter recent runs tool. Update the observability bundle.")
+        if result.get("schema_version") == "cosmatter.recent-run-links/v1" and isinstance(result.get("runs"), list):
+            return {**result, "checked_via": [tool]}
+    raise DshCompositionCheckError("DSH could not read recent runs. Check that CosMatter is serving the local API on the requested port.")
+
+
+def _read_through_bundle(
+    bundle: str, executable: str, dsh_home: Path | None, port: int,
+    script: str, config: dict[str, Any], prefix: str,
+) -> Any:
+    if not 1 <= port <= 65535:
+        raise DshCompositionCheckError("Port must be between 1 and 65535.")
+    dsh = shutil.which(executable)
+    if not dsh:
+        raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
+    profile = (dsh_home or _default_dsh_home()).resolve() / "profiles" / "tui"
+    if _bundle_status(profile / "node_modules" / bundle, bundle) != "verified":
+        raise DshCompositionCheckError(f"The local tui profile has no valid {bundle} bundle.")
+    return _run_isolated_dsh_probe(
+        dsh, profile, {bundle: {"baseUrl": f"http://127.0.0.1:{port}"}}, script, config, prefix,
+    )
 
 
 def _parse_evidence_link(link: str) -> tuple[str, str, str, int]:

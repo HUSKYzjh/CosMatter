@@ -300,11 +300,11 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   expect(await packageProof.locator("ul").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   const tools = deck.locator(".dsh-tool-catalogue");
   await tools.locator(":scope > summary").press("Enter");
-  await expect(tools.getByRole("status")).toHaveText("显示 19/19 个工具");
+  await expect(tools.getByRole("status")).toHaveText("显示 20/20 个工具");
   const search = tools.getByRole("searchbox", { name: "搜索工具或插件包" });
   const filter = tools.getByLabel("授权类型");
   await filter.selectOption("external");
-  await expect(tools.getByRole("status")).toHaveText("显示 4/19 个工具");
+  await expect(tools.getByRole("status")).toHaveText("显示 4/20 个工具");
   await search.fill("书目查询");
   const matching = tools.locator(".dsh-tool-item");
   await expect(matching).toHaveCount(1);
@@ -322,9 +322,9 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   expect(await deck.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await search.fill("nonexistent");
-  await expect(tools.getByRole("status")).toHaveText("显示 0/19 个工具");
+  await expect(tools.getByRole("status")).toHaveText("显示 0/20 个工具");
   await tools.getByRole("button", { name: "清除筛选" }).click();
-  await expect(tools.getByRole("status")).toHaveText("显示 19/19 个工具");
+  await expect(tools.getByRole("status")).toHaveText("显示 20/20 个工具");
 });
 
 test("rechecks a missing DSH bundle while the catalogue is unavailable", async ({ page }) => {
@@ -399,12 +399,12 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await expect(installationCard).toContainText("已验证 7/7");
   await expect(packageProof.locator("li").first().locator(".harness-package-state b")).toHaveText("已验证");
   await expect(deck.locator(".harness-activation-track")).toContainText("上次组合 7/7");
-  await expect(composition).toContainText("已注册 1/19");
+  await expect(composition).toContainText("已注册 1/20");
   await expect(packageProof.locator("li").first()).toContainText("注册 0/1");
   const tools = deck.locator(".dsh-tool-catalogue");
   await tools.locator(":scope > summary").press("Enter");
   await expect(tools.getByText("隔离核验已注册", { exact: true })).toHaveCount(1);
-  await expect(tools.getByText("隔离核验未注册", { exact: true })).toHaveCount(5);
+  await expect(tools.getByText("隔离核验未注册", { exact: true })).toHaveCount(6);
   filesChanged = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(composition).toContainText("工具核验已过期");
@@ -744,6 +744,7 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
 
 test("finds recent local missions without a run ID and reuses the selected run", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   const runId = "saved_run_05";
   const { readFile } = await import("node:fs/promises");
   const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
@@ -787,6 +788,20 @@ test("finds recent local missions without a run ID and reuses the selected run",
   await page.getByRole("button", { name: /^续航任务/ }).click();
   const list = page.getByRole("region", { name: "最近的本机任务" });
   await expect(list.getByRole("status")).toHaveText(/无法读取最近任务/);
+  const command = list.locator(".dsh-run-handoff");
+  await command.locator("summary").press("Enter");
+  await expect(command).toHaveAttribute("open", "");
+  const expectedCommand = "cosmatter dsh-recent-runs --port " + new URL(page.url()).port;
+  await expect(command.locator("code")).toHaveText(expectedCommand);
+  await command.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
+  await expect(command.getByRole("status")).toHaveText("DSH 命令已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(expectedCommand);
+  await page.evaluate(() => Object.defineProperty(navigator.clipboard, "writeText", {
+    value: () => Promise.reject(new DOMException("Clipboard access denied", "NotAllowedError")),
+  }));
+  await command.getByRole("button", { name: "复制 DSH 命令" }).click();
+  await expect(command.getByRole("status")).toHaveText("剪贴板不可用，可选中上方命令复制。");
+  expect(count).toBe(1);
   await list.getByRole("button", { name: "刷新列表" }).click();
   await expect(list.getByRole("listitem")).toHaveCount(4);
   await expect(list.getByText("已停止", { exact: true })).toBeVisible();

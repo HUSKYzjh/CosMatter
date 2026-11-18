@@ -1,5 +1,11 @@
 # CosMatter observability plugin for DeepSeek Harness
 
+`cosmatter_recent_runs` lists up to twelve recent local run IDs with their update
+times, stopped flags, and local workbench links. It takes no run ID and leaves
+research questions and labels in the browser. Open a `workbench_url` on the same
+machine to resume the run. In the CosMatter terminal, `cosmatter dsh-recent-runs`
+can read this list through an isolated, provider-free DSH invocation.
+
 `cosmatter_workflow_status` exposes a read-only, count-only view of one local
 CosMatter run. `cosmatter_stage_contract` adds the same run's fixed completion
 requirements, human gates, expected symbolic outputs, and non-executing
@@ -11,7 +17,7 @@ disclosure; it is never a provider bill or benchmark. `cosmatter_artifact_manife
 generated, fixed allowlist outputs with title, SHA-256, generation time, trust
 status, and a fixed download route. None of these tools executes a provider,
 reads source content, writes run artifacts, accepts evidence, changes consent,
-accepts arbitrary paths, or exposes PDFs, MinerU Markdown, URLs, private paths,
+accepts arbitrary paths, or exposes PDFs, MinerU Markdown, source URLs, private paths,
 provider payloads, audit details, or credentials.
 
 Only a bare `http://127.0.0.1` endpoint is accepted.

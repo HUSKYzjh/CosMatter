@@ -42,6 +42,21 @@ export class CosMatterObservabilityClient {
         this.request = request;
         this.config = normalizeConfig(config);
     }
+    async recentRunLinks(signal) {
+        const timeout = AbortSignal.timeout(this.config.timeoutMs);
+        const response = await this.request(new URL('/api/recent-run-links', this.config.baseUrl), {
+            method: 'GET', redirect: 'error', headers: { Accept: 'application/json' },
+            signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+        });
+        if (!response.ok)
+            throw new Error(`CosMatter recent runs request failed with HTTP ${response.status}`);
+        if (Number(response.headers.get('content-length') ?? 0) > this.config.maxResponseBytes)
+            throw new Error('CosMatter recent runs response exceeds configured size');
+        const text = await response.text();
+        if (new TextEncoder().encode(text).byteLength > this.config.maxResponseBytes)
+            throw new Error('CosMatter recent runs response exceeds configured size');
+        return validateRecentRunLinks(JSON.parse(text), this.config.baseUrl);
+    }
     async workflowStatus(runIdValue, signal) {
         if (!runId.test(runIdValue))
             throw new Error('run_id is invalid');
@@ -162,6 +177,30 @@ export class CosMatterObservabilityClient {
             signal?.removeEventListener('abort', abort);
         }
     }
+}
+function validateRecentRunLinks(value, baseUrl) {
+    const invalid = () => new Error('CosMatter recent runs response is invalid');
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw invalid();
+    const result = value;
+    if (Object.keys(result).length !== 2 || result.schema_version !== 'cosmatter.recent-run-links/v1'
+        || !Array.isArray(result.runs) || result.runs.length > 12)
+        throw invalid();
+    const seen = new Set();
+    const runs = result.runs.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item))
+            throw invalid();
+        const { run_id, updated_at, stopped } = item;
+        if (Object.keys(item).length !== 3 || typeof run_id !== 'string' || run_id.length > 255 || !runId.test(run_id)
+            || seen.has(run_id) || typeof stopped !== 'boolean' || typeof updated_at !== 'string'
+            || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(updated_at) || !Number.isFinite(Date.parse(updated_at)))
+            throw invalid();
+        seen.add(run_id);
+        const workbench = new URL('/?api=local', baseUrl);
+        workbench.hash = new URLSearchParams({ run: run_id }).toString();
+        return { run_id, updated_at, stopped, workbench_url: workbench.href };
+    });
+    return { schema_version: 'cosmatter.recent-run-links/v1', runs };
 }
 export function validateWorkflowStatus(value, expectedRunId) {
     if (!value || typeof value !== 'object' || Array.isArray(value))

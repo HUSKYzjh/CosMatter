@@ -137,10 +137,15 @@ class LocalMissionApiTests(unittest.TestCase):
         before = {path: path.read_bytes() for path in self.runs.rglob("*") if path.is_file()}
         with patch.object(self.api, "settings_loader", side_effect=AssertionError("unexpected provider configuration")):
             index = self.api.recent_runs()
+            links = self.api.recent_runs(include_labels=False)
         self.assertEqual([run["run_id"] for run in index["runs"]], [f"saved_{index:02d}" for index in reversed(range(2, 14))])
         self.assertEqual({run["run_id"] for run in index["runs"] if run["stopped"]}, {"saved_12", "saved_13"})
         self.assertEqual(set(index["runs"][0]), {"run_id", "material", "property", "updated_at", "stopped"})
         self.assertNotIn("private", json.dumps(index))
+        self.assertEqual(links, {
+            "schema_version": "cosmatter.recent-run-links/v1",
+            "runs": [{key: run[key] for key in ("run_id", "updated_at", "stopped")} for run in index["runs"]],
+        })
         self.assertEqual({path: path.read_bytes() for path in self.runs.rglob("*") if path.is_file()}, before)
 
     def test_imported_run_package_resumes_the_audited_stage(self):

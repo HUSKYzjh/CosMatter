@@ -6,6 +6,15 @@ export const inject = ['tools'];
 export function apply(ctx, config = {}) {
     const client = new CosMatterObservabilityClient(config);
     ctx.tools.register(defineTool({
+        name: 'cosmatter_recent_runs',
+        description: 'List up to twelve recent local CosMatter run IDs, update times, stopped flags and workbench links. Use it when a run ID is unknown.',
+        parameters: {},
+        output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+        async execute(_args, exec) {
+            return await client.recentRunLinks(exec.signal);
+        },
+    }));
+    ctx.tools.register(defineTool({
         name: 'cosmatter_workflow_status',
         description: 'Read a count-only, loopback-only CosMatter workflow status. It never invokes providers, reads source content, accepts evidence, grants consent, or changes a run.',
         parameters: { run_id: { type: 'string', required: true } },

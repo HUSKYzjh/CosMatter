@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createResource, createSignal } from "solid-js";
+import { DshRecentRunsHandoff } from "./DshRunHandoff";
 import { getRecentLocalRuns, type RecentLocalRun } from "./localApi";
 import { ActionButton, StatusBadge } from "./uiPrimitives";
 import type { UiLocale } from "./fleetRegistry";
@@ -59,5 +60,6 @@ export function RecentLocalRuns(props: {
         </ActionButton>
       </Show>
     </Show>
+    <DshRecentRunsHandoff locale={props.locale} />
   </section>;
 }

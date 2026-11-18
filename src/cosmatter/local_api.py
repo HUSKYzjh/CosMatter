@@ -1671,8 +1671,8 @@ class LocalMissionApi:
             summary["automatic_execution"] = automatic
         return summary
 
-    def recent_runs(self) -> dict[str, object]:
-        """Return a bounded local index of saved task labels and IDs."""
+    def recent_runs(self, *, include_labels: bool = True) -> dict[str, object]:
+        """Return a bounded local index, with labels reserved for the workbench."""
         runs: list[dict[str, object]] = []
         try:
             root = self.runs_dir.resolve()
@@ -1699,22 +1699,26 @@ class LocalMissionApi:
                 mission = _mission_from_payload(payload)
                 stopped = _recent_run_stopped(run_dir, mission.mission_id)
                 timestamp = datetime.fromtimestamp(updated_ns // 1_000_000_000, tz=timezone.utc)
-                material = " ".join(mission.material.split())[:120]
-                property_name = " ".join(mission.property_name.split())[:120]
-                material.encode("utf-8")
-                property_name.encode("utf-8")
+                labels = {}
+                if include_labels:
+                    labels = {
+                        "material": " ".join(mission.material.split())[:120],
+                        "property": " ".join(mission.property_name.split())[:120],
+                    }
+                    for label in labels.values():
+                        label.encode("utf-8")
             except (OSError, RuntimeError, ValueError, OverflowError):
                 continue
             runs.append({
                 "run_id": run_id,
-                "material": material,
-                "property": property_name,
+                **labels,
                 "updated_at": timestamp.isoformat(timespec="seconds").replace("+00:00", "Z"),
                 "stopped": stopped,
             })
             if len(runs) == _RECENT_RUN_LIMIT:
                 break
-        return {"schema_version": "cosmatter.recent-local-runs/v1", "runs": runs}
+        schema = "cosmatter.recent-local-runs/v1" if include_labels else "cosmatter.recent-run-links/v1"
+        return {"schema_version": schema, "runs": runs}
 
     def workflow_status(self, run_id: str) -> dict[str, object]:
         """Return a count-only workflow projection for loopback harness adapters.

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from cosmatter.dsh_profile_status import (
     EXPECTED_DSH_PACKAGES, DshCompositionCheckError, _BUNDLE_TOOLS,
-    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_run_status,
+    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_status,
 )
 
 
@@ -218,7 +218,11 @@ class DshProfileStatusTests(unittest.TestCase):
                 self.assertEqual(len(entries), 2)
                 self.assertEqual(entries[0]["name"], (profile / "node_modules" / bundle / "lib/index.js").resolve().as_uri())
                 self.assertEqual(entries[0]["config"], {"baseUrl": "http://127.0.0.1:8789"})
-                self.assertEqual(entries[1]["config"], {"runId": "run_001", "evidenceId": "ev'id"})
+                self.assertEqual(entries[1]["config"], {
+                    "tool": "cosmatter_accepted_evidence_search",
+                    "args": {"run_id": "run_001", "evidence_id": "ev'id", "limit": 1},
+                    "prefix": "COSMATTER_DSH_EVIDENCE ",
+                })
                 return "COSMATTER_DSH_EVIDENCE " + json.dumps(result)
 
             with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
@@ -231,6 +235,29 @@ class DshProfileStatusTests(unittest.TestCase):
                 for malformed in (link.replace("127.0.0.1", "example.org"), link + "&evidence=other", link.replace("ev%27id", "ev%0Aid")):
                     with self.assertRaises(DshCompositionCheckError):
                         read_dsh_evidence_link(malformed, dsh_home=home)
+                self.assertEqual(launch.call_count, 2)
+
+    def test_recent_runs_calls_only_the_installed_observability_tool_without_a_run_id(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = "@cosmatter/dsh-observability-plugin"
+            self._write_bundle(profile, bundle)
+
+            payload = {"schema_version": "cosmatter.recent-run-links/v1", "runs": []}
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=payload,
+            ) as launch:
+                self.assertEqual(read_dsh_recent_runs(port=8789, dsh_home=home), {**payload, "checked_via": ["cosmatter_recent_runs"]})
+                self.assertEqual(launch.call_args.args[1:3], (profile, {bundle: {"baseUrl": "http://127.0.0.1:8789"}}))
+                self.assertEqual(launch.call_args.args[-2], {
+                    "tool": "cosmatter_recent_runs", "args": {}, "prefix": "COSMATTER_DSH_RECENT_RUNS ",
+                })
+                launch.return_value = {"error": "not_registered"}
+                with self.assertRaisesRegex(DshCompositionCheckError, "Update the observability bundle"):
+                    read_dsh_recent_runs(port=8789, dsh_home=home)
+                with self.assertRaisesRegex(DshCompositionCheckError, "Port"):
+                    read_dsh_recent_runs(port=0, dsh_home=home)
                 self.assertEqual(launch.call_count, 2)
 
 

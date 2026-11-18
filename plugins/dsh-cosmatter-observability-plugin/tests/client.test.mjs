@@ -5,6 +5,13 @@ import { CosMatterObservabilityClient } from '../lib/client.js'
 import { apply, inject, name } from '../lib/index.js'
 
 const stageNames = ['intake', 'plan', 'retrieval', 'screening', 'parse', 'extraction', 'gap', 'report', 'evaluation']
+const recent = {
+  schema_version: 'cosmatter.recent-run-links/v1',
+  runs: [
+    { run_id: 'run_002', updated_at: '2026-11-19T01:00:00Z', stopped: true },
+    { run_id: 'run_001', updated_at: '2026-11-18T23:00:00Z', stopped: false },
+  ],
+}
 const status = {
   schema_version: '1.0', run_id: 'run_001', mission_id: 'mission_abcdef12',
   trust_status: 'loopback_workflow_status_not_scientific_evidence', next_stage: 'screening',
@@ -49,6 +56,28 @@ const dag = {
   schema_version: 'cosmatter.workflow-dag/v1', run_id: 'run_001', mission_id: 'mission_abcdef12', trust_status: 'loopback_declared_dag_readiness_projection_not_execution_authorization', dag_id: 'cosmatter_review_gated_linear_workflow', max_concurrency: 1, scheduler_status: 'declarative_only_no_execution_authorization', runtime_safety: 'verified', eligible_stages: [], blocked_stage_count: 0, human_review_required: true,
   stages: stageNames.map((stage, index) => { const [depends_on, allowed_descriptors, data_classification, execution_class] = dagSpecs[stage]; return { stage, depends_on, status: index < 3 ? 'completed' : 'waiting_human_review', allowed_descriptors, data_classification, execution_class } }),
 }
+
+test('recent runs read only the label-free index and build links for the configured port', async () => {
+  let response = recent
+  const client = new CosMatterObservabilityClient({ baseUrl: 'http://127.0.0.1:8791' }, async (url, options) => {
+    assert.equal(String(url), 'http://127.0.0.1:8791/api/recent-run-links')
+    assert.equal(options.method, 'GET')
+    assert.equal(options.redirect, 'error')
+    return Response.json(response)
+  })
+  const result = await client.recentRunLinks()
+  assert.deepEqual(result.runs.map(row => row.workbench_url), [
+    'http://127.0.0.1:8791/?api=local#run=run_002',
+    'http://127.0.0.1:8791/?api=local#run=run_001',
+  ])
+  assert.deepEqual(result.runs.map(row => row.stopped), [true, false])
+  const first = recent.runs[0]
+  for (const runs of [[{ ...first, material: 'private' }], [{ ...first, workbench_url: 'https://example.org/' }],
+    [{ ...first, run_id: 'injected&document=x' }], [first, first], Array(13).fill(first)]) {
+    response = { ...recent, runs }
+    await assert.rejects(() => client.recentRunLinks(), /recent runs response is invalid/)
+  }
+})
 
 test('client reads only a bounded workflow-status projection', async () => {
   let request
@@ -127,24 +156,29 @@ test('client reads a fixed DAG but rejects scheduler-like mutations', async () =
 test('DSH apply registers only read-only observability tools', async () => {
   const tools = []; const events = []; let dispose
   const originalFetch = globalThis.fetch
-  globalThis.fetch = async url => new Response(JSON.stringify(String(url).endsWith('/artifacts') ? artifacts : String(url).endsWith('/stage-contract') ? contract : String(url).endsWith('/operational-telemetry') ? telemetry : String(url).endsWith('/workflow-dag') ? dag : status), { status: 200 })
+  const routes = { 'recent-run-links': recent, artifacts, 'stage-contract': contract, 'operational-telemetry': telemetry, 'workflow-dag': dag, 'workflow-status': status }
+  globalThis.fetch = async url => Response.json(routes[new URL(url).pathname.split('/').at(-1)])
   apply({ tools: { register: tool => tools.push(tool) }, emit: (event, payload) => events.push([event, payload]), effect: effect => { dispose = effect() } })
   assert.equal(name, 'cosmatter-observability')
   assert.deepEqual(inject, ['tools'])
-  assert.deepEqual(tools.map(tool => tool.name), ['cosmatter_workflow_status', 'cosmatter_artifact_manifest', 'cosmatter_stage_contract', 'cosmatter_operational_telemetry', 'cosmatter_workflow_dag'])
-  const result = await tools[0].execute({ run_id: 'run_001' }, { signal: new AbortController().signal })
+  assert.deepEqual(tools.map(tool => tool.name), ['cosmatter_recent_runs', 'cosmatter_workflow_status', 'cosmatter_artifact_manifest', 'cosmatter_stage_contract', 'cosmatter_operational_telemetry', 'cosmatter_workflow_dag'])
+  const execute = (name, args = { run_id: 'run_001' }) => tools.find(tool => tool.name === name).execute(args, { signal: new AbortController().signal })
+  const recentResult = await execute('cosmatter_recent_runs', {})
+  assert.equal(recentResult.runs[0].run_id, 'run_002')
+  assert.equal(events.length, 0)
+  const result = await execute('cosmatter_workflow_status')
   assert.equal(result.next_stage, 'screening')
   assert.equal(events[0][0], 'cosmatter-observability/workflow-read')
-  const manifest = await tools[1].execute({ run_id: 'run_001' }, { signal: new AbortController().signal })
+  const manifest = await execute('cosmatter_artifact_manifest')
   assert.equal(manifest.artifact_count, 1)
   assert.equal(events[1][0], 'cosmatter-observability/artifact-read')
-  const stageContract = await tools[2].execute({ run_id: 'run_001' }, { signal: new AbortController().signal })
+  const stageContract = await execute('cosmatter_stage_contract')
   assert.equal(stageContract.runtime_safety, 'verified')
   assert.equal(events[2][0], 'cosmatter-observability/stage-contract-read')
-  const telemetryResult = await tools[3].execute({ run_id: 'run_001' }, { signal: new AbortController().signal })
+  const telemetryResult = await execute('cosmatter_operational_telemetry')
   assert.equal(telemetryResult.provider_operations.length, 1)
   assert.equal(events[3][0], 'cosmatter-observability/telemetry-read')
-  const dagResult = await tools[4].execute({ run_id: 'run_001' }, { signal: new AbortController().signal })
+  const dagResult = await execute('cosmatter_workflow_dag')
   assert.equal(dagResult.scheduler_status, 'declarative_only_no_execution_authorization')
   assert.equal(events[4][0], 'cosmatter-observability/dag-read')
   dispose()

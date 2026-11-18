@@ -7,7 +7,7 @@ CosMatter 的 Python 领域层仍是任务工件、证据门禁和审计记录�
 | 包 | DSH 工具 | 自动化边界 |
 | --- | --- | --- |
 | `dsh-cosmatter-mission-plugin` | `cosmatter_mission_create` | 仅创建有界本地任务；无模型、检索、证据接受或计划批准。 |
-| `dsh-cosmatter-observability-plugin` | `cosmatter_workflow_status` | 只读返回下一阶段及各阶段计数；不读取来源内容、不调度提供商、不写入工件或改变审核/同意状态。 |
+| `dsh-cosmatter-observability-plugin` | `cosmatter_recent_runs`、`cosmatter_workflow_status` | 查找近期本机任务链接，读取下一阶段与各阶段计数。 |
 | `dsh-cosmatter-policy-plugin` | `cosmatter_plugin_catalogue`、`cosmatter_plugin_authorization_plan` | 只读能力目录和非执行授权边界判断；不记录同意、不调度适配器。 |
 | `dsh-cosmatter-research-plugin` | `cosmatter_research_plan_draft`、`cosmatter_research_plan_approve`、`cosmatter_research_query_execute` | 仅在工具调用提供精确、任务范围同意时，由 loopback 后端生成不可信 DeepSeek 计划草案或执行已批准的元数据检索；不读取全文、不调用 MinerU、不接受证据。 |
 | `dsh-cosmatter-review-plugin` | `cosmatter_candidate_screening_template`、`cosmatter_candidate_screening_record` | 只读候选元数据并记录完整人工筛选；不调用提供商、不调度全文或 MinerU、不接受证据。 |
