@@ -30,10 +30,17 @@ export function apply(ctx, config = {}) {
     }));
     ctx.tools.register(defineTool({
         name: 'cosmatter_accepted_evidence_search',
-        description: 'Search human-accepted evidence-card metadata for this run. A result with a workbench_url opens that evidence card in the local reader for human review.',
-        parameters: { run_id: { type: 'string', required: true }, query: { type: 'string', required: true }, limit: { type: 'integer' } },
+        description: 'Search human-accepted evidence-card metadata for this run. Provide a keyword query or one exact evidence_id. A result with a workbench_url opens the card in the local reader.',
+        parameters: { run_id: { type: 'string', required: true }, query: { type: 'string' }, evidence_id: { type: 'string' }, limit: { type: 'integer' } },
         output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
-        async execute(args, exec) { return await client.searchAcceptedEvidence(String(args.run_id), String(args.query), typeof args.limit === 'number' ? args.limit : 8, exec.signal); },
+        async execute(args, exec) {
+            const query = typeof args.query === 'string' ? args.query : null;
+            const evidenceId = typeof args.evidence_id === 'string' ? args.evidence_id : null;
+            if ((query === null) === (evidenceId === null))
+                throw new Error('provide a query or one exact evidence ID');
+            const selector = evidenceId === null ? query : { evidenceId };
+            return await client.searchAcceptedEvidence(String(args.run_id), selector, typeof args.limit === 'number' ? args.limit : 8, exec.signal);
+        },
     }));
     ctx.tools.register(defineTool({
         name: 'cosmatter_graph_review_request', description: 'Submit a pending human review request for existing graph nodes. It cannot approve evidence or modify the graph.',

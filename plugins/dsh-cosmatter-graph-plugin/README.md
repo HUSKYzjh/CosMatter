@@ -3,7 +3,7 @@
 This is an independent DeepSeek Harness bundle. It exposes four tools:
 
 - `cosmatter_graph_query` reads a previously projected graph through the loopback-only CosMatter API.
-- `cosmatter_accepted_evidence_search` returns human-accepted evidence-card metadata and same-machine `workbench_url` links. Open a link to select the card in CosMatter's reader and review its source.
+- `cosmatter_accepted_evidence_search` accepts a keyword `query` or one exact `evidence_id` for a run. Each eligible hit includes a same-machine `workbench_url` for CosMatter's reader. The reader's **View evidence in DSH** command uses that same link to look up the exact card.
 - `cosmatter_graph_plan` writes an untrusted, non-executing graph-inspection draft for selected existing nodes.
 - `cosmatter_graph_review_request` submits a pending human-review request; it cannot accept evidence or modify the graph.
 

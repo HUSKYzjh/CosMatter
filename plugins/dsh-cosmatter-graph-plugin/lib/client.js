@@ -1,7 +1,7 @@
 import { normalizeConfig } from './config.js';
 import { assertGraphSnapshot } from './contract.js';
 const runId = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-const evidenceSearchKeys = new Set(['run_id', 'schema_version', 'mission_id', 'trust_status', 'query_sha256', 'query_char_count', 'accepted_evidence_count', 'result_count', 'results']);
+const evidenceSearchKeys = new Set(['run_id', 'schema_version', 'mission_id', 'trust_status', 'query_sha256', 'query_char_count', 'accepted_evidence_count', 'result_count', 'results', 'match_mode']);
 export class CosMatterLoopbackClient {
     request;
     config;
@@ -42,14 +42,18 @@ export class CosMatterLoopbackClient {
             options.signal?.removeEventListener('abort', abort);
         }
     }
-    async searchAcceptedEvidence(runIdValue, query, limit = 8, signal) {
-        if (!runId.test(runIdValue) || runIdValue.length > 255 || typeof query !== 'string' || !query.trim() || query.length > 300 || !Number.isInteger(limit) || limit < 1 || limit > 12)
+    async searchAcceptedEvidence(runIdValue, selector, limit = 8, signal) {
+        if (!runId.test(runIdValue) || runIdValue.length > 255 || !Number.isInteger(limit) || limit < 1 || limit > 12)
             throw new Error('accepted-evidence search request is invalid');
+        const query = typeof selector === 'string' ? selector.trim() : null;
+        const evidenceId = typeof selector === 'string' ? null : selector?.evidenceId;
+        if (query !== null ? !query || query.length > 300 : typeof evidenceId !== 'string' || !canLinkIdentifier(evidenceId, 200))
+            throw new Error('accepted-evidence search selector is invalid');
         const url = new URL(`/api/runs/${encodeURIComponent(runIdValue)}/accepted-evidence/search`, this.config.baseUrl);
         const timeout = AbortSignal.timeout(this.config.timeoutMs);
         const response = await this.request(url, {
             method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ query: query.trim(), limit }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+            body: JSON.stringify({ ...(query === null ? { evidence_id: evidenceId } : { query }), limit }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         });
         if (!response.ok)
             throw new Error('accepted-evidence search was rejected');
@@ -68,6 +72,8 @@ export class CosMatterLoopbackClient {
             || typeof result.query_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(result.query_sha256)
             || !Array.isArray(result.results) || result.results.length > limit || !result.results.every(safeEvidenceResult))
             throw new Error('accepted-evidence search response is invalid');
+        if (evidenceId && (result.match_mode !== 'exact_id' || result.results.length > 1 || result.results.some(item => item.evidence_id !== evidenceId)))
+            throw new Error('accepted-evidence exact response is invalid');
         const results = result.results.map(item => {
             if (!canLinkIdentifier(item.document_id, 255) || !canLinkIdentifier(item.evidence_id, 200))
                 return item;

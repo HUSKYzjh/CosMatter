@@ -2,7 +2,7 @@ import { normalizeConfig, type CosMatterGraphConfig, type NormalizedConfig } fro
 import { assertGraphSnapshot, type GraphSnapshot } from './contract.js'
 
 const runId = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
-const evidenceSearchKeys = new Set(['run_id', 'schema_version', 'mission_id', 'trust_status', 'query_sha256', 'query_char_count', 'accepted_evidence_count', 'result_count', 'results'])
+const evidenceSearchKeys = new Set(['run_id', 'schema_version', 'mission_id', 'trust_status', 'query_sha256', 'query_char_count', 'accepted_evidence_count', 'result_count', 'results', 'match_mode'])
 
 export class CosMatterLoopbackClient {
   readonly config: NormalizedConfig
@@ -37,13 +37,16 @@ export class CosMatterLoopbackClient {
     }
   }
 
-  async searchAcceptedEvidence(runIdValue: string, query: string, limit = 8, signal?: AbortSignal): Promise<Record<string, unknown>> {
-    if (!runId.test(runIdValue) || runIdValue.length > 255 || typeof query !== 'string' || !query.trim() || query.length > 300 || !Number.isInteger(limit) || limit < 1 || limit > 12) throw new Error('accepted-evidence search request is invalid')
+  async searchAcceptedEvidence(runIdValue: string, selector: string | { evidenceId: string }, limit = 8, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    if (!runId.test(runIdValue) || runIdValue.length > 255 || !Number.isInteger(limit) || limit < 1 || limit > 12) throw new Error('accepted-evidence search request is invalid')
+    const query = typeof selector === 'string' ? selector.trim() : null
+    const evidenceId = typeof selector === 'string' ? null : selector?.evidenceId
+    if (query !== null ? !query || query.length > 300 : typeof evidenceId !== 'string' || !canLinkIdentifier(evidenceId, 200)) throw new Error('accepted-evidence search selector is invalid')
     const url = new URL(`/api/runs/${encodeURIComponent(runIdValue)}/accepted-evidence/search`, this.config.baseUrl)
     const timeout = AbortSignal.timeout(this.config.timeoutMs)
     const response = await this.request(url, {
       method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ query: query.trim(), limit }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      body: JSON.stringify({ ...(query === null ? { evidence_id: evidenceId } : { query }), limit }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     })
     if (!response.ok) throw new Error('accepted-evidence search was rejected')
     if (Number(response.headers.get('content-length') ?? 0) > this.config.maxGraphBytes) throw new Error('accepted-evidence search response exceeds configured size')
@@ -57,6 +60,7 @@ export class CosMatterLoopbackClient {
       || result.trust_status !== 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion'
       || typeof result.query_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(result.query_sha256)
       || !Array.isArray(result.results) || result.results.length > limit || !result.results.every(safeEvidenceResult)) throw new Error('accepted-evidence search response is invalid')
+    if (evidenceId && (result.match_mode !== 'exact_id' || result.results.length > 1 || result.results.some(item => item.evidence_id !== evidenceId))) throw new Error('accepted-evidence exact response is invalid')
     const results = result.results.map(item => {
       if (!canLinkIdentifier(item.document_id, 255) || !canLinkIdentifier(item.evidence_id, 200)) return item
       const workbench = new URL('/?api=local', this.config.baseUrl.origin)

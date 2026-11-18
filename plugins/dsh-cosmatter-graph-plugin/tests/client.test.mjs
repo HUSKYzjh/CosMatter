@@ -69,6 +69,20 @@ test('accepted-evidence search accepts only safe reviewed-card pointers', async 
   await assert.rejects(search, /response is invalid/)
 })
 
+test('exact evidence search submits only the selected identifier and rejects a different card', async () => {
+  const hit = { evidence_id: "ev'id", document_id: 'doc_1', claim: 'Reviewed claim', locator: 'figure:2', source: 'fixture', score: 1 }
+  const response = { run_id: 'run_1', mission_id: 'mission_1', trust_status: 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion', query_sha256: 'a'.repeat(64), match_mode: 'exact_id', results: [hit] }
+  const client = new CosMatterLoopbackClient({}, async (_url, init) => {
+    assert.deepEqual(JSON.parse(init.body), { evidence_id: "ev'id", limit: 1 })
+    return new Response(JSON.stringify(response), { status: 200 })
+  })
+  const exact = () => client.searchAcceptedEvidence('run_1', { evidenceId: "ev'id" }, 1)
+  const result = await exact()
+  assert.match(result.results[0].workbench_url, /evidence=ev%27id$/)
+  hit.evidence_id = 'similar_id'
+  await assert.rejects(exact, /exact response is invalid/)
+})
+
 test('DSH apply registers the bounded query and plan tools', async () => {
   const tools = []
   const events = []

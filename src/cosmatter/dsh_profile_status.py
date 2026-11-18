@@ -12,6 +12,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 
 DSH_PROFILE_STATUS_SCHEMA = "cosmatter.dsh-profile-status/v2"
@@ -37,7 +38,9 @@ _MAX_CONFIG_BYTES = 1_000_000
 _DSH_VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-[a-z0-9.]{1,24})?")
 _REGISTRY_OUTPUT = "COSMATTER_TOOL_REGISTRY "
 _RUN_STATUS_OUTPUT = "COSMATTER_DSH_RUN_STATUS "
+_EVIDENCE_OUTPUT = "COSMATTER_DSH_EVIDENCE "
 _OBSERVABILITY_BUNDLE = "@cosmatter/dsh-observability-plugin"
+_GRAPH_BUNDLE = "@cosmatter/dsh-graph-plugin"
 _LOCAL_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,254}")
 _BOOTSTRAP_ENV = {
     "path", "pathext", "comspec", "systemroot", "windir", "temp", "tmp",
@@ -99,6 +102,29 @@ export async function apply(ctx, { runId }) {
     })
   } catch {
     return send({error: 'run_unavailable'})
+  }
+}
+"""
+_EVIDENCE_PROBE = """
+export const name = 'cosmatter-accepted-evidence-reader'
+export const inject = ['tools']
+export async function apply(ctx, { runId, evidenceId }) {
+  const send = value => process.stdout.write('COSMATTER_DSH_EVIDENCE ' + JSON.stringify(value) + '\\n', () => process.exit(0))
+  const name = 'cosmatter_accepted_evidence_search'
+  try {
+    const deadline = Date.now() + 5000
+    while (!ctx.tools.definitions().some(tool => tool.name === name)) {
+      if (Date.now() >= deadline) return send({error: 'not_registered'})
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    const execution = await ctx.tools.execute({
+      calls: [{type: 'tool-call', id: name, name, arguments: JSON.stringify({run_id: runId, evidence_id: evidenceId, limit: 1})}],
+      signal: AbortSignal.timeout(8000),
+    })
+    const result = execution.results.find(({callId}) => callId === name)?.result
+    return send(result && !result.isError ? result.value : {error: 'evidence_unavailable'})
+  } catch {
+    return send({error: 'evidence_unavailable'})
   }
 }
 """
@@ -244,6 +270,53 @@ def read_dsh_run_status(
         if "error" not in result and result.get("run_id") == run_id:
             return result
     raise DshCompositionCheckError("DSH did not return a status for the requested run.")
+
+
+def read_dsh_evidence_link(link: str, *, executable: str = "dsh", dsh_home: Path | None = None) -> dict[str, Any]:
+    """Read the accepted card in a local workbench link through the installed DSH graph tool."""
+    run_id, document_id, evidence_id, port = _parse_evidence_link(link)
+    dsh = shutil.which(executable)
+    if not dsh:
+        raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
+    profile = (dsh_home or _default_dsh_home()).resolve() / "profiles" / "tui"
+    if _bundle_status(profile / "node_modules" / _GRAPH_BUNDLE, _GRAPH_BUNDLE) != "verified":
+        raise DshCompositionCheckError("The local tui profile has no valid CosMatter graph bundle.")
+    result = _run_isolated_dsh_probe(
+        dsh, profile, {_GRAPH_BUNDLE: {"baseUrl": f"http://127.0.0.1:{port}"}},
+        _EVIDENCE_PROBE, {"runId": run_id, "evidenceId": evidence_id}, _EVIDENCE_OUTPUT,
+    )
+    if isinstance(result, dict):
+        if result.get("error") == "not_registered":
+            raise DshCompositionCheckError("DSH did not register the CosMatter evidence search tool.")
+        hits = result.get("results")
+        if (result.get("run_id") == run_id and result.get("match_mode") == "exact_id"
+                and result.get("trust_status") == "accepted_evidence_search_not_new_evidence_or_scientific_conclusion"
+                and isinstance(hits, list) and len(hits) == 1 and isinstance(hits[0], dict)
+                and hits[0].get("evidence_id") == evidence_id and hits[0].get("document_id") == document_id):
+            return {**result, "checked_via": ["cosmatter_accepted_evidence_search"]}
+    raise DshCompositionCheckError("DSH could not find the accepted card for this link. Check the link and the local CosMatter service.")
+
+
+def _parse_evidence_link(link: str) -> tuple[str, str, str, int]:
+    if not isinstance(link, str) or len(link) > 4_850 or re.search(r"[\x00-\x20\x7f]", link):
+        raise DshCompositionCheckError("Expected a local CosMatter evidence link.")
+    try:
+        url = urlsplit(link)
+        port = url.port if url.port is not None else 80
+        fields = parse_qs(url.fragment, strict_parsing=True, keep_blank_values=True, errors="strict", max_num_fields=3)
+    except ValueError as exc:
+        raise DshCompositionCheckError("Expected a local CosMatter evidence link.") from exc
+    if (url.scheme != "http" or url.hostname not in {"127.0.0.1", "localhost"} or url.username is not None
+            or url.password is not None or url.path != "/" or url.query != "api=local" or not 1 <= port <= 65535
+            or set(fields) != {"run", "document", "evidence"} or any(len(values) != 1 for values in fields.values())):
+        raise DshCompositionCheckError("Expected a local CosMatter evidence link.")
+    run_id, document_id, evidence_id = (fields[key][0] for key in ("run", "document", "evidence"))
+    if not _LOCAL_RUN_ID.fullmatch(run_id) or any(
+        not 1 <= len(value) <= limit or value.strip() != value or re.search(r"[\x00-\x1f\x7f]", value)
+        for value, limit in ((document_id, 255), (evidence_id, 200))
+    ):
+        raise DshCompositionCheckError("Evidence link identifiers are invalid.")
+    return run_id, document_id, evidence_id, port
 
 
 def _run_isolated_dsh_probe(

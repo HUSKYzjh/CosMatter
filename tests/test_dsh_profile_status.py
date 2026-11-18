@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from cosmatter.dsh_profile_status import (
     EXPECTED_DSH_PACKAGES, DshCompositionCheckError, _BUNDLE_TOOLS,
-    check_dsh_composition, dsh_profile_status, read_dsh_run_status,
+    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_run_status,
 )
 
 
@@ -199,6 +199,38 @@ class DshProfileStatusTests(unittest.TestCase):
                     read_dsh_run_status("run_001; bad", port=8769, dsh_home=home)
                 with self.assertRaisesRegex(DshCompositionCheckError, "Port"):
                     read_dsh_run_status("run_001", port=65536, dsh_home=home)
+                self.assertEqual(launch.call_count, 2)
+
+    def test_evidence_link_uses_the_graph_bundle_and_requires_the_exact_card_and_document(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            bundle = "@cosmatter/dsh-graph-plugin"
+            profile = home / "profiles" / "tui"
+            self._write_bundle(profile, bundle)
+            link = "http://127.0.0.1:8789/?api=local#run=run_001&document=paper+%26+x%3D1&evidence=ev%27id"
+            hit = {"evidence_id": "ev'id", "document_id": "paper & x=1"}
+            result = {"run_id": "run_001", "match_mode": "exact_id", "results": [hit],
+                      "trust_status": "accepted_evidence_search_not_new_evidence_or_scientific_conclusion"}
+
+            def diagnostic(executable, arguments, cwd, environment):
+                overlay = json.loads(Path(arguments[arguments.index("--patch") + 1]).read_text(encoding="utf-8"))
+                entries = overlay[-1]["insert"]
+                self.assertEqual(len(entries), 2)
+                self.assertEqual(entries[0]["name"], (profile / "node_modules" / bundle / "lib/index.js").resolve().as_uri())
+                self.assertEqual(entries[0]["config"], {"baseUrl": "http://127.0.0.1:8789"})
+                self.assertEqual(entries[1]["config"], {"runId": "run_001", "evidenceId": "ev'id"})
+                return "COSMATTER_DSH_EVIDENCE " + json.dumps(result)
+
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=diagnostic,
+            ) as launch:
+                self.assertEqual(read_dsh_evidence_link(link, dsh_home=home)["checked_via"], ["cosmatter_accepted_evidence_search"])
+                hit["document_id"] = "another document"
+                with self.assertRaisesRegex(DshCompositionCheckError, "could not find the accepted card"):
+                    read_dsh_evidence_link(link, dsh_home=home)
+                for malformed in (link.replace("127.0.0.1", "example.org"), link + "&evidence=other", link.replace("ev%27id", "ev%0Aid")):
+                    with self.assertRaises(DshCompositionCheckError):
+                        read_dsh_evidence_link(malformed, dsh_home=home)
                 self.assertEqual(launch.call_count, 2)
 
 

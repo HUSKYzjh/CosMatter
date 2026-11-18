@@ -84,6 +84,7 @@ DSH 可以通过 `cosmatter_candidate_screening_template` 读取已登记决定�
 复核已登记的 Source Map 时，可用条目旁的「查看原文」跳到对应行并高亮范围。每次跳转和翻页都会核对当前 Markdown 与来源定位的绑定。
 已接受的 EvidenceCard 可从卡片旁的「核对原文」回到同一阅读面板。打开或翻页时，本机服务核对接受决定、引文、来源定位和 Markdown 指纹。
 DSH 的 `cosmatter_accepted_evidence_search` 会为可定位的结果返回本机 `workbench_url`。工作台核验卡片与目标论文的已审核关联后，在阅读页选中该卡片。
+阅读页可以复制证据链接，或从「在 DSH 查看证据」复制 `cosmatter dsh-evidence` 命令。命令使用链接中的本机端口，通过已安装的 graph 插件按完整 `evidence_id` 查找，并核对返回卡片的论文 ID。
 进行中或已完成的解析会阻止同一候选重复上传 PDF。
 首次打开读取已有工件和保存的 PDF 状态；需要更新 PDF 状态时，可在舰桥手动刷新。
 从舰桥回到终端时，展开运行 ID 下方的「在 DSH 查看进度」，复制命令到 CosMatter 虚拟环境运行。

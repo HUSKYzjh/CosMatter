@@ -10,7 +10,9 @@ export declare class CosMatterLoopbackClient {
         limit?: number;
         signal?: AbortSignal;
     }): Promise<GraphSnapshot>;
-    searchAcceptedEvidence(runIdValue: string, query: string, limit?: number, signal?: AbortSignal): Promise<Record<string, unknown>>;
+    searchAcceptedEvidence(runIdValue: string, selector: string | {
+        evidenceId: string;
+    }, limit?: number, signal?: AbortSignal): Promise<Record<string, unknown>>;
     requestReview(runIdValue: string, nodeIds: string[], rationale: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
     draftPlan(runIdValue: string, nodeIds: string[], intent: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
 }

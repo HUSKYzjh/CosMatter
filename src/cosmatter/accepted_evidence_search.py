@@ -27,41 +27,59 @@ def search_accepted_evidence(
     mission: MissionBrief,
     cards: Iterable[EvidenceCard],
     decisions: Iterable[VerificationDecision],
-    query: str,
+    query: str | None = None,
+    evidence_id: str | None = None,
     limit: int = 8,
 ) -> dict[str, Any]:
-    if not isinstance(query, str) or not query.strip() or len(query.strip()) > 300:
-        raise AcceptedEvidenceSearchError("accepted-evidence query must be a bounded nonempty string")
+    if (query is None) == (evidence_id is None):
+        raise AcceptedEvidenceSearchError("provide a query or one exact evidence ID")
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 12:
         raise AcceptedEvidenceSearchError("accepted-evidence limit must be between 1 and 12")
-    query_terms = _terms(query)
-    if not query_terms:
-        raise AcceptedEvidenceSearchError("accepted-evidence query must contain searchable terms")
+    if evidence_id is not None:
+        if not isinstance(evidence_id, str) or not 1 <= len(evidence_id) <= 200 or evidence_id != evidence_id.strip() or re.search(r"[\x00-\x1f\x7f]", evidence_id):
+            raise AcceptedEvidenceSearchError("exact evidence ID is invalid")
+        query_value = evidence_id
+        query_terms: set[str] = set()
+    else:
+        if not isinstance(query, str) or not query.strip() or len(query.strip()) > 300:
+            raise AcceptedEvidenceSearchError("accepted-evidence query must be a bounded nonempty string")
+        query_value = query.strip()
+        query_terms = _terms(query_value)
+        if not query_terms:
+            raise AcceptedEvidenceSearchError("accepted-evidence query must contain searchable terms")
+    mission_decisions = [decision for decision in decisions if decision.mission_id == mission.mission_id]
+    if evidence_id is not None and sum(decision.evidence_id == evidence_id for decision in mission_decisions) > 1:
+        raise AcceptedEvidenceSearchError("accepted evidence ID has ambiguous verification decisions")
     accepted = {
         decision.evidence_id
-        for decision in decisions
-        if decision.mission_id == mission.mission_id and decision.status is ReviewStatus.ACCEPTED
+        for decision in mission_decisions
+        if decision.status is ReviewStatus.ACCEPTED
     }
     candidates = [card for card in cards if card.evidence_id in accepted]
     if not candidates:
         raise AcceptedEvidenceSearchError("accepted-evidence search requires at least one accepted card")
     scored: list[tuple[int, EvidenceCard]] = []
     for card in candidates:
+        if evidence_id is not None and card.evidence_id != evidence_id:
+            continue
         if card.provenance.document_id.strip() == "":
             raise AcceptedEvidenceSearchError("accepted evidence provenance is invalid")
-        score = len(query_terms & _terms(_searchable_text(card)))
+        score = 1 if evidence_id is not None else len(query_terms & _terms(_searchable_text(card)))
         if score:
             scored.append((score, card))
     scored.sort(key=lambda item: (-item[0], item[1].evidence_id))
+    if evidence_id is not None and len(scored) > 1:
+        raise AcceptedEvidenceSearchError("accepted evidence ID is ambiguous")
     return {
         "schema_version": "1.0",
         "mission_id": mission.mission_id,
         "trust_status": "accepted_evidence_search_not_new_evidence_or_scientific_conclusion",
-        "query_sha256": hashlib.sha256(query.strip().encode("utf-8")).hexdigest(),
-        "query_char_count": len(query.strip()),
+        "query_sha256": hashlib.sha256(query_value.encode("utf-8")).hexdigest(),
+        "query_char_count": len(query_value),
         "accepted_evidence_count": len(candidates),
         "result_count": min(len(scored), limit),
         "results": [_safe_result(card, score) for score, card in scored[:limit]],
+        **({"match_mode": "exact_id"} if evidence_id is not None else {}),
     }
 
 

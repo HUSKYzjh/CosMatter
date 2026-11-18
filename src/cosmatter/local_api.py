@@ -1820,11 +1820,11 @@ class LocalMissionApi:
         """Search only reviewed evidence-card metadata; never read source text."""
         run_dir, mission = self._active_mission(run_id, require_active=False)
         body = _object_payload(payload)
-        query, limit = body.get("query"), body.get("limit", 8)
+        query, evidence_id, limit = body.get("query"), body.get("evidence_id"), body.get("limit", 8)
         try:
             cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
             decisions = _verification_decisions_from_payloads(_load_array_if_present(run_dir / "verification_decisions.json", "verification decisions"))
-            result = search_accepted_evidence(mission=mission, cards=cards, decisions=decisions, query=query, limit=limit)
+            result = search_accepted_evidence(mission=mission, cards=cards, decisions=decisions, query=query, evidence_id=evidence_id, limit=limit)
         except (AcceptedEvidenceSearchError, UiExportError, ValueError) as error:
             raise LocalApiError(str(error)) from error
         FlightRecorder(self.runs_dir, run_id).record(

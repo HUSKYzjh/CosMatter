@@ -28,6 +28,20 @@ class AcceptedEvidenceSearchTests(unittest.TestCase):
         with self.assertRaisesRegex(AcceptedEvidenceSearchError, "at least one accepted"):
             search_accepted_evidence(mission=self.mission, cards=(self.accepted,), decisions=(), query="strain")
 
+    def test_exact_id_only_matches_one_currently_accepted_card(self) -> None:
+        decision = VerificationDecision(self.mission.mission_id, self.accepted.evidence_id, ReviewStatus.ACCEPTED, "human reviewed")
+        cards = (self.accepted, self.rejected)
+        result = search_accepted_evidence(mission=self.mission, cards=cards, decisions=(decision,), evidence_id=self.accepted.evidence_id)
+        self.assertEqual(result["match_mode"], "exact_id")
+        self.assertEqual([hit["evidence_id"] for hit in result["results"]], [self.accepted.evidence_id])
+        for mismatched in (self.accepted.evidence_id.upper(), "evidence", self.rejected.evidence_id):
+            result = search_accepted_evidence(mission=self.mission, cards=cards, decisions=(decision,), evidence_id=mismatched)
+            self.assertEqual(result["results"], [])
+        with self.assertRaisesRegex(AcceptedEvidenceSearchError, "ambiguous verification"):
+            search_accepted_evidence(mission=self.mission, cards=cards, decisions=(decision, decision), evidence_id=self.accepted.evidence_id)
+        with self.assertRaisesRegex(AcceptedEvidenceSearchError, "provide a query or"):
+            search_accepted_evidence(mission=self.mission, cards=cards, decisions=(decision,), query="strain", evidence_id=self.accepted.evidence_id)
+
 
 if __name__ == "__main__":
     unittest.main()

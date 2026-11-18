@@ -74,6 +74,9 @@ class LocalApiGraphTests(unittest.TestCase):
             self.assertEqual(result["result_count"], 1)
             self.assertEqual(result["results"][0]["evidence_id"], card.evidence_id)
             self.assertNotIn("private source quote", json.dumps(result))
+            exact = api.search_accepted_evidence("search_graph", {"evidence_id": card.evidence_id, "limit": 1})
+            self.assertEqual((exact["run_id"], exact["match_mode"], exact["result_count"]), ("search_graph", "exact_id", 1))
+            self.assertEqual(exact["results"][0]["document_id"], "doc_search")
 
 
 if __name__ == "__main__":

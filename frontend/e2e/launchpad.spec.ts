@@ -1076,6 +1076,7 @@ test("opens local DSH links directly and keeps a failed linked run editable", as
 });
 
 test("opens the linked DSH candidate at its verified review step", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.setViewportSize({ width: 320, height: 900 });
   const runId = "dsh_candidate_handoff";
   const { readFile } = await import("node:fs/promises");
@@ -1166,6 +1167,19 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await expect(page.locator(".source-reader")).toBeFocused();
   expect(new URL(page.url()).hash).toBe("#" + paperFragment(ready, "source_ready"));
   expect(evidenceJumps).toEqual(["source_ready", "source_stale"]);
+  const evidenceCard = page.locator(".source-reader");
+  const cardLink = page.url();
+  await evidenceCard.getByRole("button", { name: "复制证据链接" }).click();
+  await expect(evidenceCard.getByText("证据链接已复制。", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(cardLink);
+  await evidenceCard.locator(".dsh-run-handoff > summary").press("Enter");
+  await evidenceCard.getByRole("button", { name: "复制 DSH 命令" }).click();
+  await expect(evidenceCard.getByText("DSH 命令已复制。", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter dsh-evidence '${cardLink}'`);
+  await page.evaluate(() => Object.defineProperty(navigator.clipboard, "writeText", { value: () => Promise.reject(new DOMException("Clipboard access denied", "NotAllowedError")) }));
+  await evidenceCard.getByRole("button", { name: "复制证据链接" }).click();
+  await expect(evidenceCard.getByRole("textbox", { name: "证据链接", exact: true })).toHaveValue(cardLink);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
   markdownReady = false;
   await page.reload();
   await expect(page.locator(".source-reader blockquote")).toHaveText(reviewedCards[0].quote, workspaceLoad);
