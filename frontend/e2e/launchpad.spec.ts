@@ -829,11 +829,16 @@ test("resumes browser screening drafts and requires the current checklist revisi
     checklist_revision: "a".repeat(64), decisions: papers.map(({ document_id }) => ({ document_id, decision: "unreviewed", reason_codes: [] as string[] })),
   };
   const submissions: unknown[] = [];
+  let sourceTasks: { document_id: string; state: string }[] = [];
   await page.route("**/api/runs/**", (route) => {
     const path = new URL(route.request().url()).pathname.split("/").pop();
     if (path === "ui") return route.fulfill({ json: bundle });
     if (path === "status") return route.fulfill({ json: { run_id: runId, mission_id: bundle.mission.mission_id, state: "INTAKE" } });
     if (path === "stage-contract") return route.fulfill({ json: stageContractFixture(runId, bundle.mission.mission_id, "screening") });
+    if (path === "source-parse-status") return route.fulfill({ json: {
+      run_id: runId, mission_id: bundle.mission.mission_id,
+      trust_status: "saved_source_parse_state_not_scientific_evidence", tasks: sourceTasks,
+    } });
     if (path === "candidate-screening") {
       if (route.request().method() === "GET") return route.fulfill({ json: screening });
       const body = route.request().postDataJSON();
@@ -873,11 +878,27 @@ test("resumes browser screening drafts and requires the current checklist revisi
   await panel.getByRole("button", { name: "下一待审" }).click();
   await panel.getByRole("combobox", { name: "决定", exact: true }).selectOption("exclude");
   await panel.getByRole("combobox", { name: "理由", exact: true }).selectOption("out_of_scope_material");
-  await expect(panel.getByRole("button", { name: /为此候选选择授权 PDF/ })).toHaveCount(0);
+  const queue = page.getByRole("region", { name: "全文核对队列" });
+  await expect(queue).toHaveCount(0);
   await panel.getByRole("button", { name: "提交人工筛选决定" }).click();
   await expect(panel.getByText("已登记 2 篇 · 草稿修改 0 篇")).toBeVisible();
-  await expect(panel.getByRole("button", { name: /为此候选选择授权 PDF/ })).toHaveCount(1);
+  await expect(queue.getByRole("button", { name: "选择授权 PDF · Candidate A" })).toBeEnabled();
   expect(submissions).toEqual([{ checklist_revision: "b".repeat(64), decisions: screening.decisions }]);
+
+  sourceTasks = [{ document_id: "paper_a", state: "running" }];
+  await queue.getByRole("button", { name: "刷新本机解析记录" }).click();
+  await expect(queue.getByText("来源解析中", { exact: true })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /选择授权 PDF/ })).toHaveCount(0);
+  sourceTasks = [{ document_id: "paper_a", state: "done" }];
+  await queue.getByRole("button", { name: "刷新本机解析记录" }).click();
+  await expect(queue.getByText("来源解析完成", { exact: true })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /选择授权 PDF|进入阅读页/ })).toHaveCount(0);
+  sourceTasks = [{ document_id: "paper_a", state: "failed" }];
+  await queue.getByRole("button", { name: "刷新本机解析记录" }).click();
+  await queue.getByRole("button", { name: "重新选择授权 PDF · Candidate A" }).click();
+  await expect(page.locator(".candidate-pdf-context")).toContainText("Candidate A");
+  await page.getByRole("button", { name: "返回文献星图", exact: true }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-graph/, workspaceLoad);
 });
 
 test("opens local DSH links directly and keeps a failed linked run editable", async ({ page }) => {

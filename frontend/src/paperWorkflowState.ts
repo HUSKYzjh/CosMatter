@@ -1,9 +1,9 @@
 import { documentIdForReviewablePaper } from "./evidenceLinking";
-import { paperPdfIntake, pdfTaskForPaper, type PaperPdfIntakeState } from "./paperPdfIntake";
-import type { CandidateScreeningDecision, PdfTaskStatus } from "./localApi";
+import { candidatePdfAction, paperPdfIntake, pdfTaskForPaper } from "./paperPdfIntake";
+import type { CandidateScreeningDecision, PdfTaskStatus, SavedSourceParseTask } from "./localApi";
 import type { LiteratureGraphNode } from "./model";
 
-export type PaperWorkflowState = "untracked" | "screening" | "included" | "parsing" | "source_map" | "evidence_review" | "provenance_audit" | "accepted_evidence" | "failed" | "excluded";
+export type PaperWorkflowState = "untracked" | "screening" | "included" | "parsing" | "source_recorded" | "source_map" | "evidence_review" | "provenance_audit" | "accepted_evidence" | "failed" | "excluded";
 
 /**
  * A display-only projection of one candidate's audited workflow position.
@@ -15,12 +15,17 @@ export function paperWorkflowState(
   decision: CandidateScreeningDecision["decision"] | "unreviewed" | null | undefined,
   acceptedEvidenceCount: number,
   acceptedEvidenceProvenanceAudited = true,
+  recordedTask?: SavedSourceParseTask,
 ): PaperWorkflowState | null {
-  if (!documentIdForReviewablePaper(node)) return null;
+  const documentId = documentIdForReviewablePaper(node);
+  if (!documentId) return null;
   if (acceptedEvidenceCount > 0) return acceptedEvidenceProvenanceAudited ? "accepted_evidence" : "provenance_audit";
-  const intake: PaperPdfIntakeState = paperPdfIntake(pdfTaskForPaper(tasks, node), node).state;
-  if (intake === "failed") return "failed";
-  if (intake === "parsing") return "parsing";
+  const local = pdfTaskForPaper(tasks, node);
+  const action = candidatePdfAction(local, recordedTask?.document_id === documentId ? recordedTask : null);
+  if (action === "recorded_done") return "source_recorded";
+  if (action === "recorded_active" || action === "open_bridge") return "parsing";
+  if (action === "retry_pdf") return "failed";
+  const intake = paperPdfIntake(local, node).state;
   if (intake === "source-map") return "source_map";
   if (intake === "evidence-review") return "evidence_review";
   if (decision === "exclude") return "excluded";

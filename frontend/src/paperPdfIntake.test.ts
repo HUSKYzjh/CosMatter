@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { paperPdfIntake, pdfTaskForPaper } from "./paperPdfIntake";
+import { candidatePdfAction, paperPdfIntake, pdfTaskForPaper } from "./paperPdfIntake";
 import type { PdfTaskStatus } from "./localApi";
 import type { LiteratureGraphNode } from "./model";
 
@@ -39,5 +39,13 @@ describe("paperPdfIntake", () => {
 
   it("routes a recorded Source Map to material-fact and EvidenceCard review", () => {
     expect(paperPdfIntake(task({ state: "done", markdown_ready: true, audit_state: "done", source_map_review_status: "recorded", source_map_segment_count: 2 }), paper).state).toBe("evidence-review");
+  });
+
+  it("keeps a saved source parse separate from locally readable PDF results", () => {
+    expect(candidatePdfAction(null, { document_id: "doc-1", state: "running" })).toBe("recorded_active");
+    expect(candidatePdfAction(null, { document_id: "doc-1", state: "done" })).toBe("recorded_done");
+    expect(candidatePdfAction(null, { document_id: "doc-1", state: "failed" })).toBe("retry_pdf");
+    expect(candidatePdfAction(task(), null)).toBe("open_bridge");
+    expect(candidatePdfAction(task({ state: "done", audit_state: "done", markdown_ready: true }), null)).toBe("open_reader");
   });
 });

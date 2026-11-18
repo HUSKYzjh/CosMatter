@@ -379,6 +379,8 @@ export const PDF_DOI_STATUSES = ["pending", "resolved", "needs_human_doi", "huma
 export type PdfDoiStatus = typeof PDF_DOI_STATUSES[number];
 export interface PdfRunResult extends LiveMission { document_id: string; candidate_document_id?: string | null; doi_status: PdfDoiStatus; state: PdfTaskState; }
 export interface PdfTaskStatus { document_id: string; candidate_document_id?: string | null; audit_document_id: string; audit_state: "pending" | "running" | "done" | "failed"; file_name: string; state: PdfTaskState; doi: string | null; doi_status: PdfDoiStatus; markdown_ready: boolean; source_map_review_status: "absent" | "recorded" | "invalid"; source_map_segment_count: number; error?: string | null; trust_status: string; }
+export interface SavedSourceParseTask { document_id: string; state: "pending" | "running" | "done" | "failed"; }
+export type SavedSourceParseHealth = "idle" | "loading" | "ready" | "unavailable";
 export function createAutomaticMission(payload: { question: string; material: string; property: string; scope: string; sources: RetrievalSource[] }): Promise<AutoMissionResult> { return jsonPost<AutoMissionResult>("./api/missions/auto", { ...payload, consent: true }); }
 export function getRunStatus(runId: string): Promise<RunStatus> { return request<RunStatus>(`./api/runs/${encodeURIComponent(runId)}/status`); }
 export function getStageContract(runId: string, timeoutMs?: number): Promise<StageContract> {
@@ -429,6 +431,21 @@ export async function getPdfTasks(runId: string, readMode: "refresh" | "cached" 
   const registry = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/tasks${suffix}`);
   if (!isPdfTaskRegistry(registry, runId)) throw new LocalApiRequestError("transport");
   return registry;
+}
+export async function getSavedSourceParses(runId: string, missionId: string): Promise<SavedSourceParseTask[]> {
+  const response = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/source-parse-status`, { redirect: "error" });
+  if (!exactObjectKeys(response, ["run_id", "mission_id", "trust_status", "tasks"])) throw new LocalApiRequestError("transport");
+  const data = response as Record<string, unknown>;
+  if (data.run_id !== runId || data.mission_id !== missionId || data.trust_status !== "saved_source_parse_state_not_scientific_evidence"
+    || !Array.isArray(data.tasks) || data.tasks.length > 12) throw new LocalApiRequestError("transport");
+  const seen = new Set<string>();
+  for (const task of data.tasks) {
+    if (!exactObjectKeys(task, ["document_id", "state"]) || !boundedString(task.document_id, 255)
+      || typeof task.state !== "string" || !["pending", "running", "done", "failed"].includes(task.state)
+      || seen.has(task.document_id)) throw new LocalApiRequestError("transport");
+    seen.add(task.document_id);
+  }
+  return data.tasks;
 }
 export async function getPdfStatus(runId: string, documentId: string): Promise<PdfTaskStatus> { const task = await request<unknown>(`./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/status`); if (!isPdfTaskStatus(task)) throw new LocalApiRequestError("transport"); return task; }
 export function privateMarkdownUrl(runId: string, documentId: string): string { return `./api/runs/${encodeURIComponent(runId)}/pdf/${encodeURIComponent(documentId)}/markdown`; }

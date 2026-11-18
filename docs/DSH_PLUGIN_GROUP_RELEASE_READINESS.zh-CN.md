@@ -76,6 +76,9 @@ DSH 原生工具执行器通过临时 CosMatter HTTP 服务读取正式契约目
 DSH 可以通过 `cosmatter_candidate_screening_template` 读取已登记决定。登记修改时，请把读取时的
 `checklist_revision` 与人工决定一并交给 `cosmatter_candidate_screening_record`。候选或已有决定更新后，
 服务器会要求重新读取清单，浏览器也会提示重新核对。
+「全文核对队列」按已登记的纳入决定显示候选，合并本机 PDF 绑定与 DSH 来源解析状态。
+「刷新本机解析记录」只读取已保存的账本。来源解析完成后如阅读页尚无本机 Markdown，可继续使用
+`mineru-fetch-markdown` 的私有终端流程。进行中或已完成的解析会阻止同一候选重复上传。
 首次打开读取已有工件和保存的 PDF 状态；需要更新 PDF 状态时，可在舰桥手动刷新。
 从舰桥回到终端时，展开运行 ID 下方的「在 DSH 查看进度」，复制命令到 CosMatter 虚拟环境运行。
 命令使用页面的本机端口和当前 `run_id`，由 DSH 调用 `cosmatter_workflow_status` 与 `cosmatter_stage_contract`，

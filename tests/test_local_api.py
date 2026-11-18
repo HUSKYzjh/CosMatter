@@ -620,6 +620,38 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertEqual(snapshot["tasks"][0]["state"], "running")
         self.assertNotIn("saved-batch", json.dumps(snapshot))
 
+    def test_source_parse_snapshot_keeps_saved_dsh_work_visible_without_duplicate_upload(self):
+        mission = self._mission()
+        run_dir = self.runs / "live_001"
+        self.assertEqual(self.api.source_parse_status("live_001")["tasks"], [])
+        (run_dir / "retrieval_candidates.json").write_text(json.dumps({
+            "candidates": [{"document_id": "doc-1", "title": "Synthetic candidate", "source": "local fixture"}],
+            "searches": [],
+        }), encoding="utf-8")
+        self.api.record_candidate_screening("live_001", {
+            "decisions": [{"document_id": "doc-1", "decision": "include_for_fulltext", "reason_codes": ["material_match"]}],
+        })
+        ledger = run_dir / "source_parse_tasks.json"
+        payload = {
+            "schema_version": "1.0", "mission_id": mission["mission_id"],
+            "tasks": [{"document_id": "doc-1", "provider": "mineru", "source_url_sha256": "a" * 64,
+                       "task_id": "b" * 64, "state": "running", "model_version": "private-model-version"}],
+        }
+        with patch("cosmatter.local_api.MinerUAdapter", side_effect=AssertionError("unexpected provider request")), patch.object(
+            self.api, "settings_loader", side_effect=AssertionError("unexpected provider settings read"),
+        ), patch("cosmatter.local_api.write_pdf") as storage:
+            for state in ("running", "done"):
+                payload["tasks"][0]["state"] = state
+                ledger.write_text(json.dumps(payload), encoding="utf-8")
+                snapshot = self.api.source_parse_status("live_001")
+                self.assertEqual(snapshot["mission_id"], mission["mission_id"])
+                self.assertEqual(snapshot["tasks"], [{"document_id": "doc-1", "state": state}])
+                with self.assertRaises(LocalApiError) as rejected:
+                    self.api.create_pdf_run({"run_id": "live_001", "candidate_document_id": "doc-1", "consent": True},
+                                            "authorized.pdf", b"%PDF-1.7 synthetic")
+                self.assertEqual(rejected.exception.status, 409)
+            storage.assert_not_called()
+
     def test_private_pdf_source_map_requires_human_confirmation_and_matching_lines(self):
         mission = self._mission()
         run_dir = self.runs / "live_001"

@@ -2,7 +2,7 @@ import { documentIdForReviewablePaper } from "./evidenceLinking";
 import type { LiteratureGraphNode, ResearchGuide, ResearchTrack, RouteEligibility } from "./model";
 import type { PaperWorkflowState } from "./paperWorkflowState";
 
-export type ReadingRouteAction = "recover-pdf" | "register-source-map" | "review-evidence" | "audit-provenance" | "verify-evidence" | "select-pdf" | "screen-paper" | "load-screening" | "wait-for-parse";
+export type ReadingRouteAction = "recover-pdf" | "register-source-map" | "review-evidence" | "audit-provenance" | "verify-evidence" | "select-pdf" | "screen-paper" | "load-screening" | "wait-for-parse" | "inspect-saved-parse";
 export type TaskTitleAnchorMatch = "material-and-context" | "context" | "material" | "none";
 
 export interface ReadingRouteTaskAnchors {
@@ -35,6 +35,7 @@ const ROUTE_ACTION: Record<PaperWorkflowState, ReadingRouteAction> = {
   screening: "screen-paper",
   untracked: "load-screening",
   parsing: "wait-for-parse",
+  source_recorded: "inspect-saved-parse",
   excluded: "screen-paper",
 };
 
@@ -48,6 +49,7 @@ const PRIORITY: Record<ReadingRouteAction, number> = {
   "screen-paper": 6,
   "load-screening": 7,
   "wait-for-parse": 8,
+  "inspect-saved-parse": 8,
 };
 
 const TITLE_ANCHOR_PRIORITY: Record<TaskTitleAnchorMatch, number> = {

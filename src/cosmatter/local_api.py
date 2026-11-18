@@ -53,7 +53,7 @@ from .source_map import SourceMapError, iter_source_maps, load_source_map_for_do
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, write_evidence_provenance_audit
 from .material_extraction import MaterialExtractionError, material_facts_from_review, write_material_facts_for_document
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
-from .source_parse import SourceParseArtifactError, private_task_id_for_document, record_source_parse_task, task_for_document, update_source_parse_task
+from .source_parse import SourceParseArtifactError, load_source_parse_tasks, private_task_id_for_document, record_source_parse_task, task_for_document, update_source_parse_task
 from .pdf_task_registry import PdfTaskRegistryError, assert_pdf_task_slot, load_pdf_tasks, task_for_pdf_document, write_pdf_task
 from .counterevidence import CounterevidenceGateError, require_executed_counterevidence
 from .facilities import DiscrepancyMatrix, DiscrepancyRow, FacilityGateError, condition_differential, write_condition_matrix
@@ -976,8 +976,14 @@ class LocalMissionApi:
             if existing is not None:
                 return {**created, "document_id": document_id, "candidate_document_id": existing.get("candidate_document_id"), "state": existing["state"], "doi_status": existing["doi_status"], "idempotency_status": "duplicate_completed"}
             assert_pdf_task_slot(run_dir, mission.mission_id, candidate_document_id if isinstance(candidate_document_id, str) else None)
+            if candidate_document_id is not None:
+                ledger = load_source_parse_tasks(run_dir / "source_parse_tasks.json", mission.mission_id)
+                if ledger and any(item["document_id"] == candidate_document_id and item["state"] != "failed" for item in ledger["tasks"]):
+                    raise LocalApiError("this candidate already has a recorded source parse; refresh the local record before uploading", 409)
             _, pdf_sha256 = write_pdf(document_id, content)
             batch = MinerUAdapter(self.settings_loader()).submit_local_file(file_name, content)
+        except LocalApiError:
+            raise
         except (PrivateStorageError, MinerUConfigurationError, MinerURequestError, ValueError) as error:
             raise LocalApiError(str(error), 503) from error
         artifact = {"schema_version": "1.0", "mission_id": mission.mission_id, "document_id": document_id, "candidate_document_id": candidate_document_id, "file_name": file_name, "pdf_sha256": pdf_sha256, "byte_count": len(content), "consent": True, "batch_id": batch.batch_id, "state": batch.state, "markdown_sha256": None, "doi": None, "doi_status": "pending"}
@@ -1053,6 +1059,23 @@ class LocalMissionApi:
             raise LocalApiError(f"cannot update private PDF audit task: {error}", 500) from error
         _write_pdf_intake(run_dir, mission.mission_id, artifact)
         return _pdf_public_status(artifact, _source_map_review_status(run_dir, mission.mission_id, artifact))
+
+    def source_parse_status(self, run_id: str) -> dict[str, object]:
+        """Read saved parse states without polling MinerU or exposing source identifiers."""
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        try:
+            ledger = load_source_parse_tasks(run_dir / "source_parse_tasks.json", mission.mission_id)
+        except (OSError, ValueError) as error:
+            raise LocalApiError("saved source parse status is unavailable", 404) from error
+        return {
+            "run_id": _api_safe_run_id(run_id),
+            "mission_id": mission.mission_id,
+            "trust_status": "saved_source_parse_state_not_scientific_evidence",
+            "tasks": [
+                {"document_id": item["document_id"], "state": item["state"]}
+                for item in ledger["tasks"] if len(item["document_id"]) <= 255
+            ] if ledger else [],
+        }
 
     def pdf_tasks(self, run_id: str, *, refresh: bool = True) -> dict[str, object]:
         """Return public status projections for every private document task."""

@@ -14,6 +14,7 @@
 
 .paper-workflow-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .38rem .7rem; margin: .55rem 0 0; color: var(--muted); font: .59rem/1.35 ui-monospace, monospace; }
 .paper-workflow-legend small { flex-basis: 100%; color: var(--muted); letter-spacing: .07em; }
+.paper-workflow-legend .state-source_recorded { color: var(--signal-amber); }
 .paper-workflow-legend span { display: inline-flex; align-items: center; gap: .25rem; }
 .paper-workflow-legend span::before { content: ""; inline-size: .5rem; block-size: .5rem; border: 1.5px solid currentColor; border-radius: 999px; }
 .paper-workflow-legend .state-screening { color: var(--muted); }.paper-workflow-legend .state-included, .paper-workflow-legend .state-evidence_review { color: var(--signal-teal); }.paper-workflow-legend .state-parsing { color: var(--signal-blue); }.paper-workflow-legend .state-source_map, .paper-workflow-legend .state-provenance_audit { color: var(--signal-amber); }.paper-workflow-legend .state-accepted_evidence { color: var(--signal-violet); }.paper-workflow-legend .state-failed { color: var(--signal-rose); }

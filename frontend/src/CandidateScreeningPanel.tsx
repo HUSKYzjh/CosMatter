@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 
-import type { CandidateScreening, CandidateScreeningCandidate, CandidateScreeningDecision } from "./localApi";
-import { hasScreeningDecision, isScreeningComplete, recordedIncludedCandidates, sameScreeningDecision, screeningDraftChanges, screeningDraftForCandidates, screeningSubmission, type ScreeningDraft } from "./candidateScreeningDraft";
+import type { CandidateScreening, CandidateScreeningDecision } from "./localApi";
+import { hasScreeningDecision, isScreeningComplete, sameScreeningDecision, screeningDraftChanges, screeningDraftForCandidates, screeningSubmission, type ScreeningDraft } from "./candidateScreeningDraft";
 import { safeOperationFeedback } from "./importFeedback";
 import { ActionButton } from "./uiPrimitives";
 
@@ -37,7 +37,6 @@ export function CandidateScreeningPanel(props: {
   screening: CandidateScreening | null;
   load: () => Promise<void>;
   submit: (decisions: CandidateScreeningDecision[], revision?: string) => Promise<void>;
-  onRequestFulltext?: (candidate: CandidateScreeningCandidate) => void;
   onClose: () => void;
   focusDocumentId?: string | null;
 }) {
@@ -56,7 +55,6 @@ export function CandidateScreeningPanel(props: {
   const editedIds = createMemo(() => new Set(changes().map((decision) => decision.document_id)));
   const includedCount = createMemo(() => Object.values(draft()).filter((item) => item.decision === "include_for_fulltext").length);
   const persistedReview = createMemo(() => props.screening?.trust_status === "human_reviewed_candidate_screening_not_scientific_evidence");
-  const recordedIncluded = createMemo(() => recordedIncludedCandidates(props.screening));
   const activeCandidate = createMemo(() => {
     const list = candidates();
     const current = activeDocumentId();
@@ -224,7 +222,6 @@ export function CandidateScreeningPanel(props: {
           : t("完整清单已登记。", "The complete checklist is recorded.")}</span>
         <ActionButton variant="primary" busy={busy()} busyLabel={t("处理中…", "Working…")} disabled={!complete() || !changes().length} onClick={() => void submit()}>{t("提交人工筛选决定", "Submit human screening decisions")}</ActionButton>
       </footer>
-      <Show when={recordedIncluded().length > 0 && props.onRequestFulltext}><section class="screening-fulltext-intake"><small>{t("已登记的全文核对候选", "RECORDED FULL-TEXT CANDIDATES")}</small><For each={recordedIncluded()}>{(candidate) => <ActionButton size="sm" variant="secondary" disabled={busy()} onClick={() => props.onRequestFulltext?.(candidate)}>{t("为此候选选择授权 PDF", "Choose an authorized PDF for this candidate")} · {candidate.title}</ActionButton>}</For></section></Show>
     </div></Show>
   </section>;
 }

@@ -130,6 +130,10 @@ def build_ui_preview_server(
             if run_id is not None:
                 self._api_json(lambda: api.pdf_tasks(run_id) if api is not None else _api_disabled())
                 return
+            run_id = _api_run_id(path, "/api/runs/", "/source-parse-status")
+            if run_id is not None:
+                self._api_json(lambda: api.source_parse_status(run_id) if api is not None else _api_disabled())
+                return
             run_id = _api_run_id(path, "/api/runs/", "/pdf/tasks/cached")
             if run_id is not None:
                 self._api_json(lambda: api.pdf_tasks(run_id, refresh=False) if api is not None else _api_disabled())

@@ -28,6 +28,8 @@ import { setUiLanguage, uiLanguage } from "./zh";
 import { shouldPollPdfTask } from "./pdfTaskPolling";
 import { pdfTaskSnapshotFreshness, type PdfTaskReadHealth } from "./pdfTaskFreshness";
 import { pdfTaskForSession } from "./sessionPdfSelection";
+import { getSavedSourceParses, type SavedSourceParseHealth, type SavedSourceParseTask } from "./localApi";
+import { candidatePdfAction } from "./paperPdfIntake";
 import { queuedResumeCanCommit } from "./resumeRequestGate";
 import { candidateFulltextGate } from "./candidateFulltextGate";
 import { completedPrivateSourceMapMatchesPaper, screeningAllowsSourceReview } from "./currentPaperReviewRoute";
@@ -291,6 +293,8 @@ export function App() {
   const [pdfObservationMode, setPdfObservationMode] = createSignal<"refresh" | "cached">("refresh");
   const [pdfTaskObservedAt, setPdfTaskObservedAt] = createSignal<Record<string, number>>({});
   const [pdfTaskReadHealth, setPdfTaskReadHealth] = createSignal<PdfTaskReadHealth>("disabled");
+  const [sourceParseTasks, setSourceParseTasks] = createSignal<SavedSourceParseTask[]>([]);
+  const [sourceParseHealth, setSourceParseHealth] = createSignal<SavedSourceParseHealth>("idle");
   const [pdfFreshnessNow, setPdfFreshnessNow] = createSignal(Date.now());
   const [draftContent, setDraftContent] = createSignal("");
   const [planDraftConsent, setPlanDraftConsent] = createSignal(false);
@@ -494,6 +498,7 @@ export function App() {
     if (!runId) return;
     existingRunReadGate.invalidate();
     setExistingRunReadPending(false);
+    setCandidatePdfTarget(null);
     setLaunchPreview(false);
     setRouteRecovery(null);
     batch(() => {
@@ -569,6 +574,7 @@ export function App() {
   const runtimeProjectionRefreshGate = createLatestRequestGate();
   const pdfTaskRefreshGate = createLatestRequestGate();
   const pdfTasksRefreshGate = createLatestRequestGate();
+  const sourceParseRefreshGate = createLatestRequestGate();
   const existingRunReadGate = createLatestRequestGate();
   const pdfSubmissionGate = createExclusiveSubmissionGate();
   const resumeSubmissionGate = createExclusiveSubmissionGate();
@@ -718,6 +724,9 @@ export function App() {
    * matching in-run PDF task while refreshing its graph projection.
    */
   function clearRunScopedClientArtifacts() {
+    sourceParseRefreshGate.invalidate();
+    setSourceParseTasks([]);
+    setSourceParseHealth("idle");
     setExistingRunLanding(null);
     setCandidateScreening(null);
     setCandidatePdfTarget(null);
@@ -843,13 +852,46 @@ export function App() {
       setStatus(text(`不能进入 PDF 入港：${reason}。请返回文献星图完成或刷新人工筛选。`, `PDF intake is blocked because ${reason}. Return to the literature map to complete or refresh human screening.`));
       return;
     }
+    if (!canChooseCandidatePdf(candidate.document_id)) {
+      setStatus(text("该候选已有解析记录，请在全文核对队列查看。", "This candidate has a parse record. Check it in the full-text review queue."));
+      return;
+    }
     const paper = reviewablePaperForDocumentId(bundle().literatureGraph.nodes, candidate.document_id)!;
     setResearchSession(selectPaper(emptyResearchSession(), paper));
     setPdfTask(pdfTaskForSession(pdfTasks(), candidate.document_id));
     setCandidatePdfTarget({ runId, documentId: candidate.document_id, title: candidate.title });
+    lastActiveWorkspace = { runId, view: "graph" };
     setView("launch");
     setStatus(text(`已选择“${candidate.title}”。请仅选择你有权处理的对应 PDF；提交时会再次核验该候选的人工纳入记录。`, `Selected “${candidate.title}”. Choose only the corresponding PDF you are authorized to process; the human inclusion record will be checked again on submission.`));
   }
+  function canChooseCandidatePdf(documentId: string) {
+    const local = pdfTaskForSession(pdfTasks(), documentId);
+    const recorded = sourceParseTasks().find((task) => task.document_id === documentId) ?? null;
+    const action = candidatePdfAction(local, recorded);
+    return action === "choose_pdf" || action === "retry_pdf";
+  }
+
+  async function refreshSavedSourceParses() {
+    const runId = liveRunId();
+    const missionId = bundle().mission.missionId;
+    if (!runId || launchPreview() || !localApiEnabled()) return;
+    const guard = currentRunGuard(runId);
+    const isLatest = sourceParseRefreshGate.begin();
+    setSourceParseHealth("loading");
+    try {
+      const tasks = await getSavedSourceParses(runId, missionId);
+      if (!guard() || !isLatest()) return;
+      setSourceParseTasks(tasks);
+      setSourceParseHealth("ready");
+    } catch {
+      if (guard() && isLatest()) setSourceParseHealth("unavailable");
+    }
+  }
+
+  createEffect(() => {
+    if (!liveRunId() || launchPreview() || view() !== "graph") return;
+    void untrack(refreshSavedSourceParses);
+  });
   function upsertPdfTask(task: PdfTaskStatus, select = true) {
     setPdfTasks((current) => [...current.filter((item) => item.document_id !== task.document_id), task]);
     setPdfTaskObservedAt((current) => ({ ...current, [task.document_id]: Date.now() }));
@@ -1486,6 +1528,10 @@ export function App() {
         setStatus(text("候选全文入口已失效：当前运行的人工筛选或文献图已变化。未上传文件；请回到文献星图重新选择已纳入候选。", "The candidate full-text entry has expired because the current run's screening or graph changed. No file was uploaded; return to the literature map and reselect an included candidate."));
         return;
       }
+      if (!canChooseCandidatePdf(candidateTarget.documentId)) {
+        setLaunchNotice(text("该候选已有解析记录，请返回文献星图查看。", "This candidate has a parse record. Return to the literature map to inspect it."));
+        return;
+      }
       if (!pdfSubmissionGate.tryStart()) {
         setLaunchNotice(text("正在提交一个 PDF 解析任务；请等待当前请求结束。", "A PDF parsing task is already being submitted; wait for the current request to finish."));
         return;
@@ -1494,15 +1540,20 @@ export function App() {
       const operationId = beginActiveOperation(text("正在提交候选 PDF", "Submitting candidate PDF"), text("仅将已授权文件交给本机环回服务；MinerU 解析尚未产生证据。", "Only the authorized file is being handed to the local loopback service; MinerU parsing has not produced evidence."));
       const pdfEpoch = taskEpoch;
       void createPdfRun(file, bundle().mission, { runId: candidateTarget.runId, documentId: candidateTarget.documentId }).then((result) => {
-        if (!isCurrentTask(pdfEpoch) || liveRunId() !== candidateTarget.runId) { void cancelRun(result.run_id).catch(() => undefined); return; }
+        if (!isCurrentTask(pdfEpoch) || liveRunId() !== candidateTarget.runId) return;
         setCandidatePdfTarget(null);
         upsertPdfTask({ document_id: result.document_id, candidate_document_id: result.candidate_document_id ?? candidateTarget.documentId, audit_document_id: result.candidate_document_id ?? candidateTarget.documentId, audit_state: "pending", file_name: file.name, state: result.state, doi: null, doi_status: result.doi_status, markdown_ready: false, source_map_review_status: "absent", source_map_segment_count: 0, trust_status: "private_markdown_outside_run_not_scientific_evidence" });
         setStatus(text(`已将授权 PDF 关联到已人工纳入的候选“${candidateTarget.title}”；MinerU 任务当前为 ${result.state}。Markdown 始终位于本机私有缓存。`, `The authorized PDF is linked to the human-included candidate “${candidateTarget.title}”; the MinerU task is ${result.state}. Markdown remains in local private cache.`));
         setView("workflow");
         void refreshPdfTask(result.run_id).catch(() => undefined);
-      }).catch((error: unknown) => { if (isCurrentTask(pdfEpoch) && liveRunId() === candidateTarget.runId) showMutationRecovery("candidate_pdf", error,
-        text("无法提交候选 PDF 入港任务；未上传或创建可用来源工件。", "Unable to submit the candidate PDF intake task; no usable source artifact was uploaded or created."),
-        text("候选 PDF 入港请求超时，结果未知；请先刷新本机任务状态，不要重新上传同一文件。", "The candidate-PDF intake request timed out and its outcome is unknown. Refresh local task status first; do not re-upload the same file.")); }).finally(() => { pdfSubmissionGate.finish(); setPdfSubmissionPending(false); finishActiveOperation(operationId); });
+      }).catch((error: unknown) => {
+        if (!isCurrentTask(pdfEpoch) || liveRunId() !== candidateTarget.runId) return;
+        void refreshSavedSourceParses();
+        const notice = text("候选 PDF 提交未确认。请返回文献星图核对解析记录。", "Candidate PDF submission was not confirmed. Return to the literature map to check the parse record.");
+        setLaunchNotice(notice);
+        showMutationRecovery("candidate_pdf", error, notice,
+          text("候选 PDF 入港请求超时，结果未知；请先刷新本机任务状态。", "The candidate-PDF intake request timed out and its outcome is unknown. Refresh local task status first."));
+      }).finally(() => { pdfSubmissionGate.finish(); setPdfSubmissionPending(false); finishActiveOperation(operationId); });
       return;
     }
     const nextMission = {
@@ -2122,7 +2173,7 @@ export function App() {
       <div class="rail-footer"><div class="language-toggle" aria-label="Language"><button type="button" classList={{ active: language() === "zh" }} onClick={() => { setLanguage("zh"); setUiLanguage("zh"); }}>ZH</button><button type="button" classList={{ active: language() === "en" }} onClick={() => { setLanguage("en"); setUiLanguage("en"); }}>EN</button></div><label>{text("主题", "Theme")}<select value={theme()} onChange={(event) => setTheme(event.currentTarget.value as Theme)}><option value="light">{text("浅色", "Light")}</option><option value="dark">{text("深色", "Dark")}</option><option value="eye">{text("护眼", "Eye care")}</option></select></label></div>
     </aside>
     <Suspense fallback={<main class="route-loading" aria-live="polite"><div class="route-loading-beacon" aria-hidden="true"><i /><i /><i /></div><small>{text("正在切换工作区", "SWITCHING WORKSPACE")}</small><h1>{text("正在载入已选择的本地工作区", "Loading the selected local workspace")}</h1><p>{text("不会读取私有文件、调用提供方或改变任务。", "No private file is read, provider is called, or task is changed.")}</p><div class="route-loading-radar" aria-hidden="true"><i /><i /><i /></div></main>}>
-      <Show when={view() === "discover"} fallback={view() === "workflow" ? <FleetCommand bundle={bundle()} locale={language()} facilityContracts={facilityContracts()} facilityCatalogueHealth={facilityCatalogueHealth()} onRefreshFacilityContracts={() => void refreshFacilityContracts()} harnessPlugins={harnessPlugins()} harnessCatalogueHealth={harnessCatalogueHealth()} onRefreshHarnessCatalogue={() => void refreshHarnessCatalogue()} dshProfile={dshProfile()} dshProfileHealth={dshProfileHealth()} onRefreshDshProfile={() => void refreshDshProfile()} operationalTelemetry={launchPreview() ? null : operationalTelemetry()} bfoTemplateId={launchPreview() ? null : activeBfoTemplateId()} selectedDocumentId={launchPreview() ? null : selectedDocumentId()} pdfTask={previewPdfTask()} pdfTaskFreshness={selectedPdfTaskFreshness()} pdfTasks={previewPdfTasks()} onSelectPdf={previewCanActOnRun() ? (task) => setPdfTask(task) : undefined} markdownUrl={previewPdfTask() && liveRunId() ? privateMarkdownUrl(liveRunId()!, previewPdfTask()!.document_id) : null} onRefreshPdf={previewPdfTask() ? refreshPdfTask : undefined} onConfirmPdfDoi={previewPdfTask() ? confirmManualPdfDoi : undefined} onExpandPdfCitations={previewPdfTask() ? expandPdfCitationGraph : undefined} onOpenTaskControl={previewCanActOnRun() ? openManualTaskControl : undefined} automaticMissionPending={launchPreview() ? false : automaticMissionPending()} automaticCancellationRequested={launchPreview() ? false : automaticCancellationRequested()} onCancelAutomaticMission={automaticCancellationEnabled(launchPreview(), liveRunId(), automaticExecution()?.state, automaticCancellationRequested()) ? cancelAutomaticMission : undefined} automaticAuthorization={launchPreview() ? null : automaticAuthorization()} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} /> : view() === "graph" ? <GraphNetwork bundle={bundle()} theme={theme()} locale={language()} runId={previewCanActOnRun() ? liveRunId() : null} selectedDocumentId={launchPreview() ? null : selectedDocumentId()} pdfTask={previewPdfTask()} pdfTasks={previewPdfTasks()} screening={candidateScreening()} onLoadScreening={previewCanActOnRun() ? loadCandidateScreening : undefined} onSubmitScreening={previewCanActOnRun() ? submitCandidateScreening : undefined} onRequestFulltext={previewCanActOnRun() ? prepareCandidatePdf : undefined} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} onSelectPaper={choosePaper} onSelectEvidence={chooseEvidence} /> : view() === "reader" ? <PaperReader bundle={bundle()} session={researchSession()} pdfTask={previewPdfTask()} screeningAllowsSourceReview={previewCanActOnRun() && selectedPaperScreenedForFulltext()} markdownUrl={previewPdfTask() && liveRunId() ? privateMarkdownUrl(liveRunId()!, previewPdfTask()!.document_id) : null} onRecordSourceMap={previewPdfTask() ? recordPrivateSourceMap : undefined} onLoadSourceMap={previewPdfTask() ? loadPrivateSourceMap : undefined} onRecordMaterialFacts={previewPdfTask() ? recordPrivateMaterialFacts : undefined} onRecordEvidence={previewPdfTask() ? recordPrivateEvidenceCard : undefined} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} onSelectEvidence={chooseEvidence} /> : <ResearchExpansion bundle={bundle()} session={researchSession()} onNavigate={navigate} onOpenTaskControl={previewCanActOnRun() ? openManualTaskControl : undefined} onBuildConditionMatrix={previewCanActOnRun() ? buildConditionMatrix : undefined} onBuildGapCandidates={previewCanActOnRun() ? buildGapCandidates : undefined} onFocusEvidence={focusGapEvidence} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} />}>
+      <Show when={view() === "discover"} fallback={view() === "workflow" ? <FleetCommand bundle={bundle()} locale={language()} facilityContracts={facilityContracts()} facilityCatalogueHealth={facilityCatalogueHealth()} onRefreshFacilityContracts={() => void refreshFacilityContracts()} harnessPlugins={harnessPlugins()} harnessCatalogueHealth={harnessCatalogueHealth()} onRefreshHarnessCatalogue={() => void refreshHarnessCatalogue()} dshProfile={dshProfile()} dshProfileHealth={dshProfileHealth()} onRefreshDshProfile={() => void refreshDshProfile()} operationalTelemetry={launchPreview() ? null : operationalTelemetry()} bfoTemplateId={launchPreview() ? null : activeBfoTemplateId()} selectedDocumentId={launchPreview() ? null : selectedDocumentId()} pdfTask={previewPdfTask()} pdfTaskFreshness={selectedPdfTaskFreshness()} pdfTasks={previewPdfTasks()} onSelectPdf={previewCanActOnRun() ? (task) => setPdfTask(task) : undefined} markdownUrl={previewPdfTask() && liveRunId() ? privateMarkdownUrl(liveRunId()!, previewPdfTask()!.document_id) : null} onRefreshPdf={previewPdfTask() ? refreshPdfTask : undefined} onConfirmPdfDoi={previewPdfTask() ? confirmManualPdfDoi : undefined} onExpandPdfCitations={previewPdfTask() ? expandPdfCitationGraph : undefined} onOpenTaskControl={previewCanActOnRun() ? openManualTaskControl : undefined} automaticMissionPending={launchPreview() ? false : automaticMissionPending()} automaticCancellationRequested={launchPreview() ? false : automaticCancellationRequested()} onCancelAutomaticMission={automaticCancellationEnabled(launchPreview(), liveRunId(), automaticExecution()?.state, automaticCancellationRequested()) ? cancelAutomaticMission : undefined} automaticAuthorization={launchPreview() ? null : automaticAuthorization()} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} /> : view() === "graph" ? <GraphNetwork bundle={bundle()} theme={theme()} locale={language()} runId={previewCanActOnRun() ? liveRunId() : null} selectedDocumentId={launchPreview() ? null : selectedDocumentId()} pdfTask={previewPdfTask()} pdfTasks={previewPdfTasks()} sourceTasks={sourceParseTasks()} sourceHealth={sourceParseHealth()} onRefreshSourceParses={previewCanActOnRun() ? () => void refreshSavedSourceParses() : undefined} screening={candidateScreening()} onLoadScreening={previewCanActOnRun() ? loadCandidateScreening : undefined} onSubmitScreening={previewCanActOnRun() ? submitCandidateScreening : undefined} onRequestFulltext={previewCanActOnRun() ? prepareCandidatePdf : undefined} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} onSelectPaper={choosePaper} onSelectEvidence={chooseEvidence} /> : view() === "reader" ? <PaperReader bundle={bundle()} session={researchSession()} pdfTask={previewPdfTask()} screeningAllowsSourceReview={previewCanActOnRun() && selectedPaperScreenedForFulltext()} markdownUrl={previewPdfTask() && liveRunId() ? privateMarkdownUrl(liveRunId()!, previewPdfTask()!.document_id) : null} onRecordSourceMap={previewPdfTask() ? recordPrivateSourceMap : undefined} onLoadSourceMap={previewPdfTask() ? loadPrivateSourceMap : undefined} onRecordMaterialFacts={previewPdfTask() ? recordPrivateMaterialFacts : undefined} onRecordEvidence={previewPdfTask() ? recordPrivateEvidenceCard : undefined} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} onNavigate={navigate} onSelectEvidence={chooseEvidence} /> : <ResearchExpansion bundle={bundle()} session={researchSession()} onNavigate={navigate} onOpenTaskControl={previewCanActOnRun() ? openManualTaskControl : undefined} onBuildConditionMatrix={previewCanActOnRun() ? buildConditionMatrix : undefined} onBuildGapCandidates={previewCanActOnRun() ? buildGapCandidates : undefined} onFocusEvidence={focusGapEvidence} readOnlyPreview={launchPreview()} onExitPreview={returnToLaunch} />}>
       <main class="discovery-stage mission-stage"><FleetDecoration kind="discover" state={fleetVisualState(bundle(), "discover")} />
         <header class="stage-header"><div><p class="stage-kicker">COSMATTER / {text("任务定义", "MISSION DEFINITION")}</p><h1>{text("从问题到可审计的证据航线", "From question to an auditable evidence route")}</h1><p>{bundle().mission.question}</p></div></header>
         <Show when={launchPreview()}><ReadOnlyPreviewContext locale={language()} onExit={returnToLaunch} /></Show>
