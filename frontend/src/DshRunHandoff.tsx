@@ -1,12 +1,8 @@
 import { Show, createSignal } from "solid-js";
-import { isLocalRunId, localRunLink, parseLocalRunLink } from "./liveRunIdentity";
+import { isLocalRunId } from "./liveRunIdentity";
+import { localEvidenceLink, localWorkbenchLocation, type DshEvidenceTarget } from "./dshLocalCommands";
 import { ActionButton } from "./uiPrimitives";
 import type { UiLocale } from "./fleetRegistry";
-
-function localWorkbenchLocation() {
-  const location = window.location;
-  return location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) ? location : null;
-}
 
 function DshCommandHandoff(props: { command: string; label: string; locale: UiLocale; description?: string }) {
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
@@ -62,14 +58,9 @@ export function DshRunArtifactsHandoff(props: { runId: string; locale: UiLocale 
     label={props.locale === "zh" ? "在 DSH 查看工件目录" : "View artifact list in DSH"} />;
 }
 
-export function DshEvidenceHandoff(props: { runId: string; documentId: string; evidenceId: string; locale: UiLocale }) {
+export function DshEvidenceHandoff(props: DshEvidenceTarget & { runId: string; locale: UiLocale }) {
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
-  const href = () => {
-    const location = localWorkbenchLocation();
-    if (!location) return null;
-    const value = localRunLink(location.origin, props.runId, props.documentId, props.evidenceId);
-    return parseLocalRunLink(new URL(value).hash)?.evidenceId === props.evidenceId ? value : null;
-  };
+  const href = () => localEvidenceLink(props.runId, props);
   return <Show when={href()} keyed>{(evidenceLink) => {
     const [feedback, setFeedback] = createSignal<"copied" | "manual" | null>(null);
     const command = `cosmatter dsh-evidence '${evidenceLink}'`;

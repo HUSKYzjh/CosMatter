@@ -85,7 +85,7 @@ from .crossref import CrossrefAdapter, CrossrefRequestError
 from .crossref_relation_expansion import CrossrefRelationExpansionError, build_crossref_relation_expansion, write_crossref_relation_expansion
 from .paper_structure import PaperStructureError, paper_structure_from_review, write_paper_structure_for_document
 from .ui_preview import UiPreviewError, serve_ui_preview
-from .dsh_profile_status import DshCompositionCheckError, check_dsh_composition, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status
+from .dsh_profile_status import DSH_RUN_READ_TOOLS, DshCompositionCheckError, check_dsh_composition, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool
 from .relation_reconciliation import RelationReconciliationError, reconciliation_from_review, write_relation_reconciliation
 from .condition_normalization import ConditionNormalizationError, condition_normalization_from_review, write_condition_normalization
 from .reporting import ReportGateError, build_evidence_manifest, build_structured_research_report, write_mission_report, write_structured_research_report
@@ -178,6 +178,15 @@ def command_dsh_recent_runs(args: argparse.Namespace) -> int:
 def command_dsh_run_artifacts(args: argparse.Namespace) -> int:
     try:
         _json_print(read_dsh_run_artifacts(args.run_id, port=args.port, executable=args.dsh_executable))
+    except DshCompositionCheckError as error:
+        _json_print({"error": str(error)})
+        return 2
+    return 0
+
+
+def command_dsh_read(args: argparse.Namespace) -> int:
+    try:
+        _json_print(read_dsh_run_tool(args.tool, args.run_id, port=args.port, executable=args.dsh_executable))
     except DshCompositionCheckError as error:
         _json_print({"error": str(error)})
         return 2
@@ -3666,6 +3675,13 @@ def build_parser() -> argparse.ArgumentParser:
     dsh_artifacts.add_argument("--port", type=int, default=8765, help="port for the local CosMatter preview API")
     dsh_artifacts.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_artifacts.set_defaults(handler=command_dsh_run_artifacts)
+
+    dsh_read = commands.add_parser("dsh-read", help="read a local run with one allowlisted DSH tool")
+    dsh_read.add_argument("tool", choices=tuple(DSH_RUN_READ_TOOLS), help="fixed local read tool")
+    dsh_read.add_argument("--run-id", required=True, help="existing CosMatter run ID")
+    dsh_read.add_argument("--port", type=int, default=8765, help="port for the local CosMatter preview API")
+    dsh_read.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
+    dsh_read.set_defaults(handler=command_dsh_read)
 
     preview = commands.add_parser("preview-ui", help="serve a loopback-only UI; credentials and unselected run artifacts are never exposed")
     preview.add_argument("--port", type=int, default=8765)

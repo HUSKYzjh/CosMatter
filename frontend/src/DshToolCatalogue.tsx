@@ -2,6 +2,7 @@ import { For, Show, createMemo, createSignal } from "solid-js";
 import { packages } from "../../plugins/dsh-plugin-group.json";
 import { continuationStageLabel } from "./continuationStage";
 import { DSH_STAGE_NOTES, DSH_STAGE_TOOLS } from "./dshStageTools";
+import { dshCatalogueCommand, type DshEvidenceTarget } from "./dshLocalCommands";
 import type { UiLocale } from "./fleetRegistry";
 import type { DshProfileHealth, DshProfileStatus, HarnessPluginDescriptor, WorkflowStageName } from "./localApi";
 import { ActionButton, StatusBadge } from "./uiPrimitives";
@@ -57,6 +58,8 @@ export interface DshToolCatalogueProps {
   profile: DshProfileStatus | null;
   profileHealth: DshProfileHealth;
   currentStage?: WorkflowStageName | null;
+  runId?: string | null;
+  evidence?: DshEvidenceTarget | null;
 }
 
 export function DshToolCatalogue(props: DshToolCatalogueProps) {
@@ -71,7 +74,7 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
   const [query, setQuery] = createSignal("");
   const [filter, setFilter] = createSignal<Access | "all">("all");
   const [stageFilter, setStageFilter] = createSignal<WorkflowStageName | "all">(props.initialStage ?? "all");
-  const [clipboard, setClipboard] = createSignal<{ name: string; copied: boolean } | null>(null);
+  const [clipboard, setClipboard] = createSignal<{ name: string; kind: "name" | "command"; value: string; copied: boolean } | null>(null);
   const pluginById = createMemo(() => new Map(props.plugins.map((plugin) => [plugin.plugin_id, plugin])));
   const registry = createMemo(() => {
     const check = props.profile?.tool_registry_check;
@@ -106,12 +109,12 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
       ? x("上次核验已组合，启动待确认", "Composed on last check; startup unconfirmed")
       : x("上次核验未组合此包", "Bundle absent from last composition check");
   };
-  const copyTool = async (name: string) => {
+  const copyTool = async (name: string, kind: "name" | "command", value: string) => {
     try {
-      await navigator.clipboard.writeText(name);
-      setClipboard({ name, copied: true });
+      await navigator.clipboard.writeText(value);
+      setClipboard({ name, kind, value, copied: true });
     } catch {
-      setClipboard({ name, copied: false });
+      setClipboard({ name, kind, value, copied: false });
     }
   };
 
@@ -148,7 +151,11 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
           <For each={visibleTools()}>{(tool) => {
             const descriptor = () => tool.copy?.descriptor ? pluginById().get(tool.copy.descriptor) : undefined;
             const label = () => tool.copy ? x(...tool.copy.label) : tool.name;
-            const toolStatus = () => clipboard()?.name === tool.name ? clipboard() : null;
+            const command = createMemo(() => dshCatalogueCommand(tool.name, props.runId, props.evidence));
+            const toolStatus = () => {
+              const status = clipboard();
+              return status?.name === tool.name && (status.kind === "name" || status.value === command()) ? status : null;
+            };
             const registered = () => registry()?.bundles.has(tool.bundle) ? registry()?.tools.has(tool.name) : undefined;
             return <li>
               <details class="harness-disclosure dsh-tool-item">
@@ -173,12 +180,23 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
                       <For each={descriptor()?.required_authorizations}>{(authorization) => <code>{authorization}</code>}</For>
                     </div>
                   </Show>
-                  <ActionButton size="sm" onClick={() => void copyTool(tool.name)}>{x("复制工具名", "Copy tool name")}</ActionButton>
+                  <Show when={command()}>{(line) => <div class="dsh-tool-terminal">
+                    <p>{x("在 CosMatter 的 PowerShell 终端运行命令。", "Run this command in the CosMatter PowerShell environment.")}</p>
+                    <code>{line()}</code>
+                  </div>}</Show>
+                  <div class="dsh-tool-actions">
+                    <Show when={command()}>{(line) =>
+                      <ActionButton size="sm" onClick={() => void copyTool(tool.name, "command", line())}>{x("复制 DSH 命令", "Copy DSH command")}</ActionButton>
+                    }</Show>
+                    <ActionButton size="sm" variant={command() ? "quiet" : "secondary"} onClick={() => void copyTool(tool.name, "name", tool.name)}>{x("复制工具名", "Copy tool name")}</ActionButton>
+                  </div>
                   <Show when={toolStatus()}>{(status) => <>
-                    <p role="status">{status().copied
-                      ? x("工具名已复制。", "Tool name copied.")
-                      : x("剪贴板不可用，请选中下方工具名手动复制。", "Clipboard unavailable. Select and copy the tool name below.")}</p>
-                    <Show when={!status().copied}><code class="dsh-tool-manual-copy">{tool.name}</code></Show>
+                    <p role="status">{status().kind === "command"
+                      ? status().copied ? x("DSH 命令已复制。", "DSH command copied.")
+                        : x("剪贴板不可用，可选中上方命令复制。", "Clipboard unavailable. Select the command above to copy it.")
+                      : status().copied ? x("工具名已复制。", "Tool name copied.")
+                        : x("剪贴板不可用，请选中下方工具名手动复制。", "Clipboard unavailable. Select and copy the tool name below.")}</p>
+                    <Show when={status().kind === "name" && !status().copied}><code class="dsh-tool-manual-copy">{tool.name}</code></Show>
                   </>}</Show>
                 </div>
               </details>

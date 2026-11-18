@@ -1,0 +1,37 @@
+import { isLocalRunId, localRunLink, parseLocalRunLink } from "./liveRunIdentity";
+
+const runReadTools = new Set([
+  "cosmatter_workflow_status",
+  "cosmatter_stage_contract",
+  "cosmatter_operational_telemetry",
+  "cosmatter_workflow_dag",
+  "cosmatter_candidate_screening_template",
+]);
+
+export interface DshEvidenceTarget { documentId: string; evidenceId: string; }
+
+export function localWorkbenchLocation() {
+  const location = window.location;
+  return location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) ? location : null;
+}
+
+export function localEvidenceLink(runId: string, evidence: DshEvidenceTarget): string | null {
+  const location = localWorkbenchLocation();
+  if (!location) return null;
+  const url = localRunLink(location.origin, runId, evidence.documentId, evidence.evidenceId);
+  const target = parseLocalRunLink(new URL(url).hash);
+  return target?.evidenceId === evidence.evidenceId && target.documentId === evidence.documentId ? url : null;
+}
+
+export function dshCatalogueCommand(tool: string, runId?: string | null, evidence?: DshEvidenceTarget | null): string | null {
+  const location = localWorkbenchLocation();
+  if (!location || !runId || !isLocalRunId(runId)) return null;
+  const port = location.port || "80";
+  if (tool === "cosmatter_recent_runs") return `cosmatter dsh-recent-runs --port ${port}`;
+  if (tool === "cosmatter_artifact_manifest") return `cosmatter dsh-run-artifacts ${runId} --port ${port}`;
+  if (tool === "cosmatter_accepted_evidence_search" && evidence) {
+    const link = localEvidenceLink(runId, evidence);
+    return link ? `cosmatter dsh-evidence '${link}'` : null;
+  }
+  return runReadTools.has(tool) ? `cosmatter dsh-read ${tool} --run-id ${runId} --port ${port}` : null;
+}

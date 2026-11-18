@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from cosmatter.dsh_profile_status import (
     EXPECTED_DSH_PACKAGES, DshCompositionCheckError, _BUNDLE_TOOLS,
-    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status,
+    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool,
 )
 
 
@@ -285,6 +285,30 @@ class DshProfileStatusTests(unittest.TestCase):
                     read_dsh_run_artifacts("archived_2", port=8789, dsh_home=home)
                 with self.assertRaisesRegex(DshCompositionCheckError, "Run ID"):
                     read_dsh_run_artifacts("../private", port=8789, dsh_home=home)
+                self.assertEqual(launch.call_count, 2)
+
+
+    def test_only_fixed_run_reads_can_be_dispatched_by_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = "@cosmatter/dsh-review-plugin"
+            tool = "cosmatter_candidate_screening_template"
+            self._write_bundle(profile, bundle)
+            payload = {"run_id": "saved_1", "candidates": [], "decisions": []}
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=payload,
+            ) as launch:
+                self.assertEqual(read_dsh_run_tool(tool, "saved_1", port=8789, dsh_home=home), {**payload, "checked_via": [tool]})
+                self.assertEqual(launch.call_args.args[1:3], (profile, {bundle: {"baseUrl": "http://127.0.0.1:8789"}}))
+                self.assertEqual(launch.call_args.args[-2], {"tool": tool, "args": {"run_id": "saved_1"}, "prefix": "COSMATTER_DSH_RUN_READ "})
+                for rejected in ("cosmatter_mineru_task_poll", "cosmatter_candidate_screening_record", "other_tool"):
+                    with self.assertRaisesRegex(DshCompositionCheckError, "allowed local DSH read"):
+                        read_dsh_run_tool(rejected, "saved_1", dsh_home=home)
+                with self.assertRaisesRegex(DshCompositionCheckError, "Run ID"):
+                    read_dsh_run_tool(tool, "../other", dsh_home=home)
+                with self.assertRaisesRegex(DshCompositionCheckError, "could not read this run"):
+                    read_dsh_run_tool(tool, "other_run", port=8789, dsh_home=home)
                 self.assertEqual(launch.call_count, 2)
 
 

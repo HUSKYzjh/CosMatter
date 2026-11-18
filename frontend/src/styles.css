@@ -863,6 +863,9 @@ html:has(.dsh-tool-dialog[open]) { overflow: hidden; }
 .dsh-tool-detail { display: grid; justify-items: start; gap: .45rem; min-width: 0; padding: .55rem .65rem; border-top: 1px solid var(--line); }
 .dsh-tool-detail code { min-width: 0; max-width: 100%; }
 .dsh-tool-consents { display: grid; gap: .2rem; min-width: 0; max-width: 100%; font-size: max(.73rem, 12px); }
+.dsh-tool-terminal { display: grid; gap: .25rem; min-width: 0; width: 100%; }
+.dsh-tool-terminal code { padding: .35rem .45rem; border: 1px solid var(--line); border-radius: .22rem; color: var(--ink); background: var(--surface); user-select: all; }
+.dsh-tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; max-width: 100%; }
 .dsh-tool-empty { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
 .dsh-stage-note { padding-inline-start: .5rem; border-inline-start: 2px solid var(--line); }
 @media (max-width: 520px) {
