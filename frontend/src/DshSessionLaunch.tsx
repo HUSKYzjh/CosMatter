@@ -44,5 +44,7 @@ export function DshSessionLaunch(props: { locale: UiLocale; port: number; runId?
     <p>{showLink() ? x("在 CosMatter 终端运行命令，再打开终端显示的本机链接。", "Run in the CosMatter terminal, then open the local link it prints.")
       : x("在 CosMatter 终端运行命令，DSH 将在浏览器中打开。", "Run in the CosMatter terminal to open DSH in your browser.")}</p>
     <DshCommandRow locale={props.locale} command={command()} label={x("复制 DSH 启动命令", "Copy DSH launch command")} />
+    <Show when={!runId()}><p>{x("创建任务时，告诉 DSH 你的研究问题、材料、目标性质和研究范围，再打开它返回的工作台链接。",
+      "To create a run, give DSH your question, material, target property and study scope. Open the workbench link it returns.")}</p></Show>
   </section>;
 }

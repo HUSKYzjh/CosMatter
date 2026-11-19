@@ -600,6 +600,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .recent-local-runs > .dsh-run-handoff { width: 100%; min-width: 0; }
 .dsh-linked-handoff { display: grid; justify-items: start; gap: .4rem; min-width: 0; margin-block: .45rem; }
 .dsh-linked-actions { display: flex; flex-wrap: wrap; gap: .35rem; max-width: 100%; }
+.dsh-read-recovery { display: grid; gap: .45rem; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.dsh-read-recovery > p { margin: 0; }
+.dsh-read-recovery > .cm-action { justify-self: start; }
 .dsh-linked-handoff details { width: 100%; min-width: 0; }
 @media (max-width: 520px) {
   .run-id-form-row { grid-template-columns: minmax(0, 1fr); }
@@ -2213,6 +2216,16 @@ button.quiet-action:not(.cm-action):disabled,
 .rail-execution > .cm-action { --action-accent: #b85454; color: color-mix(in srgb, #b85454 82%, var(--ink)); background: color-mix(in srgb, #b85454 6%, var(--surface)); }
 
 .launch-control-group button { font-size: max(.7rem, 12px); }
+.launch-preferences { display: flex; gap: .35rem; align-items: center; margin-inline-start: auto; }
+.launch-controls.has-dsh { align-items: center; }
+.launch-controls .launch-dsh-entry { min-height: 2.25rem; white-space: nowrap; }
+@media (max-width: 560px), (pointer: coarse) {
+  .launch-controls .launch-dsh-entry { min-height: 2.75rem; }
+}
+@media (max-width: 560px) {
+  .launchpad > .launch-controls.has-dsh { position: relative; inset: auto; flex-wrap: wrap; justify-content: space-between; }
+  .launch-controls.has-dsh + .launch-hero { padding-top: 1.25rem; }
+}
 .bfo-task-deck button span { font-size: max(.72rem, 12px); }
 .workbench button em { font-size: max(.78rem, 13px); }
 

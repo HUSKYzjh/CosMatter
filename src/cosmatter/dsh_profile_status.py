@@ -43,6 +43,7 @@ _PORT_HISTORY_FILE = ".cosmatter-tool-registry-ports.json"
 _PORT_HISTORY_SCHEMA = "cosmatter.dsh-tool-registry-ports/v1"
 _MAX_LOOPBACK_RECEIPTS = 16
 _MAX_CONFIG_BYTES = 1_000_000
+_DIAGNOSTIC_CLEANUP_FAILED = "Diagnostic cleanup did not finish."
 _DSH_VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-[a-z0-9.]{1,24})?")
 _DSH_UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\1bf39983-50d0-5fe0-9ef4-cece76f67c5e"
 _REGISTRY_OUTPUT = "COSMATTER_TOOL_REGISTRY "
@@ -735,6 +736,8 @@ def _run_isolated_dsh_probe(
     dsh: str, profile: Path, bundles: dict[str, dict[str, Any] | None], script: str,
     probe_config: dict[str, Any], prefix: str,
 ) -> Any:
+    # TemporaryDirectory cleanup can raise a second error while a child still holds a file.
+    interruption: subprocess.TimeoutExpired | KeyboardInterrupt | None = None
     try:
         with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-probe-") as temporary:
             directory = Path(temporary)
@@ -752,14 +755,25 @@ def _run_isolated_dsh_probe(
                 {"id": "llm-deepseek-account", "disabled": True},
                 {"insert": [*entries, {"id": "cosmatter-isolated-probe", "name": "./probe.mjs", "config": probe_config}]},
             ]), encoding="utf-8")
-            output = _run_dsh_diagnostic(dsh, [
-                "--profile", "cosmatter-isolated-probe", "--from-default-profile", "headless",
-                "--patch", str(overlay), "CosMatter local diagnostic",
-            ], temporary, environment)
+            try:
+                output = _run_dsh_diagnostic(dsh, [
+                    "--profile", "cosmatter-isolated-probe", "--from-default-profile", "headless",
+                    "--patch", str(overlay), "CosMatter local diagnostic",
+                ], temporary, environment)
+            except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
+                interruption = exc
+                raise
         results = [line.removeprefix(prefix) for line in output.splitlines() if line.startswith(prefix)]
         if len(results) == 1:
             return json.loads(results[0])
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        if isinstance(interruption, KeyboardInterrupt):
+            raise interruption from None
+        if interruption is not None:
+            message = "The isolated DSH diagnostic timed out."
+            if exc is not interruption or _DIAGNOSTIC_CLEANUP_FAILED in getattr(interruption, "__notes__", ()):
+                message += " " + _DIAGNOSTIC_CLEANUP_FAILED
+            raise DshCompositionCheckError(message) from None
         raise DshCompositionCheckError("The isolated DSH diagnostic could not complete.") from exc
     raise DshCompositionCheckError("The isolated DSH diagnostic did not return a result.")
 
@@ -794,24 +808,27 @@ def _run_dsh_diagnostic(
     ) as process:
         try:
             stdout, _ = process.communicate(timeout=timeout)
-        except (subprocess.TimeoutExpired, KeyboardInterrupt):
-            # A Windows .cmd waits for the runtime. Terminate the tree while
-            # its root still exists, before closing the pipe and temporary home.
-            if os.name == "nt":
-                taskkill = Path(os.environ["SystemRoot"]) / "System32" / "taskkill.exe"
-                try:
-                    subprocess.run(
-                        [str(taskkill), "/PID", str(process.pid), "/T", "/F"], stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False,
-                    )
-                finally:
-                    process.kill()
-            else:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            process.communicate(timeout=10)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
+            try:
+                # A Windows .cmd waits for the runtime. Terminate the tree while
+                # its root still exists, before closing the pipe and temporary home.
+                if os.name == "nt":
+                    taskkill = Path(os.environ["SystemRoot"]) / "System32" / "taskkill.exe"
+                    try:
+                        subprocess.run(
+                            [str(taskkill), "/PID", str(process.pid), "/T", "/F"], stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False,
+                        )
+                    finally:
+                        process.kill()
+                else:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                process.communicate(timeout=10)
+            except (OSError, subprocess.TimeoutExpired):
+                exc.add_note(_DIAGNOSTIC_CLEANUP_FAILED)
             raise
     if process.returncode or len(stdout) > _MAX_CONFIG_BYTES:
         raise DshCompositionCheckError("DSH could not produce a valid local diagnostic result.")

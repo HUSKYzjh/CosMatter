@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getDshProfileStatus, isDshProfileStatus, LOCAL_API_READ_TIMEOUT_MS } from "./localApi";
+import { dshReadIssue, type DshReadCommand } from "./dshReadProfile";
+import type { DshProfileStatus } from "./localApi";
 
 const packages = ["mission", "observability", "policy", "research", "review", "document", "graph"].map((name) => ({
   package: `@cosmatter/dsh-${name}-plugin`, install_status: "verified" as const, dependency_kind: "local_link" as const,
@@ -76,6 +78,34 @@ describe("DSH profile receipt compatibility", () => {
 
 it("accepts a complete redacted TUI dependency snapshot", () => {
   expect(isDshProfileStatus(snapshot())).toBe(true);
+});
+
+it("only interrupts a direct read for the bundle and tools that command loads", () => {
+  const reads: [DshReadCommand, string, string][] = [
+    ["status", "observability", "cosmatter_stage_contract"], ["recent", "observability", "cosmatter_recent_runs"],
+    ["artifacts", "observability", "cosmatter_artifact_manifest"], ["evidence", "graph", "cosmatter_accepted_evidence_search"],
+    ["screening", "review", "cosmatter_candidate_screening_template"],
+  ];
+  for (const [command, name, tool] of reads) {
+    const bundle = `@cosmatter/dsh-${name}-plugin`;
+    const profile: DshProfileStatus = {
+      ...snapshot(), installed_bundle_count: 6, installation_state: "partial",
+      packages: packages.map(entry => entry.package === bundle ? { ...entry, install_status: "missing_bundle" } : entry),
+    };
+    expect(dshReadIssue(command, profile, "ready")).toEqual({ kind: "repair", bundle });
+    // The status probe requires both tools. The other read commands need one.
+    const registry: NonNullable<DshProfileStatus["tool_registry_check"]> = {
+      schema_version: "cosmatter.dsh-tool-registry-check/v1", checked_at: "2026-11-19T02:00:00Z", dsh_version: "0.2.2",
+      matches_local_files: true, bundles: [bundle], registered_tools: command === "status" ? ["cosmatter_workflow_status"] : [],
+    };
+    const intact = { ...snapshot(), tool_registry_check: registry };
+    expect(dshReadIssue(command, intact, "ready")).toEqual({ kind: "verify", missingTools: [tool] });
+    expect(dshReadIssue(command, { ...intact, tool_registry_check: { ...registry, matches_local_files: false } }, "ready")).toBeNull();
+    expect(dshReadIssue(command, { ...intact, tool_registry_check: { ...registry, bundles: ["@cosmatter/dsh-policy-plugin"] } }, "ready")).toBeNull();
+    expect(dshReadIssue(command, { ...intact, tool_registry_check: { ...registry, registered_tools: [...registry.registered_tools, tool] } }, "ready")).toBeNull();
+    expect(dshReadIssue(command, profile, "unavailable")).toBeNull();
+    expect(dshReadIssue(name === "graph" ? "screening" : "evidence", profile, "ready")).toBeNull();
+  }
 });
 
 it("rejects inconsistent counts, package order, and leaked dependency values", () => {

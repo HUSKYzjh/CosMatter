@@ -16,11 +16,70 @@ from unittest.mock import MagicMock, patch
 from cosmatter.dsh_profile_status import (
     EXPECTED_DSH_PACKAGES, DshBundleRepairError, DshCompositionCheckError, _BUNDLE_TOOLS,
     check_dsh_composition, dsh_profile_status, open_dsh_workbench, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
-    read_dsh_catalogue, repair_dsh_bundles, resolve_dsh_executable, _run_dsh_diagnostic,
+    read_dsh_catalogue, repair_dsh_bundles, resolve_dsh_executable, _run_dsh_diagnostic, _run_isolated_dsh_probe,
 )
 
 
 class DshProfileStatusTests(unittest.TestCase):
+    def test_isolated_probe_timeout_survives_process_and_directory_cleanup(self) -> None:
+        for shutdown_timeout in (False, True):
+            for locked_directory in (False, True):
+                with (
+                    self.subTest(shutdown_timeout=shutdown_timeout, locked_directory=locked_directory),
+                    patch("cosmatter.dsh_profile_status.tempfile.TemporaryDirectory") as directory,
+                    patch.object(Path, "write_text"),
+                    patch("cosmatter.dsh_profile_status.subprocess.Popen") as popen,
+                    patch("cosmatter.dsh_profile_status.subprocess.run") as taskkill,
+                    patch("cosmatter.dsh_profile_status.os.killpg", create=True),
+                ):
+                    temporary = directory.return_value
+                    temporary.__enter__.return_value = "private-temp-dir"
+                    if locked_directory:
+                        temporary.__exit__.side_effect = PermissionError("private-locked-file")
+                    process = popen.return_value.__enter__.return_value
+                    timeout = subprocess.TimeoutExpired(["private-dsh", "private-arguments"], 60, output=b"private-output")
+                    stop_timeout = subprocess.TimeoutExpired(["private-stop-command"], 10)
+                    process.communicate.side_effect = [timeout, stop_timeout if shutdown_timeout else (b"", None)]
+                    if shutdown_timeout:
+                        taskkill.side_effect = stop_timeout
+                    with self.assertRaises(DshCompositionCheckError) as caught:
+                        _run_isolated_dsh_probe("private-dsh", Path("."), {}, "", {}, "RESULT ")
+                    expected = "The isolated DSH diagnostic timed out."
+                    if shutdown_timeout or locked_directory:
+                        expected += " Diagnostic cleanup did not finish."
+                    self.assertEqual(str(caught.exception), expected)
+                    self.assertTrue(caught.exception.__suppress_context__)
+                    temporary.__exit__.assert_called_once()
+                    self.assertIs(temporary.__exit__.call_args.args[1], timeout)
+                    if os.name == "nt":
+                        process.kill.assert_called_once_with()
+
+    def test_isolated_probe_preserves_interrupt_and_other_failures(self) -> None:
+        for error in (KeyboardInterrupt(), PermissionError("private-input")):
+            with (
+                self.subTest(error=type(error).__name__),
+                patch("cosmatter.dsh_profile_status.tempfile.TemporaryDirectory") as directory,
+                patch.object(Path, "write_text"),
+                patch("cosmatter.dsh_profile_status.subprocess.Popen") as popen,
+                patch("cosmatter.dsh_profile_status.subprocess.run") as taskkill,
+                patch("cosmatter.dsh_profile_status.os.killpg", create=True),
+            ):
+                temporary = directory.return_value
+                temporary.__enter__.return_value = "private-temp-dir"
+                stop_timeout = subprocess.TimeoutExpired(["private-stop-command"], 10)
+                popen.return_value.__enter__.return_value.communicate.side_effect = [error, stop_timeout]
+                taskkill.side_effect = stop_timeout
+                if isinstance(error, KeyboardInterrupt):
+                    temporary.__exit__.side_effect = PermissionError("private-locked-file")
+                    with self.assertRaises(KeyboardInterrupt) as caught:
+                        _run_isolated_dsh_probe("private-dsh", Path("."), {}, "", {}, "RESULT ")
+                    self.assertIs(caught.exception, error)
+                else:
+                    with self.assertRaisesRegex(DshCompositionCheckError, "could not complete") as caught:
+                        _run_isolated_dsh_probe("private-dsh", Path("."), {}, "", {}, "RESULT ")
+                    self.assertIs(caught.exception.__cause__, error)
+                temporary.__exit__.assert_called_once()
+
     def test_timed_out_diagnostic_releases_files_held_by_its_descendants(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

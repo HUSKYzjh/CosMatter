@@ -43,7 +43,7 @@ const TOOL_COPY: Readonly<Partial<Record<string, ToolCopy>>> = {
 const normalizeSearch = (text: string) => text.normalize("NFKC").toLowerCase();
 const TOOLS = packages.flatMap((bundle) => bundle.tools.map((name) => {
   const copy = TOOL_COPY[name];
-  const searchText = normalizeSearch([name, bundle.package, ...(copy?.label ?? []), copy?.descriptor].join(" "));
+  const searchText = normalizeSearch([name, bundle.package, ...(copy?.label ?? []), ...(copy?.note ?? []), copy?.descriptor].join(" "));
   return { name, bundle: bundle.package, copy, searchText };
 }));
 
@@ -119,6 +119,8 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
     createEffect(on([query, filter, stageFilter], () => { results.scrollTop = 0; }, { defer: true }));
   }
   const pluginById = createMemo(() => new Map(props.plugins.map((plugin) => [plugin.plugin_id, plugin])));
+  const authorizationFields = (copy?: ToolCopy) => copy?.descriptor
+    ? pluginById().get(copy.descriptor)?.required_authorizations ?? [] : [];
   const registry = createMemo(() => {
     const check = props.profile?.tool_registry_check;
     return (props.profileHealth === "ready" || props.profileHealth === "loading") && check?.matches_local_files
@@ -127,7 +129,11 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
   });
   const matchingTools = createMemo(() => {
     const words = normalizeSearch(query()).trim().split(/\s+/).filter(Boolean);
-    return TOOLS.filter(({ searchText }) => words.every((word) => searchText.includes(word)));
+    if (!words.length) return TOOLS;
+    return TOOLS.filter(({ copy, searchText }) => {
+      const fields = normalizeSearch(authorizationFields(copy).join(" "));
+      return words.every((word) => searchText.includes(word) || fields.includes(word));
+    });
   });
   const visibleTools = createMemo(() => {
     const stage = stageFilter();
@@ -225,7 +231,7 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
         <ul class="dsh-tool-list">
           <For each={visibleTools()}>{(tool) => {
             let summary!: HTMLElement;
-            const descriptor = () => tool.copy?.descriptor ? pluginById().get(tool.copy.descriptor) : undefined;
+            const authorizations = () => authorizationFields(tool.copy);
             const label = () => tool.copy ? x(...tool.copy.label) : tool.name;
             const registered = () => registry()?.bundles.has(tool.bundle) ? registry()?.tools.has(tool.name) : undefined;
             const needsRepair = () => {
@@ -270,9 +276,9 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
                   <code>{tool.bundle}</code>
                   <Show when={!needsRepair()}><p>{bundleState(tool.bundle)}</p></Show>
                   <Show when={tool.copy?.note}>{(note) => <p>{x(...note())}</p>}</Show>
-                  <Show when={descriptor()?.required_authorizations.length}>
+                  <Show when={authorizations().length}>
                     <div class="dsh-tool-consents"><strong>{x("所需授权字段", "Required authorization fields")}</strong>
-                      <For each={descriptor()?.required_authorizations}>{(authorization) => <code>{authorization}</code>}</For>
+                      <For each={authorizations()}>{(authorization) => <code>{authorization}</code>}</For>
                     </div>
                   </Show>
                   <Show when={command()}>{(line) => <div class="dsh-tool-terminal">

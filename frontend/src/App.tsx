@@ -2,7 +2,9 @@ import { For, Show, Suspense, batch, createEffect, createMemo, createSignal, laz
 
 import { FleetDecoration } from "./FleetDecoration";
 import { DshRunHandoff } from "./DshRunHandoff";
+import { DshReadProfile } from "./dshReadProfile";
 import { DshToolDialog } from "./DshToolDialog";
+import { localWorkbenchLocation } from "./dshLocalCommands";
 import type { RunArtifactIdentity } from "./RunArtifactRecord";
 import type { RunStatus } from "./localApi";
 import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget } from "./Launchpad";
@@ -334,7 +336,7 @@ export function App() {
   const selectedDocumentId = createMemo(() => documentIdForReviewablePaper(researchSession().selectedNode));
   const localApiUsable = createMemo(() => localApiEnabled() && apiCapabilityHealth() === "ready");
   const previewCanActOnRun = createMemo(() => previewAllowsRunAction(launchPreview(), liveRunId()));
-  const canOpenDshToolDialog = createMemo(() => localApiEnabled() && previewCanActOnRun() && view() !== "launch");
+  const canOpenDshToolDialog = createMemo(() => localApiEnabled() && (view() === "launch" ? Boolean(localWorkbenchLocation()) : previewCanActOnRun()));
   const dshEvidenceTarget = createMemo(() => {
     if (view() !== "reader" || !previewCanActOnRun()) return null;
     const session = researchSession();
@@ -2127,8 +2129,9 @@ export function App() {
     onCleanup(() => { disposed = true; localApiStatusRequestEpoch += 1; window.clearInterval(timer); });
   });
 
-  return <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+  return <DshReadProfile.Provider value={{ profile: dshProfile, health: dshProfileHealth, refresh: refreshDshProfile }}>
+    <div class={`workbench theme-${theme()} view-${view()}`}>
+    <Show when={view() === "launch"}><Launchpad onOpenDsh={canOpenDshToolDialog() ? () => setDshToolsOpen(true) : undefined} legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>
@@ -2325,11 +2328,13 @@ export function App() {
     </Suspense>
     </Show>
     <Show when={canOpenDshToolDialog() && dshToolsOpen()}>
-      <DshToolDialog locale={language()} plugins={harnessCatalogueHealth() === "ready" ? harnessPlugins() ?? [] : []}
+      <DshToolDialog initialView={view() === "launch" ? "session" : "catalogue"} locale={language()} plugins={harnessCatalogueHealth() === "ready" ? harnessPlugins() ?? [] : []}
         catalogueHealth={harnessCatalogueHealth()} onRefreshCatalogue={() => void refreshHarnessCatalogue()}
-        profile={dshProfile()} profileHealth={dshProfileHealth()} onRefreshProfile={() => void refreshDshProfile()} currentStage={dshCurrentStage()} runId={liveRunId()} evidence={dshEvidenceTarget()} onDismiss={() => setDshToolsOpen(false)} />
+        profile={dshProfile()} profileHealth={dshProfileHealth()} onRefreshProfile={() => void refreshDshProfile()}
+        currentStage={view() === "launch" ? null : dshCurrentStage()} runId={view() === "launch" ? null : liveRunId()} evidence={dshEvidenceTarget()} onDismiss={() => setDshToolsOpen(false)} />
     </Show>
-  </div>;
+    </div>
+  </DshReadProfile.Provider>;
 }
 
 

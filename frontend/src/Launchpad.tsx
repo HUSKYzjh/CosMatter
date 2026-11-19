@@ -46,7 +46,7 @@ const MODES: Array<{ id: LaunchMode; icon: string; zh: string; en: string; zhDet
   { id: "resume", icon: "↗", zh: "续航任务", en: "Resume", zhDetail: "本机运行 / 运行包", enDetail: "Local run / run package" },
 ];
 
-export function Launchpad(props: { legacyWorkbench?: boolean; onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; linkedRunId?: string; existingRunReadPending?: boolean; runArtifactRecord?: RunArtifactIdentity | null; onCloseRunArtifactRecord: () => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
+export function Launchpad(props: { onOpenDsh?: () => void; legacyWorkbench?: boolean; onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; linkedRunId?: string; existingRunReadPending?: boolean; runArtifactRecord?: RunArtifactIdentity | null; onCloseRunArtifactRecord: () => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
   const [foregroundIndex, setForegroundIndex] = createSignal(nextFleetIndex());
   const [mode, setMode] = createSignal<LaunchMode>(props.candidatePdfTarget ? "pdf" : props.linkedRunId ? "resume" : "question");
   const activeStage = () => stageForLaunchMode(mode());
@@ -187,9 +187,19 @@ export function Launchpad(props: { legacyWorkbench?: boolean; onQuestion: (missi
   return <main classList={{ launchpad: true, "launch-jumping": jumping() }}>
     <div class="launch-sky" aria-hidden="true"><i /><i /><i /><i /></div>
     <div class="launch-fleet-extract" ref={(node) => { fleetNode = node; }} aria-hidden="true"><img class="launch-fleet-main" src={launchFleetMasks[foregroundIndex()]} alt="" /><img class="launch-fleet-echo" src={launchFleetMasks[foregroundIndex()]} alt="" /></div>
-    <section class="launch-controls" aria-label={copy("起始页显示设置", "Launch display settings")}>
-      <div class="launch-control-group"><button classList={{ active: props.language === "zh" }} type="button" onClick={() => props.onLanguage("zh")} aria-label="切换为中文" title="中文">中</button><button classList={{ active: props.language === "en" }} type="button" onClick={() => props.onLanguage("en")} aria-label="Switch to English" title="English">En</button></div>
-      <div class="launch-control-group"><button classList={{ active: props.theme === "light" }} type="button" onClick={() => props.onTheme("light")} aria-label={copy("浅色主题", "Light theme")} title={copy("浅色", "Light")}>☀</button><button classList={{ active: props.theme === "dark" }} type="button" onClick={() => props.onTheme("dark")} aria-label={copy("深色主题", "Dark theme")} title={copy("深色", "Dark")}>☾</button><button classList={{ active: props.theme === "eye" }} type="button" onClick={() => props.onTheme("eye")} aria-label={copy("护眼主题", "Eye-care theme")} title={copy("护眼", "Eye care")}>◉</button></div>
+    <section class="launch-controls" classList={{ "has-dsh": Boolean(props.onOpenDsh) }} aria-label={copy("工作台工具与显示设置", "Workbench tools and display settings")}>
+      <Show when={props.onOpenDsh}><ActionButton class="launch-dsh-entry" size="sm" aria-haspopup="dialog" onClick={() => props.onOpenDsh?.()}>{copy("DSH 插件", "DSH plugins")}</ActionButton></Show>
+      <div class="launch-preferences">
+        <div class="launch-control-group" role="group" aria-label={copy("界面语言", "Language")}>
+          <button classList={{ active: props.language === "zh" }} type="button" aria-pressed={props.language === "zh"} onClick={() => props.onLanguage("zh")} aria-label="切换为中文" title="中文">中</button>
+          <button classList={{ active: props.language === "en" }} type="button" aria-pressed={props.language === "en"} onClick={() => props.onLanguage("en")} aria-label="Switch to English" title="English">En</button>
+        </div>
+        <div class="launch-control-group" role="group" aria-label={copy("显示主题", "Theme")}>
+          <button classList={{ active: props.theme === "light" }} type="button" aria-pressed={props.theme === "light"} onClick={() => props.onTheme("light")} aria-label={copy("浅色主题", "Light theme")} title={copy("浅色", "Light")}>☀</button>
+          <button classList={{ active: props.theme === "dark" }} type="button" aria-pressed={props.theme === "dark"} onClick={() => props.onTheme("dark")} aria-label={copy("深色主题", "Dark theme")} title={copy("深色", "Dark")}>☾</button>
+          <button classList={{ active: props.theme === "eye" }} type="button" aria-pressed={props.theme === "eye"} onClick={() => props.onTheme("eye")} aria-label={copy("护眼主题", "Eye-care theme")} title={copy("护眼", "Eye care")}>◉</button>
+        </div>
+      </div>
     </section>
 
     <section class="launch-hero">

@@ -123,16 +123,21 @@ CosMatter 插件补入 `tui` 的启用清单。返回工作台刷新安装状态
 末尾端口随工作台地址变化，例如 `cosmatter check-dsh-profile --verify-tools --loopback-port 8765`。
 当前端口核验通过后，舰桥提供「复制 DSH 启动命令」。在 CosMatter 终端运行
 `cosmatter open-dsh-workbench --port <当前端口>`，DSH 会打开本地网页，并为会话载入 `tui` 中已安装的七个 CosMatter 插件。
+首次使用可从本机工作台首页点「DSH 插件」。面板直接打开「DSH 会话」，根据当前端口给出补齐、核验或启动命令。首页的启动命令始终打开独立会话。要继续已有任务，可从任务页打开同一面板，复制带运行 ID 的启动命令。
+要在 DSH 创建第一项任务，提供研究问题、材料、目标性质和研究范围。工具 `cosmatter_mission_create` 返回 `workbench_url`，打开即可进入该次运行。
 在阅读页或文献星图，打开「DSH 工具与会话」并切到「DSH 会话」，即可看到当前运行 ID 和工作台端口。切回「工具目录」会保留搜索和展开的卡片，按 Esc 返回原页面。安装或核验未完成时，「DSH 会话」会给出对应操作，终端操作完成后点「刷新会话状态」即可。
 如果旧工作台缺少 DSH 近期任务链接接口，可在舰桥、会话面板或「续航任务」点击「复制新版工作台命令」。「续航任务」仍可独立读取和刷新最近任务列表。在装有新版 CosMatter 的终端运行 `cosmatter preview-ui --solid --api --port 0`，打开终端打印的地址。已打开任务时，命令会带上 `--open-run <运行 ID>`。在 Windows 项目虚拟环境中，如果 PowerShell 找不到 `cosmatter`，可从仓库根目录用 `.\.venv\Scripts\cosmatter.exe` 代替命令开头的 `cosmatter`。
 
 首次启用 DSH 时，按新页面显示的端口核验。如果已有回执来自其它端口，可展开「为什么显示其它端口的回执？」查看两个端口。浏览器拒绝写入剪贴板时，可在只读命令框内按 Ctrl+C 或 ⌘C 复制完整命令。
+
+工具目录可按中英文说明或当前契约显示的授权字段搜索，例如 `DeepSeek` 或 `metadata_provider_consent`。查看运行进度、工件、筛选或证据时，如果快照确认对应读取命令缺少插件文件或工具注册，页面会给出修复指引。修复后点「刷新插件状态」，即可在原处取得读取命令。
 DSH 网页使用系统分配的空闲端口，插件连接命令里指定的 CosMatter 端口。选择「在终端显示链接」会为启动命令附加 `--no-open`，可在指定浏览器中打开终端打印的本机登录链接。工作台分别显示本端口最近的核验结果。一个 profile 保留最近 16 个端口，插件或配置文件变化后应重新核验。
 Web 界面随 DSH 安装。已在 `tui` profile 中另装交互终端前端时，可用 `--surface tui`。若终端持续空白，按 Ctrl+C 后将同一条命令改为 `--surface web`。端口设置随该次会话生效，插件的超时和大小限制沿用本机配置。
 从已打开的任务复制命令时会附上 `--run-id`。在该会话调用 `cosmatter_workflow_status` 可以省略 `run_id`，也可显式指定另一条任务。
 隔离进程只调用 `cosmatter_plugin_catalogue` 读取静态目录，
 回执记录端口和上次结果。省略 `--loopback-port` 时只核验配置组合与工具注册。
 如果终端找不到 DSH，可加上 `--dsh-executable <本机启动器路径>`。
+若核验返回 `The isolated DSH diagnostic timed out.`，等本机高负载任务结束后，再核验同一端口。附带 `Diagnostic cleanup did not finish.` 表示临时探针的清理也遇到了问题。
 注册检查在临时 DSH 环境中加载 `tui` 已安装并完成配置组合的 CosMatter 包，读取 DSH 实际注册的工具名。
 舰桥显示逐包和逐工具结果。配置或编译后的插件文件变化时，需重新核验。
 日常 TUI 会话启动与当前任务派发各有独立的检查和回执。

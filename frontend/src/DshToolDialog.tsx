@@ -26,6 +26,7 @@ const SESSION_STATUS: Record<DshSessionReadiness, readonly [string, string]> = {
 };
 
 export function DshToolDialog(props: DshToolCatalogueProps & {
+  initialView?: DialogView;
   catalogueHealth: HarnessCatalogueHealth;
   onRefreshProfile: () => void;
   onRefreshCatalogue: () => void;
@@ -35,7 +36,7 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
   let heading!: HTMLHeadingElement;
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const initialStage = props.currentStage;
-  const [view, setView] = createSignal<DialogView>("catalogue");
+  const [view, setView] = createSignal<DialogView>(props.initialView ?? "catalogue");
   const location = localWorkbenchLocation();
   const port = location ? Number(location.port || "80") : null;
   const readiness = createMemo(() => dshSessionReadiness(props.profile, props.profileHealth, props.catalogueHealth, port));
@@ -76,7 +77,8 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
 
   onMount(() => {
     dialog.showModal();
-    const initialFocus = window.matchMedia("(pointer: coarse)").matches ? heading : dialog.querySelector<HTMLInputElement>('input[type="search"]');
+    const initialFocus = view() === "session" ? dialog.querySelector<HTMLButtonElement>("#dsh-session-tab")
+      : window.matchMedia("(pointer: coarse)").matches ? heading : dialog.querySelector<HTMLInputElement>('input[type="search"]');
     initialFocus?.focus();
   });
 
