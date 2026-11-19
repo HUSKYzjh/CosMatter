@@ -1,4 +1,5 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { DshCommandText } from "./DshCommandText";
+import { For, Show, createMemo } from "solid-js";
 import { packages } from "../../plugins/dsh-plugin-group.json";
 
 import type { DshProfileHealth, DshProfileStatus, HarnessAuthorization, HarnessCatalogueHealth, HarnessPluginDescriptor, OperationalTelemetry, WorkflowStageName } from "./localApi";
@@ -6,6 +7,8 @@ import { ActionButton, StatusBadge } from "./uiPrimitives";
 import type { UiLocale } from "./fleetRegistry";
 import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
 import { DshToolCatalogue } from "./DshToolCatalogue";
+import { createDshClipboard, DshManualCopy } from "./DshManualCopy";
+import { OtherPortReceiptHelp, WorkbenchUpdateCommand } from "./WorkbenchUpdateCommand";
 import { BUNDLE_REPAIR_COMMAND, dshProfileCheckCommand, localWorkbenchLocation } from "./dshLocalCommands";
 import { DshSessionLaunch } from "./DshSessionLaunch";
 import { DSH_TOOL_COUNT as TOOL_COUNT, dshSessionReadiness } from "./dshSessionReadiness";
@@ -70,21 +73,18 @@ export function HarnessCapabilityDeck(props: {
   let packageProof: HTMLDetailsElement | undefined;
   let packageSummary: HTMLElement | undefined;
   let terminalCopy: HTMLButtonElement | undefined;
-  const [copyFeedback, setCopyFeedback] = createSignal<{ command: string; copied: boolean } | null>(null);
-  const copyCommand = async (command: string) => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopyFeedback({ command, copied: true });
-    } catch {
-      setCopyFeedback({ command, copied: false });
-    }
+  const clipboard = createDshClipboard<"check" | "repair">();
+  const commandFeedback = (target: "check" | "repair") => {
+    const state = () => {
+      const feedback = clipboard.feedback();
+      return feedback?.target === target && feedback.source.isConnected ? feedback : null;
+    };
+    return <Show when={state()}>{(result) => <Show when={result().copied} fallback={<DshManualCopy locale={props.locale}
+      label={target === "check" ? x("DSH 核验命令", "DSH check command") : x("DSH 补齐命令", "DSH repair command")}
+      value={result().value} source={result().source} />}>
+      <p role="status">{x("已复制。", "Copied.")}</p>
+    </Show>}</Show>;
   };
-  const feedbackFor = (command: string) => {
-    const feedback = copyFeedback();
-    return feedback?.command === command ? feedback : null;
-  };
-  const copyStatus = (copied: boolean) => copied ? x("已复制。", "Copied.")
-    : x("剪贴板不可用，请选中命令手动复制。", "Clipboard unavailable. Select the command and copy it manually.");
   const composition = () => props.profile?.composition_check;
   const bundleListIncomplete = () => composition()?.matches_local_files === true
     && (composition()?.bundles.length ?? 0) < (props.profile?.expected_bundle_count ?? 0);
@@ -102,6 +102,7 @@ export function HarnessCapabilityDeck(props: {
     }
   });
   const registryLabel = createMemo(() => {
+    if (props.profileHealth === "legacy") return { tone: "attention" as const, text: x("待更新工作台", "Workbench update needed") };
     const check = registry();
     if (!check) return { tone: "neutral" as const, text: x("工具注册待核验", "Tool registration unchecked") };
     if (!check.matches_local_files) return { tone: "attention" as const, text: x("工具核验已过期", "Tool check out of date") };
@@ -129,8 +130,15 @@ export function HarnessCapabilityDeck(props: {
     const count = `${profile.installed_bundle_count}/${profile.expected_bundle_count}`;
     return { tone: profile.installation_state === "installed" ? "ready" as const : "attention" as const, copy: x(`已验证 ${count}`, `Verified ${count}`) };
   });
+  const sessionReadiness = createMemo(() => dshSessionReadiness(props.profile, props.profileHealth, props.health, loopbackPort));
   const activation = createMemo<ActivationVerdict>(() => {
-    const readiness = dshSessionReadiness(props.profile, props.profileHealth, props.health, loopbackPort);
+    const readiness = sessionReadiness();
+    if (readiness === "workbench-update") return {
+      state: "partial",
+      title: x("当前工作台缺少新版接口", "This workbench needs an update"),
+      detail: x("此端口的服务缺少 DSH 近期任务链接接口。启动新版工作台后，可继续核验和打开 DSH 会话。",
+        "The server on this port lacks the DSH recent-run links endpoint. Start the updated workbench to check and open DSH sessions."),
+    };
     if (readiness === "checking") return {
       state: "checking",
       title: x("正在核验 DSH 启用条件", "Checking DSH enablement conditions"),
@@ -252,6 +260,9 @@ export function HarnessCapabilityDeck(props: {
       <Show when={activation().state === "ready" && loopbackPort}>{(port) =>
         <DshSessionLaunch locale={props.locale} port={port()} runId={props.runId} />
       }</Show>
+      <OtherPortReceiptHelp locale={props.locale} runId={props.runId} readiness={sessionReadiness()}
+        port={loopbackPort} receiptPort={registry()?.loopback_check?.port} />
+      <Show when={props.profileHealth === "legacy" && loopbackPort}><WorkbenchUpdateCommand locale={props.locale} runId={props.runId} /></Show>
     </section>
     <Show when={props.health === "ready"} fallback={<div class="harness-catalogue-message"><p>{props.health === "loading"
       ? x("正在读取固定的本机能力契约；这不会加载插件、调用工具或授予执行权限。", "Reading the fixed local capability contracts. This does not load a plugin, call a tool, or grant execution permission.")
@@ -292,7 +303,7 @@ export function HarnessCapabilityDeck(props: {
             ? x(`已登记 ${runtime().dispatchCount} 次派发：完成 ${runtime().completedCount}，未完成 ${runtime().incompleteCount}，结果未知 ${runtime().unknownCount}。`, `${runtime().dispatchCount} dispatch(es) recorded: ${runtime().completedCount} completed, ${runtime().incompleteCount} incomplete, ${runtime().unknownCount} unknown.`)
             : x("没有运行级派发记录；目录与安装状态不会被当作执行证明。", "No runtime dispatch is recorded. Catalogue and installation status are never treated as proof of execution.")}</p>
         </section>
-        <Show when={props.profileHealth !== "disabled" && props.onRefreshProfile}>
+        <Show when={props.profileHealth !== "disabled" && props.profileHealth !== "legacy" && props.onRefreshProfile}>
           <section class="harness-composition-card" aria-label={x("DSH 终端核验", "DSH terminal checks")}>
             <div>
               <small>{x("终端核验", "TERMINAL CHECKS")}</small>
@@ -311,13 +322,13 @@ export function HarnessCapabilityDeck(props: {
               <span>DSH {check().dsh_version}</span>
             </p>}</Show>
             <div class="harness-installation-footer harness-copy-row">
-              <code>{checkCommand}</code>
-              <ActionButton ref={terminalCopy} size="sm" onClick={() => void copyCommand(checkCommand)}>{x("复制核验命令", "Copy check command")}</ActionButton>
+              <DshCommandText command={checkCommand} />
+              <ActionButton ref={terminalCopy} size="sm" onClick={(event) => void clipboard.copy("check", () => checkCommand, event.currentTarget)}>{x("复制核验命令", "Copy check command")}</ActionButton>
               <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在读取…", "Reading…")} onClick={() => props.onRefreshProfile?.()}>
                 {x("刷新核验结果", "Refresh check results")}
               </ActionButton>
             </div>
-            <Show when={feedbackFor(checkCommand)}>{(feedback) => <p role="status">{copyStatus(feedback().copied)}</p>}</Show>
+            {commandFeedback("check")}
             <Show when={registry() && !registry()!.matches_local_files}><p>{x("本机配置或插件文件已变化，请在终端重新核验。", "Local configuration or bundle files changed. Run the terminal check again.")}</p></Show>
           </section>
         </Show>
@@ -359,15 +370,15 @@ export function HarnessCapabilityDeck(props: {
             <p>{x("在 CosMatter 仓库根目录的终端运行。命令会补齐缺失或异常的本地链接，并将 CosMatter 插件加入 tui 启用清单。",
               "Run from the CosMatter repository root. The command repairs missing or invalid local links and enables the CosMatter bundles in TUI.")}</p>
             <div class="harness-copy-row">
-              <code>{BUNDLE_REPAIR_COMMAND}</code>
-              <ActionButton size="sm" onClick={() => void copyCommand(BUNDLE_REPAIR_COMMAND)}>{x("复制补齐命令", "Copy repair command")}</ActionButton>
+              <DshCommandText command={BUNDLE_REPAIR_COMMAND} />
+              <ActionButton size="sm" onClick={(event) => void clipboard.copy("repair", () => BUNDLE_REPAIR_COMMAND, event.currentTarget)}>{x("复制补齐命令", "Copy repair command")}</ActionButton>
               <Show when={props.onRefreshProfile}>
                 <ActionButton size="sm" onClick={() => { packageSummary?.focus(); props.onRefreshProfile?.(); }}>
                   {x("刷新安装状态", "Refresh installation status")}
                 </ActionButton>
               </Show>
             </div>
-            <Show when={feedbackFor(BUNDLE_REPAIR_COMMAND)}>{(feedback) => <p role="status">{copyStatus(feedback().copied)}</p>}</Show>
+            {commandFeedback("repair")}
           </section>
         </Show>
         <p>{x(

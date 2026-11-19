@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createResource, createSignal } from "solid-js";
 import { DshRecentRunsHandoff } from "./DshRunHandoff";
+import { WorkbenchUpdateCommand } from "./WorkbenchUpdateCommand";
 import { getRecentLocalRuns, type RecentLocalRun } from "./localApi";
 import { ActionButton, StatusBadge } from "./uiPrimitives";
 import type { UiLocale } from "./fleetRegistry";
@@ -9,6 +10,7 @@ const FIRST_PAGE_SIZE = 4;
 export function RecentLocalRuns(props: {
   locale: UiLocale;
   listOnMount: boolean;
+  legacyWorkbench?: boolean;
   activeRunId?: string | null;
   openingRunId?: string;
   disabled: boolean;
@@ -63,6 +65,9 @@ export function RecentLocalRuns(props: {
         </ActionButton>
       </Show>
     </Show>
-    <DshRecentRunsHandoff locale={props.locale} />
+    <Show when={props.legacyWorkbench} fallback={<DshRecentRunsHandoff locale={props.locale} />}>
+      <p>{x("此工作台缺少 DSH 近期任务链接接口。", "This workbench lacks the DSH recent-run links endpoint.")}</p>
+      <WorkbenchUpdateCommand locale={props.locale} runId={props.activeRunId} />
+    </Show>
   </section>;
 }

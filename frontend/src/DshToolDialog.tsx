@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 import { DshToolCatalogueContent, type DshToolCatalogueProps } from "./DshToolCatalogue";
 import { DshCommandRow, DshSessionLaunch } from "./DshSessionLaunch";
+import { OtherPortReceiptHelp, WorkbenchUpdateCommand } from "./WorkbenchUpdateCommand";
 import { BUNDLE_REPAIR_COMMAND, dshProfileCheckCommand, localWorkbenchLocation } from "./dshLocalCommands";
 import { dshSessionReadiness, type DshSessionReadiness } from "./dshSessionReadiness";
 import type { HarnessCatalogueHealth } from "./localApi";
@@ -11,6 +12,7 @@ type DialogView = typeof views[number];
 
 const SESSION_STATUS: Record<DshSessionReadiness, readonly [string, string]> = {
   checking: ["正在读取插件状态…", "Reading plugin status…"],
+  "workbench-update": ["当前端口的工作台缺少 DSH 近期任务链接接口。", "The workbench on this port lacks the DSH recent-run links endpoint."],
   disconnected: ["请在已连接本机 API 的工作台查看会话状态。", "Open a workbench connected to the local API to check this session."],
   "repair-files": ["本机插件安装未齐。", "Some local plugin bundles need repair."],
   "profile-unavailable": ["未能读取本机插件安装状态。", "The local plugin installation status is unavailable."],
@@ -97,6 +99,7 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
     <div class="dsh-dialog-session" role="tabpanel" id="dsh-session-panel" aria-labelledby="dsh-session-tab" hidden={view() !== "session"}>
       <Show when={readiness() === "ready" && port} fallback={<>
         <p role="status">{x(...SESSION_STATUS[readiness()])}</p>
+        <Show when={readiness() === "workbench-update"}><WorkbenchUpdateCommand locale={props.locale} runId={props.runId} /></Show>
         <Show when={recoveryCommand()}>{(command) => <>
           <p>{command() === BUNDLE_REPAIR_COMMAND
             ? x("在 CosMatter 仓库根目录运行补齐命令，然后刷新会话状态。", "Run the repair command from the CosMatter repository root, then refresh the session status.")
@@ -109,6 +112,8 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
             {readiness() === "catalogue-unavailable" ? x("重试目录连接", "Retry catalogue connection") : x("刷新会话状态", "Refresh session status")}
           </ActionButton>
         </Show>
+        <OtherPortReceiptHelp locale={props.locale} runId={props.runId} readiness={readiness()}
+          port={port} receiptPort={props.profile?.tool_registry_check?.loopback_check?.port} />
       </>}>{(localPort) => <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId} />}</Show>
     </div>
   </dialog>;

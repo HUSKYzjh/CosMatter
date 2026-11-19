@@ -36,7 +36,7 @@ import { candidatePdfAction } from "./paperPdfIntake";
 import { queuedResumeCanCommit } from "./resumeRequestGate";
 import { candidateFulltextGate } from "./candidateFulltextGate";
 import { completedPrivateSourceMapMatchesPaper, screeningAllowsSourceReview } from "./currentPaperReviewRoute";
-import { getDshProfileStatus, getFacilityContractCatalogue, getHarnessPluginCatalogue, getOperationalTelemetry, getReminderBoard, getStageContract, getWorkflowDag, isDshProfileStatus, isFacilityContractCatalogue, isHarnessPluginCatalogue, isLocalApiStatus, isReminderBoard, type DshProfileHealth, type DshProfileStatus, type FacilityCatalogueHealth, type FacilityContractManifest, type HarnessCatalogueHealth, type HarnessPluginDescriptor, type OperationalTelemetry, type ReminderBoard, type StageContract, type WorkflowDag } from "./localApi";
+import { getDshProfileStatus, getFacilityContractCatalogue, getHarnessPluginCatalogue, getOperationalTelemetry, getReminderBoard, getStageContract, getWorkflowDag, isFacilityContractCatalogue, isHarnessPluginCatalogue, isLocalApiStatus, isReminderBoard, type DshProfileHealth, type DshProfileStatus, type FacilityCatalogueHealth, type FacilityContractManifest, type HarnessCatalogueHealth, type HarnessPluginDescriptor, type OperationalTelemetry, type ReminderBoard, type StageContract, type WorkflowDag } from "./localApi";
 import { currentStage, runtimeProjectionAttention, runtimeProjectionReadable, type RuntimeProjectionHealth } from "./runtimeProjection";
 import { runtimeProjectionSnapshotFreshness } from "./runtimeProjectionFreshness";
 import { workflowDagRail } from "./workflowDagProjection";
@@ -1448,11 +1448,10 @@ export function App() {
     }
     setDshProfileHealth("loading");
     try {
-      const status = await getDshProfileStatus();
+      const { profile, health } = await getDshProfileStatus();
       if (requestEpoch !== dshProfileRequestEpoch) return;
-      if (!isDshProfileStatus(status)) throw new Error("invalid DSH profile snapshot");
-      setDshProfile(status);
-      setDshProfileHealth("ready");
+      setDshProfile(profile);
+      setDshProfileHealth(health);
     } catch {
       if (requestEpoch !== dshProfileRequestEpoch) return;
       setDshProfile(null);
@@ -2129,7 +2128,7 @@ export function App() {
   });
 
   return <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+    <Show when={view() === "launch"}><Launchpad legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>

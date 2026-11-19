@@ -4,14 +4,15 @@ import type { DshProfileHealth, DshProfileStatus, HarnessCatalogueHealth } from 
 export const DSH_TOOL_COUNT = packages.reduce((total, bundle) => total + bundle.tools.length, 0);
 
 export type DshSessionReadiness =
-  | "checking" | "disconnected" | "repair-files" | "profile-unavailable" | "catalogue-unavailable"
+  | "checking" | "disconnected" | "workbench-update" | "repair-files" | "profile-unavailable" | "catalogue-unavailable"
   | "composition-unchecked" | "repair-composition" | "composition-check" | "registry-check" | "loopback-check" | "ready";
 
 export function dshSessionReadiness(
   profile: DshProfileStatus | null, profileHealth: DshProfileHealth, catalogueHealth: HarnessCatalogueHealth, port: number | null,
 ): DshSessionReadiness {
   if (profileHealth === "loading" || catalogueHealth === "loading") return "checking";
-  const snapshot = profileHealth === "ready" ? profile : null;
+  if (port && profileHealth === "legacy" && profile) return "workbench-update";
+  const snapshot = profileHealth === "ready" || profileHealth === "legacy" ? profile : null;
   if (snapshot && snapshot.installation_state !== "unavailable" && snapshot.installed_bundle_count < snapshot.expected_bundle_count) {
     return "repair-files";
   }

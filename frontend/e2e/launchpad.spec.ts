@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { resolve } from "node:path";
 import { stageContractFixture } from "../src/stageContractFixture";
 import dshPluginGroup from "../../plugins/dsh-plugin-group.json" with { type: "json" };
@@ -6,6 +6,15 @@ import dshPluginGroup from "../../plugins/dsh-plugin-group.json" with { type: "j
 const routeDiagnosticsExport = resolve(process.cwd(), "..", "examples", "ui-demo", "route_diagnostics.json");
 const workspaceLoad = { timeout: 15_000 };
 const lazyWorkspaceContentLoad = { timeout: 30_000 };
+
+async function expectManualCopy(field: Locator, value: string) {
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(value);
+  expect(await field.evaluate((element: HTMLTextAreaElement) => [element.selectionStart, element.selectionEnd])).toEqual([0, value.length]);
+  await field.press("ControlOrMeta+c");
+  await expect.poll(() => field.page().evaluate(() => navigator.clipboard.readText())).toBe(value);
+}
+
 const operationContracts = {
   schema_version: "cosmatter.operation-parameter-contracts/v1",
   trust_status: "static_parameter_contracts_not_execution_authorization",
@@ -345,8 +354,8 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await page.evaluate(() => Object.defineProperty(navigator.clipboard, "writeText", {
     value: () => Promise.reject(new DOMException("Clipboard access denied", "NotAllowedError")),
   }));
-  await matching.getByRole("button", { name: "复制工具名" }).click();
-  await expect(matching.locator(".dsh-tool-manual-copy")).toHaveText("cosmatter_research_query_execute");
+  await matching.getByRole("button", { name: "复制工具名" }).press("Enter");
+  await expectManualCopy(matching.getByRole("textbox", { name: "DSH 工具名" }), "cosmatter_research_query_execute");
   expect(await deck.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await search.fill("nonexistent");
@@ -370,6 +379,69 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await filter.selectOption("read");
   await expect(tools.locator(".dsh-tool-item > summary code")).toHaveText(["cosmatter_stage_contract", "cosmatter_artifact_manifest"]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test("offers the updated workbench on a legacy server and keeps the selected run", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.route("**/api/status", route => route.fulfill({ json: {
+    api_mode: "loopback_only", operation_contracts: operationContracts,
+    providers: { deepseek: false, sciverse: false, mineru: false, openalex: false, crossref: true, crossref_polite_contact: false },
+  } }));
+  await page.route("**/api/plugins", route => route.fulfill({ json: dshCatalogueFixture }));
+  await page.route("**/api/dsh-profile", route => route.fulfill({ json: dshProfileSnapshot }));
+  const unknownRoute = "<!DOCTYPE HTML><html><body><p>Error code: 404</p><p>Message: Unknown local API route.</p></body></html>";
+  await page.route(url => url.pathname === "/api/recent-run-links" && url.search === "?probe=1",
+    route => route.fulfill({ status: 404, body: unknownRoute,
+      headers: { "content-type": "text/html;charset=utf-8", "content-length": String(unknownRoute.length) } }));
+  let listAvailable = false;
+  await page.route("**/api/recent-runs", route => listAvailable
+    ? route.fulfill({ json: { schema_version: "cosmatter.recent-local-runs/v1", runs: [] } })
+    : route.fulfill({ status: 503 }));
+  const command = "cosmatter preview-ui --solid --api --port 0";
+  const copyUpdate = async (region: Locator, expected: string) => {
+    const update = region.getByRole("region", { name: "启动新版工作台" });
+    await expect(update.locator("code")).toHaveText(expected);
+    await update.getByRole("button", { name: "复制新版工作台命令" }).click();
+    await expect(update.getByRole("status")).toHaveText("已复制。");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected);
+  };
+
+  await page.goto("/?api=local");
+  await page.getByRole("button", { name: /^续航任务/ }).click();
+  const recent = page.getByRole("region", { name: "最近的本机任务" });
+  await expect(recent).toContainText("此工作台缺少 DSH 近期任务链接接口");
+  await expect(recent).toContainText("无法读取最近任务。可以刷新列表，或按运行 ID 打开。");
+  await copyUpdate(recent, command);
+  listAvailable = true;
+  await recent.getByRole("button", { name: "刷新列表" }).click();
+  await expect(recent).toContainText("本机暂无已保存的研究任务。");
+  await expect(recent).not.toContainText("无法读取最近任务");
+  await expect(recent.getByRole("button", { name: "复制新版工作台命令" })).toBeVisible();
+
+  await page.goto("/?api=local");
+  await page.getByRole("button", { name: /BFO-01/ }).click();
+  await page.getByRole("button", { name: "仅进入本机编排" }).click();
+  const verdict = page.getByRole("region", { name: "DSH 启用结论" });
+  await expect(verdict).toContainText("当前工作台缺少新版接口", workspaceLoad);
+  await copyUpdate(verdict, command);
+  await expect(verdict.getByRole("button", { name: "前往终端核验" })).toHaveCount(0);
+  await expect(verdict).not.toContainText("cosmatter check-dsh-profile");
+
+  const runId = "saved_legacy_run";
+  const { readFile } = await import("node:fs/promises");
+  const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
+  await page.route(`**/api/runs/${runId}/ui`, route => route.fulfill({ json: bundle }));
+  await page.route(`**/api/runs/${runId}/status`, route => route.fulfill({ json: {
+    run_id: runId, mission_id: bundle.mission.mission_id, state: "INTAKE",
+  } }));
+  await page.goto(`/?api=local#run=${runId}`);
+  await expect(page.locator(".rail-run-id code")).toHaveText(runId, workspaceLoad);
+  await page.getByRole("button", { name: "DSH 工具与会话" }).click();
+  const dialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
+  await dialog.getByRole("tab", { name: "DSH 会话" }).click();
+  const session = dialog.getByRole("tabpanel", { name: "DSH 会话" });
+  await copyUpdate(session, command + " --open-run " + runId);
+  await expect(session.getByRole("button", { name: "复制核验命令" })).toHaveCount(0);
 });
 
 test("rechecks a missing DSH bundle while the catalogue is unavailable", async ({ page }) => {
@@ -494,6 +566,8 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await verdict.getByRole("button", { name: "重试目录连接" }).press("Enter");
   await expect(deck).toHaveClass(/state-ready/);
   await expect(verdict).toContainText("已注册 2/20");
+  const portHelp = verdict.locator("details.dsh-port-help");
+  await expect(portHelp).toHaveCount(0);
   await expect(packageProof.locator("li").first().locator(".harness-package-state b")).toHaveText("已验证");
   await expect(deck.locator(".harness-activation-track")).toContainText("上次组合 7/7");
   await expect(composition).toContainText("已注册 2/20");
@@ -524,11 +598,21 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await expect(verdict).toHaveClass(/state-partial/);
   const sessionLaunch = verdict.getByRole("region", { name: "打开 DSH 会话" });
   await expect(sessionLaunch).toHaveCount(0);
+  await expect(portHelp).toHaveCount(0);
+  loopbackMatchesPort = false;
+  await composition.getByRole("button", { name: "刷新核验结果" }).click();
+  await expect(portHelp.locator("summary")).toBeVisible();
+  await expect(portHelp).not.toHaveAttribute("open", "");
+  await portHelp.locator("summary").press("Enter");
+  await expect(portHelp).toContainText(`工作台在端口 ${port}，收到的回执来自端口 8765`);
+  await expect(portHelp.getByRole("button", { name: "复制新版工作台命令" })).toBeVisible();
   await verdict.getByRole("button", { name: "前往终端核验" }).press("Enter");
   await expect(composition.getByRole("button", { name: "复制核验命令" })).toBeFocused();
+  loopbackMatchesPort = true;
   loopbackPassed = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(verdict).toHaveClass(/state-ready/);
+  await expect(portHelp).toHaveCount(0);
   await expect(verdict).toContainText("插件注册与本机连通已核验");
   await expect(sessionLaunch).toContainText(`端口 ${port}`);
   await sessionLaunch.getByRole("button", { name: "复制 DSH 启动命令" }).press("Enter");
@@ -544,6 +628,14 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await graphTool.locator("summary").press("Enter");
   await expect(graphTool.locator("summary")).toContainText("此插件未进入 tui 配置组合");
   await expect(graphTool.getByRole("button", { name: "复制补齐命令" })).toBeVisible();
+  await page.evaluate(() => Object.defineProperty(navigator.clipboard, "writeText", {
+    value: () => Promise.reject(new DOMException("Clipboard access denied", "NotAllowedError")),
+  }));
+  await repair.getByRole("button", { name: "复制补齐命令" }).press("Enter");
+  await expectManualCopy(repair.getByRole("textbox", { name: "DSH 补齐命令" }), "cosmatter repair-dsh-bundles");
+  await composition.getByRole("button", { name: "复制核验命令" }).press("Enter");
+  await expectManualCopy(composition.getByRole("textbox", { name: "DSH 核验命令" }), `cosmatter check-dsh-profile --verify-tools --loopback-port ${port}`);
+  await expect(repair.getByRole("textbox")).toHaveCount(0);
   filesChanged = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(composition).toContainText("工具核验已过期");
@@ -919,7 +1011,7 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
     value: () => Promise.reject(new DOMException("Clipboard access denied", "NotAllowedError")),
   }));
   await handoff.getByRole("button", { name: "复制 DSH 命令" }).click();
-  await expect(handoff.getByRole("status")).toHaveText("剪贴板不可用，可选中上方命令复制。");
+  await expectManualCopy(handoff.getByRole("textbox", { name: "DSH 命令" }), command);
   expect(await handoff.evaluate((element) => element.scrollWidth === element.clientWidth)).toBe(true);
   await page.getByRole("link", { name: "CosMatter", exact: true }).click();
   expect(new URL(page.url()).hash).toBe("");
@@ -940,11 +1032,16 @@ test("finds recent local missions without a run ID and reuses the selected run",
   const runId = "saved_run_05";
   let installed = false;
   let catalogueAvailable = false;
-  let verified = false;
+  let portCheck: "unverified" | "no-receipt" | "other" | "current" = "unverified";
   await page.route("**/api/plugins", route => catalogueAvailable
     ? route.fulfill({ json: dshCatalogueFixture }) : route.fulfill({ status: 503 }));
   await page.route("**/api/dsh-profile", route => {
-    if (verified) return route.fulfill({ json: verifiedDshProfile(Number(new URL(route.request().url()).port)) });
+    if (portCheck !== "unverified") {
+      const port = Number(new URL(route.request().url()).port);
+      const profile = verifiedDshProfile(portCheck === "other" ? 8765 : port);
+      if (portCheck === "no-receipt") return route.fulfill({ json: { ...profile, tool_registry_check: { ...profile.tool_registry_check, loopback_check: undefined } } });
+      return route.fulfill({ json: profile });
+    }
     if (installed) return route.fulfill({ json: dshProfileSnapshot });
     return route.fulfill({ json: {
       ...dshProfileSnapshot, installation_state: "partial", installed_bundle_count: 6,
@@ -1001,11 +1098,25 @@ test("finds recent local missions without a run ID and reuses the selected run",
   await command.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
   await expect(command.getByRole("status")).toHaveText("DSH 命令已复制。");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(expectedCommand);
-  await page.evaluate(() => Object.defineProperty(navigator.clipboard, "writeText", {
-    value: () => Promise.reject(new DOMException("Clipboard access denied", "NotAllowedError")),
-  }));
-  await command.getByRole("button", { name: "复制 DSH 命令" }).click();
-  await expect(command.getByRole("status")).toHaveText("剪贴板不可用，可选中上方命令复制。");
+  await page.evaluate(() => {
+    let delayFirstDenial = true;
+    Object.defineProperty(navigator.clipboard, "writeText", { value: () => {
+      const error = new DOMException("Clipboard access denied", "NotAllowedError");
+      if (!delayFirstDenial) return Promise.reject(error);
+      delayFirstDenial = false;
+      return new Promise((_, reject) => window.addEventListener("test:deny-clipboard", () => reject(error), { once: true }));
+    } });
+  });
+  await command.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
+  await page.keyboard.press("Shift+Tab");
+  await expect(command.locator("summary")).toBeFocused();
+  await page.evaluate(() => window.dispatchEvent(new Event("test:deny-clipboard")));
+  const manualCommand = command.getByRole("textbox", { name: "DSH 命令" });
+  await expect(manualCommand).toBeVisible();
+  await expect(command.locator("summary")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expectManualCopy(manualCommand, expectedCommand);
   expect(count).toBe(1);
   await list.getByRole("button", { name: "刷新列表" }).click();
   await expect(list.getByRole("listitem")).toHaveCount(4);
@@ -1035,8 +1146,7 @@ test("finds recent local missions without a run ID and reuses the selected run",
   const launch = panel.getByRole("button", { name: "复制 DSH 启动命令" });
   const refresh = panel.getByRole("button", { name: "刷新会话状态" });
   await panel.getByRole("button", { name: "复制补齐命令" }).press("Enter");
-  await expect(panel.getByText("剪贴板不可用，请选中命令手动复制。", { exact: true })).toBeVisible();
-  await expect(panel.locator("code")).toHaveText("cosmatter repair-dsh-bundles");
+  await expectManualCopy(panel.getByRole("textbox", { name: "DSH 命令" }), "cosmatter repair-dsh-bundles");
   await expect(launch).toHaveCount(0);
   installed = true;
   await refresh.press("Enter");
@@ -1047,11 +1157,30 @@ test("finds recent local missions without a run ID and reuses the selected run",
   await retry.press("Enter");
   await expect(panel.getByRole("button", { name: "复制核验命令" })).toBeVisible();
   await expect(panel.locator("code")).toHaveText(`cosmatter check-dsh-profile --verify-tools --loopback-port ${new URL(graphUrl).port}`);
+  await expect(panel.getByRole("textbox", { name: "DSH 命令" })).toHaveCount(0);
   await expect(launch).toHaveCount(0);
-  verified = true;
+  const portHelp = panel.locator("details.dsh-port-help");
+  portCheck = "no-receipt";
+  await refresh.press("Enter");
+  await expect(panel.getByText("当前工作台端口的连通性待核验。", { exact: true })).toBeVisible();
+  await expect(portHelp).toHaveCount(0);
+  portCheck = "other";
+  await refresh.press("Enter");
+  await expect(portHelp.locator("summary")).toBeVisible();
+  await expect(portHelp).not.toHaveAttribute("open", "");
+  await expect(panel.getByRole("button", { name: "复制核验命令" })).toBeVisible();
+  await portHelp.locator("summary").press("Enter");
+  await expect(portHelp).toContainText(`工作台在端口 ${new URL(graphUrl).port}，收到的回执来自端口 8765`);
+  await expect(portHelp.locator("code")).toHaveText(`cosmatter preview-ui --solid --api --port 0 --open-run ${runId}`);
+  portCheck = "current";
   await refresh.press("Enter");
   await expect(launch).toBeVisible();
+  await expect(portHelp).toHaveCount(0);
   await expect(sessionTab).toBeFocused();
+  await launch.press("Enter");
+  await expectManualCopy(panel.getByRole("textbox", { name: "DSH 命令" }), `cosmatter open-dsh-workbench --port ${new URL(graphUrl).port} --run-id ${runId}`);
+  await panel.getByRole("radio", { name: "在终端显示链接" }).check();
+  await expect(panel.getByRole("textbox", { name: "DSH 命令" })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(opener).toBeFocused();
   await expect(page).toHaveURL(graphUrl);
@@ -1676,13 +1805,13 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await evidenceCard.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
   await expect(commandPreview).toBeVisible();
   await expect(commandPreview).toHaveText(`cosmatter dsh-evidence '${cardLink}'`);
-  await expect(evidenceCard.getByText("剪贴板不可用，可在下方选中命令复制。", { exact: true })).toBeVisible();
+  await expectManualCopy(evidenceCard.getByRole("textbox", { name: "DSH 命令" }), `cosmatter dsh-evidence '${cardLink}'`);
   expect(await evidenceCard.evaluate((element) => {
     const { left, right } = element.getBoundingClientRect();
     return left >= 0 && right <= document.documentElement.clientWidth && element.scrollWidth <= element.clientWidth;
   })).toBe(true);
   await evidenceCard.getByRole("button", { name: "复制证据链接" }).click();
-  await expect(evidenceCard.getByRole("textbox", { name: "证据链接", exact: true })).toHaveValue(cardLink);
+  await expectManualCopy(evidenceCard.getByRole("textbox", { name: "证据链接", exact: true }), cardLink);
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
   markdownReady = false;
   await page.reload();

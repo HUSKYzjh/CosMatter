@@ -1,11 +1,13 @@
+import { DshCommandText } from "./DshCommandText";
 import { For, Show, batch, createEffect, createMemo, createSignal, createUniqueId, on } from "solid-js";
 import { packages } from "../../plugins/dsh-plugin-group.json";
 import { continuationStageLabel } from "./continuationStage";
 import { DSH_STAGE_NOTES, DSH_STAGE_TOOLS } from "./dshStageTools";
-import { BUNDLE_REPAIR_COMMAND, dshCatalogueCommand, dshProfileCheckCommand, localWorkbenchLocation, type DshEvidenceTarget } from "./dshLocalCommands";
+import { BUNDLE_REPAIR_COMMAND, dshCatalogueCommand, dshProfileCheckCommand, localWorkbenchLocation, updatedWorkbenchCommand, type DshEvidenceTarget } from "./dshLocalCommands";
 import type { UiLocale } from "./fleetRegistry";
 import type { DshProfileHealth, DshProfileStatus, HarnessPluginDescriptor, WorkflowStageName } from "./localApi";
 import { ActionButton, StatusBadge } from "./uiPrimitives";
+import { createDshClipboard, DshManualCopy } from "./DshManualCopy";
 
 type Access = "read" | "local" | "review" | "external";
 type ToolCopy = {
@@ -52,8 +54,12 @@ const ACCESS_LABELS: Record<Access, readonly [string, string]> = {
   external: ["需逐任务授权", "Mission authorization required"],
 };
 const ACCESS_TYPES = Object.keys(ACCESS_LABELS) as Access[];
-type CommandKind = "repair" | "verify" | "read";
+type CommandKind = "repair" | "verify" | "read" | "update";
 const COMMAND_COPY: Record<CommandKind, Record<"hint" | "button" | "copied", readonly [string, string]>> = {
+  update: {
+    hint: ["此工作台缺少 DSH 近期任务链接接口。在已更新的 CosMatter 环境中新开终端运行命令，再打开终端打印的地址。", "This workbench lacks the DSH recent-run links endpoint. Run this in a new terminal in your updated CosMatter environment, then open the printed URL."],
+    button: ["复制新版工作台命令", "Copy workbench command"], copied: ["工作台命令已复制。", "Workbench command copied."],
+  },
   repair: {
     hint: ["在 CosMatter 仓库根目录运行补齐命令，再刷新本卡。", "Run the repair from the CosMatter repository root, then refresh this card."],
     button: ["复制补齐命令", "Copy repair command"], copied: ["补齐命令已复制。", "Repair command copied."],
@@ -103,7 +109,7 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
   const [query, setQuery] = createSignal("");
   const [filter, setFilter] = createSignal<Access | "all">("all");
   const [stageFilter, setStageFilter] = createSignal<WorkflowStageName | "all">(props.initialStage ?? "all");
-  const [clipboard, setClipboard] = createSignal<{ name: string; kind: "name" | "command"; value: string; copied: boolean } | null>(null);
+  const clipboard = createDshClipboard<{ name: string; kind: "name" | "command" }>();
   let searchInput!: HTMLInputElement;
   let results!: HTMLDivElement;
   const searchId = createUniqueId();
@@ -164,14 +170,6 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
     if (checkOutdated()) return x("本机文件已变化，待复核", "Local files changed; recheck needed");
     if (!check) return x("安装文件已验证，待核验组合", "Files verified; composition unchecked");
     return x("安装文件与 tui 配置组合已核验", "Files and TUI composition verified");
-  };
-  const copyTool = async (name: string, kind: "name" | "command", value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setClipboard({ name, kind, value, copied: true });
-    } catch {
-      setClipboard({ name, kind, value, copied: false });
-    }
   };
 
   return <div class="dsh-tool-body">
@@ -237,19 +235,21 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
               return status !== "verified" || Boolean(composition?.matches_local_files && !composition.bundles.includes(tool.bundle));
             };
             const commandKind = (): CommandKind => {
+              if (location && props.profileHealth === "legacy" && tool.name === "cosmatter_recent_runs") return "update";
               if (checkCommand && needsRepair()) return "repair";
               if (checkCommand && (registered() === false || checkOutdated())) return "verify";
               return "read";
             };
             const commandCopy = () => COMMAND_COPY[commandKind()];
             const command = createMemo(() => {
+              if (commandKind() === "update") return updatedWorkbenchCommand(props.runId);
               if (commandKind() === "repair") return BUNDLE_REPAIR_COMMAND;
               if (commandKind() === "verify") return checkCommand;
               return dshCatalogueCommand(tool.name, props.runId, props.evidence);
             });
             const toolStatus = () => {
-              const status = clipboard();
-              return status?.name === tool.name && (status.kind === "name" || status.value === command()) ? status : null;
+              const status = clipboard.feedback();
+              return status?.target.name === tool.name && status.source.isConnected ? status : null;
             };
             return <li>
               <details class="harness-disclosure dsh-tool-item">
@@ -279,26 +279,23 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
                     <p>{commandKind() === "verify" && checkOutdated()
                       ? x("在终端重新核验当前插件文件和注册状态，再刷新本卡。", "Run the check against the current bundle files and tool registry, then refresh this card.")
                       : x(...commandCopy().hint)}</p>
-                    <code>{line()}</code>
+                    <DshCommandText command={line()} />
                   </div>}</Show>
                   <div class="dsh-tool-actions">
-                    <Show when={command()}>{(line) =>
-                      <ActionButton size="sm" onClick={() => void copyTool(tool.name, "command", line())}>{x(...commandCopy().button)}</ActionButton>
-                    }</Show>
+                    <Show when={command()}>
+                      <ActionButton size="sm" onClick={(event) => void clipboard.copy({ name: tool.name, kind: "command" }, command, event.currentTarget)}>{x(...commandCopy().button)}</ActionButton>
+                    </Show>
                     <Show when={props.onRefreshProfile && (commandKind() !== "read" || props.profileHealth === "unavailable" || props.profile?.installation_state === "unavailable")}>
                       <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在读取…", "Reading…")}
                         onClick={() => { summary.focus(); props.onRefreshProfile?.(); }}>{x("刷新插件状态", "Refresh bundle status")}</ActionButton>
                     </Show>
-                    <ActionButton size="sm" variant={command() ? "quiet" : "secondary"} onClick={() => void copyTool(tool.name, "name", tool.name)}>{x("复制工具名", "Copy tool name")}</ActionButton>
+                    <ActionButton size="sm" variant={command() ? "quiet" : "secondary"} onClick={(event) => void clipboard.copy({ name: tool.name, kind: "name" }, () => tool.name, event.currentTarget)}>{x("复制工具名", "Copy tool name")}</ActionButton>
                   </div>
-                  <Show when={toolStatus()}>{(status) => <>
-                    <p role="status">{status().kind === "command"
-                      ? status().copied ? x(...commandCopy().copied)
-                        : x("剪贴板不可用，可选中上方命令复制。", "Clipboard unavailable. Select the command above to copy it.")
-                      : status().copied ? x("工具名已复制。", "Tool name copied.")
-                        : x("剪贴板不可用，请选中下方工具名手动复制。", "Clipboard unavailable. Select and copy the tool name below.")}</p>
-                    <Show when={status().kind === "name" && !status().copied}><code class="dsh-tool-manual-copy">{tool.name}</code></Show>
-                  </>}</Show>
+                  <Show when={toolStatus()}>{(status) => <Show when={status().copied} fallback={<DshManualCopy
+                    locale={props.locale} label={status().target.kind === "command" ? x("DSH 命令", "DSH command") : x("DSH 工具名", "DSH tool name")}
+                    value={status().value} source={status().source} />}>
+                    <p role="status">{status().target.kind === "command" ? x(...commandCopy().copied) : x("工具名已复制。", "Tool name copied.")}</p>
+                  </Show>}</Show>
                 </div>
               </details>
             </li>;

@@ -12,6 +12,10 @@ const runReadTools = new Set([
 export interface DshEvidenceTarget { documentId: string; evidenceId: string; }
 
 export const BUNDLE_REPAIR_COMMAND = "cosmatter repair-dsh-bundles";
+export function updatedWorkbenchCommand(runId?: string | null): string {
+  return "cosmatter preview-ui --solid --api --port 0" + (runId && isLocalRunId(runId) ? ` --open-run ${runId}` : "");
+}
+
 export function dshProfileCheckCommand(port: number | null) {
   return `cosmatter check-dsh-profile --verify-tools${port ? ` --loopback-port ${port}` : ""}`;
 }

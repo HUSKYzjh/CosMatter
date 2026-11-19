@@ -1,6 +1,6 @@
-import { expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isDshProfileStatus } from "./localApi";
+import { getDshProfileStatus, isDshProfileStatus, LOCAL_API_READ_TIMEOUT_MS } from "./localApi";
 
 const packages = ["mission", "observability", "policy", "research", "review", "document", "graph"].map((name) => ({
   package: `@cosmatter/dsh-${name}-plugin`, install_status: "verified" as const, dependency_kind: "local_link" as const,
@@ -15,6 +15,63 @@ const snapshot = () => ({
   packages,
   composition_status: "not_checked_by_http_api" as const,
   trust_status: "local_installation_snapshot_not_profile_boot_or_plugin_execution" as const,
+});
+
+describe("DSH profile receipt compatibility", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+  const mockProfile = (response: Response) => {
+    vi.stubGlobal("window", globalThis);
+    const fetch = vi.fn().mockResolvedValueOnce(response);
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  };
+
+  it("accepts an advertised receipt mode without the compatibility probe", async () => {
+    for (const mode of ["per-port-v1", "future-version"]) {
+      const fetch = mockProfile(Response.json(snapshot(), { headers: { "X-CosMatter-DSH-Receipts": mode } }));
+      await expect(getDshProfileStatus()).resolves.toEqual({ profile: snapshot(), health: "ready" });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("rejects a malformed profile before probing for an older workbench", async () => {
+    const fetch = mockProfile(Response.json({ schema_version: "cosmatter.dsh-profile-status/v2" }));
+    await expect(getDshProfileStatus()).rejects.toMatchObject({ failure: "transport" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("identifies the specific unknown-route 404 with or without the original HTTP reason phrase", async () => {
+    const html = "<p>Error code: 404</p><p>Message: Unknown local API route.</p>";
+    for (const probe of [
+      new Response(null, { status: 404, statusText: "Unknown local API route" }),
+      new Response(html, { status: 404, headers: { "Content-Type": "text/html;charset=utf-8", "Content-Length": String(html.length) } }),
+    ]) {
+      const fetch = mockProfile(Response.json(snapshot())).mockResolvedValueOnce(probe);
+      await expect(getDshProfileStatus()).resolves.toEqual({ profile: snapshot(), health: "legacy" });
+      expect(fetch).toHaveBeenNthCalledWith(2, "./api/recent-run-links?probe=1", expect.objectContaining({ credentials: "omit", redirect: "error" }));
+    }
+  });
+
+  it("keeps the validated profile after ambiguous responses, without reading a run index", async () => {
+    for (const probe of [Response.json({ runs: [] }), new Response(null, { status: 400 }), new Response(null, { status: 404 }), new Response(null, { status: 503 })]) {
+      const json = vi.spyOn(probe, "json");
+      const text = vi.spyOn(probe, "text");
+      mockProfile(Response.json(snapshot())).mockResolvedValueOnce(probe);
+      await expect(getDshProfileStatus()).resolves.toEqual({ profile: snapshot(), health: "ready" });
+      expect(json).not.toHaveBeenCalled();
+      expect(text).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps a profile ready after an inconclusive probe timeout", async () => {
+    vi.useFakeTimers();
+    mockProfile(Response.json(snapshot())).mockImplementationOnce((_path, { signal }: RequestInit) =>
+      new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true })));
+    const result = getDshProfileStatus();
+    await vi.advanceTimersByTimeAsync(LOCAL_API_READ_TIMEOUT_MS + 1);
+    await expect(result).resolves.toEqual({ profile: snapshot(), health: "ready" });
+  });
 });
 
 it("accepts a complete redacted TUI dependency snapshot", () => {

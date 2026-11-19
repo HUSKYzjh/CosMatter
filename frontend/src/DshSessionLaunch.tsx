@@ -1,48 +1,25 @@
-import { Show, createEffect, createSignal, createUniqueId, on, onCleanup } from "solid-js";
+import { DshCommandText } from "./DshCommandText";
+import { Show, createSignal, createUniqueId } from "solid-js";
+import { createDshClipboard, DshManualCopy } from "./DshManualCopy";
 import type { UiLocale } from "./fleetRegistry";
 import { isLocalRunId } from "./liveRunIdentity";
 import { ActionButton } from "./uiPrimitives";
 
 export function DshCommandRow(props: { locale: UiLocale; command: string; label: string }) {
-  const [feedback, setFeedback] = createSignal<{ command: string; copied: boolean } | null>(null);
-  let copyAttempt = 0;
-  let reset: ReturnType<typeof setTimeout> | undefined;
-  createEffect(on(() => props.command, () => {
-    copyAttempt++;
-    clearTimeout(reset);
-    setFeedback(null);
-  }, { defer: true }));
-  onCleanup(() => { copyAttempt++; clearTimeout(reset); });
-  const current = () => feedback()?.command === props.command ? feedback() : null;
+  const { copy, feedback: current } = createDshClipboard<"command">(2500);
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
-  const copy = async () => {
-    const attempt = ++copyAttempt;
-    const command = props.command;
-    clearTimeout(reset);
-    let copied = false;
-    try {
-      await navigator.clipboard.writeText(command);
-      copied = true;
-    } catch {
-      // Keep the selectable command available when the system denies clipboard access.
-    }
-    if (attempt !== copyAttempt || command !== props.command) return;
-    setFeedback({ command, copied });
-    if (copied) reset = setTimeout(() => setFeedback(null), 2500);
-  };
   return <div class="dsh-session-command">
     <div class="harness-copy-row">
-      <code>{props.command}</code>
+      <DshCommandText command={props.command} />
       <div class="dsh-copy-control" classList={{ copied: current()?.copied }}>
-        <ActionButton size="sm" aria-label={props.label} onClick={() => void copy()}>
+        <ActionButton size="sm" aria-label={props.label} onClick={(event) => void copy("command", () => props.command, event.currentTarget)}>
           <span class="dsh-copy-icon" aria-hidden="true">⧉</span>{props.label}
         </ActionButton>
         <Show when={current()?.copied}><span role="status">{x("已复制。", "Copied.")}</span></Show>
       </div>
     </div>
-    <Show when={current()?.copied === false}><p role="status">
-      {x("剪贴板不可用，请选中命令手动复制。", "Clipboard unavailable. Select the command and copy it manually.")}
-    </p></Show>
+    <Show when={current()?.copied === false && current()}>{(state) => <DshManualCopy locale={props.locale}
+      label={x("DSH 命令", "DSH command")} value={state().value} source={state().source} />}</Show>
   </div>;
 }
 

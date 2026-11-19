@@ -1,9 +1,11 @@
 import hashlib
+import io
 import json
 import tempfile
 import threading
 import time
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
@@ -13,11 +15,11 @@ from cosmatter.cli import main
 from cosmatter.config import Settings
 from cosmatter.deepseek import DraftCompletion
 from cosmatter.dsh_profile_status import EXPECTED_DSH_PACKAGES, dsh_profile_status
-from cosmatter.local_api import LocalMissionApi
+from cosmatter.local_api import LocalApiError, LocalMissionApi
 from cosmatter.mineru import MinerUBatch
 from cosmatter.models import AccessPolicy, EvidenceCard, Provenance, ReviewStatus, Stance
 from cosmatter.sciverse import SciverseResponse
-from cosmatter.ui_preview import UiPreviewError, _graph_query, build_ui_preview_server
+from cosmatter.ui_preview import UiPreviewError, _graph_query, build_ui_preview_server, serve_ui_preview
 from cosmatter.verification import VerificationDecision
 
 
@@ -106,6 +108,7 @@ class UiPreviewTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
             try:
                 with urlopen(f"http://127.0.0.1:{server.server_port}/api/dsh-profile", timeout=2) as response:
+                    self.assertEqual(response.headers["X-CosMatter-DSH-Receipts"], "per-port-v1")
                     payload = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(payload["profile_name"], "tui")
                 self.assertEqual(payload["declared_bundle_count"], 1)
@@ -113,6 +116,15 @@ class UiPreviewTests(unittest.TestCase):
                 self.assertEqual(payload["packages"][0]["install_status"], "missing_bundle")
                 self.assertNotIn("private-do-not-return", json.dumps(payload))
                 api.dsh_profile_status.assert_called_once_with(loopback_port=server.server_port)
+                api.dsh_profile_status.side_effect = LocalApiError("unavailable", 503)
+                with self.assertRaises(HTTPError) as failure:
+                    urlopen(f"http://127.0.0.1:{server.server_port}/api/dsh-profile", timeout=2)
+                with failure.exception as response:
+                    self.assertEqual(response.status, 503)
+                    self.assertIsNone(response.headers.get("X-CosMatter-DSH-Receipts"))
+                api.plugin_catalogue.return_value = {}
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/plugins", timeout=2) as response:
+                    self.assertIsNone(response.headers.get("X-CosMatter-DSH-Receipts"))
             finally:
                 server.shutdown(); server.server_close(); thread.join(timeout=2)
 
@@ -389,7 +401,47 @@ class UiPreviewTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
     def test_cli_rejects_path_traversal_before_starting_preview(self) -> None:
-        self.assertEqual(main(["preview-ui", "--solid", "--run-id", "../not-a-run", "--port", "8876"]), 2)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main(["preview-ui", "--solid", "--run-id", "../not-a-run", "--port", "8876"]), 2)
+        self.assertNotIn("../not-a-run", output.getvalue())
+
+    def test_preview_prints_bound_port_and_preserves_the_selected_mode(self) -> None:
+        server = Mock(server_port=51999)
+        cases = [
+            ({}, "/"), ({"api": True}, "/?api=local"),
+            ({"ui_bundle": Path("ui.json")}, "/?ui=server"),
+            ({"ui_bundle": Path("ui.json"), "api": True}, "/?ui=server&api=local"),
+            ({"api": True, "open_run": "Run_2026-1"}, "/?api=local#run=Run_2026-1"),
+        ]
+        with (
+            patch("cosmatter.ui_preview.build_ui_preview_server", return_value=server),
+            patch.object(LocalMissionApi, "from_project"),
+            patch("builtins.print") as announce,
+        ):
+            for options, suffix in cases:
+                with self.subTest(options=options):
+                    serve_ui_preview(0, solid=True, **options)
+                    announce.assert_called_with("CosMatter UI preview: http://127.0.0.1:51999" + suffix, flush=True)
+        self.assertEqual(server.server_close.call_count, len(cases))
+
+    def test_preview_open_run_requires_a_valid_live_target_before_binding(self) -> None:
+        with patch("cosmatter.ui_preview.build_ui_preview_server") as build:
+            for flags in ([], ["--solid"], ["--api"], ["--solid", "--api"]):
+                with self.subTest(flags=flags):
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        self.assertEqual(main(["preview-ui", *flags, "--open-run", "private/run"]), 2)
+                    self.assertNotIn("private/run", output.getvalue())
+                    self.assertIn("Invalid local run ID" if len(flags) == 2 else "requires --solid and --api", output.getvalue())
+            output = io.StringIO()
+            with redirect_stderr(output), self.assertRaises(SystemExit) as conflict:
+                main(["preview-ui", "--solid", "--api", "--run-id", "selected", "--open-run", "private/run"])
+            self.assertEqual(conflict.exception.code, 2)
+            self.assertIn("--run-id", output.getvalue())
+            self.assertIn("--open-run", output.getvalue())
+            self.assertNotIn("private/run", output.getvalue())
+            build.assert_not_called()
 
     def test_rejects_non_user_ports_and_non_ui_bundle_names(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

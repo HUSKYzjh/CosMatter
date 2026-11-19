@@ -41,6 +41,14 @@ it("offers repair only for a current incomplete local composition", () => {
   expect(dshSessionReadiness(stale, "ready", "ready", port)).toBe("composition-check");
 });
 
+it("prioritises updating a confirmed legacy workbench when using its local port", () => {
+  expect(dshSessionReadiness(profile, "legacy", "ready", port)).toBe("workbench-update");
+  expect(dshSessionReadiness(profile, "legacy", "unavailable", port)).toBe("workbench-update");
+  expect(dshSessionReadiness(profile, "legacy", "loading", port)).toBe("checking");
+  expect(dshSessionReadiness(profile, "legacy", "ready", null)).toBe("ready");
+  expect(dshSessionReadiness(null, "legacy", "ready", port)).toBe("disconnected");
+});
+
 it("requires current registration for all tools and a successful check of the workbench port", () => {
   for (const check of [undefined, { ...registry, matches_local_files: false }, { ...registry, registered_tools: registry.registered_tools.slice(1) }]) {
     expect(dshSessionReadiness({ ...profile, tool_registry_check: check }, "ready", "ready", port)).toBe("registry-check");

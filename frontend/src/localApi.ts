@@ -63,7 +63,7 @@ export interface DshProfileStatus {
   tool_registry_check?: DshToolRegistryCheck;
   trust_status: "local_installation_snapshot_not_profile_boot_or_plugin_execution";
 }
-export type DshProfileHealth = "disabled" | "loading" | "ready" | "unavailable";
+export type DshProfileHealth = "disabled" | "loading" | "ready" | "legacy" | "unavailable";
 
 const stringList = (value: unknown, maximum: number): value is string[] => Array.isArray(value)
   && value.length > 0 && value.length <= maximum
@@ -165,26 +165,33 @@ export function localApiHttpFailure(method: string | undefined, status: number):
   return (method ?? "GET").toUpperCase() !== "GET" && status >= 500 ? "write_outcome_unknown" : "transport";
 }
 
-async function request<T>(path: string, init?: RequestInit, timeoutMs = (init?.method ?? "GET") === "GET" ? LOCAL_API_READ_TIMEOUT_MS : LOCAL_API_WRITE_TIMEOUT_MS): Promise<T> {
+async function withLocalResponse<T>(
+  path: string, init: RequestInit | undefined, timeoutMs: number, read: (response: Response, signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
   const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
     const response = await fetch(path, { ...init, cache: "no-store", signal: controller.signal });
-    if (!response.ok) {
-      // Provider and filesystem details are untrusted display data.
-      throw new LocalApiRequestError(localApiHttpFailure(init?.method, response.status), response.status);
-    }
-    return await response.json().catch((error) => {
-      if (controller.signal.aborted) throw error;
-      return {};
-    }) as T;
+    return await read(response, controller.signal);
   } catch (error) {
     if (error instanceof LocalApiRequestError) throw error;
     throw new LocalApiRequestError(timedOut ? localApiTimeoutFailure(init?.method) : "transport");
   } finally {
     window.clearTimeout(timeout);
   }
+}
+async function request<T>(path: string, init?: RequestInit, timeoutMs = (init?.method ?? "GET") === "GET" ? LOCAL_API_READ_TIMEOUT_MS : LOCAL_API_WRITE_TIMEOUT_MS): Promise<T> {
+  return withLocalResponse(path, init, timeoutMs, async (response, signal) => {
+    if (!response.ok) {
+      // Provider and filesystem details are untrusted display data.
+      throw new LocalApiRequestError(localApiHttpFailure(init?.method, response.status), response.status);
+    }
+    return await response.json().catch((error) => {
+      if (signal.aborted) throw error;
+      return {};
+    }) as T;
+  });
 }
 function jsonPost<T>(path: string, payload: unknown): Promise<T> { return request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
 export async function getRecentLocalRuns(): Promise<RecentLocalRun[]> {
@@ -211,7 +218,32 @@ function isRecentLocalRun(value: unknown): value is RecentLocalRun {
 export function getLocalApiStatus(): Promise<LocalApiStatus> { return request<LocalApiStatus>("./api/status"); }
 export function getFacilityContractCatalogue(): Promise<FacilityContractCatalogue> { return request<FacilityContractCatalogue>("./api/facility-contracts"); }
 export function getHarnessPluginCatalogue(): Promise<HarnessPluginCatalogue> { return request<HarnessPluginCatalogue>("./api/plugins"); }
-export function getDshProfileStatus(): Promise<DshProfileStatus> { return request<DshProfileStatus>("./api/dsh-profile"); }
+export async function getDshProfileStatus(): Promise<{ profile: DshProfileStatus; health: "ready" | "legacy" }> {
+  const options: RequestInit = { credentials: "omit", redirect: "error" };
+  const { profile, receiptMode } = await withLocalResponse("./api/dsh-profile", options, LOCAL_API_READ_TIMEOUT_MS, async response => {
+    if (!response.ok) throw new LocalApiRequestError("transport", response.status);
+    const profile: unknown = await response.json();
+    if (!isDshProfileStatus(profile)) throw new LocalApiRequestError("transport");
+    return { profile, receiptMode: response.headers.get("X-CosMatter-DSH-Receipts") };
+  });
+  // per-port-v1 and future advertised modes still require the normal receipt checks.
+  if (receiptMode !== null) return { profile, health: "ready" };
+
+  // Current workbenches reject this query before opening the recent-run index.
+  const legacy = await withLocalResponse("./api/recent-run-links?probe=1", options, LOCAL_API_READ_TIMEOUT_MS, async response => {
+    if (response.status !== 404) {
+      await response.body?.cancel();
+      return false;
+    }
+    if (response.statusText === "Unknown local API route") return true;
+    const contentType = response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+    const size = Number(response.headers.get("Content-Length"));
+    if (contentType !== "text/html" || !(size > 0 && size <= 2048)) return false;
+    const body = await response.text();
+    return body.length <= 2048 && body.includes("<p>Error code: 404</p>") && body.includes("<p>Message: Unknown local API route.</p>");
+  }).catch(() => false);
+  return { profile, health: legacy ? "legacy" : "ready" };
+}
 export function createLiveMission(payload: { question: string; material: string; property: string; scope: string }): Promise<LiveMission> { return jsonPost<LiveMission>("./api/missions", payload); }
 export function draftAuthorizedPlan(runId: string, dshCallId: string): Promise<DraftPlan> { return jsonPost<DraftPlan>(`./api/runs/${encodeURIComponent(runId)}/authorized-draft-plan`, { authorizations: ["mission_scoped_egress_consent", "deepseek_request_consent"], actor: "browser_researcher", dsh_call_id: dshCallId }); }
 export function approveLivePlan(runId: string, plan: unknown): Promise<ApprovedPlan> { return jsonPost<ApprovedPlan>(`./api/runs/${encodeURIComponent(runId)}/approve-plan`, plan); }

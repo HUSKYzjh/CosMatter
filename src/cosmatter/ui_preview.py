@@ -7,9 +7,10 @@ import re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from .config import AGENT_ROOT
+from .dsh_profile_status import _LOCAL_RUN_ID
 from .harness_autorun import HarnessAutoRunError, run_authorized_automatic_mission
 from .local_api import LocalApiError, LocalMissionApi
 from .artifact_contract import ArtifactDownload
@@ -67,7 +68,10 @@ def build_ui_preview_server(
                 self._api_json(lambda: api.plugin_catalogue() if api is not None else _api_disabled())
                 return
             if path == "/api/dsh-profile":
-                self._api_json(lambda: api.dsh_profile_status(loopback_port=self.server.server_port) if api is not None else _api_disabled())
+                self._api_json(
+                    lambda: api.dsh_profile_status(loopback_port=self.server.server_port) if api is not None else _api_disabled(),
+                    per_port_receipts=True,
+                )
                 return
             if path == "/api/facility-contracts":
                 self._api_json(lambda: api.facility_contract_catalogue() if api is not None else _api_disabled())
@@ -424,12 +428,14 @@ def build_ui_preview_server(
             if body is None or file_name is None or content is None:
                 raise LocalApiError("PDF upload must include payload and file")
             return body, file_name, content
-        def _api_json(self, operation: Callable[[], object], status: int = 200) -> None:
+        def _api_json(self, operation: Callable[[], object], status: int = 200, *, per_port_receipts: bool = False) -> None:
             try:
                 body = json.dumps(operation(), ensure_ascii=False).encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
+                if per_port_receipts:
+                    self.send_header("X-CosMatter-DSH-Receipts", "per-port-v1")
                 self.end_headers()
                 self.wfile.write(body)
             except LocalApiError as error:
@@ -580,14 +586,28 @@ def _graph_query(query: str) -> dict[str, object]:
     return parsed
 
 
-def serve_ui_preview(port: int = 8765, *, solid: bool = False, ui_bundle: Path | None = None, api: bool = False) -> None:
+def serve_ui_preview(
+    port: int = 8765, *, solid: bool = False, ui_bundle: Path | None = None, api: bool = False, open_run: str | None = None,
+) -> None:
+    if open_run is not None:
+        if ui_bundle is not None:
+            raise UiPreviewError("--open-run cannot be combined with --run-id.")
+        if not (solid and api):
+            raise UiPreviewError("--open-run requires --solid and --api.")
+        if not isinstance(open_run, str) or not _LOCAL_RUN_ID.fullmatch(open_run):
+            raise UiPreviewError("Invalid local run ID for --open-run.")
     server = build_ui_preview_server(
         port, solid=solid, ui_bundle=ui_bundle, api=LocalMissionApi.from_project() if api else None
     )
-    suffix = " with local API" if api else ""
-    suffix += " and selected UI bundle" if ui_bundle is not None else ""
-    print(f"CosMatter UI preview: http://127.0.0.1:{port}/{suffix}")
     try:
+        query = {}
+        if ui_bundle is not None:
+            query["ui"] = "server"
+        if api:
+            query["api"] = "local"
+        fragment = urlencode({"run": open_run}) if open_run is not None else ""
+        url = urlunsplit(("http", f"127.0.0.1:{server.server_port}", "/", urlencode(query), fragment))
+        print(f"CosMatter UI preview: {url}", flush=True)
         server.serve_forever()
     finally:
         server.server_close()
