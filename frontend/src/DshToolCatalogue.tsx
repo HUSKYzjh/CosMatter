@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on } from "solid-js";
+import { For, Show, batch, createEffect, createMemo, createSignal, createUniqueId, on } from "solid-js";
 import { packages } from "../../plugins/dsh-plugin-group.json";
 import { continuationStageLabel } from "./continuationStage";
 import { DSH_STAGE_NOTES, DSH_STAGE_TOOLS } from "./dshStageTools";
@@ -38,11 +38,12 @@ const TOOL_COPY: Readonly<Partial<Record<string, ToolCopy>>> = {
   cosmatter_graph_review_request: { label: ["提交图谱人工复核请求", "Request human graph review"], access: "local", note: ["提交待复核请求，由人工决定后续操作。", "Queues a review request for a human decision."] },
 };
 
-const TOOLS = packages.flatMap((bundle) => bundle.tools.map((name) => ({
-  name,
-  bundle: bundle.package,
-  copy: TOOL_COPY[name],
-})));
+const normalizeSearch = (text: string) => text.normalize("NFKC").toLowerCase();
+const TOOLS = packages.flatMap((bundle) => bundle.tools.map((name) => {
+  const copy = TOOL_COPY[name];
+  const searchText = normalizeSearch([name, bundle.package, ...(copy?.label ?? []), copy?.descriptor].join(" "));
+  return { name, bundle: bundle.package, copy, searchText };
+}));
 
 const ACCESS_LABELS: Record<Access, readonly [string, string]> = {
   read: ["本机读取", "Local read"],
@@ -89,6 +90,7 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
   const [clipboard, setClipboard] = createSignal<{ name: string; kind: "name" | "command"; value: string; copied: boolean } | null>(null);
   let searchInput!: HTMLInputElement;
   let results!: HTMLDivElement;
+  const searchId = createUniqueId();
   if (props.scrollResults) {
     createEffect(on([query, filter, stageFilter], () => { results.scrollTop = 0; }, { defer: true }));
   }
@@ -99,24 +101,31 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
       ? { bundles: new Set(check.bundles), tools: new Set(check.registered_tools) }
       : null;
   });
-  const visibleTools = createMemo(() => {
-    const search = query().trim().toLowerCase();
-    const stage = stageFilter();
-    return TOOLS.filter(({ name, bundle, copy }) => {
-      if (stage !== "all" && !DSH_STAGE_TOOLS[stage].includes(name)) return false;
-      if (filter() !== "all" && filter() !== copy?.access) return false;
-      return [name, bundle, ...(copy?.label ?? []), copy?.descriptor].some((term) => term?.toLowerCase().includes(search));
-    });
+  const matchingTools = createMemo(() => {
+    const words = normalizeSearch(query()).trim().split(/\s+/).filter(Boolean);
+    return TOOLS.filter(({ searchText }) => words.every((word) => searchText.includes(word)));
   });
+  const visibleTools = createMemo(() => {
+    const stage = stageFilter();
+    return matchingTools().filter(({ name, copy }) => (stage === "all" || DSH_STAGE_TOOLS[stage].includes(name))
+      && (filter() === "all" || filter() === copy?.access));
+  });
+  const hasHiddenMatches = () => Boolean(query().trim()) && matchingTools().length > visibleTools().length;
+  const singleMatch = () => Boolean(query().trim()) && visibleTools().length === 1;
+  const openMatch = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" || event.isComposing || event.keyCode === 229 || !singleMatch()) return;
+    const item = results.querySelector<HTMLDetailsElement>(".dsh-tool-item");
+    if (!item) return;
+    event.preventDefault();
+    item.open = true;
+    item.querySelector("summary")?.focus();
+  };
   const stageNote = () => {
     const stage = stageFilter();
     return stage === "all" ? undefined : DSH_STAGE_NOTES[stage];
   };
-  const filtersApplied = () => Boolean(query()) || filter() !== "all" || stageFilter() !== "all";
   const clearFilters = () => {
-    setQuery("");
-    setFilter("all");
-    setStageFilter("all");
+    batch(() => { setFilter("all"); setStageFilter("all"); });
     searchInput.focus();
   };
   const bundleState = (bundle: string) => {
@@ -148,9 +157,15 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
         <ActionButton size="sm" aria-pressed={stageFilter() === stage()} onClick={() => setStageFilter(stageFilter() === stage() ? "all" : stage())}>{x("只看本阶段", "Filter to this stage")}</ActionButton>
       </div>}</Show>
       <div class="dsh-tool-filters">
-        <label><span>{x("搜索工具或插件包", "Search tools or bundles")}</span>
-          <input ref={searchInput} type="search" value={query()} maxLength={160} onInput={(event) => setQuery(event.currentTarget.value)} />
-        </label>
+        <div class="dsh-tool-search">
+          <label for={searchId}>{x("搜索工具或插件包", "Search tools or bundles")}</label>
+          <div class="dsh-tool-search-field">
+            <input ref={searchInput} id={searchId} type="search" value={query()} maxLength={160} onKeyDown={openMatch}
+              aria-describedby={singleMatch() ? `${searchId}-hint` : undefined} onInput={(event) => setQuery(event.currentTarget.value)} />
+            <Show when={query()}><ActionButton size="icon" variant="quiet" aria-label={x("清空关键词", "Clear search text")}
+              onClick={() => { setQuery(""); searchInput.focus(); }}><span aria-hidden="true">×</span></ActionButton></Show>
+          </div>
+        </div>
         <label><span>{x("研究阶段", "Research stage")}</span>
           <select value={stageFilter()} onChange={(event) => setStageFilter(event.currentTarget.value as WorkflowStageName | "all")}>
             <option value="all">{x("全部阶段", "All stages")}</option>
@@ -170,14 +185,20 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
       </div>
       <div class="dsh-tool-filter-status">
         <p class="dsh-tool-count" role="status">{x(`显示 ${visibleTools().length}/${TOOLS.length} 个工具`, `Showing ${visibleTools().length} of ${TOOLS.length} tools`)}</p>
-        <ActionButton size="sm" variant="quiet" disabled={!filtersApplied()} onClick={clearFilters}>{x("清除筛选", "Clear filters")}</ActionButton>
+        <Show when={stageFilter() !== "all" || filter() !== "all"}>
+          <ActionButton size="sm" variant={hasHiddenMatches() ? "secondary" : "quiet"} onClick={clearFilters}>{hasHiddenMatches()
+            ? x(`查看全部 ${matchingTools().length} 项匹配`, matchingTools().length === 1 ? "Show 1 match across all tools" : `Show all ${matchingTools().length} matches`)
+            : x("清除筛选", "Clear filters")}</ActionButton>
+        </Show>
       </div>
     </div>
     <div ref={results} class="dsh-tool-results" role={props.scrollResults ? "region" : undefined}
       aria-label={props.scrollResults ? x("工具结果", "Tool results") : undefined} tabIndex={props.scrollResults ? 0 : undefined}>
+      <Show when={singleMatch()}><p id={`${searchId}-hint`}>{x("在搜索框按 Enter 展开此工具。", "Press Enter in the search field to open this tool.")}</p></Show>
       <Show when={stageNote()}>{(note) => <p class="dsh-stage-note">{x(...note())}</p>}</Show>
       <Show when={visibleTools().length > 0} fallback={<div class="dsh-tool-empty">
-        <p>{x("没有符合条件的工具。", "No tools match these filters.")}</p>
+        <p>{hasHiddenMatches() ? x("匹配的工具在当前筛选范围之外。", "Matching tools are outside the active filters.")
+          : x("没有符合条件的工具。", "No tools match these filters.")}</p>
       </div>}>
         <ul class="dsh-tool-list">
           <For each={visibleTools()}>{(tool) => {

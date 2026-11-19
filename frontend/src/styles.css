@@ -855,7 +855,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-bundle-repair p { margin: 0; color: var(--muted); font-size: max(.68rem, 12px); line-height: 1.45; }
 .harness-bundle-repair > div { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .65rem; min-width: 0; }
 .dsh-tool-dialog { box-sizing: border-box; width: min(46rem, calc(100% - 1rem)); max-width: none; max-height: calc(100dvh - 1rem); margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: .4rem; color: var(--ink); background: var(--surface); box-shadow: 0 .75rem 3rem rgb(5 14 26 / 30%); }
-.dsh-tool-dialog[open] { display: flex; flex-direction: column; }
+.dsh-tool-dialog[open] { display: flex; flex-direction: column; inset-block: 0 auto; max-height: min(42rem, calc(100dvh - 1rem)); margin-block: max(.5rem, calc((100dvh - 42rem) / 2)) auto; }
 .dsh-tool-dialog::backdrop { background: rgb(5 14 26 / 58%); }
 .dsh-tool-dialog > header { display: flex; flex: none; align-items: center; justify-content: space-between; gap: .45rem .7rem; padding: .48rem .7rem; border-bottom: 1px solid var(--line); }
 .dsh-tool-dialog > header .cm-action { flex: none; }
@@ -874,10 +874,14 @@ html:has(.dsh-tool-dialog[open]) { overflow: hidden; }
 .dsh-current-stage strong { color: var(--ink); font-size: max(.78rem, 13px); }
 .dsh-current-stage .cm-action[aria-pressed="true"] { border-color: var(--signal-blue); background: color-mix(in srgb, var(--signal-blue) 15%, var(--surface)); }
 .dsh-tool-filters { display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 1fr)); gap: .5rem; }
-.dsh-tool-filters label { display: grid; gap: .25rem; min-width: 0; font-size: max(.73rem, 12px); }
+.dsh-tool-filters label, .dsh-tool-search { display: grid; gap: .25rem; min-width: 0; font-size: max(.73rem, 12px); }
 .dsh-tool-filters input, .dsh-tool-filters select { width: 100%; min-width: 0; min-height: 2.3rem; padding: .3rem .45rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: .22rem; font: inherit; }
 .dsh-tool-filters :is(input, select):focus-visible { outline: 2px solid var(--signal-blue); outline-offset: 1px; }
-.dsh-tool-filter-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem .5rem; }
+.dsh-tool-search-field { position: relative; }
+.dsh-tool-search-field input { padding-inline-end: 2.5rem; font-size: max(.85rem, 14px); }
+.dsh-tool-search-field input::-webkit-search-cancel-button { display: none; }
+.dsh-tool-search-field .cm-action { position: absolute; inset-inline-end: .15rem; inset-block: 0; margin-block: auto; font-size: 1.15rem; }
+.dsh-tool-filter-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem .5rem; min-height: 1.9rem; }
 .dsh-tool-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr)); align-items: start; gap: .4rem; margin: 0; padding: 0; list-style: none; }
 .dsh-tool-list li { min-width: 0; }
 .dsh-tool-item > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) max-content; gap: .45rem; }
@@ -898,13 +902,20 @@ html:has(.dsh-tool-dialog[open]) { overflow: hidden; }
 .dsh-stage-note { padding-inline-start: .5rem; border-inline-start: 2px solid var(--line); }
 @media (max-width: 520px) {
   .dsh-tool-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dsh-tool-filters > label:first-child { grid-column: 1 / -1; }
+  .dsh-tool-search { grid-column: 1 / -1; }
   .dsh-tool-item > summary { display: grid; grid-template-columns: auto minmax(0, 1fr); }
   .dsh-tool-item .cm-status-badge { grid-column: 2; justify-self: start; max-width: 100%; }
 }
 @media (max-height: 420px) {
   .dsh-tool-dialog > .dsh-tool-body { overflow: auto; overscroll-behavior: contain; }
   .dsh-tool-dialog .dsh-tool-results { flex: none; overflow: visible; }
+}
+@media (pointer: coarse) {
+  :is(.dsh-tool-dialog, .dsh-tool-catalogue) :is(.cm-action, summary) { min-height: 44px; }
+  :is(.dsh-tool-dialog, .dsh-tool-catalogue) .cm-action { min-width: 44px; }
+  .dsh-tool-filters :is(input, select) { min-height: 44px; font-size: max(1rem, 16px); }
+  .dsh-tool-search-field input { padding-inline-end: 48px; }
+  .dsh-tool-search-field .cm-action { width: 44px; }
 }
 .harness-boundary-copy { display: flex; align-items: start; justify-content: space-between; gap: .5rem 1rem; }
 .harness-boundary-copy p, .harness-catalogue-message p { max-width: 59rem; margin: 0; color: var(--muted); font-size: max(.68rem, 12px); line-height: 1.5; }

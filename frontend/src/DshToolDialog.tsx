@@ -9,7 +9,8 @@ export function DshToolDialog(props: DshToolCatalogueProps & { onDismiss: () => 
 
   onMount(() => {
     dialog.showModal();
-    heading.focus();
+    const initialFocus = window.matchMedia("(pointer: coarse)").matches ? heading : dialog.querySelector<HTMLInputElement>('input[type="search"]');
+    initialFocus?.focus();
   });
 
   return <dialog ref={dialog} class="dsh-tool-dialog" aria-labelledby="dsh-tool-dialog-title" onClose={() => props.onDismiss()}>
