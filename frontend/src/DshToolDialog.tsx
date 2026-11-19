@@ -20,6 +20,6 @@ export function DshToolDialog(props: DshToolCatalogueProps & { onDismiss: () => 
         onClick={() => dialog.close()}>{props.locale === "zh" ? "关闭" : "Close"}</ActionButton>
     </header>
     <DshToolCatalogueContent locale={props.locale} plugins={props.plugins} profile={props.profile} profileHealth={props.profileHealth}
-      currentStage={props.currentStage} runId={props.runId} evidence={props.evidence} initialStage={initialStage} scrollResults />
+      currentStage={props.currentStage} runId={props.runId} evidence={props.evidence} onRefreshProfile={props.onRefreshProfile} initialStage={initialStage} scrollResults />
   </dialog>;
 }

@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,10 +37,12 @@ _REGISTRY_RECEIPT = ".cosmatter-tool-registry-check.json"
 _REGISTRY_SCHEMA = "cosmatter.dsh-tool-registry-check/v1"
 _MAX_CONFIG_BYTES = 1_000_000
 _DSH_VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-[a-z0-9.]{1,24})?")
+_DSH_UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\1bf39983-50d0-5fe0-9ef4-cece76f67c5e"
 _REGISTRY_OUTPUT = "COSMATTER_TOOL_REGISTRY "
 _RUN_STATUS_OUTPUT = "COSMATTER_DSH_RUN_STATUS "
 _EVIDENCE_OUTPUT = "COSMATTER_DSH_EVIDENCE "
 _RECENT_RUNS_OUTPUT = "COSMATTER_DSH_RECENT_RUNS "
+_CATALOGUE_OUTPUT = "COSMATTER_DSH_CATALOGUE "
 _ARTIFACTS_OUTPUT = "COSMATTER_DSH_RUN_ARTIFACTS "
 _RUN_READ_OUTPUT = "COSMATTER_DSH_RUN_READ "
 _OBSERVABILITY_BUNDLE = "@cosmatter/dsh-observability-plugin"
@@ -236,7 +239,7 @@ def repair_dsh_bundles(
     if not missing:
         enabled = _enable_dsh_bundles(profile)
         return {"profile_name": "tui", "status": "activated" if enabled else "already_installed", "repaired_bundles": [], "enabled_bundles": enabled}
-    dsh = shutil.which(executable)
+    dsh = resolve_dsh_executable(executable)
     if not dsh:
         raise DshBundleRepairError("DSH executable not found. Set PATH or pass --dsh-executable.")
     root = project_root.resolve()
@@ -300,7 +303,7 @@ def open_dsh_workbench(
         raise DshCompositionCheckError("Select the web or tui surface.")
     if run_id is not None and not _LOCAL_RUN_ID.fullmatch(run_id):
         raise DshCompositionCheckError("Invalid local run ID.")
-    dsh = shutil.which(executable)
+    dsh = resolve_dsh_executable(executable)
     if not dsh:
         raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
     home = (dsh_home or _default_dsh_home()).resolve()
@@ -459,7 +462,7 @@ def check_dsh_composition(
     """Run the fixed TUI composition diagnostic and save only its redacted result."""
     if loopback_port is not None and (type(loopback_port) is not int or not 1 <= loopback_port <= 65535):
         raise DshCompositionCheckError("Port must be between 1 and 65535.")
-    dsh = shutil.which(executable)
+    dsh = resolve_dsh_executable(executable)
     if not dsh:
         raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
     home = (dsh_home or _default_dsh_home()).resolve()
@@ -597,6 +600,30 @@ def read_dsh_screening_link(link: str, *, executable: str = "dsh", dsh_home: Pat
     return result
 
 
+def read_dsh_catalogue(*, port: int = 8765, executable: str = "dsh", dsh_home: Path | None = None) -> dict[str, Any]:
+    """Read the workbench's static capability contracts through the installed policy tool."""
+    config = {"tool": _CATALOGUE_TOOL, "args": {}, "prefix": _CATALOGUE_OUTPUT}
+    result = _read_through_bundle(_POLICY_BUNDLE, executable, dsh_home, port, _TOOL_READ_PROBE, config, _CATALOGUE_OUTPUT)
+    if isinstance(result, dict):
+        if result.get("error") == "not_registered":
+            raise DshCompositionCheckError("DSH did not register the catalogue tool. Check the installed policy bundle.")
+        plugins = result.get("plugins")
+        if (
+            result.get("catalogue_api_version") == "2.0"
+            and result.get("trust_status") == "static_catalogue_not_plugin_execution_or_evidence_acceptance"
+            and isinstance(plugins, list)
+            and 1 <= len(plugins) <= 64
+            and all(isinstance(item, dict) and isinstance(item.get("plugin_id"), str) and item["plugin_id"] for item in plugins)
+        ):
+            return {
+                "catalogue_api_version": result["catalogue_api_version"],
+                "trust_status": result["trust_status"],
+                "plugins": plugins,
+                "checked_via": [_CATALOGUE_TOOL],
+            }
+    raise DshCompositionCheckError("DSH could not read the capability catalogue. Check the local workbench API and port.")
+
+
 def read_dsh_recent_runs(*, port: int = 8765, executable: str = "dsh", dsh_home: Path | None = None) -> dict[str, Any]:
     """Read a label-free local run index through the installed observability bundle."""
     tool = "cosmatter_recent_runs"
@@ -656,7 +683,7 @@ def _read_through_bundle(
 ) -> Any:
     if not 1 <= port <= 65535:
         raise DshCompositionCheckError("Port must be between 1 and 65535.")
-    dsh = shutil.which(executable)
+    dsh = resolve_dsh_executable(executable)
     if not dsh:
         raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
     profile = (dsh_home or _default_dsh_home()).resolve() / "profiles" / "tui"
@@ -959,6 +986,31 @@ def _read_manifest(root: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("DSH package manifest is invalid")
     return payload
+
+
+def resolve_dsh_executable(executable: str = "dsh") -> str | None:
+    """Find the requested launcher or the registered DeepSeek Harness desktop CLI."""
+    found = shutil.which(executable)
+    if found or executable != "dsh" or sys.platform != "win32":
+        return found
+
+    import winreg
+
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+            try:
+                with winreg.OpenKey(hive, _DSH_UNINSTALL_KEY, 0, winreg.KEY_READ | view) as key:
+                    name, _ = winreg.QueryValueEx(key, "DisplayName")
+                    if name != "DeepSeek Harness":
+                        continue
+                    location, _ = winreg.QueryValueEx(key, "InstallLocation")
+                if isinstance(location, str):
+                    launcher = Path(location) / "resources/runtime/cli/bin/dsh.cmd"
+                    if launcher.is_absolute() and launcher.is_file():
+                        return str(launcher)
+            except (OSError, ValueError):
+                continue
+    return None
 
 
 def _default_dsh_home() -> Path:

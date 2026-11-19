@@ -426,6 +426,28 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await verdict.getByRole("button", { name: "查看安装问题" }).press("Enter");
   await expect(packageProof.locator("summary")).toBeFocused();
   await expect(packageProof.locator("li").first()).toContainText("文件缺失");
+  const tools = deck.locator(".dsh-tool-catalogue");
+  await tools.locator(":scope > summary").press("Enter");
+  const missionTool = tools.locator(".dsh-tool-item").filter({ hasText: "cosmatter_mission_create" });
+  await missionTool.locator("summary").press("Enter");
+  await expect(missionTool.locator("summary")).toContainText("本机缺少插件文件");
+  const actionBounds = await missionTool.locator(".dsh-tool-actions button").evaluateAll((buttons) => buttons.map((button) => {
+    const { left, right, top, bottom, width, height } = button.getBoundingClientRect();
+    return { left, right, top, bottom, width, height };
+  }));
+  expect(actionBounds).toHaveLength(3);
+  for (const [index, rect] of actionBounds.entries()) {
+    expect(rect.width).toBeGreaterThanOrEqual(44);
+    expect(rect.height).toBeGreaterThanOrEqual(44);
+    expect(rect.left).toBeGreaterThanOrEqual(0);
+    expect(rect.right).toBeLessThanOrEqual(320);
+    for (const other of actionBounds.slice(0, index)) {
+      expect(rect.top >= other.bottom || rect.left >= other.right || rect.right <= other.left).toBe(true);
+    }
+  }
+  await missionTool.getByRole("button", { name: "复制补齐命令" }).press("Enter");
+  await expect(missionTool.getByRole("status")).toHaveText("补齐命令已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cosmatter repair-dsh-bundles");
   const repair = packageProof.getByRole("region", { name: "补齐本机 DSH 插件" });
   await repair.getByRole("button", { name: "复制补齐命令" }).press("Enter");
   await expect(repair.getByRole("status")).toHaveText("已复制。");
@@ -468,13 +490,20 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await expect(loopback).toContainText("上次连通核验通过");
   await expect(verdict).toHaveClass(/state-partial/);
   await expect(packageProof.locator("li").first()).toContainText("注册 0/1");
-  const tools = deck.locator(".dsh-tool-catalogue");
-  await tools.locator(":scope > summary").press("Enter");
   await expect(tools.getByText("隔离核验已注册", { exact: true })).toHaveCount(2);
   await expect(tools.getByText("隔离核验未注册", { exact: true })).toHaveCount(7);
+  await missionTool.getByRole("button", { name: "复制核验命令" }).press("Enter");
+  await expect(missionTool.getByRole("status")).toHaveText("核验命令已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter check-dsh-profile --verify-tools --loopback-port ${port}`);
+  const policyTool = tools.locator(".dsh-tool-item").filter({ hasText: "cosmatter_plugin_catalogue" });
+  await policyTool.locator("summary").press("Enter");
+  await policyTool.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter dsh-catalogue --port ${port}`);
   allToolsRegistered = true;
   loopbackPassed = false;
-  await composition.getByRole("button", { name: "刷新核验结果" }).click();
+  await missionTool.getByRole("button", { name: "刷新插件状态" }).press("Enter");
+  await expect(missionTool.locator("summary")).toBeFocused();
+  await expect(missionTool.getByRole("button", { name: "复制核验命令" })).toHaveCount(0);
   await expect(verdict).toContainText("上次未能读取目录");
   await expect(verdict).toHaveClass(/state-partial/);
   const sessionLaunch = verdict.getByRole("region", { name: "打开 DSH 会话" });
@@ -495,6 +524,10 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await expect(packageProof.locator("summary")).toBeFocused();
   await expect(packageProof.locator("li").last()).toContainText("未进入配置组合");
   await expect(repair.getByRole("button", { name: "复制补齐命令" })).toBeVisible();
+  const graphTool = tools.locator(".dsh-tool-item").filter({ hasText: "cosmatter_graph_query" });
+  await graphTool.locator("summary").press("Enter");
+  await expect(graphTool.locator("summary")).toContainText("此插件未进入 tui 配置组合");
+  await expect(graphTool.getByRole("button", { name: "复制补齐命令" })).toBeVisible();
   filesChanged = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(composition).toContainText("工具核验已过期");
@@ -502,6 +535,9 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await expect(verdict).toHaveClass(/state-partial/);
   await expect(sessionLaunch).toHaveCount(0);
   await expect(tools.locator(".dsh-tool-registration")).toHaveCount(0);
+  await expect(graphTool.getByRole("button", { name: "复制核验命令" })).toBeVisible();
+  await expect(graphTool.getByRole("button", { name: "刷新插件状态" })).toBeVisible();
+  await expect(graphTool.getByText("本机文件已变化，待复核", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 

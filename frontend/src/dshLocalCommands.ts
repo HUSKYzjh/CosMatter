@@ -11,6 +11,11 @@ const runReadTools = new Set([
 
 export interface DshEvidenceTarget { documentId: string; evidenceId: string; }
 
+export const BUNDLE_REPAIR_COMMAND = "cosmatter repair-dsh-bundles";
+export function dshProfileCheckCommand(port: number | null) {
+  return `cosmatter check-dsh-profile --verify-tools${port ? ` --loopback-port ${port}` : ""}`;
+}
+
 export function localWorkbenchLocation() {
   const location = window.location;
   return location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) ? location : null;
@@ -28,6 +33,7 @@ export function dshCatalogueCommand(tool: string, runId?: string | null, evidenc
   const location = localWorkbenchLocation();
   if (!location || !localApiEnabled()) return null;
   const port = location.port || "80";
+  if (tool === "cosmatter_plugin_catalogue") return `cosmatter dsh-catalogue --port ${port}`;
   if (tool === "cosmatter_recent_runs") return `cosmatter dsh-recent-runs --port ${port}`;
   if (!runId || !isLocalRunId(runId)) return null;
   if (tool === "cosmatter_artifact_manifest") return `cosmatter dsh-run-artifacts ${runId} --port ${port}`;

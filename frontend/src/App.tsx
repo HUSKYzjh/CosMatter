@@ -2327,7 +2327,7 @@ export function App() {
     </Show>
     <Show when={canOpenDshToolDialog() && dshToolsOpen()}>
       <DshToolDialog locale={language()} plugins={harnessCatalogueHealth() === "ready" ? harnessPlugins() ?? [] : []}
-        profile={dshProfile()} profileHealth={dshProfileHealth()} currentStage={dshCurrentStage()} runId={liveRunId()} evidence={dshEvidenceTarget()} onDismiss={() => setDshToolsOpen(false)} />
+        profile={dshProfile()} profileHealth={dshProfileHealth()} onRefreshProfile={() => void refreshDshProfile()} currentStage={dshCurrentStage()} runId={liveRunId()} evidence={dshEvidenceTarget()} onDismiss={() => setDshToolsOpen(false)} />
     </Show>
   </div>;
 }

@@ -6,12 +6,10 @@ import { ActionButton, StatusBadge } from "./uiPrimitives";
 import type { UiLocale } from "./fleetRegistry";
 import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
 import { DshToolCatalogue } from "./DshToolCatalogue";
-import { localWorkbenchLocation } from "./dshLocalCommands";
+import { BUNDLE_REPAIR_COMMAND, dshProfileCheckCommand, localWorkbenchLocation } from "./dshLocalCommands";
 import { isLocalRunId } from "./liveRunIdentity";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
-const PROFILE_CHECK_COMMAND = "cosmatter check-dsh-profile --verify-tools";
-const BUNDLE_REPAIR_COMMAND = "cosmatter repair-dsh-bundles";
 const TOOL_COUNT = packages.reduce((total, bundle) => total + bundle.tools.length, 0);
 type ActivationAction = "bundles" | "terminal" | "profile" | "catalogue";
 type ActivationVerdict = {
@@ -67,7 +65,7 @@ export function HarnessCapabilityDeck(props: {
   const runtime = createMemo(() => harnessRuntimeSummary(props.operationalTelemetry));
   const workbenchLocation = localWorkbenchLocation();
   const loopbackPort = workbenchLocation ? Number(workbenchLocation.port || "80") : null;
-  const checkCommand = loopbackPort ? `${PROFILE_CHECK_COMMAND} --loopback-port ${loopbackPort}` : PROFILE_CHECK_COMMAND;
+  const checkCommand = dshProfileCheckCommand(loopbackPort);
   const sessionRun = () => props.runId && isLocalRunId(props.runId) ? props.runId : null;
   const openCommand = () => loopbackPort ? `cosmatter open-dsh-workbench --port ${loopbackPort}${sessionRun() ? ` --run-id ${sessionRun()}` : ""}` : null;
   let verdictTitle!: HTMLElement;
@@ -389,7 +387,7 @@ export function HarnessCapabilityDeck(props: {
     }</Show>
     <Show when={!props.runId && (props.health !== "disabled" || props.profileHealth !== "disabled")}>
       <DshToolCatalogue locale={props.locale} plugins={props.health === "ready" ? props.plugins ?? [] : []} profile={props.profile} profileHealth={props.profileHealth}
-        currentStage={props.currentStage} runId={props.runId} />
+        currentStage={props.currentStage} runId={props.runId} onRefreshProfile={props.onRefreshProfile} />
     </Show>
     <div class="harness-boundary-copy"><p>{props.health === "ready"
       ? x("目录已连接只证明 CosMatter 能读取本机静态契约；profile 依赖快照与运行回执分别证明不同层次，任何一层都不能代替工具结果。", "A connected catalogue proves only that CosMatter can read local static contracts. The profile dependency snapshot and runtime receipts prove separate layers; none can substitute for tool results.")

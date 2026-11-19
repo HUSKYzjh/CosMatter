@@ -910,7 +910,7 @@ html:has(.dsh-tool-dialog[open]) { overflow: hidden; }
   .dsh-tool-dialog > .dsh-tool-body { overflow: auto; overscroll-behavior: contain; }
   .dsh-tool-dialog .dsh-tool-results { flex: none; overflow: visible; }
 }
-@media (pointer: coarse) {
+@media (max-width: 520px), (pointer: coarse) {
   :is(.dsh-tool-dialog, .dsh-tool-catalogue) :is(.cm-action, summary) { min-height: 44px; }
   :is(.dsh-tool-dialog, .dsh-tool-catalogue) .cm-action { min-width: 44px; }
   .dsh-tool-filters :is(input, select) { min-height: 44px; font-size: max(1rem, 16px); }

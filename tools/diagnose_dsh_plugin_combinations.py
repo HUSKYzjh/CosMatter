@@ -11,7 +11,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from cosmatter.dsh_combination_lab import DshCombinationLabError, all_pairs, compact_report, minimise_failing_combination, normalize_package_selection
+from cosmatter.dsh_profile_status import resolve_dsh_executable
 
 
 class ProbeError(RuntimeError):
@@ -60,9 +60,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _probe_combo(group: dict[str, object], combo: tuple[str, ...], timeout: int) -> bool:
-    dsh = shutil.which("dsh")
+    dsh = resolve_dsh_executable()
     if not dsh:
-        raise ProbeError("dsh must be on PATH")
+        raise ProbeError("DSH executable not found for combination probe")
     entries = [item for item in group["packages"] if item["package"] in combo]
     with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-combination-") as directory:
         temp = Path(directory)

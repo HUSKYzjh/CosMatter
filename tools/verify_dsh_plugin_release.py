@@ -83,12 +83,17 @@ def _validate(compatibility: dict[str, Any], manifest: dict[str, Any]) -> None:
 
 
 def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, timeout_seconds: int) -> int:
-    dsh = shutil.which("dsh")
+    sys.path.insert(0, str(ROOT / "src"))
+    from cosmatter.dsh_profile_status import resolve_dsh_executable
+
+    dsh = resolve_dsh_executable()
+    if not dsh:
+        raise ReleaseGateError("DSH executable not found for profile smoke")
     npm = shutil.which("npm")
     node = shutil.which("node")
     pnpm = shutil.which("pnpm")
-    if not dsh or not npm or not node or not pnpm:
-        raise ReleaseGateError("dsh, node, npm, and pnpm must be available on PATH for profile smoke")
+    if not npm or not node or not pnpm:
+        raise ReleaseGateError("node, npm, and pnpm must be available on PATH for profile smoke")
     actual = _command_text([dsh, "--version"])
     if actual != compatibility["dsh"]:
         raise ReleaseGateError(f"DSH version mismatch: expected {compatibility['dsh']}, got {actual}")

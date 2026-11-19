@@ -2,7 +2,7 @@ import { For, Show, batch, createEffect, createMemo, createSignal, createUniqueI
 import { packages } from "../../plugins/dsh-plugin-group.json";
 import { continuationStageLabel } from "./continuationStage";
 import { DSH_STAGE_NOTES, DSH_STAGE_TOOLS } from "./dshStageTools";
-import { dshCatalogueCommand, type DshEvidenceTarget } from "./dshLocalCommands";
+import { BUNDLE_REPAIR_COMMAND, dshCatalogueCommand, dshProfileCheckCommand, localWorkbenchLocation, type DshEvidenceTarget } from "./dshLocalCommands";
 import type { UiLocale } from "./fleetRegistry";
 import type { DshProfileHealth, DshProfileStatus, HarnessPluginDescriptor, WorkflowStageName } from "./localApi";
 import { ActionButton, StatusBadge } from "./uiPrimitives";
@@ -52,6 +52,21 @@ const ACCESS_LABELS: Record<Access, readonly [string, string]> = {
   external: ["需逐任务授权", "Mission authorization required"],
 };
 const ACCESS_TYPES = Object.keys(ACCESS_LABELS) as Access[];
+type CommandKind = "repair" | "verify" | "read";
+const COMMAND_COPY: Record<CommandKind, Record<"hint" | "button" | "copied", readonly [string, string]>> = {
+  repair: {
+    hint: ["在 CosMatter 仓库根目录运行补齐命令，再刷新本卡。", "Run the repair from the CosMatter repository root, then refresh this card."],
+    button: ["复制补齐命令", "Copy repair command"], copied: ["补齐命令已复制。", "Repair command copied."],
+  },
+  verify: {
+    hint: ["核对此插件的编译版本，更新后在终端重新核验，再刷新本卡。", "Check the installed bundle version. After updating, run the terminal check and refresh this card."],
+    button: ["复制核验命令", "Copy check command"], copied: ["核验命令已复制。", "Check command copied."],
+  },
+  read: {
+    hint: ["在 CosMatter 的 PowerShell 终端运行命令。", "Run this command in the CosMatter PowerShell environment."],
+    button: ["复制 DSH 命令", "Copy DSH command"], copied: ["DSH 命令已复制。", "DSH command copied."],
+  },
+};
 const ACCESS_FILTER_EN: Partial<Record<Access, string>> = { review: "Human review", external: "Mission consent" };
 const STAGE_FILTER_EN: Record<WorkflowStageName, string> = {
   intake: "Mission setup",
@@ -70,6 +85,7 @@ export interface DshToolCatalogueProps {
   plugins: readonly HarnessPluginDescriptor[];
   profile: DshProfileStatus | null;
   profileHealth: DshProfileHealth;
+  onRefreshProfile?: () => void;
   currentStage?: WorkflowStageName | null;
   runId?: string | null;
   evidence?: DshEvidenceTarget | null;
@@ -91,13 +107,15 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
   let searchInput!: HTMLInputElement;
   let results!: HTMLDivElement;
   const searchId = createUniqueId();
+  const location = localWorkbenchLocation();
+  const checkCommand = location ? dshProfileCheckCommand(Number(location.port || "80")) : null;
   if (props.scrollResults) {
     createEffect(on([query, filter, stageFilter], () => { results.scrollTop = 0; }, { defer: true }));
   }
   const pluginById = createMemo(() => new Map(props.plugins.map((plugin) => [plugin.plugin_id, plugin])));
   const registry = createMemo(() => {
     const check = props.profile?.tool_registry_check;
-    return props.profileHealth === "ready" && check?.matches_local_files
+    return (props.profileHealth === "ready" || props.profileHealth === "loading") && check?.matches_local_files
       ? { bundles: new Set(check.bundles), tools: new Set(check.registered_tools) }
       : null;
   });
@@ -128,18 +146,24 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
     batch(() => { setFilter("all"); setStageFilter("all"); });
     searchInput.focus();
   };
+  const installStatus = (bundle: string) => props.profile && props.profile.installation_state !== "unavailable"
+    ? props.profile.packages.find((item) => item.package === bundle)?.install_status : undefined;
+  const checkOutdated = () => props.profile?.composition_check?.matches_local_files === false
+    || props.profile?.tool_registry_check?.matches_local_files === false;
   const bundleState = (bundle: string) => {
-    if (props.profileHealth !== "ready" || !props.profile || props.profile.installation_state === "unavailable") {
+    if (props.profileHealth === "loading") return x("正在刷新插件状态…", "Refreshing bundle status…");
+    const status = installStatus(bundle);
+    if (!status) {
       return x("本机安装状态未确认", "Local installation unconfirmed");
     }
-    const status = props.profile.packages.find((item) => item.package === bundle);
-    const check = props.profile.composition_check;
-    if (status?.install_status !== "verified") return x("本机安装尚未验证", "Local installation unverified");
+    if (status === "missing_bundle") return x("本机缺少插件文件", "Bundle files missing");
+    if (status === "invalid_bundle") return x("本机插件文件异常", "Invalid bundle files");
+    if (status === "not_declared") return x("tui 尚未声明此插件", "Bundle absent from TUI dependencies");
+    const check = props.profile?.composition_check;
+    if (check?.matches_local_files && !check.bundles.includes(bundle)) return x("此插件未进入 tui 配置组合", "Bundle missing from TUI composition");
+    if (checkOutdated()) return x("本机文件已变化，待复核", "Local files changed; recheck needed");
     if (!check) return x("安装文件已验证，待核验组合", "Files verified; composition unchecked");
-    if (!check.matches_local_files) return x("本机文件已变化，待复核", "Local files changed; recheck needed");
-    return check.bundles.includes(bundle)
-      ? x("上次核验已组合，启动待确认", "Composed on last check; startup unconfirmed")
-      : x("上次核验未组合此包", "Bundle absent from last composition check");
+    return x("安装文件与 tui 配置组合已核验", "Files and TUI composition verified");
   };
   const copyTool = async (name: string, kind: "name" | "command", value: string) => {
     try {
@@ -202,21 +226,39 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
       </div>}>
         <ul class="dsh-tool-list">
           <For each={visibleTools()}>{(tool) => {
+            let summary!: HTMLElement;
             const descriptor = () => tool.copy?.descriptor ? pluginById().get(tool.copy.descriptor) : undefined;
             const label = () => tool.copy ? x(...tool.copy.label) : tool.name;
-            const command = createMemo(() => dshCatalogueCommand(tool.name, props.runId, props.evidence));
+            const registered = () => registry()?.bundles.has(tool.bundle) ? registry()?.tools.has(tool.name) : undefined;
+            const needsRepair = () => {
+              const status = installStatus(tool.bundle);
+              if (!status) return false;
+              const composition = props.profile?.composition_check;
+              return status !== "verified" || Boolean(composition?.matches_local_files && !composition.bundles.includes(tool.bundle));
+            };
+            const commandKind = (): CommandKind => {
+              if (checkCommand && needsRepair()) return "repair";
+              if (checkCommand && (registered() === false || checkOutdated())) return "verify";
+              return "read";
+            };
+            const commandCopy = () => COMMAND_COPY[commandKind()];
+            const command = createMemo(() => {
+              if (commandKind() === "repair") return BUNDLE_REPAIR_COMMAND;
+              if (commandKind() === "verify") return checkCommand;
+              return dshCatalogueCommand(tool.name, props.runId, props.evidence);
+            });
             const toolStatus = () => {
               const status = clipboard();
               return status?.name === tool.name && (status.kind === "name" || status.value === command()) ? status : null;
             };
-            const registered = () => registry()?.bundles.has(tool.bundle) ? registry()?.tools.has(tool.name) : undefined;
             return <li>
               <details class="harness-disclosure dsh-tool-item">
-                <summary>
+                <summary ref={summary}>
                   <span>
                     <strong>{label()}</strong><code>{tool.name.split("_").map((segment, index, segments) =>
                       index === segments.length - 1 ? segment : <>{segment}_<wbr /></>)}</code>
-                    <Show when={registered() !== undefined}><small classList={{ "dsh-tool-registration": true, ready: registered() }}>
+                    <Show when={needsRepair()}><small class="dsh-tool-registration">{bundleState(tool.bundle)}</small></Show>
+                    <Show when={!needsRepair() && registered() !== undefined}><small classList={{ "dsh-tool-registration": true, ready: registered() }}>
                       {registered() ? x("隔离核验已注册", "Registered in isolated check") : x("隔离核验未注册", "Missing from isolated registry")}
                     </small></Show>
                   </span>
@@ -226,7 +268,7 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
                 </summary>
                 <div class="dsh-tool-detail">
                   <code>{tool.bundle}</code>
-                  <p>{bundleState(tool.bundle)}</p>
+                  <Show when={!needsRepair()}><p>{bundleState(tool.bundle)}</p></Show>
                   <Show when={tool.copy?.note}>{(note) => <p>{x(...note())}</p>}</Show>
                   <Show when={descriptor()?.required_authorizations.length}>
                     <div class="dsh-tool-consents"><strong>{x("所需授权字段", "Required authorization fields")}</strong>
@@ -234,18 +276,24 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & { initial
                     </div>
                   </Show>
                   <Show when={command()}>{(line) => <div class="dsh-tool-terminal">
-                    <p>{x("在 CosMatter 的 PowerShell 终端运行命令。", "Run this command in the CosMatter PowerShell environment.")}</p>
+                    <p>{commandKind() === "verify" && checkOutdated()
+                      ? x("在终端重新核验当前插件文件和注册状态，再刷新本卡。", "Run the check against the current bundle files and tool registry, then refresh this card.")
+                      : x(...commandCopy().hint)}</p>
                     <code>{line()}</code>
                   </div>}</Show>
                   <div class="dsh-tool-actions">
                     <Show when={command()}>{(line) =>
-                      <ActionButton size="sm" onClick={() => void copyTool(tool.name, "command", line())}>{x("复制 DSH 命令", "Copy DSH command")}</ActionButton>
+                      <ActionButton size="sm" onClick={() => void copyTool(tool.name, "command", line())}>{x(...commandCopy().button)}</ActionButton>
                     }</Show>
+                    <Show when={props.onRefreshProfile && (commandKind() !== "read" || props.profileHealth === "unavailable" || props.profile?.installation_state === "unavailable")}>
+                      <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在读取…", "Reading…")}
+                        onClick={() => { summary.focus(); props.onRefreshProfile?.(); }}>{x("刷新插件状态", "Refresh bundle status")}</ActionButton>
+                    </Show>
                     <ActionButton size="sm" variant={command() ? "quiet" : "secondary"} onClick={() => void copyTool(tool.name, "name", tool.name)}>{x("复制工具名", "Copy tool name")}</ActionButton>
                   </div>
                   <Show when={toolStatus()}>{(status) => <>
                     <p role="status">{status().kind === "command"
-                      ? status().copied ? x("DSH 命令已复制。", "DSH command copied.")
+                      ? status().copied ? x(...commandCopy().copied)
                         : x("剪贴板不可用，可选中上方命令复制。", "Clipboard unavailable. Select the command above to copy it.")
                       : status().copied ? x("工具名已复制。", "Tool name copied.")
                         : x("剪贴板不可用，请选中下方工具名手动复制。", "Clipboard unavailable. Select and copy the tool name below.")}</p>

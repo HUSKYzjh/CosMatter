@@ -5,16 +5,60 @@ import tempfile
 import unittest
 from pathlib import Path
 from subprocess import CompletedProcess
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from cosmatter.dsh_profile_status import (
     EXPECTED_DSH_PACKAGES, DshBundleRepairError, DshCompositionCheckError, _BUNDLE_TOOLS,
     check_dsh_composition, dsh_profile_status, open_dsh_workbench, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
-    repair_dsh_bundles,
+    read_dsh_catalogue, repair_dsh_bundles, resolve_dsh_executable,
 )
 
 
 class DshProfileStatusTests(unittest.TestCase):
+    def test_dsh_uses_the_explicit_launcher_or_path_before_windows_discovery(self) -> None:
+        registry = MagicMock()
+        with (
+            patch.dict("sys.modules", winreg=registry),
+            patch("sys.platform", "win32"),
+            patch("cosmatter.dsh_profile_status.shutil.which") as which,
+        ):
+            for executable in ("dsh", "custom-dsh", "tools/dsh.cmd"):
+                which.return_value = "resolved-launcher"
+                self.assertEqual(resolve_dsh_executable(executable), "resolved-launcher")
+                which.assert_called_with(executable)
+            which.return_value = None
+            for executable in ("custom-dsh", "tools/dsh.cmd"):
+                with self.assertRaisesRegex(DshCompositionCheckError, "DSH executable not found"):
+                    check_dsh_composition(executable=executable)
+            with patch("sys.platform", "linux"):
+                self.assertIsNone(resolve_dsh_executable())
+            registry.OpenKey.assert_not_called()
+
+    def test_windows_dsh_requires_the_registered_product_and_its_bundled_launcher(self) -> None:
+        registry = MagicMock(KEY_READ=1, KEY_WOW64_64KEY=256, KEY_WOW64_32KEY=512)
+        uninstall_key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\1bf39983-50d0-5fe0-9ef4-cece76f67c5e"
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.dict("sys.modules", winreg=registry),
+            patch("sys.platform", "win32"),
+            patch("cosmatter.dsh_profile_status.shutil.which", return_value=None),
+        ):
+            install = Path(temporary) / "DeepSeek Harness"
+            values = {"DisplayName": "DeepSeek Harness", "InstallLocation": str(install)}
+            registry.QueryValueEx.side_effect = lambda key, name: (values[name], 1)
+            self.assertIsNone(resolve_dsh_executable())
+
+            launcher = install / "resources/runtime/cli/bin/dsh.cmd"
+            launcher.parent.mkdir(parents=True)
+            launcher.touch()
+            values["DisplayName"] = "Another application"
+            self.assertIsNone(resolve_dsh_executable())
+            values["DisplayName"] = "DeepSeek Harness"
+            # Only the machine-wide 32-bit registry view contains this install.
+            registry.OpenKey.side_effect = [FileNotFoundError(), PermissionError(), FileNotFoundError(), MagicMock()]
+            self.assertEqual(resolve_dsh_executable(), str(launcher))
+            registry.OpenKey.assert_called_with(registry.HKEY_LOCAL_MACHINE, uninstall_key, 0, 1 | 512)
+
     def _write_bundle(self, profile: Path, package: str, *, manifest_name: str | None = None) -> None:
         bundle = profile / "node_modules" / package
         (bundle / "lib").mkdir(parents=True)
@@ -464,6 +508,27 @@ class DshProfileStatusTests(unittest.TestCase):
                     with self.assertRaises(DshCompositionCheckError):
                         read_dsh_evidence_link(malformed, dsh_home=home)
                 self.assertEqual(launch.call_count, 2)
+
+    def test_catalogue_reads_through_policy_without_a_run_and_rejects_non_catalogue_results(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = "@cosmatter/dsh-policy-plugin"
+            self._write_bundle(profile, bundle)
+            payload = {"catalogue_api_version": "2.0", "trust_status": "static_catalogue_not_plugin_execution_or_evidence_acceptance",
+                       "plugins": [{"plugin_id": "mission.define", "title": "任务边界定义"}]}
+            with (patch("cosmatter.dsh_profile_status.shutil.which", return_value="dsh"),
+                  patch("cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=payload) as probe):
+                self.assertEqual(read_dsh_catalogue(port=8789, dsh_home=home), {**payload, "checked_via": ["cosmatter_plugin_catalogue"]})
+                self.assertEqual(probe.call_args.args[1:3], (profile, {bundle: {"baseUrl": "http://127.0.0.1:8789"}}))
+                self.assertEqual(probe.call_args.args[-2], {"tool": "cosmatter_plugin_catalogue", "args": {}, "prefix": "COSMATTER_DSH_CATALOGUE "})
+                for update in ({"plugins": []}, {"plugins": [42]}, {"trust_status": "executed"}):
+                    probe.return_value = {**payload, **update}
+                    with self.assertRaisesRegex(DshCompositionCheckError, "capability catalogue"):
+                        read_dsh_catalogue(port=8789, dsh_home=home)
+                probe.return_value = {"error": "not_registered"}
+                with self.assertRaisesRegex(DshCompositionCheckError, "policy bundle"):
+                    read_dsh_catalogue(port=8789, dsh_home=home)
 
     def test_recent_runs_calls_only_the_installed_observability_tool_without_a_run_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

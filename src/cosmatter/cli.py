@@ -87,7 +87,7 @@ from .paper_structure import PaperStructureError, paper_structure_from_review, w
 from .ui_preview import UiPreviewError, serve_ui_preview
 from .dsh_profile_status import (
     DSH_RUN_READ_TOOLS, DshBundleRepairError, DshCompositionCheckError, check_dsh_composition, open_dsh_workbench, read_dsh_evidence_link,
-    read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
+    read_dsh_catalogue, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
     repair_dsh_bundles,
 )
 from .relation_reconciliation import RelationReconciliationError, reconciliation_from_review, write_relation_reconciliation
@@ -191,6 +191,15 @@ def command_dsh_evidence(args: argparse.Namespace) -> int:
 def command_dsh_screening(args: argparse.Namespace) -> int:
     try:
         _json_print(read_dsh_screening_link(args.link, executable=args.dsh_executable))
+    except DshCompositionCheckError as error:
+        _json_print({"error": str(error)})
+        return 2
+    return 0
+
+
+def command_dsh_catalogue(args: argparse.Namespace) -> int:
+    try:
+        _json_print(read_dsh_catalogue(port=args.port, executable=args.dsh_executable))
     except DshCompositionCheckError as error:
         _json_print({"error": str(error)})
         return 2
@@ -3713,6 +3722,11 @@ def build_parser() -> argparse.ArgumentParser:
     dsh_screening.add_argument("link", help="local CosMatter screening link")
     dsh_screening.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_screening.set_defaults(handler=command_dsh_screening)
+
+    dsh_catalogue = commands.add_parser("dsh-catalogue", help="read static workbench capability contracts through the installed DSH policy tool")
+    dsh_catalogue.add_argument("--port", type=int, default=8765, help="port for the local CosMatter preview API")
+    dsh_catalogue.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
+    dsh_catalogue.set_defaults(handler=command_dsh_catalogue)
 
     dsh_recent = commands.add_parser("dsh-recent-runs", help="list recent local run IDs and workbench links through DSH")
     dsh_recent.add_argument("--port", type=int, default=8765, help="port for the local CosMatter preview API")

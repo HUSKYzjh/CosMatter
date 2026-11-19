@@ -14,6 +14,10 @@ import argparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from cosmatter.dsh_profile_status import resolve_dsh_executable
+
 _RECIPE_FIELDS = {"schema_version", "recipe_id", "trust_status", "compatibility_matrix", "fixture", "expected_workspace", "required_checks", "quality_boundary", "latency_boundary", "safety_boundary", "known_limitations"}
 
 
@@ -75,7 +79,7 @@ def _load_recipe(path: Path) -> dict[str, Any]:
 
 
 def _version(command: str) -> str:
-    executable = shutil.which(command)
+    executable = resolve_dsh_executable() if command == "dsh" else shutil.which(command)
     if executable is None:
         raise HarnessRecipeError(f"required recipe executable is unavailable: {command}")
     completed = subprocess.run([executable, "--version"], cwd=ROOT, text=True, encoding="utf-8", capture_output=True, timeout=15, check=False)
