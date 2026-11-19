@@ -119,8 +119,10 @@ Set-Location D:\CosMatter\development\CosMatter
 CosMatter 插件补入 `tui` 的启用清单。返回工作台刷新安装状态后，再做终端注册和连通核验。
 末尾端口随工作台地址变化，例如 `cosmatter check-dsh-profile --verify-tools --loopback-port 8765`。
 当前端口核验通过后，舰桥提供「复制 DSH 启动命令」。在 CosMatter 终端运行
-`cosmatter open-dsh-workbench --port <当前端口>`，可打开现有的 `tui` profile，
-把七个 CosMatter 插件都接到这个端口。端口设置随该次会话生效，插件的超时和大小限制沿用本机配置。
+`cosmatter open-dsh-workbench --port <当前端口>`，DSH 会打开本地网页，并为会话载入 `tui` 中已安装的七个 CosMatter 插件。
+DSH 网页使用系统分配的空闲端口，插件连接命令里指定的 CosMatter 端口。`--no-open` 可让 DSH 在终端打印登录链接。
+已有交互终端界面的用户可加 `--surface tui`。端口设置随该次会话生效，插件的超时和大小限制沿用本机配置。
+从已打开的任务复制命令时会附上 `--run-id`。在该会话调用 `cosmatter_workflow_status` 可以省略 `run_id`，也可显式指定另一条任务。
 隔离进程只调用 `cosmatter_plugin_catalogue` 读取静态目录，
 回执记录端口和上次结果。省略 `--loopback-port` 时只核验配置组合与工具注册。
 如果终端找不到 DSH，可加上 `--dsh-executable <本机启动器路径>`。

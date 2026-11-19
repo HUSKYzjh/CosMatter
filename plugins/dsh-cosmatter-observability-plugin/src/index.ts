@@ -22,6 +22,10 @@ function isWorkbenchLink(value: JsonValue | undefined, runId: JsonValue | undefi
 
 export function apply(ctx: Context, config: CosMatterObservabilityConfig = {}): void {
   const client = new CosMatterObservabilityClient(config)
+  const sessionRun = config.workbenchRunId
+  if (sessionRun !== undefined && (typeof sessionRun !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(sessionRun))) {
+    throw new Error('Invalid CosMatter workbench run ID')
+  }
   ctx.tools.register(defineTool({
     name: 'cosmatter_recent_runs',
     description: 'List up to twelve recent local CosMatter run IDs, update times, stopped flags and workbench links. Use it when a run ID is unknown.',
@@ -52,11 +56,14 @@ export function apply(ctx: Context, config: CosMatterObservabilityConfig = {}): 
   }))
   ctx.tools.register(defineTool({
     name: 'cosmatter_workflow_status',
-    description: 'Read a count-only, loopback-only CosMatter workflow status. It never invokes providers, reads source content, accepts evidence, grants consent, or changes a run.',
-    parameters: { run_id: { type: 'string', required: true } },
+    description: 'Read a count-only, loopback-only CosMatter workflow status. It never invokes providers, reads source content, accepts evidence, grants consent, or changes a run.'
+      + (sessionRun ? ' Omit run_id to read the run selected in the workbench.' : ''),
+    parameters: { run_id: sessionRun ? { type: 'string' } : { type: 'string', required: true } },
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     async execute(args, exec) {
-      const result = await client.workflowStatus(String(args.run_id), exec.signal)
+      const runId = args.run_id === undefined ? sessionRun : args.run_id
+      if (typeof runId !== 'string') throw new Error('A CosMatter run ID is required')
+      const result = await client.workflowStatus(runId, exec.signal)
       ctx.emit('cosmatter-observability/workflow-read', { run_id: result.run_id, next_stage: result.next_stage })
       return result as unknown as Record<string, JsonValue>
     },

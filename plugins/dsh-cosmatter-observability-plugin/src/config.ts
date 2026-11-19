@@ -1,4 +1,4 @@
-export interface CosMatterObservabilityConfig { baseUrl?: string; timeoutMs?: number; maxResponseBytes?: number }
+export interface CosMatterObservabilityConfig { baseUrl?: string; timeoutMs?: number; maxResponseBytes?: number; workbenchRunId?: string }
 export interface NormalizedConfig { baseUrl: string; timeoutMs: number; maxResponseBytes: number }
 
 export function normalizeConfig(config: CosMatterObservabilityConfig = {}): NormalizedConfig {

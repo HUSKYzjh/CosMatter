@@ -67,11 +67,33 @@ class DshProfileStatusTests(unittest.TestCase):
                 patch("cosmatter.dsh_profile_status._run_dsh_diagnostic", return_value="".join(rows)) as dump,
                 patch("cosmatter.dsh_profile_status.subprocess.run", side_effect=launch),
             ):
-                self.assertEqual(open_dsh_workbench(8789, dsh_home=home), 23)
+                self.assertEqual(open_dsh_workbench(8789, dsh_home=home, surface="tui"), 23)
             self.assertEqual(dump.call_args.args[1], ["--profile", "tui", "--dump-config"])
             self.assertIsNotNone(overlay)
             self.assertFalse(overlay.exists())
             self.assertEqual(manifest.read_bytes(), original)
+
+            web = home / "profiles" / "web"
+            observability = "@cosmatter/dsh-observability-plugin"
+            self._write_bundle(web, observability)
+            web_rows = f"- id: cosmatter-observability\n  name: '{observability}'\n  config:\n    timeoutMs: 1234\n    workbenchRunId: stale_run\n"
+
+            def launch_web(arguments, *, env, check):
+                self.assertEqual(arguments[:4], ["dsh", "--profile", "web", "--patch"])
+                self.assertEqual(arguments[5:], ["--host", "127.0.0.1", "--port", "0", "--no-open"])
+                override, additions = yaml.safe_load(Path(arguments[4]).read_text(encoding="utf-8"))
+                self.assertEqual(override["config"], {"timeoutMs": 1234, "workbenchRunId": "chosen_run", "baseUrl": "http://127.0.0.1:8789"})
+                self.assertEqual([row["name"] for row in additions["insert"]], [
+                    (profile / "node_modules" / name / "lib/index.js").as_uri() for name in EXPECTED_DSH_PACKAGES if name != observability
+                ])
+                return CompletedProcess(arguments, 0)
+
+            with (
+                patch("cosmatter.dsh_profile_status.shutil.which", return_value="dsh"),
+                patch("cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=["".join(rows), web_rows]),
+                patch("cosmatter.dsh_profile_status.subprocess.run", side_effect=launch_web),
+            ):
+                self.assertEqual(open_dsh_workbench(8789, dsh_home=home, open_browser=False, run_id="chosen_run"), 0)
 
             with (
                 patch("cosmatter.dsh_profile_status.shutil.which", return_value="dsh"),

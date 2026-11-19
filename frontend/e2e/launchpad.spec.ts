@@ -754,8 +754,20 @@ test("keeps synthetic launch-preview papers out of the real research route", asy
 });
 
 test("opens an existing DSH run by ID and reads PDF status from the local snapshot", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   const runId = "run_dsh_existing_01";
+  await page.route("**/api/plugins", route => route.fulfill({ json: dshCatalogueFixture }));
+  await page.route("**/api/dsh-profile", route => {
+    const proof = { checked_at: "2026-11-18T03:00:00Z", dsh_version: "0.2.2-rc.3", matches_local_files: true,
+      bundles: dshProfileSnapshot.packages.map(entry => entry.package) };
+    return route.fulfill({ json: { ...dshProfileSnapshot,
+      composition_check: { ...proof, schema_version: "cosmatter.dsh-composition-check/v1" },
+      tool_registry_check: { ...proof, schema_version: "cosmatter.dsh-tool-registry-check/v1",
+        registered_tools: dshPluginGroup.packages.flatMap(entry => entry.tools).sort(),
+        loopback_check: { status: "verified", port: Number(new URL(route.request().url()).port) } },
+    } });
+  });
   const missionId = "mission_dsh_existing_01";
   const documentId = "pdf_0123456789abcdef01234567";
   const { readFile } = await import("node:fs/promises");
@@ -799,6 +811,10 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
   await expect(page.getByText("cached-running.pdf", { exact: true })).toBeVisible(lazyWorkspaceContentLoad);
   await expect(page.locator(".rail-run-id code")).toHaveText(runId);
+  const session = page.getByRole("region", { name: "打开 DSH 会话" });
+  await session.getByRole("button", { name: "复制 DSH 启动命令" }).press("Enter");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter open-dsh-workbench --port ${new URL(page.url()).port} --run-id ${runId}`);
+  expect(await session.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(page.locator(".dsh-tool-catalogue")).toHaveCount(0);
   const opener = page.getByRole("button", { name: "查找 DSH 工具" });
   const fragment = new URL(page.url()).hash;

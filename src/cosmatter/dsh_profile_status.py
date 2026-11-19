@@ -289,10 +289,17 @@ def _enable_dsh_bundles(profile: Path) -> list[str]:
         raise DshBundleRepairError("Bundle files are installed, but DSH could not persist the enabled-bundle list. Run the repair again.") from error
 
 
-def open_dsh_workbench(port: int, *, executable: str = "dsh", dsh_home: Path | None = None) -> int:
-    """Open the usual TUI with a session-local endpoint for the CosMatter group."""
+def open_dsh_workbench(
+    port: int, *, executable: str = "dsh", dsh_home: Path | None = None,
+    surface: str = "web", open_browser: bool = True, run_id: str | None = None,
+) -> int:
+    """Open a DSH interface with the installed TUI bundles on this workbench port."""
     if type(port) is not int or not 1 <= port <= 65535:
         raise DshCompositionCheckError("Port must be between 1 and 65535.")
+    if surface not in {"web", "tui"}:
+        raise DshCompositionCheckError("Select the web or tui surface.")
+    if run_id is not None and not _LOCAL_RUN_ID.fullmatch(run_id):
+        raise DshCompositionCheckError("Invalid local run ID.")
     dsh = shutil.which(executable)
     if not dsh:
         raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
@@ -305,17 +312,24 @@ def open_dsh_workbench(port: int, *, executable: str = "dsh", dsh_home: Path | N
             patch_path = Path(temporary) / "workbench.yml"
             if os.name == "nt" and Path(dsh).suffix.lower() in {".bat", ".cmd"} and re.search(r"[&|<>^()%!\r\n]", str(patch_path)):
                 raise DshCompositionCheckError("The temporary directory contains characters unsupported by the DSH Windows command launcher.")
-            args = ["--profile", "tui"]
-            composed = _run_dsh_diagnostic(dsh, [*args, "--dump-config"], temporary, environment)
-            patch_path.write_text(_dsh_workbench_patch(composed, port), encoding="utf-8")
-            return subprocess.run([dsh, *args, "--patch", str(patch_path)], env=environment, check=False).returncode
+            composed = _run_dsh_diagnostic(dsh, ["--profile", "tui", "--dump-config"], temporary, environment)
+            overlay = _dsh_workbench_patch(composed, port, run_id)
+            args = [dsh, "--profile", surface, "--patch", str(patch_path)]
+            if surface == "web":
+                web_config = _run_dsh_diagnostic(dsh, ["--profile", "web", "--dump-config"], temporary, environment)
+                overlay = _dsh_web_overlay(overlay, web_config, home)
+                args.extend(["--host", "127.0.0.1", "--port", "0"])
+                if not open_browser:
+                    args.append("--no-open")
+            patch_path.write_text(overlay, encoding="utf-8")
+            return subprocess.run(args, env=environment, check=False).returncode
     except (OSError, UnicodeError, subprocess.TimeoutExpired) as error:
         raise DshCompositionCheckError("DSH could not open the local workbench session.") from error
     except KeyboardInterrupt:
         return 130
 
 
-def _dsh_workbench_patch(composed: str, port: int) -> str:
+def _dsh_workbench_patch(composed: str, port: int, run_id: str | None = None) -> str:
     # DSH replaces the whole config mapping in a patch. Copy only the seven
     # verified rows' config nodes so timeouts, limits and YAML tags survive.
     try:
@@ -355,6 +369,10 @@ def _dsh_workbench_patch(composed: str, port: int) -> str:
                 raise DshCompositionCheckError("A CosMatter bundle has a non-mapping configuration. Check its tui configuration before setting a session port.")
             options = [(key, value) for key, value in configuration.value if not (isinstance(key, ScalarNode) and key.value == "baseUrl")]
             options.append((ScalarNode(string_tag, "baseUrl"), ScalarNode(string_tag, f"http://127.0.0.1:{port}")))
+            if name.value == _OBSERVABILITY_BUNDLE:
+                options = [(key, value) for key, value in options if key.value != "workbenchRunId"]
+                if run_id is not None:
+                    options.append((ScalarNode(string_tag, "workbenchRunId"), ScalarNode(string_tag, run_id)))
             entries[identifier.value] = MappingNode(mapping_tag, [
                 (ScalarNode(string_tag, "id"), identifier),
                 (ScalarNode(string_tag, "name"), name),
@@ -365,6 +383,74 @@ def _dsh_workbench_patch(composed: str, port: int) -> str:
         return yaml.serialize(SequenceNode(sequence_tag, list(entries.values())), Dumper=yaml.SafeDumper, allow_unicode=True)
     except yaml.YAMLError as error:
         raise DshCompositionCheckError("The tui configuration could not be read as a DSH patch list.") from error
+
+
+def _dsh_web_overlay(tui_overlay: str, web_config: str, home: Path) -> str:
+    """Mount verified local entries in the browser profile without changing its manifest."""
+    import yaml
+    from yaml.nodes import MappingNode, ScalarNode, SequenceNode
+
+    def fields(row):
+        return {key.value: value for key, value in row.value if isinstance(key, ScalarNode)}
+
+    try:
+        patch = yaml.compose(tui_overlay, Loader=yaml.SafeLoader)
+        web = yaml.compose(web_config, Loader=yaml.SafeLoader)
+        if not isinstance(web, SequenceNode):
+            raise DshCompositionCheckError("DSH did not return a web profile entry list.")
+        additions = []
+        overrides = []
+        pending = [(row, True) for row in web.value]
+        existing = {}
+        names = set(EXPECTED_DSH_PACKAGES)
+        while pending:
+            row, parent_enabled = pending.pop()
+            if not isinstance(row, MappingNode):
+                continue
+            entry = fields(row)
+            disabled = entry.get("disabled")
+            enabled = parent_enabled and (disabled is None or (
+                isinstance(disabled, ScalarNode) and disabled.tag == "tag:yaml.org,2002:bool" and disabled.value == "false"
+            ))
+            group, children = entry.get("group"), entry.get("config")
+            if isinstance(group, ScalarNode) and group.value == "true" and isinstance(children, SequenceNode):
+                pending.extend((child, enabled) for child in children.value)
+            identifier, name = entry.get("id"), entry.get("name")
+            if isinstance(identifier, ScalarNode):
+                existing.setdefault(identifier.value, []).append((entry, enabled))
+            if isinstance(name, ScalarNode) and name.value in names:
+                canonical = name.value.replace("@cosmatter/dsh-", "cosmatter-").removesuffix("-plugin")
+                if not isinstance(identifier, ScalarNode) or identifier.value != canonical:
+                    raise DshCompositionCheckError("A CosMatter bundle already has a different ID in the web profile. Resolve the conflicting entry before launch.")
+        profiles = home / "profiles"
+        for row in patch.value:
+            entry = fields(row)
+            identifier, name = entry["id"].value, entry["name"].value
+            matches = existing.get(identifier, [])
+            if not matches:
+                entry["name"].value = (profiles / "tui" / "node_modules" / name / _ENTRY).resolve(strict=True).as_uri()
+                additions.append(row)
+                continue
+            target, enabled = matches[0]
+            target_name = target.get("name")
+            if len(matches) != 1 or not enabled or not isinstance(target_name, ScalarNode) or target_name.value != name:
+                raise DshCompositionCheckError(f"The web profile has a conflicting or disabled entry for {name}.")
+            if (_bundle_status(profiles / "web" / "node_modules" / name, name) != "verified"
+                or _bundle_runtime_stamp(profiles / "web", [name]) != _bundle_runtime_stamp(profiles / "tui", [name])):
+                raise DshCompositionCheckError(f"The web and tui profiles have different compiled versions of {name}.")
+            # Preserve web-specific limits when the bundle is already present.
+            config = target.get("config", MappingNode("tag:yaml.org,2002:map", []))
+            if not isinstance(config, MappingNode) or config.tag != "tag:yaml.org,2002:map":
+                raise DshCompositionCheckError(f"The web configuration for {name} must be a mapping.")
+            session_fields = {"baseUrl", "workbenchRunId"} if name == _OBSERVABILITY_BUNDLE else {"baseUrl"}
+            session_options = [(key, value) for key, value in entry["config"].value if key.value in session_fields]
+            entry["config"].value = [(key, value) for key, value in config.value if not isinstance(key, ScalarNode) or key.value not in session_fields] + session_options
+            overrides.append(row)
+        if additions:
+            overrides.append(MappingNode("tag:yaml.org,2002:map", [(ScalarNode("tag:yaml.org,2002:str", "insert"), SequenceNode(patch.tag, additions))]))
+        return yaml.serialize(SequenceNode(patch.tag, overrides), Dumper=yaml.SafeDumper, allow_unicode=True)
+    except yaml.YAMLError as error:
+        raise DshCompositionCheckError("DSH could not read the web profile configuration.") from error
 
 
 def check_dsh_composition(

@@ -7,6 +7,7 @@ import type { UiLocale } from "./fleetRegistry";
 import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
 import { DshToolCatalogue } from "./DshToolCatalogue";
 import { localWorkbenchLocation } from "./dshLocalCommands";
+import { isLocalRunId } from "./liveRunIdentity";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
 const PROFILE_CHECK_COMMAND = "cosmatter check-dsh-profile --verify-tools";
@@ -67,7 +68,8 @@ export function HarnessCapabilityDeck(props: {
   const workbenchLocation = localWorkbenchLocation();
   const loopbackPort = workbenchLocation ? Number(workbenchLocation.port || "80") : null;
   const checkCommand = loopbackPort ? `${PROFILE_CHECK_COMMAND} --loopback-port ${loopbackPort}` : PROFILE_CHECK_COMMAND;
-  const openCommand = loopbackPort ? `cosmatter open-dsh-workbench --port ${loopbackPort}` : null;
+  const sessionRun = () => props.runId && isLocalRunId(props.runId) ? props.runId : null;
+  const openCommand = () => loopbackPort ? `cosmatter open-dsh-workbench --port ${loopbackPort}${sessionRun() ? ` --run-id ${sessionRun()}` : ""}` : null;
   let verdictTitle!: HTMLElement;
   let packageProof: HTMLDetailsElement | undefined;
   let packageSummary: HTMLElement | undefined;
@@ -248,10 +250,12 @@ export function HarnessCapabilityDeck(props: {
           <ActionButton size="sm" onClick={() => handleAction(action())}>{actionLabel(action())}</ActionButton>
         }</Show>
       </div>
-      <Show when={activation().state === "ready" && openCommand}>{(command) =>
+      <Show when={activation().state === "ready" && openCommand()}>{(command) =>
         <section class="harness-session-launch" aria-label={x("打开 DSH 会话", "Open a DSH session")}>
-          <p>{x(`在终端运行，将本次 DSH 会话连接到工作台端口 ${loopbackPort}。`,
-            `Run in your terminal to connect this DSH session to workbench port ${loopbackPort}.`)}</p>
+          <p>{sessionRun() ? x(`在终端运行即可打开 DSH 网页，查询当前任务的进度。插件连接工作台端口 ${loopbackPort}。`,
+            `Run in your terminal to open DSH with this run selected for status queries on workbench port ${loopbackPort}.`)
+            : x(`在终端运行即可打开 DSH 网页。七个插件会连接到工作台端口 ${loopbackPort}。`,
+              `Run in your terminal to open DSH in your browser. Its seven plugins connect to workbench port ${loopbackPort}.`)}</p>
           <div class="harness-copy-row">
             <code>{command()}</code>
             <ActionButton size="sm" onClick={() => void copyCommand(command())}>{x("复制 DSH 启动命令", "Copy DSH launch command")}</ActionButton>

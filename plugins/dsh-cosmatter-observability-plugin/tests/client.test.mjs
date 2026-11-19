@@ -186,6 +186,25 @@ test('DSH apply registers only read-only observability tools', async () => {
   globalThis.fetch = originalFetch
 })
 
+test('only the status read defaults to the workbench run and an explicit run takes precedence', async t => {
+  const requested = []
+  t.mock.method(globalThis, 'fetch', async url => {
+    const id = new URL(url).pathname.split('/')[3]
+    requested.push(id)
+    return Response.json({ ...status, run_id: id })
+  })
+  const tools = new Map()
+  const ctx = { tools: { register: tool => tools.set(tool.name, tool) }, emit() {}, effect() {} }
+  apply(ctx, { workbenchRunId: 'run_selected' })
+  const read = tools.get('cosmatter_workflow_status')
+  const execution = { signal: new AbortController().signal }
+  assert.equal((await read.execute({}, execution)).run_id, 'run_selected')
+  assert.equal((await read.execute({ run_id: 'run_other' }, execution)).run_id, 'run_other')
+  apply(ctx)
+  await assert.rejects(() => tools.get('cosmatter_workflow_status').execute({}, execution), /missing required property "run_id"/)
+  assert.deepEqual(requested, ['run_selected', 'run_other'])
+})
+
 test('DSH presents loopback links and concise summaries while preserving canonical results', async t => {
   let runs = recent.runs
   t.mock.method(globalThis, 'fetch', async url => {
