@@ -114,6 +114,9 @@ Set-Location D:\CosMatter\development\CosMatter
 「DSH 终端核验」里的「复制核验命令」。在 CosMatter 虚拟环境运行命令后，点「刷新核验结果」。
 「启用结论」会指出当前最先需要处理的问题。可从这里展开安装清单、重试工作台目录连接或跳到终端核验。
 本机端口的结论需同时满足完整的工具注册和该端口的连通核验。
+安装或配置组合缺少 CosMatter 插件时，可以点「复制补齐命令」，再在 CosMatter 仓库根目录运行
+`cosmatter repair-dsh-bundles`。命令用 DSH 离线链接仓库中缺失或无效的已编译插件，再将
+CosMatter 插件补入 `tui` 的启用清单。返回工作台刷新安装状态后，再做终端注册和连通核验。
 末尾端口随工作台地址变化，例如 `cosmatter check-dsh-profile --verify-tools --loopback-port 8765`。
 隔离进程只调用 `cosmatter_plugin_catalogue` 读取静态目录，
 回执记录端口和上次结果。省略 `--loopback-port` 时只核验配置组合与工具注册。

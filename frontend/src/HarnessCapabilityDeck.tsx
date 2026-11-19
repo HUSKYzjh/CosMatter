@@ -10,6 +10,7 @@ import { localWorkbenchLocation } from "./dshLocalCommands";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
 const PROFILE_CHECK_COMMAND = "cosmatter check-dsh-profile --verify-tools";
+const BUNDLE_REPAIR_COMMAND = "cosmatter repair-dsh-bundles";
 const TOOL_COUNT = packages.reduce((total, bundle) => total + bundle.tools.length, 0);
 type ActivationAction = "bundles" | "terminal" | "profile" | "catalogue";
 type ActivationVerdict = {
@@ -70,16 +71,24 @@ export function HarnessCapabilityDeck(props: {
   let packageProof: HTMLDetailsElement | undefined;
   let packageSummary: HTMLElement | undefined;
   let terminalCopy: HTMLButtonElement | undefined;
-  const [copyFeedback, setCopyFeedback] = createSignal<"copied" | "manual" | null>(null);
-  const copyCheckCommand = async () => {
+  const [copyFeedback, setCopyFeedback] = createSignal<{ command: string; copied: boolean } | null>(null);
+  const copyCommand = async (command: string) => {
     try {
-      await navigator.clipboard.writeText(checkCommand);
-      setCopyFeedback("copied");
+      await navigator.clipboard.writeText(command);
+      setCopyFeedback({ command, copied: true });
     } catch {
-      setCopyFeedback("manual");
+      setCopyFeedback({ command, copied: false });
     }
   };
+  const feedbackFor = (command: string) => {
+    const feedback = copyFeedback();
+    return feedback?.command === command ? feedback : null;
+  };
+  const copyStatus = (copied: boolean) => copied ? x("已复制。", "Copied.")
+    : x("剪贴板不可用，请选中命令手动复制。", "Clipboard unavailable. Select the command and copy it manually.");
   const composition = () => props.profile?.composition_check;
+  const bundleListIncomplete = () => composition()?.matches_local_files === true
+    && (composition()?.bundles.length ?? 0) < (props.profile?.expected_bundle_count ?? 0);
   const registry = () => props.profileHealth === "ready" ? props.profile?.tool_registry_check : undefined;
   const loopbackLabel = createMemo(() => {
     const check = registry();
@@ -156,9 +165,10 @@ export function HarnessCapabilityDeck(props: {
       detail: x("终端命令可一并核验配置组合和工具注册。", "The terminal command checks both composition and tool registration."),
     };
     if (compositionLabel().tone !== "ready" || registryLabel().tone !== "ready") return {
-      state: "partial", action: terminal,
+      state: "partial", action: bundleListIncomplete() && workbenchLocation ? "bundles" : terminal,
       title: compositionLabel().tone !== "ready" ? compositionLabel().text : registryLabel().text,
-      detail: x("在终端核验当前 tui 组合和工具注册结果。", "Check the current TUI composition and registrations in the terminal."),
+      detail: bundleListIncomplete() && workbenchLocation ? x("从插件清单检查缺少的 tui 组合条目。", "Inspect the bundle list for missing TUI composition entries.")
+        : x("在终端核验当前 tui 组合和工具注册结果。", "Check the current TUI composition and registrations in the terminal."),
     };
     if (loopbackPort && loopbackLabel().tone !== "ready") return {
       state: "partial", action: terminal,
@@ -174,7 +184,7 @@ export function HarnessCapabilityDeck(props: {
     };
   });
   const actionLabel = (action: ActivationAction) => ({
-    bundles: x("查看安装问题", "Inspect installation"),
+    bundles: bundleListIncomplete() ? x("查看插件清单", "Inspect bundles") : x("查看安装问题", "Inspect installation"),
     terminal: x("前往终端核验", "Go to terminal checks"),
     profile: x("重读安装状态", "Reload installation status"),
     catalogue: x("重试目录连接", "Retry catalogue connection"),
@@ -297,14 +307,12 @@ export function HarnessCapabilityDeck(props: {
             </p>}</Show>
             <div class="harness-installation-footer harness-copy-row">
               <code>{checkCommand}</code>
-              <ActionButton ref={terminalCopy} size="sm" onClick={() => void copyCheckCommand()}>{x("复制核验命令", "Copy check command")}</ActionButton>
+              <ActionButton ref={terminalCopy} size="sm" onClick={() => void copyCommand(checkCommand)}>{x("复制核验命令", "Copy check command")}</ActionButton>
               <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在读取…", "Reading…")} onClick={() => props.onRefreshProfile?.()}>
                 {x("刷新核验结果", "Refresh check results")}
               </ActionButton>
             </div>
-            <Show when={copyFeedback()}>{(feedback) => <p role="status">{feedback() === "copied"
-              ? x("已复制。", "Copied.")
-              : x("剪贴板不可用，请选中命令手动复制。", "Clipboard unavailable. Select the command and copy it manually.")}</p>}</Show>
+            <Show when={feedbackFor(checkCommand)}>{(feedback) => <p role="status">{copyStatus(feedback().copied)}</p>}</Show>
             <Show when={registry() && !registry()!.matches_local_files}><p>{x("本机配置或插件文件已变化，请在终端重新核验。", "Local configuration or bundle files changed. Run the terminal check again.")}</p></Show>
           </section>
         </Show>
@@ -324,6 +332,8 @@ export function HarnessCapabilityDeck(props: {
               const tools = packages.find(({ package: name }) => name === packageStatus.package)?.tools ?? [];
               return `${tools.filter((name) => check.registered_tools.includes(name)).length}/${tools.length}`;
             };
+            const absentFromComposition = () => packageStatus.install_status === "verified"
+              && composition()?.matches_local_files && !composition()?.bundles.includes(packageStatus.package);
             return <li classList={{ installed: packageStatus.install_status === "verified" }}>
               <i aria-hidden="true" />
               <div>
@@ -332,11 +342,29 @@ export function HarnessCapabilityDeck(props: {
               </div>
               <span class="harness-package-state"><b>{installStatusLabel(props.locale, packageStatus.install_status)}</b>
                 <Show when={packageStatus.dependency_kind !== "absent"}><small>{dependencyKindLabel(props.locale, packageStatus.dependency_kind)}</small></Show>
+                <Show when={absentFromComposition()}><small class="harness-package-composition-missing">{x("未进入配置组合", "Absent from composition")}</small></Show>
                 <Show when={registration()}>{(count) => <small>{x(`注册 ${count()}`, `Registered ${count()}`)}</small>}</Show>
               </span>
             </li>;
           }}</For>
         </ul>
+        <Show when={workbenchLocation && props.profileHealth === "ready"
+          && (profile().installed_bundle_count < profile().expected_bundle_count || bundleListIncomplete())}>
+          <section class="harness-bundle-repair" aria-label={x("补齐本机 DSH 插件", "Repair local DSH bundles")}>
+            <p>{x("在 CosMatter 仓库根目录的终端运行。命令会补齐缺失或异常的本地链接，并将 CosMatter 插件加入 tui 启用清单。",
+              "Run from the CosMatter repository root. The command repairs missing or invalid local links and enables the CosMatter bundles in TUI.")}</p>
+            <div class="harness-copy-row">
+              <code>{BUNDLE_REPAIR_COMMAND}</code>
+              <ActionButton size="sm" onClick={() => void copyCommand(BUNDLE_REPAIR_COMMAND)}>{x("复制补齐命令", "Copy repair command")}</ActionButton>
+              <Show when={props.onRefreshProfile}>
+                <ActionButton size="sm" onClick={() => { packageSummary?.focus(); props.onRefreshProfile?.(); }}>
+                  {x("刷新安装状态", "Refresh installation status")}
+                </ActionButton>
+              </Show>
+            </div>
+            <Show when={feedbackFor(BUNDLE_REPAIR_COMMAND)}>{(feedback) => <p role="status">{copyStatus(feedback().copied)}</p>}</Show>
+          </section>
+        </Show>
         <p>{x(
           "此处检查安装文件。配置组合、profile 启动和派发由各自的检查确认。",
           "These checks cover installed files. Profile composition, startup, and dispatch have separate checks.",

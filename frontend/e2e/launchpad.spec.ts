@@ -370,6 +370,7 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   let repaired = false;
   let filesChanged = false;
   let allToolsRegistered = false;
+  let compositionIncomplete = false;
   let loopbackMatchesPort = false;
   let loopbackPassed = false;
   let finishCheck: () => void = () => {};
@@ -382,7 +383,7 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
         schema_version: "cosmatter.dsh-composition-check/v1",
         checked_at: "2026-11-18T03:00:00Z",
         dsh_version: "0.2.2-rc.3",
-        bundles: dshProfileSnapshot.packages.map(({ package: name }) => name),
+        bundles: (compositionIncomplete ? dshProfileSnapshot.packages.slice(0, -1) : dshProfileSnapshot.packages).map(({ package: name }) => name),
         matches_local_files: !filesChanged,
       },
       tool_registry_check: {
@@ -421,6 +422,10 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await verdict.getByRole("button", { name: "查看安装问题" }).press("Enter");
   await expect(packageProof.locator("summary")).toBeFocused();
   await expect(packageProof.locator("li").first()).toContainText("文件缺失");
+  const repair = packageProof.getByRole("region", { name: "补齐本机 DSH 插件" });
+  await repair.getByRole("button", { name: "复制补齐命令" }).press("Enter");
+  await expect(repair.getByRole("status")).toHaveText("已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cosmatter repair-dsh-bundles");
   const composition = deck.getByRole("region", { name: "DSH 终端核验" });
   const loopback = composition.locator(".harness-loopback-proof");
   const port = new URL(page.url()).port;
@@ -431,7 +436,7 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter check-dsh-profile --verify-tools --loopback-port ${port}`);
 
   repaired = true;
-  await composition.getByRole("button", { name: "刷新核验结果" }).click();
+  await repair.getByRole("button", { name: "刷新安装状态" }).click();
   try {
     const busy = composition.getByRole("button", { name: "正在读取…" });
     await expect(busy).toHaveAttribute("aria-busy", "true");
@@ -440,6 +445,8 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
     finishCheck();
   }
   await expect(installationCard).toContainText("已验证 7/7");
+  await expect(repair).toHaveCount(0);
+  await expect(packageProof.locator("summary")).toBeFocused();
   await expect(verdict).toContainText("工作台未能读取插件目录");
   catalogueAvailable = true;
   await verdict.getByRole("button", { name: "重试目录连接" }).press("Enter");
@@ -472,6 +479,12 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(verdict).toHaveClass(/state-ready/);
   await expect(verdict).toContainText("插件注册与本机连通已核验");
+  compositionIncomplete = true;
+  await composition.getByRole("button", { name: "刷新核验结果" }).click();
+  await verdict.getByRole("button", { name: "查看插件清单" }).press("Enter");
+  await expect(packageProof.locator("summary")).toBeFocused();
+  await expect(packageProof.locator("li").last()).toContainText("未进入配置组合");
+  await expect(repair.getByRole("button", { name: "复制补齐命令" })).toBeVisible();
   filesChanged = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(composition).toContainText("工具核验已过期");

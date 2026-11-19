@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import parse_qs, urlsplit
 
 
@@ -169,6 +169,10 @@ class DshCompositionCheckError(RuntimeError):
     """An explicit local check could not produce a trustworthy receipt."""
 
 
+class DshBundleRepairError(RuntimeError):
+    """The local CosMatter bundles could not be repaired."""
+
+
 def dsh_profile_status(profile_name: str = "tui", *, dsh_home: Path | None = None) -> dict[str, Any]:
     """Check declared bundles and their fixed installation files without loading them."""
     if not isinstance(profile_name, str) or not _PROFILE_NAME.fullmatch(profile_name):
@@ -219,6 +223,72 @@ def dsh_profile_status(profile_name: str = "tui", *, dsh_home: Path | None = Non
     return snapshot
 
 
+def repair_dsh_bundles(
+    project_root: Path, *, executable: str = "dsh", dsh_home: Path | None = None,
+) -> dict[str, Any]:
+    """Link missing CosMatter bundles and enable the installed group in TUI."""
+    home = (dsh_home or _default_dsh_home()).resolve()
+    before = dsh_profile_status(dsh_home=home)
+    if before["installation_state"] == "unavailable":
+        raise DshBundleRepairError("The local tui manifest could not be read. Check its contents before repairing bundles.")
+    missing = [item["package"] for item in before["packages"] if item["install_status"] != "verified"]
+    profile = home / "profiles" / "tui"
+    if not missing:
+        enabled = _enable_dsh_bundles(profile)
+        return {"profile_name": "tui", "status": "activated" if enabled else "already_installed", "repaired_bundles": [], "enabled_bundles": enabled}
+    dsh = shutil.which(executable)
+    if not dsh:
+        raise DshBundleRepairError("DSH executable not found. Set PATH or pass --dsh-executable.")
+    root = project_root.resolve()
+    plugin_root = root / "plugins"
+    sources = []
+    for package in missing:
+        name = package.removeprefix("@cosmatter/dsh-").removesuffix("-plugin")
+        source = plugin_root / f"dsh-cosmatter-{name}-plugin"
+        if source.resolve() != source or _bundle_status(source, package) != "verified":
+            raise DshBundleRepairError(f"Compiled checkout bundle unavailable for {package}. Run from the CosMatter repository root.")
+        sources.append(f"link:{source.as_posix()}")
+    if os.name == "nt" and Path(dsh).suffix.lower() in {".bat", ".cmd"} and re.search(r"[&|<>^()%!\r\n]", str(root)):
+        raise DshBundleRepairError("The checkout path contains characters unsupported by the DSH Windows command launcher.")
+    inherited = _BOOTSTRAP_ENV | {"home", "userprofile", "appdata", "localappdata"}
+    environment = {key: value for key, value in os.environ.items() if key.casefold() in inherited}
+    environment.update(DSH_HOME=str(home), CI="1")
+    try:
+        result = subprocess.run(
+            [dsh, "plugin", "--profile", "tui", "add", "--offline", "--ignore-scripts", *sources],
+            cwd=root, env=environment, stdin=subprocess.DEVNULL, capture_output=True, timeout=60, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise DshBundleRepairError("DSH could not finish linking the local bundles. Check the local DSH and pnpm installation.") from error
+    if result.returncode:
+        raise DshBundleRepairError("DSH could not link the bundles offline. Check pnpm and the local tui profile dependencies.")
+    if dsh_profile_status(dsh_home=home)["installation_state"] != "installed":
+        raise DshBundleRepairError("Some CosMatter bundle files are still missing or invalid. Refresh the installation checklist.")
+    enabled = _enable_dsh_bundles(profile)
+    return {"profile_name": "tui", "status": "installed", "repaired_bundles": missing, "enabled_bundles": enabled}
+
+
+def _enable_dsh_bundles(profile: Path) -> list[str]:
+    try:
+        manifest = _read_manifest(profile.resolve())
+        dsh = manifest.get("dsh")
+        settings = dsh.get("profile") if isinstance(dsh, dict) else None
+        if not isinstance(settings, dict) or "bundles" not in settings:
+            return []
+        bundles = settings["bundles"]
+        if not isinstance(bundles, list) or any(not isinstance(bundle, str) for bundle in bundles):
+            raise DshBundleRepairError("The tui enabled-bundle list is invalid. Check it before enabling CosMatter.")
+        additions = [bundle for bundle in EXPECTED_DSH_PACKAGES if bundle not in bundles]
+        if additions:
+            updated = {**manifest, "dsh": {**dsh, "profile": {**settings, "bundles": bundles + additions}}}
+            _write_profile_json(profile, "package.json", updated, indent=2, expected_manifest=manifest)
+        return additions
+    except DshBundleRepairError:
+        raise
+    except (OSError, RuntimeError, ValueError) as error:
+        raise DshBundleRepairError("Bundle files are installed, but DSH could not persist the enabled-bundle list. Run the repair again.") from error
+
+
 def check_dsh_composition(
     *, executable: str = "dsh", dsh_home: Path | None = None, verify_tools: bool = False, loopback_port: int | None = None,
 ) -> dict[str, Any]:
@@ -234,14 +304,23 @@ def check_dsh_composition(
         raise DshCompositionCheckError("The local tui profile manifest is missing.")
     environment = {**os.environ, "DSH_HOME": str(home)}
     try:
-        stamp = _configuration_stamp(profile)
+        before = _configuration_state(profile)
         with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-composition-") as temporary:
             version = _run_dsh_diagnostic(dsh, ["--version"], temporary, environment).strip()
             if not _DSH_VERSION.fullmatch(version):
                 raise DshCompositionCheckError("DSH returned an unsupported version string.")
-            config = _run_dsh_diagnostic(dsh, ["--profile", "tui", "--dump-config"], temporary, environment)
-        if stamp != _configuration_stamp(profile):
+            arguments = ["--profile", "tui", "--dump-config"]
+            config = _run_dsh_diagnostic(dsh, arguments, temporary, environment)
+            after = _configuration_state(profile)
+            if before != after and before.inputs == after.inputs:
+                # DSH can generate or refresh cordis.yml on the first dump
+                # after installing bundles. Require a stable second dump.
+                before = after
+                config = _run_dsh_diagnostic(dsh, arguments, temporary, environment)
+                after = _configuration_state(profile)
+        if before != after:
             raise DshCompositionCheckError("The local profile changed during the check. Run it again.")
+        stamp = _stamp_configuration(after)
         composed = _composed_packages(config)
         check = {
             "schema_version": _COMPOSITION_SCHEMA,
@@ -249,7 +328,7 @@ def check_dsh_composition(
             "dsh_version": version,
             "bundles": composed,
         }
-        _write_profile_receipt(profile, _COMPOSITION_RECEIPT, {**check, "configuration_stamp": stamp})
+        _write_profile_json(profile, _COMPOSITION_RECEIPT, {**check, "configuration_stamp": stamp})
         if verify_tools or loopback_port is not None:
             registry = _check_tool_registry(dsh, profile, composed, version, stamp, loopback_port)
             check["tool_registry_check"] = registry
@@ -291,7 +370,7 @@ def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: 
     }
     if loopback_check is not None:
         check["loopback_check"] = loopback_check
-    _write_profile_receipt(profile, _REGISTRY_RECEIPT, {**check, "configuration_stamp": stamp, "runtime_stamp": runtime_stamp})
+    _write_profile_json(profile, _REGISTRY_RECEIPT, {**check, "configuration_stamp": stamp, "runtime_stamp": runtime_stamp})
     return {**check, "matches_local_files": True}
 
 
@@ -544,8 +623,19 @@ def _composed_packages(config: str) -> list[str]:
 
 
 def _configuration_stamp(profile: Path) -> str:
-    # DSH rewrites cordis.yml with identical content during a dump. Compare its
-    # bounded content digest, and track the other principal inputs by metadata.
+    return _stamp_configuration(_configuration_state(profile))
+
+
+class _DshConfigurationState(NamedTuple):
+    generated_config_digest: str | None
+    inputs: list[tuple[int, int, int] | None]
+
+
+def _stamp_configuration(state: _DshConfigurationState) -> str:
+    return hashlib.sha256(json.dumps(state).encode("ascii")).hexdigest()
+
+
+def _configuration_state(profile: Path) -> _DshConfigurationState:
     files = [profile / name for name in ("package.json", _PATCH, "pnpm-lock.yaml", "pnpm-workspace.yaml")]
     files.append(profile.parent.parent / _PATCH)
     for package in EXPECTED_DSH_PACKAGES:
@@ -558,8 +648,7 @@ def _configuration_stamp(profile: Path) -> str:
             metadata.append((stat.st_size, stat.st_mtime_ns, stat.st_ino))
         except FileNotFoundError:
             metadata.append(None)
-    digest = _profile_config_digest(profile)
-    return hashlib.sha256(json.dumps([digest, metadata]).encode("ascii")).hexdigest()
+    return _DshConfigurationState(_profile_config_digest(profile), metadata)
 
 
 def _profile_config_digest(profile: Path) -> str | None:
@@ -577,12 +666,18 @@ def _profile_config_digest(profile: Path) -> str | None:
     return hashlib.sha256(contents).hexdigest()
 
 
-def _write_profile_receipt(profile: Path, filename: str, payload: dict[str, Any]) -> None:
+def _write_profile_json(
+    profile: Path, filename: str, payload: dict[str, Any], *, indent: int | None = None, expected_manifest: dict[str, Any] | None = None,
+) -> None:
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=profile, delete=False) as stream:
         temporary = Path(stream.name)
         try:
-            json.dump(payload, stream)
+            json.dump(payload, stream, ensure_ascii=indent is None, indent=indent)
+            if indent is not None:
+                stream.write("\n")
             stream.close()
+            if expected_manifest is not None and expected_manifest != _read_manifest(profile.resolve()):
+                raise DshBundleRepairError("The tui manifest changed while enabling bundles. Run the repair again.")
             temporary.replace(profile / filename)
         finally:
             temporary.unlink(missing_ok=True)

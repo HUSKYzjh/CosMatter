@@ -8,8 +8,9 @@ from subprocess import CompletedProcess
 from unittest.mock import patch
 
 from cosmatter.dsh_profile_status import (
-    EXPECTED_DSH_PACKAGES, DshCompositionCheckError, _BUNDLE_TOOLS,
+    EXPECTED_DSH_PACKAGES, DshBundleRepairError, DshCompositionCheckError, _BUNDLE_TOOLS,
     check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
+    repair_dsh_bundles,
 )
 
 
@@ -130,6 +131,37 @@ class DshProfileStatusTests(unittest.TestCase):
             (profile / "cordis.patch.yml").write_text("# local edit\n", encoding="utf-8")
             self.assertFalse(dsh_profile_status(dsh_home=home)["composition_check"]["matches_local_files"])
 
+    def test_composition_rechecks_generated_config_but_rejects_a_change_to_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = EXPECTED_DSH_PACKAGES[0]
+            self._write_bundle(profile, bundle)
+            (profile / "package.json").write_text(json.dumps({"dependencies": {bundle: "link:checkout"}}), encoding="utf-8")
+            dump_count = 0
+            edit_profile = False
+
+            def diagnostic(_executable, arguments, _cwd, _environment):
+                nonlocal dump_count
+                if arguments == ["--version"]:
+                    return "0.2.2-rc.3"
+                dump_count += 1
+                (profile / "cordis.yml").write_text("generated config", encoding="utf-8")
+                if edit_profile:
+                    (profile / "cordis.patch.yml").write_text("changed locally", encoding="utf-8")
+                return f"- id: cosmatter-mission\n  name: '{bundle}'\n"
+
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=diagnostic,
+            ):
+                check = check_dsh_composition(dsh_home=home)
+                self.assertEqual(dump_count, 2)
+                self.assertEqual(dsh_profile_status(dsh_home=home)["composition_check"], check)
+                edit_profile = True
+                with self.assertRaisesRegex(DshCompositionCheckError, "profile changed"):
+                    check_dsh_composition(dsh_home=home)
+                self.assertEqual(dump_count, 3)
+
     def test_registry_records_only_observed_tools_and_expires_when_imported_js_changes(self) -> None:
         manifest = Path(__file__).resolve().parents[1] / "plugins" / "dsh-plugin-group.json"
         declared = json.loads(manifest.read_text(encoding="utf-8"))["packages"]
@@ -212,6 +244,82 @@ class DshProfileStatusTests(unittest.TestCase):
             payload["loopback_check"]["private_path"] = "must be rejected"
             receipt.write_text(json.dumps(payload), encoding="utf-8")
             self.assertNotIn("tool_registry_check", dsh_profile_status(dsh_home=home))
+
+    def test_repair_links_only_unverified_bundles_and_is_repeatable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            project = base / "checkout with spaces"
+            home = base / "dsh-home"
+            profile = home / "profiles" / "tui"
+            installed = EXPECTED_DSH_PACKAGES[0]
+            missing = list(EXPECTED_DSH_PACKAGES[1:])
+            self._write_bundle(profile, installed)
+            dependencies = {installed: "link:existing", "user-fixture": "link:retained"}
+            profile_manifest = profile / "package.json"
+            profile_manifest.write_text(json.dumps({"dependencies": dependencies}), encoding="utf-8")
+
+            def link_bundles(arguments, **options):
+                self.assertEqual(arguments[:7], ["local-dsh", "plugin", "--profile", "tui", "add", "--offline", "--ignore-scripts"])
+                self.assertEqual(arguments[7:], [f"link:{sources[name].as_posix()}" for name in missing])
+                self.assertEqual(options["cwd"], project)
+                self.assertEqual(options["env"]["DSH_HOME"], str(home))
+                self.assertNotIn("DEEPSEEK_API_KEY", options["env"])
+                dependencies.update({name: f"link:{sources[name]}" for name in missing})
+                for name in missing:
+                    self._write_bundle(profile, name)
+                profile_manifest.write_text(json.dumps({"dependencies": dependencies}), encoding="utf-8")
+                return CompletedProcess(arguments, 0)
+
+            sources = {}
+            for package in missing:
+                name = package.split("/")[1].replace("dsh-", "dsh-cosmatter-", 1)
+                source = project / "plugins" / name
+                self._write_bundle(base / "staging", package)
+                source.parent.mkdir(parents=True, exist_ok=True)
+                (base / "staging" / "node_modules" / package).rename(source)
+                sources[package] = source
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status.subprocess.run", side_effect=link_bundles,
+            ) as launch, patch.dict("os.environ", {"DEEPSEEK_API_KEY": "unused-fixture"}):
+                self.assertEqual(repair_dsh_bundles(project, dsh_home=home)["repaired_bundles"], missing)
+                self.assertEqual(repair_dsh_bundles(project, dsh_home=home)["status"], "already_installed")
+                launch.assert_called_once()
+            retained = json.loads(profile_manifest.read_text(encoding="utf-8"))["dependencies"]
+            self.assertEqual(retained[installed], "link:existing")
+            self.assertEqual(retained["user-fixture"], "link:retained")
+
+    def test_repair_requires_checkout_sources_before_running_dsh(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status.subprocess.run",
+            ) as launch:
+                with self.assertRaisesRegex(DshBundleRepairError, "repository root"):
+                    repair_dsh_bundles(base, dsh_home=base / "dsh-home")
+                launch.assert_not_called()
+
+    def test_repair_enables_existing_bundles_without_reinstalling_or_replacing_other_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            dependencies = {package: "link:existing" for package in EXPECTED_DSH_PACKAGES}
+            for name in dependencies:
+                self._write_bundle(profile, name)
+            profile_manifest = profile / "package.json"
+            prior = ["base-bundle", "operator-bundle", EXPECTED_DSH_PACKAGES[0]]
+            profile_manifest.write_text(json.dumps({
+                "dependencies": dependencies, "dsh": {"profile": {"bundles": prior, "unknown_setting": True}},
+            }), encoding="utf-8")
+            with patch("cosmatter.dsh_profile_status.subprocess.run") as launch:
+                changed = repair_dsh_bundles(home, dsh_home=home)
+                self.assertEqual(changed["status"], "activated")
+                self.assertEqual(changed["repaired_bundles"], [])
+                self.assertEqual(changed["enabled_bundles"], list(EXPECTED_DSH_PACKAGES[1:]))
+                self.assertEqual(repair_dsh_bundles(home, dsh_home=home)["status"], "already_installed")
+                launch.assert_not_called()
+            manifest = json.loads(profile_manifest.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["dsh"]["profile"], {"bundles": prior + list(EXPECTED_DSH_PACKAGES[1:]), "unknown_setting": True})
+            self.assertEqual(manifest["dependencies"], dependencies)
 
     def test_run_status_uses_installed_observability_bundle_and_requires_the_requested_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
