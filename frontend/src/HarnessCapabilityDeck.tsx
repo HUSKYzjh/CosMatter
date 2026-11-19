@@ -7,10 +7,10 @@ import type { UiLocale } from "./fleetRegistry";
 import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
 import { DshToolCatalogue } from "./DshToolCatalogue";
 import { BUNDLE_REPAIR_COMMAND, dshProfileCheckCommand, localWorkbenchLocation } from "./dshLocalCommands";
-import { isLocalRunId } from "./liveRunIdentity";
+import { DshSessionLaunch } from "./DshSessionLaunch";
+import { DSH_TOOL_COUNT as TOOL_COUNT, dshSessionReadiness } from "./dshSessionReadiness";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
-const TOOL_COUNT = packages.reduce((total, bundle) => total + bundle.tools.length, 0);
 type ActivationAction = "bundles" | "terminal" | "profile" | "catalogue";
 type ActivationVerdict = {
   state: "checking" | "partial" | "disconnected" | "ready";
@@ -66,8 +66,6 @@ export function HarnessCapabilityDeck(props: {
   const workbenchLocation = localWorkbenchLocation();
   const loopbackPort = workbenchLocation ? Number(workbenchLocation.port || "80") : null;
   const checkCommand = dshProfileCheckCommand(loopbackPort);
-  const sessionRun = () => props.runId && isLocalRunId(props.runId) ? props.runId : null;
-  const openCommand = () => loopbackPort ? `cosmatter open-dsh-workbench --port ${loopbackPort}${sessionRun() ? ` --run-id ${sessionRun()}` : ""}` : null;
   let verdictTitle!: HTMLElement;
   let packageProof: HTMLDetailsElement | undefined;
   let packageSummary: HTMLElement | undefined;
@@ -132,46 +130,49 @@ export function HarnessCapabilityDeck(props: {
     return { tone: profile.installation_state === "installed" ? "ready" as const : "attention" as const, copy: x(`已验证 ${count}`, `Verified ${count}`) };
   });
   const activation = createMemo<ActivationVerdict>(() => {
-    if (props.profileHealth === "loading" || props.health === "loading") return {
+    const readiness = dshSessionReadiness(props.profile, props.profileHealth, props.health, loopbackPort);
+    if (readiness === "checking") return {
       state: "checking",
       title: x("正在核验 DSH 启用条件", "Checking DSH enablement conditions"),
       detail: x("正在读取本机安装状态和插件契约。", "Reading the local installation status and plugin contracts."),
     };
-    const profile = props.profileHealth === "ready" ? props.profile : null;
-    if (profile && profile.installation_state !== "unavailable" && profile.installed_bundle_count < profile.expected_bundle_count) return {
-      state: "partial", action: "bundles",
-      title: x("插件安装未齐", "Bundle installation incomplete"),
-      detail: x(`已验证 ${profile.installed_bundle_count}/${profile.expected_bundle_count} 个插件包。逐包检查会标出未声明或缺少有效文件的包。`,
-        `${profile.installed_bundle_count} of ${profile.expected_bundle_count} bundles verified. The bundle list identifies undeclared or invalid installations.`),
-    };
-    if (props.profileHealth === "unavailable" || profile?.installation_state === "unavailable") return {
+    if (readiness === "repair-files") {
+      const { installed_bundle_count: installed, expected_bundle_count: expected } = props.profile!;
+      return {
+        state: "partial", action: "bundles",
+        title: x("插件安装未齐", "Bundle installation incomplete"),
+        detail: x(`已验证 ${installed}/${expected} 个插件包。逐包检查会标出未声明或缺少有效文件的包。`,
+          `${installed} of ${expected} bundles verified. The bundle list identifies undeclared or invalid installations.`),
+      };
+    }
+    if (readiness === "profile-unavailable") return {
       state: "partial", action: props.onRefreshProfile ? "profile" : undefined,
       title: x("插件安装状态不可用", "Installation status unavailable"),
       detail: x("重新读取本机 tui 的插件安装和核验回执。", "Reload installed bundles and check receipts for the local TUI profile."),
     };
-    if (props.health === "unavailable") return {
+    if (readiness === "catalogue-unavailable") return {
       state: "partial", action: props.onRefresh ? "catalogue" : undefined,
       title: x("工作台未能读取插件目录", "Workbench catalogue read failed"),
       detail: x("重试工作台到本机目录的读取。", "Retry the workbench connection to the local catalogue."),
     };
-    if (!profile || props.health !== "ready") return {
+    if (readiness === "disconnected") return {
       state: "disconnected",
       title: x("DSH 插件桥未启用", "DSH plugin bridge not enabled"),
       detail: x("可在启用本地 API 的工作台检查插件状态。", "Check plugin status in a workbench with the local API enabled."),
     };
     const terminal = props.onRefreshProfile ? "terminal" : undefined;
-    if (!composition()) return {
+    if (readiness === "composition-unchecked") return {
       state: "partial", action: terminal,
       title: x("安装与契约已就绪，工具注册待核验", "Installation and contracts ready; tool registration unchecked"),
       detail: x("终端命令可一并核验配置组合和工具注册。", "The terminal command checks both composition and tool registration."),
     };
-    if (compositionLabel().tone !== "ready" || registryLabel().tone !== "ready") return {
-      state: "partial", action: bundleListIncomplete() && workbenchLocation ? "bundles" : terminal,
-      title: compositionLabel().tone !== "ready" ? compositionLabel().text : registryLabel().text,
-      detail: bundleListIncomplete() && workbenchLocation ? x("从插件清单检查缺少的 tui 组合条目。", "Inspect the bundle list for missing TUI composition entries.")
+    if (readiness === "repair-composition" || readiness === "composition-check" || readiness === "registry-check") return {
+      state: "partial", action: readiness === "repair-composition" ? "bundles" : terminal,
+      title: readiness === "registry-check" ? registryLabel().text : compositionLabel().text,
+      detail: readiness === "repair-composition" ? x("从插件清单检查缺少的 tui 组合条目。", "Inspect the bundle list for missing TUI composition entries.")
         : x("在终端核验当前 tui 组合和工具注册结果。", "Check the current TUI composition and registrations in the terminal."),
     };
-    if (loopbackPort && loopbackLabel().tone !== "ready") return {
+    if (readiness === "loopback-check") return {
       state: "partial", action: terminal,
       title: loopbackLabel().text,
       detail: x(`工具已注册 ${TOOL_COUNT}/${TOOL_COUNT}。请核验 DSH 到工作台端口 ${loopbackPort} 的连通性。`,
@@ -248,18 +249,8 @@ export function HarnessCapabilityDeck(props: {
           <ActionButton size="sm" onClick={() => handleAction(action())}>{actionLabel(action())}</ActionButton>
         }</Show>
       </div>
-      <Show when={activation().state === "ready" && openCommand()}>{(command) =>
-        <section class="harness-session-launch" aria-label={x("打开 DSH 会话", "Open a DSH session")}>
-          <p>{sessionRun() ? x(`在终端运行即可打开 DSH 网页，查询当前任务的进度。插件连接工作台端口 ${loopbackPort}。`,
-            `Run in your terminal to open DSH with this run selected for status queries on workbench port ${loopbackPort}.`)
-            : x(`在终端运行即可打开 DSH 网页。七个插件会连接到工作台端口 ${loopbackPort}。`,
-              `Run in your terminal to open DSH in your browser. Its seven plugins connect to workbench port ${loopbackPort}.`)}</p>
-          <div class="harness-copy-row">
-            <code>{command()}</code>
-            <ActionButton size="sm" onClick={() => void copyCommand(command())}>{x("复制 DSH 启动命令", "Copy DSH launch command")}</ActionButton>
-          </div>
-          <Show when={feedbackFor(command())}>{(feedback) => <p role="status">{copyStatus(feedback().copied)}</p>}</Show>
-        </section>
+      <Show when={activation().state === "ready" && loopbackPort}>{(port) =>
+        <DshSessionLaunch locale={props.locale} port={port()} runId={props.runId} />
       }</Show>
     </section>
     <Show when={props.health === "ready"} fallback={<div class="harness-catalogue-message"><p>{props.health === "loading"

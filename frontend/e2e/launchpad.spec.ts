@@ -32,6 +32,22 @@ const dshProfileSnapshot = {
   composition_status: "not_checked_by_http_api",
   trust_status: "local_installation_snapshot_not_profile_boot_or_plugin_execution",
 };
+function verifiedDshProfile(port: number) {
+  const proof = {
+    checked_at: "2026-11-18T03:00:00Z", dsh_version: "0.2.2-rc.3", matches_local_files: true,
+    bundles: dshProfileSnapshot.packages.map(entry => entry.package),
+  };
+  return {
+    ...dshProfileSnapshot,
+    composition_check: { ...proof, schema_version: "cosmatter.dsh-composition-check/v1" },
+    tool_registry_check: {
+      ...proof, schema_version: "cosmatter.dsh-tool-registry-check/v1",
+      registered_tools: dshPluginGroup.packages.flatMap(entry => entry.tools).sort(),
+      loopback_check: { status: "verified", port },
+    },
+  };
+}
+
 const dshCatalogueFixture = {
   catalogue_api_version: "2.0",
   trust_status: "static_catalogue_not_plugin_execution_or_evidence_acceptance",
@@ -798,16 +814,7 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   const runId = "run_dsh_existing_01";
   await page.route("**/api/plugins", route => route.fulfill({ json: dshCatalogueFixture }));
-  await page.route("**/api/dsh-profile", route => {
-    const proof = { checked_at: "2026-11-18T03:00:00Z", dsh_version: "0.2.2-rc.3", matches_local_files: true,
-      bundles: dshProfileSnapshot.packages.map(entry => entry.package) };
-    return route.fulfill({ json: { ...dshProfileSnapshot,
-      composition_check: { ...proof, schema_version: "cosmatter.dsh-composition-check/v1" },
-      tool_registry_check: { ...proof, schema_version: "cosmatter.dsh-tool-registry-check/v1",
-        registered_tools: dshPluginGroup.packages.flatMap(entry => entry.tools).sort(),
-        loopback_check: { status: "verified", port: Number(new URL(route.request().url()).port) } },
-    } });
-  });
+  await page.route("**/api/dsh-profile", route => route.fulfill({ json: verifiedDshProfile(Number(new URL(route.request().url()).port)) }));
   const missionId = "mission_dsh_existing_01";
   const documentId = "pdf_0123456789abcdef01234567";
   const { readFile } = await import("node:fs/promises");
@@ -852,14 +859,24 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await expect(page.getByText("cached-running.pdf", { exact: true })).toBeVisible(lazyWorkspaceContentLoad);
   await expect(page.locator(".rail-run-id code")).toHaveText(runId);
   const session = page.getByRole("region", { name: "打开 DSH 会话" });
+  const launchCommand = `cosmatter open-dsh-workbench --port ${new URL(page.url()).port} --run-id ${runId}`;
+  const openMode = session.getByRole("radiogroup", { name: "网页打开方式" });
+  await expect(openMode.getByRole("radio", { name: "自动打开网页" })).toBeChecked();
   await session.getByRole("button", { name: "复制 DSH 启动命令" }).press("Enter");
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter open-dsh-workbench --port ${new URL(page.url()).port} --run-id ${runId}`);
+  await expect(session.getByRole("status")).toHaveText("已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(launchCommand);
+  await openMode.getByRole("radio", { name: "自动打开网页" }).press("ArrowRight");
+  await expect(openMode.getByRole("radio", { name: "在终端显示链接" })).toBeChecked();
+  await expect(session.getByRole("status")).toHaveCount(0);
+  await session.getByRole("button", { name: "复制 DSH 启动命令" }).press("Enter");
+  await expect(session.getByRole("status")).toHaveText("已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(launchCommand + " --no-open");
   expect(await session.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(page.locator(".dsh-tool-catalogue")).toHaveCount(0);
-  const opener = page.getByRole("button", { name: "查找 DSH 工具" });
+  const opener = page.getByRole("button", { name: "DSH 工具与会话" });
   const fragment = new URL(page.url()).hash;
   await opener.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "查找 DSH 工具" });
+  const dialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
   const search = dialog.getByRole("searchbox");
   await expect(search).toBeFocused();
   const position = await search.boundingBox();
@@ -921,6 +938,19 @@ test("finds recent local missions without a run ID and reuses the selected run",
   await page.setViewportSize({ width: 320, height: 844 });
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   const runId = "saved_run_05";
+  let installed = false;
+  let catalogueAvailable = false;
+  let verified = false;
+  await page.route("**/api/plugins", route => catalogueAvailable
+    ? route.fulfill({ json: dshCatalogueFixture }) : route.fulfill({ status: 503 }));
+  await page.route("**/api/dsh-profile", route => {
+    if (verified) return route.fulfill({ json: verifiedDshProfile(Number(new URL(route.request().url()).port)) });
+    if (installed) return route.fulfill({ json: dshProfileSnapshot });
+    return route.fulfill({ json: {
+      ...dshProfileSnapshot, installation_state: "partial", installed_bundle_count: 6,
+      packages: [{ ...dshProfileSnapshot.packages[0], install_status: "missing_bundle" }, ...dshProfileSnapshot.packages.slice(1)],
+    } });
+  });
   const { readFile } = await import("node:fs/promises");
   const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
   bundle.literature_graph = {
@@ -995,6 +1025,36 @@ test("finds recent local missions without a run ID and reuses the selected run",
   await expect(page.locator(".workbench")).toHaveClass(/view-graph/, workspaceLoad);
   await expect(page.locator(".rail-run-id code")).toHaveText(runId);
   await expect(page.getByText(/打开时阶段为“候选筛选”/)).toBeVisible();
+  const graphUrl = page.url();
+  const opener = page.getByRole("button", { name: "DSH 工具与会话" });
+  await opener.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
+  const sessionTab = dialog.getByRole("tab", { name: "DSH 会话" });
+  await sessionTab.click();
+  const panel = dialog.getByRole("tabpanel", { name: "DSH 会话" });
+  const launch = panel.getByRole("button", { name: "复制 DSH 启动命令" });
+  const refresh = panel.getByRole("button", { name: "刷新会话状态" });
+  await panel.getByRole("button", { name: "复制补齐命令" }).press("Enter");
+  await expect(panel.getByText("剪贴板不可用，请选中命令手动复制。", { exact: true })).toBeVisible();
+  await expect(panel.locator("code")).toHaveText("cosmatter repair-dsh-bundles");
+  await expect(launch).toHaveCount(0);
+  installed = true;
+  await refresh.press("Enter");
+  const retry = panel.getByRole("button", { name: "重试目录连接" });
+  await expect(retry).toBeVisible();
+  await expect(launch).toHaveCount(0);
+  catalogueAvailable = true;
+  await retry.press("Enter");
+  await expect(panel.getByRole("button", { name: "复制核验命令" })).toBeVisible();
+  await expect(panel.locator("code")).toHaveText(`cosmatter check-dsh-profile --verify-tools --loopback-port ${new URL(graphUrl).port}`);
+  await expect(launch).toHaveCount(0);
+  verified = true;
+  await refresh.press("Enter");
+  await expect(launch).toBeVisible();
+  await expect(sessionTab).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(opener).toBeFocused();
+  await expect(page).toHaveURL(graphUrl);
   await page.getByRole("link", { name: "CosMatter", exact: true }).click();
   await page.getByRole("button", { name: "返回当前任务" }).click();
   await expect(page.locator(".workbench")).toHaveClass(/view-graph/, workspaceLoad);
@@ -1417,6 +1477,8 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.setViewportSize({ width: 320, height: 900 });
   const runId = "dsh_candidate_handoff";
+  await page.route("**/api/plugins", route => route.fulfill({ json: dshCatalogueFixture }));
+  await page.route("**/api/dsh-profile", route => route.fulfill({ json: verifiedDshProfile(Number(new URL(route.request().url()).port)) }));
   const { readFile } = await import("node:fs/promises");
   const bundle = JSON.parse(await readFile(routeDiagnosticsExport, "utf8"));
   const ready = "文献 & ready=1";
@@ -1491,8 +1553,8 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await expect(sourcePreview).toBeFocused();
   await expect(sourcePreview.getByText("来源定位第 7 行", { exact: true })).toBeVisible();
   await expect(sourcePreview.locator("li.selected")).toHaveText("7Temperature measured at 300 K.");
-  const toolOpener = page.locator(".research-rail").getByRole("button", { name: "查找 DSH 工具" });
-  const toolDialog = page.getByRole("dialog", { name: "查找 DSH 工具" });
+  const toolOpener = page.locator(".research-rail").getByRole("button", { name: "DSH 工具与会话" });
+  const toolDialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
   const readerFragment = new URL(page.url()).hash;
   await page.setViewportSize({ width: 320, height: 568 });
   await toolOpener.press("Enter");
@@ -1529,6 +1591,50 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await evidenceTool.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
   await expect(evidenceTool.getByRole("status")).toHaveText("DSH 命令已复制。");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(evidenceCommand);
+  await search.fill("accepted");
+  await expect(toolDialog.locator(".dsh-tool-item")).toHaveCount(1);
+  const catalogueTab = toolDialog.getByRole("tab", { name: "工具目录" });
+  const sessionTab = toolDialog.getByRole("tab", { name: "DSH 会话" });
+  await expect(catalogueTab).toHaveAttribute("aria-selected", "true");
+  await catalogueTab.press("ArrowRight");
+  await expect(sessionTab).toBeFocused();
+  await expect(sessionTab).toHaveAttribute("aria-selected", "true");
+  await expect(search).not.toBeVisible();
+  const sessionPanel = toolDialog.getByRole("tabpanel", { name: "DSH 会话" });
+  const mode = sessionPanel.getByRole("radiogroup", { name: "网页打开方式" });
+  await expect(mode.getByRole("radio", { name: "自动打开网页" })).toBeChecked();
+  await page.setViewportSize({ width: 320, height: 400 });
+  await mode.getByRole("radio", { name: "在终端显示链接" }).check();
+  await sessionPanel.getByRole("button", { name: "复制 DSH 启动命令" }).click();
+  await expect(sessionPanel.getByRole("status")).toHaveText("已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `cosmatter open-dsh-workbench --port ${new URL(page.url()).port} --run-id ${runId} --no-open`);
+  expect(await toolDialog.evaluate(dialog => {
+    const rect = dialog.getBoundingClientRect();
+    return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight && dialog.scrollWidth <= dialog.clientWidth;
+  })).toBe(true);
+  const controls = await sessionPanel.locator("label, button").evaluateAll(elements =>
+    elements.map(element => {
+      const { left, right, top, bottom } = element.getBoundingClientRect();
+      return { left, right, top, bottom };
+    }));
+  expect(controls).toHaveLength(3);
+  for (const [index, box] of controls.entries()) {
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(320);
+    for (const other of controls.slice(0, index)) {
+      expect(box.left >= other.right || box.right <= other.left || box.top >= other.bottom || box.bottom <= other.top).toBe(true);
+    }
+  }
+  await expect(sessionPanel.getByRole("status")).toHaveCount(0);
+  await page.setViewportSize({ width: 320, height: 568 });
+  await sessionTab.press("ArrowLeft");
+  await expect(catalogueTab).toBeFocused();
+  await expect(toolDialog.getByRole("tabpanel", { name: "工具目录" })).toBeVisible();
+  await expect(stagePicker).toHaveValue("extraction");
+  await expect(search).toHaveValue("accepted");
+  await expect(evidenceTool).toHaveAttribute("open", "");
+  await search.fill("");
   await toolDialog.getByRole("button", { name: "清除筛选" }).press("Enter");
   await expect(stagePicker).toHaveValue("all");
   await expect(search).toBeFocused();
@@ -1601,7 +1707,7 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await stagePicker.selectOption("extraction");
   await evidenceTool.locator("summary").press("Enter");
   await expect(evidenceTool.getByRole("button", { name: "复制 DSH 命令" })).toHaveCount(0);
-  await toolDialog.getByRole("button", { name: "关闭工具目录" }).press("Enter");
+  await toolDialog.getByRole("button", { name: "关闭 DSH 面板" }).press("Enter");
   await expect(toolDialog).toHaveCount(0);
   await expect(toolOpener).toBeFocused();
   await expect(inspector.getByRole("heading", { name: "Pending candidate", exact: true })).toBeVisible();

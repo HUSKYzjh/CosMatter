@@ -163,6 +163,12 @@ def command_repair_dsh_bundles(args: argparse.Namespace) -> int:
 
 
 def command_open_dsh_workbench(args: argparse.Namespace) -> int:
+    if args.surface == "tui":
+        print(
+            "The tui profile requires a separately installed interactive terminal frontend. "
+            "If the terminal stays blank, press Ctrl+C and rerun the same command with --surface web.",
+            file=sys.stderr, flush=True,
+        )
     try:
         return open_dsh_workbench(args.port, executable=args.dsh_executable, surface=args.surface, open_browser=not args.no_open, run_id=args.run_id)
     except DshCompositionCheckError as error:
@@ -3702,7 +3708,7 @@ def build_parser() -> argparse.ArgumentParser:
     dsh_open = commands.add_parser("open-dsh-workbench", help="open the DSH browser interface with CosMatter connected to this workbench port")
     dsh_open.add_argument("--port", type=int, required=True, help="port of the running local CosMatter workbench")
     dsh_open.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
-    dsh_open.add_argument("--surface", choices=("web", "tui"), default="web", help="use web (default) or your configured tui frontend")
+    dsh_open.add_argument("--surface", choices=("web", "tui"), default="web", help="use the bundled web interface (default) or a separately installed interactive frontend in the tui profile")
     dsh_open.add_argument("--no-open", action="store_true", help="print the local DSH Web URL for manual opening")
     dsh_open.add_argument("--run-id", help="default run for the read-only workflow status tool in this session")
     dsh_open.set_defaults(handler=command_open_dsh_workbench)

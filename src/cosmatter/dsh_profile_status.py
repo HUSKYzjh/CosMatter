@@ -7,9 +7,13 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -35,6 +39,9 @@ _COMPOSITION_RECEIPT = ".cosmatter-composition-check.json"
 _COMPOSITION_SCHEMA = "cosmatter.dsh-composition-check/v1"
 _REGISTRY_RECEIPT = ".cosmatter-tool-registry-check.json"
 _REGISTRY_SCHEMA = "cosmatter.dsh-tool-registry-check/v1"
+_PORT_HISTORY_FILE = ".cosmatter-tool-registry-ports.json"
+_PORT_HISTORY_SCHEMA = "cosmatter.dsh-tool-registry-ports/v1"
+_MAX_LOOPBACK_RECEIPTS = 16
 _MAX_CONFIG_BYTES = 1_000_000
 _DSH_VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-[a-z0-9.]{1,24})?")
 _DSH_UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\1bf39983-50d0-5fe0-9ef4-cece76f67c5e"
@@ -176,10 +183,14 @@ class DshBundleRepairError(RuntimeError):
     """The local CosMatter bundles could not be repaired."""
 
 
-def dsh_profile_status(profile_name: str = "tui", *, dsh_home: Path | None = None) -> dict[str, Any]:
+def dsh_profile_status(
+    profile_name: str = "tui", *, dsh_home: Path | None = None, loopback_port: int | None = None,
+) -> dict[str, Any]:
     """Check declared bundles and their fixed installation files without loading them."""
     if not isinstance(profile_name, str) or not _PROFILE_NAME.fullmatch(profile_name):
         raise ValueError("DSH profile name is invalid")
+    if loopback_port is not None and (type(loopback_port) is not int or not 1 <= loopback_port <= 65535):
+        raise ValueError("Port must be between 1 and 65535.")
     profile = (dsh_home or _default_dsh_home()) / "profiles" / profile_name
     dependencies: dict[str, object] = {}
     unavailable = False
@@ -221,7 +232,7 @@ def dsh_profile_status(profile_name: str = "tui", *, dsh_home: Path | None = Non
     }
     if profile_name == "tui" and not unavailable and (check := _read_composition_check(profile)) is not None:
         snapshot["composition_check"] = check
-    if profile_name == "tui" and not unavailable and (registry := _read_registry_check(profile)) is not None:
+    if profile_name == "tui" and not unavailable and (registry := _read_registry_check(profile, loopback_port)) is not None:
         snapshot["tool_registry_check"] = registry
     return snapshot
 
@@ -528,8 +539,6 @@ def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: 
         raise DshCompositionCheckError("DSH did not return a valid isolated tool registry.")
     if loopback_check is not None and not _valid_loopback_check(loopback_check, tools):
         raise DshCompositionCheckError("DSH did not return a valid loopback check.")
-    if stamp != _configuration_stamp(profile) or runtime_stamp != _bundle_runtime_stamp(profile, bundles):
-        raise DshCompositionCheckError("The local profile or bundle files changed during the registration check. Run it again.")
     check = {
         "schema_version": _REGISTRY_SCHEMA,
         "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -537,7 +546,7 @@ def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: 
     }
     if loopback_check is not None:
         check["loopback_check"] = loopback_check
-    _write_profile_json(profile, _REGISTRY_RECEIPT, {**check, "configuration_stamp": stamp, "runtime_stamp": runtime_stamp})
+    _save_registry_check(profile, {**check, "configuration_stamp": stamp, "runtime_stamp": runtime_stamp})
     return {**check, "matches_local_files": True}
 
 
@@ -775,14 +784,38 @@ def _bundle_runtime_stamp(profile: Path, bundles: list[str]) -> str:
     return digest.hexdigest()
 
 
-def _run_dsh_diagnostic(dsh: str, arguments: list[str], cwd: str, environment: dict[str, str]) -> str:
-    result = subprocess.run(
+def _run_dsh_diagnostic(
+    dsh: str, arguments: list[str], cwd: str, environment: dict[str, str], *, timeout: float = 60,
+) -> str:
+    group_options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    with subprocess.Popen(
         [dsh, *arguments], cwd=cwd, env=environment, stdin=subprocess.DEVNULL,
-        capture_output=True, timeout=20, check=False,
-    )
-    if result.returncode or len(result.stdout) > _MAX_CONFIG_BYTES:
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, **group_options,
+    ) as process:
+        try:
+            stdout, _ = process.communicate(timeout=timeout)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt):
+            # A Windows .cmd waits for the runtime. Terminate the tree while
+            # its root still exists, before closing the pipe and temporary home.
+            if os.name == "nt":
+                taskkill = Path(os.environ["SystemRoot"]) / "System32" / "taskkill.exe"
+                try:
+                    subprocess.run(
+                        [str(taskkill), "/PID", str(process.pid), "/T", "/F"], stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False,
+                    )
+                finally:
+                    process.kill()
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.communicate(timeout=10)
+            raise
+    if process.returncode or len(stdout) > _MAX_CONFIG_BYTES:
         raise DshCompositionCheckError("DSH could not produce a valid local diagnostic result.")
-    return result.stdout.decode("utf-8")
+    return stdout.decode("utf-8")
 
 
 def _composed_packages(config: str) -> list[str]:
@@ -869,21 +902,30 @@ def _write_profile_json(
             stream.close()
             if expected_manifest is not None and expected_manifest != _read_manifest(profile.resolve()):
                 raise DshBundleRepairError("The tui manifest changed while enabling bundles. Run the repair again.")
-            temporary.replace(profile / filename)
+            # Windows briefly denies atomic replacement while another check or
+            # an HTTP reader has the destination receipt open.
+            for attempt in range(6):
+                try:
+                    temporary.replace(profile / filename)
+                    break
+                except PermissionError as error:
+                    if expected_manifest is not None or getattr(error, "winerror", None) not in (5, 32, 33) or attempt == 5:
+                        raise
+                    time.sleep(0.01 * 2**attempt)
         finally:
             temporary.unlink(missing_ok=True)
 
 
-def _read_profile_receipt(profile: Path, filename: str) -> dict[str, Any] | None:
+def _read_profile_receipt(profile: Path, filename: str, *, max_bytes: int = 4096) -> dict[str, Any] | None:
     try:
         root = profile.resolve()
         path = (root / filename).resolve(strict=True)
         if not path.is_relative_to(root) or not path.is_file():
             return None
         with path.open("rb") as stream:
-            data = stream.read(4097)
+            data = stream.read(max_bytes + 1)
         payload = json.loads(data)
-        return payload if len(data) <= 4096 and isinstance(payload, dict) else None
+        return payload if len(data) <= max_bytes and isinstance(payload, dict) else None
     except (OSError, RuntimeError, ValueError):
         return None
 
@@ -912,10 +954,69 @@ def _read_composition_check(profile: Path) -> dict[str, Any] | None:
         return None
 
 
-def _read_registry_check(profile: Path) -> dict[str, Any] | None:
-    payload = _read_profile_receipt(profile, _REGISTRY_RECEIPT)
-    if payload is None or set(payload) - {"loopback_check"} != {"schema_version", "checked_at", "dsh_version", "bundles", "registered_tools", "configuration_stamp", "runtime_stamp"}:
-        return None
+@contextmanager
+def _registry_write_lock(profile: Path) -> Iterator[None]:
+    # Atomic replacement protects readers. Lock a separate, stable file so
+    # independent CLI processes cannot overwrite one another's port history.
+    with (profile / ".cosmatter-tool-registry.lock").open("a+b") as stream:
+        if os.name == "nt":
+            import msvcrt
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        yield
+
+
+def _save_registry_check(profile: Path, check: dict[str, Any]) -> None:
+    with _registry_write_lock(profile):
+        if (check["configuration_stamp"] != _configuration_stamp(profile)
+                or check["runtime_stamp"] != _bundle_runtime_stamp(profile, check["bundles"])):
+            raise DshCompositionCheckError("The local profile or bundle files changed during the registration check. Run it again.")
+        port = check.get("loopback_check", {}).get("port")
+        history = [check] if port is not None else []
+        seen = {port}
+        for previous in _load_registry_receipts(profile):
+            old_port = previous.get("loopback_check", {}).get("port")
+            if old_port is None or old_port in seen:
+                continue
+            if not _same_registry_generation(previous, check):
+                continue
+            seen.add(old_port)
+            history.append(previous)
+        _write_profile_json(profile, _PORT_HISTORY_FILE, {
+            "schema_version": _PORT_HISTORY_SCHEMA, "receipts": history[:_MAX_LOOPBACK_RECEIPTS],
+        })
+        # Older workbenches read this exact, single-check schema. Commit it last.
+        _write_profile_json(profile, _REGISTRY_RECEIPT, check)
+
+
+def _same_registry_generation(first: dict[str, Any], second: dict[str, Any]) -> bool:
+    return all(first[key] == second[key] for key in ("configuration_stamp", "runtime_stamp", "dsh_version", "bundles"))
+
+
+def _load_registry_receipts(profile: Path, *, include_history: bool = True) -> list[dict[str, Any]]:
+    latest = _read_profile_receipt(profile, _REGISTRY_RECEIPT)
+    if latest is None or not _valid_registry_receipt(latest):
+        return []
+    if not include_history:
+        return [latest]
+    sidecar = _read_profile_receipt(profile, _PORT_HISTORY_FILE, max_bytes=4096 * (1 + _MAX_LOOPBACK_RECEIPTS))
+    if sidecar is None or set(sidecar) != {"schema_version", "receipts"} or sidecar["schema_version"] != _PORT_HISTORY_SCHEMA:
+        return [latest]
+    history = sidecar["receipts"]
+    if not isinstance(history, list) or len(history) > _MAX_LOOPBACK_RECEIPTS:
+        return [latest]
+    return [latest] + [
+        item for item in history
+        if _valid_registry_receipt(item) and "loopback_check" in item and _same_registry_generation(item, latest)
+    ]
+
+
+def _valid_registry_receipt(payload: object) -> bool:
+    if not isinstance(payload, dict) or set(payload) - {"loopback_check"} != {"schema_version", "checked_at", "dsh_version", "bundles", "registered_tools", "configuration_stamp", "runtime_stamp"}:
+        return False
     version, checked_at, bundles = payload["dsh_version"], payload["checked_at"], payload["bundles"]
     tools, stamp, runtime_stamp = payload["registered_tools"], payload["configuration_stamp"], payload["runtime_stamp"]
     if (
@@ -925,18 +1026,36 @@ def _read_registry_check(profile: Path) -> dict[str, Any] | None:
         or not isinstance(bundles, list) or not bundles or bundles != [name for name in EXPECTED_DSH_PACKAGES if name in bundles]
         or not all(isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) for value in (stamp, runtime_stamp))
     ):
-        return None
+        return False
     expected = sorted(tool for bundle in bundles for tool in _BUNDLE_TOOLS[bundle])
     if not isinstance(tools, list) or tools != [name for name in expected if name in tools]:
-        return None
+        return False
     if "loopback_check" in payload and not _valid_loopback_check(payload["loopback_check"], tools):
-        return None
+        return False
     try:
         datetime.fromisoformat(checked_at)
     except ValueError:
+        return False
+    return True
+
+
+def _read_registry_check(profile: Path, loopback_port: int | None) -> dict[str, Any] | None:
+    receipts = _load_registry_receipts(profile, include_history=loopback_port is not None)
+    if not receipts:
         return None
+    payload = receipts[0]
+    if loopback_port is not None:
+        for item in receipts:
+            if item.get("loopback_check", {}).get("port") == loopback_port:
+                payload = item
+                break
+        else:
+            payload = {key: value for key, value in payload.items() if key != "loopback_check"}
     try:
-        matches = stamp == _configuration_stamp(profile) and runtime_stamp == _bundle_runtime_stamp(profile, bundles)
+        matches = (
+            payload["configuration_stamp"] == _configuration_stamp(profile)
+            and payload["runtime_stamp"] == _bundle_runtime_stamp(profile, payload["bundles"])
+        )
     except (OSError, RuntimeError, ValueError):
         matches = False
     return {key: value for key, value in payload.items() if key not in {"configuration_stamp", "runtime_stamp"}} | {"matches_local_files": matches}

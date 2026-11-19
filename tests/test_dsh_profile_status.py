@@ -1,20 +1,50 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from subprocess import CompletedProcess
+from threading import Barrier
 from unittest.mock import MagicMock, patch
 
 from cosmatter.dsh_profile_status import (
     EXPECTED_DSH_PACKAGES, DshBundleRepairError, DshCompositionCheckError, _BUNDLE_TOOLS,
     check_dsh_composition, dsh_profile_status, open_dsh_workbench, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
-    read_dsh_catalogue, repair_dsh_bundles, resolve_dsh_executable,
+    read_dsh_catalogue, repair_dsh_bundles, resolve_dsh_executable, _run_dsh_diagnostic,
 )
 
 
 class DshProfileStatusTests(unittest.TestCase):
+    def test_timed_out_diagnostic_releases_files_held_by_its_descendants(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "child.py").write_text(
+                "import time\nwith open('held.node', 'w') as lock:\n"
+                "    lock.write('started')\n    lock.flush()\n    time.sleep(20)\n",
+                encoding="utf-8",
+            )
+            (root / "parent.py").write_text(
+                "import subprocess, sys\nsubprocess.run([sys.executable, '-S', 'child.py'], check=True)\n", encoding="utf-8",
+            )
+            executable, arguments = sys.executable, ["-S", "parent.py"]
+            if os.name == "nt":
+                launcher = root / "diagnostic.cmd"
+                launcher.write_text(f'@echo off\n"{sys.executable}" -S parent.py\n', encoding="utf-8")
+                executable, arguments = str(launcher), []
+            started = time.monotonic()
+            with self.assertRaises(subprocess.TimeoutExpired):
+                _run_dsh_diagnostic(executable, arguments, directory, dict(os.environ), timeout=4)
+            self.assertLess(time.monotonic() - started, 15)
+            held = root / "held.node"
+            self.assertEqual(held.read_text(), "started")
+            held.unlink()
+
     def test_dsh_uses_the_explicit_launcher_or_path_before_windows_discovery(self) -> None:
         registry = MagicMock()
         with (
@@ -232,17 +262,13 @@ class DshProfileStatusTests(unittest.TestCase):
   name: '@cosmatter/dsh-document-plugin'
 """
             with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
-                "cosmatter.dsh_profile_status.subprocess.run",
-                side_effect=[
-                    CompletedProcess([], 0, b"0.2.2-rc.3\n"),
-                    CompletedProcess([], 0, config.encode("utf-8")),
-                ],
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=["0.2.2-rc.3\n", config],
             ) as run:
                 receipt = check_dsh_composition(dsh_home=home)
-                self.assertEqual([call.args[0] for call in run.call_args_list], [
-                    ["local-dsh", "--version"], ["local-dsh", "--profile", "tui", "--dump-config"],
+                self.assertEqual([call.args[:2] for call in run.call_args_list], [
+                    ("local-dsh", ["--version"]), ("local-dsh", ["--profile", "tui", "--dump-config"]),
                 ])
-                self.assertTrue(all(call.kwargs["env"]["DSH_HOME"] == str(home.resolve()) for call in run.call_args_list))
+                self.assertTrue(all(call.args[3]["DSH_HOME"] == str(home.resolve()) for call in run.call_args_list))
             self.assertEqual(receipt["bundles"], [EXPECTED_DSH_PACKAGES[0]])
             receipt_text = (profile / ".cosmatter-composition-check.json").read_text(encoding="utf-8")
             self.assertNotIn("raw-value-must-not-be-saved", receipt_text)
@@ -366,6 +392,113 @@ class DshProfileStatusTests(unittest.TestCase):
             payload["loopback_check"]["private_path"] = "must be rejected"
             receipt.write_text(json.dumps(payload), encoding="utf-8")
             self.assertNotIn("tool_registry_check", dsh_profile_status(dsh_home=home))
+
+    def test_loopback_history_preserves_other_workbenches_and_expires_on_change(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = "@cosmatter/dsh-policy-plugin"
+            self._write_bundle(profile, bundle)
+            (profile / "package.json").write_text(json.dumps({"dependencies": {bundle: "0.2.0"}}), encoding="utf-8")
+            tools = ["cosmatter_plugin_catalogue"]
+            result = {"registered_tools": tools, "loopback_status": "verified"}
+            composed = f"- id: cosmatter-policy\n  name: '{bundle}'\n"
+
+            def check(port):
+                return check_dsh_composition(dsh_home=home, verify_tools=True, loopback_port=port)["tool_registry_check"]
+
+            def read(port=None):
+                return dsh_profile_status(dsh_home=home, loopback_port=port)["tool_registry_check"]
+
+            with (
+                patch("cosmatter.dsh_profile_status.resolve_dsh_executable", return_value="local-dsh"),
+                patch("cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=lambda _, args, *_rest: "0.2.2" if args == ["--version"] else composed),
+                patch("cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=result) as probe,
+                patch("cosmatter.dsh_profile_status._MAX_LOOPBACK_RECEIPTS", 3),
+            ):
+                first = check(8765)
+                legacy = json.loads((profile / ".cosmatter-tool-registry-check.json").read_text())
+                self.assertNotIn("port_history", legacy)
+                self.assertEqual(read(8765), first)
+                self.assertNotIn("loopback_check", read(8766))
+                second = check(8766)
+                result["loopback_status"] = "unavailable"
+                failed = check(8765)
+                self.assertEqual(read(8765), failed)
+                self.assertEqual(read(8766), second)
+                self.assertEqual(read(), failed)
+                self.assertEqual(failed["loopback_check"]["status"], "unavailable")
+                probe.return_value = tools
+                generic = check(None)
+                self.assertNotIn("loopback_check", generic)
+                self.assertEqual(read(), generic)
+                self.assertEqual(read(8765), failed)
+                probe.return_value = result
+                check(8767)
+                check(8768)
+                self.assertNotIn("loopback_check", read(8766))
+                self.assertEqual(read(8765), failed)
+                for changed in (profile / "cordis.patch.yml", profile / "node_modules" / bundle / "lib" / "client.js"):
+                    changed.write_text("updated", encoding="utf-8")
+                    self.assertFalse(read(8765)["matches_local_files"])
+                    current = check(8766)
+                    self.assertTrue(current["matches_local_files"])
+                    self.assertNotIn("loopback_check", read(8765))
+                    check(8765)
+
+                barrier = Barrier(3)
+
+                def concurrent_probe(*_args):
+                    barrier.wait(timeout=5)
+                    return result
+
+                probe.side_effect = concurrent_probe
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    ports = (8780, 8781, 8782)
+                    written = list(executor.map(check, ports))
+                self.assertEqual([read(port) for port in ports], written)
+
+    def test_single_receipt_remains_authoritative_during_a_rolling_upgrade(self) -> None:
+        from cosmatter.dsh_profile_status import _bundle_runtime_stamp, _configuration_stamp, _save_registry_check
+
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = "@cosmatter/dsh-policy-plugin"
+            self._write_bundle(profile, bundle)
+            (profile / "package.json").write_text(json.dumps({"dependencies": {bundle: "0.2.0"}}), encoding="utf-8")
+            primary = profile / ".cosmatter-tool-registry-check.json"
+            legacy = {
+                "schema_version": "cosmatter.dsh-tool-registry-check/v1", "checked_at": "2026-11-19T01:00:00Z",
+                "dsh_version": "0.2.2", "bundles": [bundle], "registered_tools": ["cosmatter_plugin_catalogue"],
+                "configuration_stamp": _configuration_stamp(profile), "runtime_stamp": _bundle_runtime_stamp(profile, [bundle]),
+                "loopback_check": {"port": 8765, "status": "verified"},
+            }
+            primary.write_text(json.dumps(legacy), encoding="utf-8")
+
+            def snapshot(port):
+                return dsh_profile_status(dsh_home=home, loopback_port=port).get("tool_registry_check")
+
+            latest = {**legacy, "loopback_check": {"port": 8766, "status": "verified"}}
+            _save_registry_check(profile, latest)
+            # The old reader bounds the primary at 4096 bytes and accepts only these fields.
+            self.assertLessEqual(primary.stat().st_size, 4096)
+            self.assertEqual(json.loads(primary.read_text(encoding="utf-8")), latest)
+            self.assertEqual(snapshot(8765)["loopback_check"], legacy["loopback_check"])
+            self.assertTrue(snapshot(8766)["matches_local_files"])
+
+            failed = {**legacy, "loopback_check": {"port": 8765, "status": "unavailable"}}
+            primary.write_text(json.dumps(failed), encoding="utf-8")
+            self.assertEqual(snapshot(8765)["loopback_check"], failed["loopback_check"])
+            self.assertEqual(snapshot(8766)["loopback_check"], latest["loopback_check"])
+            _save_registry_check(profile, latest)
+            self.assertEqual(snapshot(8765)["loopback_check"], failed["loopback_check"])
+            primary.write_text(json.dumps({**latest, "dsh_version": "0.3.0"}), encoding="utf-8")
+            self.assertNotIn("loopback_check", snapshot(8765))
+            primary.write_text(json.dumps({**latest, "unexpected": True}), encoding="utf-8")
+            self.assertIsNone(snapshot(8766))
+            primary.unlink()
+            self.assertIsNone(snapshot(8765))
 
     def test_repair_links_only_unverified_bundles_and_is_repeatable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

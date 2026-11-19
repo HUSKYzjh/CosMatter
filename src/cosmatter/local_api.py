@@ -161,9 +161,9 @@ class LocalMissionApi:
             "trust_status": "static_catalogue_not_plugin_execution_or_evidence_acceptance",
         }
 
-    def dsh_profile_status(self) -> dict[str, object]:
+    def dsh_profile_status(self, *, loopback_port: int | None = None) -> dict[str, object]:
         """Return a redacted installation snapshot for the fixed local TUI profile."""
-        return dsh_profile_status()
+        return dsh_profile_status(loopback_port=loopback_port)
 
     def facility_contract_catalogue(self) -> dict[str, object]:
         """Expose static facility schemas and safety boundaries only.

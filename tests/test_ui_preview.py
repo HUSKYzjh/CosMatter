@@ -112,7 +112,7 @@ class UiPreviewTests(unittest.TestCase):
                 self.assertEqual(payload["installed_bundle_count"], 0)
                 self.assertEqual(payload["packages"][0]["install_status"], "missing_bundle")
                 self.assertNotIn("private-do-not-return", json.dumps(payload))
-                api.dsh_profile_status.assert_called_once_with()
+                api.dsh_profile_status.assert_called_once_with(loopback_port=server.server_port)
             finally:
                 server.shutdown(); server.server_close(); thread.join(timeout=2)
 

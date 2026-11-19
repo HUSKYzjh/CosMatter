@@ -2148,7 +2148,7 @@ export function App() {
         </Show>
         <div class="rail-run-actions">
           <Show when={canOpenDshToolDialog()}>
-            <ActionButton class="rail-dsh-tools" size="sm" aria-haspopup="dialog" onClick={() => setDshToolsOpen(true)}>{text("查找 DSH 工具", "Find DSH tools")}</ActionButton>
+            <ActionButton class="rail-dsh-tools" size="sm" aria-haspopup="dialog" onClick={() => setDshToolsOpen(true)}>{text("DSH 工具与会话", "DSH tools and sessions")}</ActionButton>
           </Show>
           <ActionButton size="sm" variant="quiet" onClick={() => void copyCurrentRun(runId(), "id")}>{text("复制运行 ID", "Copy run ID")}</ActionButton>
           <ActionButton size="sm" variant="quiet" onClick={() => void copyCurrentRun(runId(), "link")}>{text("复制任务链接", "Copy run link")}</ActionButton>
@@ -2327,6 +2327,7 @@ export function App() {
     </Show>
     <Show when={canOpenDshToolDialog() && dshToolsOpen()}>
       <DshToolDialog locale={language()} plugins={harnessCatalogueHealth() === "ready" ? harnessPlugins() ?? [] : []}
+        catalogueHealth={harnessCatalogueHealth()} onRefreshCatalogue={() => void refreshHarnessCatalogue()}
         profile={dshProfile()} profileHealth={dshProfileHealth()} onRefreshProfile={() => void refreshDshProfile()} currentStage={dshCurrentStage()} runId={liveRunId()} evidence={dshEvidenceTarget()} onDismiss={() => setDshToolsOpen(false)} />
     </Show>
   </div>;

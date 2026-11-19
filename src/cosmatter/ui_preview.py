@@ -67,7 +67,7 @@ def build_ui_preview_server(
                 self._api_json(lambda: api.plugin_catalogue() if api is not None else _api_disabled())
                 return
             if path == "/api/dsh-profile":
-                self._api_json(lambda: api.dsh_profile_status() if api is not None else _api_disabled())
+                self._api_json(lambda: api.dsh_profile_status(loopback_port=self.server.server_port) if api is not None else _api_disabled())
                 return
             if path == "/api/facility-contracts":
                 self._api_json(lambda: api.facility_contract_catalogue() if api is not None else _api_disabled())
