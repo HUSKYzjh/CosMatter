@@ -11,6 +11,13 @@ import { localWorkbenchLocation } from "./dshLocalCommands";
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
 const PROFILE_CHECK_COMMAND = "cosmatter check-dsh-profile --verify-tools";
 const TOOL_COUNT = packages.reduce((total, bundle) => total + bundle.tools.length, 0);
+type ActivationAction = "bundles" | "terminal" | "profile" | "catalogue";
+type ActivationVerdict = {
+  state: "checking" | "partial" | "disconnected" | "ready";
+  title: string;
+  detail: string;
+  action?: ActivationAction;
+};
 
 const BUNDLE_ROLES: Record<string, readonly [string, string]> = {
   "@cosmatter/dsh-mission-plugin": ["任务建立", "Mission intake"],
@@ -59,6 +66,10 @@ export function HarnessCapabilityDeck(props: {
   const workbenchLocation = localWorkbenchLocation();
   const loopbackPort = workbenchLocation ? Number(workbenchLocation.port || "80") : null;
   const checkCommand = loopbackPort ? `${PROFILE_CHECK_COMMAND} --loopback-port ${loopbackPort}` : PROFILE_CHECK_COMMAND;
+  let verdictTitle!: HTMLElement;
+  let packageProof: HTMLDetailsElement | undefined;
+  let packageSummary: HTMLElement | undefined;
+  let terminalCopy: HTMLButtonElement | undefined;
   const [copyFeedback, setCopyFeedback] = createSignal<"copied" | "manual" | null>(null);
   const copyCheckCommand = async () => {
     try {
@@ -110,53 +121,76 @@ export function HarnessCapabilityDeck(props: {
     const count = `${profile.installed_bundle_count}/${profile.expected_bundle_count}`;
     return { tone: profile.installation_state === "installed" ? "ready" as const : "attention" as const, copy: x(`已验证 ${count}`, `Verified ${count}`) };
   });
-  const activation = createMemo(() => {
+  const activation = createMemo<ActivationVerdict>(() => {
     if (props.profileHealth === "loading" || props.health === "loading") return {
       state: "checking",
       title: x("正在核验 DSH 启用条件", "Checking DSH enablement conditions"),
       detail: x("正在读取本机安装状态和插件契约。", "Reading the local installation status and plugin contracts."),
     };
-    const profileReady = props.profileHealth === "ready" && props.profile?.installation_state === "installed";
-    const adapterReady = props.health === "ready";
-    if (profileReady && adapterReady && compositionLabel().tone === "ready" && registryLabel().tone === "ready") return {
-      state: "ready",
-      title: x("七个插件通过隔离注册核验", "All seven bundles passed isolated registration"),
-      detail: x(`DSH 已注册全部 ${TOOL_COUNT} 个工具。当前任务的实际派发结果见运行回执。`, `DSH registered all ${TOOL_COUNT} tools. See the runtime receipts for dispatch results in this mission.`),
-    };
-    if (profileReady && adapterReady && compositionLabel().tone === "ready") return {
-      state: "partial",
-      title: x("配置组合完整，工具注册待确认", "Composition complete; registration pending"),
-      detail: x("可在终端核验本机插件的工具注册。", "Run the terminal check to verify registration for the local bundles."),
-    };
-    if (profileReady && adapterReady && compositionLabel().tone === "attention") return {
-      state: "partial",
-      title: compositionLabel().text,
-      detail: x("可在终端重新核验 tui 配置组合。", "Recheck the TUI composition in the terminal."),
-    };
-    if (profileReady && adapterReady) return {
-      state: "partial",
-      title: x("安装与契约已就绪，工具注册待核验", "Installation and contracts ready; tool registration unchecked"),
-      detail: x("已核对七个本机插件包与契约目录。任务派发结果见本次运行回执。", "All seven local bundles and the contract catalogue have been checked. See this mission’s receipts for dispatch results."),
-    };
     const profile = props.profileHealth === "ready" ? props.profile : null;
-    if (profile && profile.declared_bundle_count > profile.installed_bundle_count) return {
-      state: "partial",
-      title: x("部分依赖缺少有效安装", "Some dependencies have no valid installation"),
-      detail: x("展开逐包检查结果，定位缺失或异常的插件包。", "Open the bundle checks to find missing or invalid installations."),
+    if (profile && profile.installation_state !== "unavailable" && profile.installed_bundle_count < profile.expected_bundle_count) return {
+      state: "partial", action: "bundles",
+      title: x("插件安装未齐", "Bundle installation incomplete"),
+      detail: x(`已验证 ${profile.installed_bundle_count}/${profile.expected_bundle_count} 个插件包。逐包检查会标出未声明或缺少有效文件的包。`,
+        `${profile.installed_bundle_count} of ${profile.expected_bundle_count} bundles verified. The bundle list identifies undeclared or invalid installations.`),
     };
-    if (profileReady || adapterReady) return {
-      state: "partial",
-      title: x("DSH 仅部分启用", "DSH enablement is partial"),
-      detail: profileReady
-        ? x("包已安装，但契约目录尚未连接；不会开放派发。", "Bundles are installed, but the contract catalogue is disconnected; dispatch remains closed.")
-        : x("契约目录可读，但 profile 安装尚未核验；不会把目录发现当作插件已装载。", "The catalogue is readable, but profile installation is not verified; catalogue discovery is not treated as plugin loading."),
+    if (props.profileHealth === "unavailable" || profile?.installation_state === "unavailable") return {
+      state: "partial", action: props.onRefreshProfile ? "profile" : undefined,
+      title: x("插件安装状态不可用", "Installation status unavailable"),
+      detail: x("重新读取本机 tui 的插件安装和核验回执。", "Reload installed bundles and check receipts for the local TUI profile."),
     };
-    return {
+    if (props.health === "unavailable") return {
+      state: "partial", action: props.onRefresh ? "catalogue" : undefined,
+      title: x("工作台未能读取插件目录", "Workbench catalogue read failed"),
+      detail: x("重试工作台到本机目录的读取。", "Retry the workbench connection to the local catalogue."),
+    };
+    if (!profile || props.health !== "ready") return {
       state: "disconnected",
       title: x("DSH 插件桥未启用", "DSH plugin bridge not enabled"),
-      detail: x("当前只显示安全关闭状态；不会读取配置、凭据或隐式启动 profile。", "Only a safely closed state is shown; configuration, credentials, and profile startup remain untouched."),
+      detail: x("可在启用本地 API 的工作台检查插件状态。", "Check plugin status in a workbench with the local API enabled."),
+    };
+    const terminal = props.onRefreshProfile ? "terminal" : undefined;
+    if (!composition()) return {
+      state: "partial", action: terminal,
+      title: x("安装与契约已就绪，工具注册待核验", "Installation and contracts ready; tool registration unchecked"),
+      detail: x("终端命令可一并核验配置组合和工具注册。", "The terminal command checks both composition and tool registration."),
+    };
+    if (compositionLabel().tone !== "ready" || registryLabel().tone !== "ready") return {
+      state: "partial", action: terminal,
+      title: compositionLabel().tone !== "ready" ? compositionLabel().text : registryLabel().text,
+      detail: x("在终端核验当前 tui 组合和工具注册结果。", "Check the current TUI composition and registrations in the terminal."),
+    };
+    if (loopbackPort && loopbackLabel().tone !== "ready") return {
+      state: "partial", action: terminal,
+      title: loopbackLabel().text,
+      detail: x(`工具已注册 ${TOOL_COUNT}/${TOOL_COUNT}。请核验 DSH 到工作台端口 ${loopbackPort} 的连通性。`,
+        `All ${TOOL_COUNT} tools are registered. Check DSH access to workbench port ${loopbackPort}.`),
+    };
+    return {
+      state: "ready",
+      title: loopbackPort ? x("插件注册与本机连通已核验", "Registration and local access verified")
+        : x("七个插件通过隔离注册核验", "All seven bundles passed isolated registration"),
+      detail: x(`DSH 已注册全部 ${TOOL_COUNT} 个工具。任务派发结果见本次运行回执。`, `DSH registered all ${TOOL_COUNT} tools. See this mission’s receipts for dispatch results.`),
     };
   });
+  const actionLabel = (action: ActivationAction) => ({
+    bundles: x("查看安装问题", "Inspect installation"),
+    terminal: x("前往终端核验", "Go to terminal checks"),
+    profile: x("重读安装状态", "Reload installation status"),
+    catalogue: x("重试目录连接", "Retry catalogue connection"),
+  })[action];
+  const handleAction = (action: ActivationAction) => {
+    if (action === "bundles" && packageProof) {
+      packageProof.open = true;
+      packageSummary?.focus();
+    } else if (action === "terminal") {
+      terminalCopy?.focus();
+    } else {
+      verdictTitle.focus();
+      if (action === "profile") props.onRefreshProfile?.();
+      if (action === "catalogue") props.onRefresh?.();
+    }
+  };
   const badge = () => props.health === "ready"
     ? permitted().length ? { tone: "active" as const, copy: x("任务授权已登记", "Mission authorization recorded") }
       : { tone: "ready" as const, copy: x("本机目录已连接", "Local catalogue connected") }
@@ -196,14 +230,19 @@ export function HarnessCapabilityDeck(props: {
     </section>
     <section class={`harness-activation-verdict state-${activation().state}`} aria-label={x("DSH 启用结论", "DSH enablement verdict")}>
       <i aria-hidden="true" />
-      <div><small>{x("启用结论", "ENABLEMENT VERDICT")}</small><strong>{activation().title}</strong></div>
-      <p>{activation().detail}</p>
+      <div><small>{x("启用结论", "ENABLEMENT VERDICT")}</small><strong ref={verdictTitle} tabIndex={-1}>{activation().title}</strong></div>
+      <div class="harness-activation-next">
+        <p>{activation().detail}</p>
+        <Show when={activation().action}>{(action) =>
+          <ActionButton size="sm" onClick={() => handleAction(action())}>{actionLabel(action())}</ActionButton>
+        }</Show>
+      </div>
     </section>
     <Show when={props.health === "ready"} fallback={<div class="harness-catalogue-message"><p>{props.health === "loading"
       ? x("正在读取固定的本机能力契约；这不会加载插件、调用工具或授予执行权限。", "Reading the fixed local capability contracts. This does not load a plugin, call a tool, or grant execution permission.")
       : props.health === "unavailable"
         ? x("未能验证本机插件目录，因此本页不显示任何可用能力。任务工件与门禁保持不变。", "The local plugin catalogue could not be verified, so no capability is shown as available. Mission artifacts and gates remain unchanged.")
-        : x("只读预览或未启用本地 API 时，插件桥保持断开。", "The plugin bridge stays disconnected in read-only preview or when the local API is disabled.")}</p><Show when={props.health === "unavailable" && props.onRefresh}><ActionButton size="sm" variant="secondary" onClick={() => props.onRefresh?.()}>{x("重试目录连接", "Retry catalogue connection")}</ActionButton></Show></div>}>
+        : x("只读预览或未启用本地 API 时，插件桥保持断开。", "The plugin bridge stays disconnected in read-only preview or when the local API is disabled.")}</p><Show when={props.health === "unavailable" && props.onRefresh && activation().action !== "catalogue"}><ActionButton size="sm" variant="secondary" onClick={() => props.onRefresh?.()}>{x("重试目录连接", "Retry catalogue connection")}</ActionButton></Show></div>}>
       <div class="harness-capability-metrics">
         <div><small>{x("已验证契约", "VERIFIED CONTRACTS")}</small><strong>{props.plugins?.length ?? 0}</strong><span>{x("静态描述符", "static descriptors")}</span></div>
         <div><small>{x("需外部授权", "EXTERNAL CONSENT")}</small><strong>{externalCount()}</strong><span>{x("逐任务批准", "mission-scoped")}</span></div>
@@ -258,7 +297,7 @@ export function HarnessCapabilityDeck(props: {
             </p>}</Show>
             <div class="harness-installation-footer harness-copy-row">
               <code>{checkCommand}</code>
-              <ActionButton size="sm" onClick={() => void copyCheckCommand()}>{x("复制核验命令", "Copy check command")}</ActionButton>
+              <ActionButton ref={terminalCopy} size="sm" onClick={() => void copyCheckCommand()}>{x("复制核验命令", "Copy check command")}</ActionButton>
               <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在读取…", "Reading…")} onClick={() => props.onRefreshProfile?.()}>
                 {x("刷新核验结果", "Refresh check results")}
               </ActionButton>
@@ -271,8 +310,8 @@ export function HarnessCapabilityDeck(props: {
         </Show>
     </div>
     <Show when={props.profile?.installation_state !== "unavailable" && props.profile}>{(profile) =>
-      <details class="harness-disclosure harness-package-proof" aria-busy={props.profileHealth === "loading" || undefined}>
-        <summary>
+      <details ref={packageProof} class="harness-disclosure harness-package-proof" aria-busy={props.profileHealth === "loading" || undefined}>
+        <summary ref={packageSummary}>
           <span>{x("查看逐包检查结果", "Inspect bundle checks")}</span>
           <strong>{profile().installed_bundle_count}/{profile().expected_bundle_count}</strong>
         </summary>

@@ -800,6 +800,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-activation-verdict.state-checking { --verdict-signal: var(--signal-blue); }
 .harness-activation-verdict > i { width: .48rem; height: .48rem; background: var(--verdict-signal); box-shadow: 0 0 .48rem color-mix(in srgb, var(--verdict-signal) 52%, transparent); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
 .harness-activation-verdict > div { display: grid; gap: .06rem; min-width: 0; }
+.harness-activation-verdict > .harness-activation-next { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .35rem .6rem; }
+.harness-activation-next > p { flex: 1 1 15rem; }
+.harness-activation-next > .cm-action { flex: 0 0 auto; }
 .harness-activation-verdict small { color: var(--verdict-signal); font: 700 max(.62rem, 11px)/1.3 ui-monospace, "Cascadia Mono", monospace; letter-spacing: .07em; }
 .harness-activation-verdict strong { overflow-wrap: anywhere; font-size: max(.73rem, 12px); line-height: 1.35; }
 .harness-activation-verdict p { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--muted); font-size: max(.68rem, 12px); line-height: 1.45; }

@@ -112,6 +112,8 @@ Set-Location D:\CosMatter\development\CosMatter
 
 要在舰桥查看本机 `tui` 的配置组合、工具注册和当前工作台端口的连通结果，可点
 「DSH 终端核验」里的「复制核验命令」。在 CosMatter 虚拟环境运行命令后，点「刷新核验结果」。
+「启用结论」会指出当前最先需要处理的问题。可从这里展开安装清单、重试工作台目录连接或跳到终端核验。
+本机端口的结论需同时满足完整的工具注册和该端口的连通核验。
 末尾端口随工作台地址变化，例如 `cosmatter check-dsh-profile --verify-tools --loopback-port 8765`。
 隔离进程只调用 `cosmatter_plugin_catalogue` 读取静态目录，
 回执记录端口和上次结果。省略 `--loopback-port` 时只核验配置组合与工具注册。

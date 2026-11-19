@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resolve } from "node:path";
 import { stageContractFixture } from "../src/stageContractFixture";
+import dshPluginGroup from "../../plugins/dsh-plugin-group.json" with { type: "json" };
 
 const routeDiagnosticsExport = resolve(process.cwd(), "..", "examples", "ui-demo", "route_diagnostics.json");
 const workspaceLoad = { timeout: 15_000 };
@@ -30,6 +31,24 @@ const dshProfileSnapshot = {
   packages: ["mission", "observability", "policy", "research", "review", "document", "graph"].map((name) => ({ package: `@cosmatter/dsh-${name}-plugin`, install_status: "verified", dependency_kind: "local_link" })),
   composition_status: "not_checked_by_http_api",
   trust_status: "local_installation_snapshot_not_profile_boot_or_plugin_execution",
+};
+const dshCatalogueFixture = {
+  catalogue_api_version: "2.0",
+  trust_status: "static_catalogue_not_plugin_execution_or_evidence_acceptance",
+  plugins: [{
+    plugin_id: "literature.metadata_retrieval",
+    title: "书目元数据检索",
+    domain: "retrieval",
+    entrypoint: "cosmatter.metadata_search:MetadataSearch",
+    api_version: "2.0",
+    capabilities: ["metadata_search"],
+    data_classification: "public_metadata",
+    automation_class: "external_authorized",
+    required_authorizations: ["mission_scoped_egress_consent", "metadata_provider_consent"],
+    requires_human_review: false,
+    contract: { input_schema: "cosmatter.plugin-input/v1", output_schema: "cosmatter.plugin-output/v1", execution_mode: "provider_request", lifecycle: "authorize -> dispatch -> receipt" },
+    execution_boundary: "Descriptor only; catalogue discovery grants no execution authority.",
+  }],
 };
 
 async function openEditableTaskDefinition(page: Page) {
@@ -227,27 +246,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   }));
   await page.route("**/api/plugins", async (route) => {
     if (!route.request().url().endsWith("/api/plugins")) return route.fallback();
-    return route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        catalogue_api_version: "2.0",
-        trust_status: "static_catalogue_not_plugin_execution_or_evidence_acceptance",
-        plugins: [{
-          plugin_id: "literature.metadata_retrieval",
-          title: "书目元数据检索",
-          domain: "retrieval",
-          entrypoint: "cosmatter.metadata_search:MetadataSearch",
-          api_version: "2.0",
-          capabilities: ["metadata_search"],
-          data_classification: "public_metadata",
-          automation_class: "external_authorized",
-          required_authorizations: ["mission_scoped_egress_consent", "metadata_provider_consent"],
-          requires_human_review: false,
-          contract: { input_schema: "cosmatter.plugin-input/v1", output_schema: "cosmatter.plugin-output/v1", execution_mode: "provider_request", lifecycle: "authorize -> dispatch -> receipt" },
-          execution_boundary: "Descriptor only; catalogue discovery grants no execution authority.",
-        }],
-      }),
-    });
+    return route.fulfill({ json: dshCatalogueFixture });
   });
   await page.route("**/api/dsh-profile", async (route) => route.fulfill({
     contentType: "application/json",
@@ -276,7 +275,9 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   const activationVerdict = deck.locator(".harness-activation-verdict");
   await expect(activationVerdict).toHaveClass(/state-partial/);
   await expect(activationVerdict).toContainText("安装与契约已就绪，工具注册待核验");
-  await expect(activationVerdict).toContainText("任务派发结果见本次运行回执");
+  await expect(activationVerdict).toContainText("终端命令可一并核验配置组合和工具注册");
+  await activationVerdict.getByRole("button", { name: "前往终端核验" }).press("Enter");
+  await expect(deck.getByRole("button", { name: "复制核验命令" })).toBeFocused();
   await expect(deck.locator(".harness-capability-metrics strong").first()).toHaveText("1");
   const packageProof = deck.locator(".harness-package-proof");
   await expect(packageProof.locator("summary")).toContainText("查看逐包检查结果");
@@ -352,6 +353,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
 });
 
 test("rechecks a missing DSH bundle while the catalogue is unavailable", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.route("**/api/status", async (route) => route.fulfill({
     contentType: "application/json",
@@ -361,9 +363,13 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
       operation_contracts: operationContracts,
     }),
   }));
-  await page.route("**/api/plugins", async (route) => route.fulfill({ status: 503, body: "catalogue unavailable" }));
+  let catalogueAvailable = false;
+  await page.route("**/api/plugins", async (route) => catalogueAvailable
+    ? route.fulfill({ json: dshCatalogueFixture })
+    : route.fulfill({ status: 503, body: "catalogue unavailable" }));
   let repaired = false;
   let filesChanged = false;
+  let allToolsRegistered = false;
   let loopbackMatchesPort = false;
   let loopbackPassed = false;
   let finishCheck: () => void = () => {};
@@ -383,9 +389,9 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
         schema_version: "cosmatter.dsh-tool-registry-check/v1",
         checked_at: "2026-11-18T03:00:00Z",
         dsh_version: "0.2.2-rc.3",
-        bundles: dshProfileSnapshot.packages.slice(0, 3).map(({ package: name }) => name),
+        bundles: (allToolsRegistered ? dshProfileSnapshot.packages : dshProfileSnapshot.packages.slice(0, 3)).map(({ package: name }) => name),
         matches_local_files: !filesChanged,
-        registered_tools: ["cosmatter_plugin_catalogue", "cosmatter_workflow_status"],
+        registered_tools: allToolsRegistered ? dshPluginGroup.packages.flatMap(({ tools }) => tools).sort() : ["cosmatter_plugin_catalogue", "cosmatter_workflow_status"],
         loopback_check: {
           port: loopbackMatchesPort ? Number(new URL(route.request().url()).port) : 8765,
           status: loopbackPassed ? "verified" : "unavailable",
@@ -409,8 +415,11 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await expect(installationCard).toContainText("已验证 6/7");
   await expect(installationCard).toContainText("已声明 7 个依赖");
   await expect(deck).toContainText("目录、profile 依赖快照与运行回执独立检查");
+  const verdict = deck.getByRole("region", { name: "DSH 启用结论" });
+  await expect(verdict).toContainText("插件安装未齐");
   const packageProof = deck.locator(".harness-package-proof");
-  await packageProof.locator("summary").press("Enter");
+  await verdict.getByRole("button", { name: "查看安装问题" }).press("Enter");
+  await expect(packageProof.locator("summary")).toBeFocused();
   await expect(packageProof.locator("li").first()).toContainText("文件缺失");
   const composition = deck.getByRole("region", { name: "DSH 终端核验" });
   const loopback = composition.locator(".harness-loopback-proof");
@@ -431,6 +440,11 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
     finishCheck();
   }
   await expect(installationCard).toContainText("已验证 7/7");
+  await expect(verdict).toContainText("工作台未能读取插件目录");
+  catalogueAvailable = true;
+  await verdict.getByRole("button", { name: "重试目录连接" }).press("Enter");
+  await expect(deck).toHaveClass(/state-ready/);
+  await expect(verdict).toContainText("已注册 2/20");
   await expect(packageProof.locator("li").first().locator(".harness-package-state b")).toHaveText("已验证");
   await expect(deck.locator(".harness-activation-track")).toContainText("上次组合 7/7");
   await expect(composition).toContainText("已注册 2/20");
@@ -441,15 +455,28 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   loopbackPassed = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(loopback).toContainText("上次连通核验通过");
+  await expect(verdict).toHaveClass(/state-partial/);
   await expect(packageProof.locator("li").first()).toContainText("注册 0/1");
   const tools = deck.locator(".dsh-tool-catalogue");
   await tools.locator(":scope > summary").press("Enter");
   await expect(tools.getByText("隔离核验已注册", { exact: true })).toHaveCount(2);
   await expect(tools.getByText("隔离核验未注册", { exact: true })).toHaveCount(7);
+  allToolsRegistered = true;
+  loopbackPassed = false;
+  await composition.getByRole("button", { name: "刷新核验结果" }).click();
+  await expect(verdict).toContainText("上次未能读取目录");
+  await expect(verdict).toHaveClass(/state-partial/);
+  await verdict.getByRole("button", { name: "前往终端核验" }).press("Enter");
+  await expect(composition.getByRole("button", { name: "复制核验命令" })).toBeFocused();
+  loopbackPassed = true;
+  await composition.getByRole("button", { name: "刷新核验结果" }).click();
+  await expect(verdict).toHaveClass(/state-ready/);
+  await expect(verdict).toContainText("插件注册与本机连通已核验");
   filesChanged = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(composition).toContainText("工具核验已过期");
   await expect(loopback).toContainText("文件已变化，需重新核验");
+  await expect(verdict).toHaveClass(/state-partial/);
   await expect(tools.locator(".dsh-tool-registration")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
