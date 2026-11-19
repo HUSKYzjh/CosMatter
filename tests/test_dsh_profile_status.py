@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from cosmatter.dsh_profile_status import (
     EXPECTED_DSH_PACKAGES, DshBundleRepairError, DshCompositionCheckError, _BUNDLE_TOOLS,
-    check_dsh_composition, dsh_profile_status, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
+    check_dsh_composition, dsh_profile_status, open_dsh_workbench, read_dsh_evidence_link, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
     repair_dsh_bundles,
 )
 
@@ -25,6 +25,62 @@ class DshProfileStatusTests(unittest.TestCase):
         }), encoding="utf-8")
         (bundle / "lib" / "index.js").write_text("throw new Error('status must not load this')", encoding="utf-8")
         (bundle / "cordis.patch.yml").write_text("private-patch-content", encoding="utf-8")
+
+    def test_workbench_launch_rebinds_existing_tui_only_for_the_session(self) -> None:
+        import yaml
+
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            profile = home / "profiles" / "tui"
+            profile.mkdir(parents=True)
+            manifest = profile / "package.json"
+            manifest.write_text(json.dumps({"dependencies": dict.fromkeys(EXPECTED_DSH_PACKAGES, "0.2.0")}), encoding="utf-8")
+            rows = []
+            for index, package in enumerate(EXPECTED_DSH_PACKAGES):
+                self._write_bundle(profile, package)
+                bundle_id = package.removeprefix("@cosmatter/dsh-").removesuffix("-plugin")
+                rows.append(f"- id: cosmatter-{bundle_id}\n  name: '{package}'\n  config:\n    baseUrl: http://127.0.0.1:8765\n    timeoutMs: {7000 + index}\n")
+            rows.append("- id: unrelated-account\n  config:\n    credential: never-copy-this\n")
+            original = manifest.read_bytes()
+            overlay = None
+
+            def launch(arguments, *, env, check):
+                nonlocal overlay
+                self.assertEqual(arguments[:4], ["dsh", "--profile", "tui", "--patch"])
+                self.assertEqual(env["DSH_HOME"], str(home))
+                self.assertFalse(check)
+                overlay = Path(arguments[-1])
+                patch = overlay.read_text(encoding="utf-8")
+                self.assertNotIn("never-copy-this", patch)
+                self.assertEqual(yaml.safe_load(patch), [
+                    {
+                        "id": f"cosmatter-{package.removeprefix('@cosmatter/dsh-').removesuffix('-plugin')}",
+                        "name": package,
+                        "config": {"timeoutMs": 7000 + index, "baseUrl": "http://127.0.0.1:8789"},
+                    }
+                    for index, package in enumerate(EXPECTED_DSH_PACKAGES)
+                ])
+                return CompletedProcess(arguments, 23)
+
+            with (
+                patch("cosmatter.dsh_profile_status.shutil.which", return_value="dsh"),
+                patch("cosmatter.dsh_profile_status._run_dsh_diagnostic", return_value="".join(rows)) as dump,
+                patch("cosmatter.dsh_profile_status.subprocess.run", side_effect=launch),
+            ):
+                self.assertEqual(open_dsh_workbench(8789, dsh_home=home), 23)
+            self.assertEqual(dump.call_args.args[1], ["--profile", "tui", "--dump-config"])
+            self.assertIsNotNone(overlay)
+            self.assertFalse(overlay.exists())
+            self.assertEqual(manifest.read_bytes(), original)
+
+            with (
+                patch("cosmatter.dsh_profile_status.shutil.which", return_value="dsh"),
+                patch("cosmatter.dsh_profile_status._run_dsh_diagnostic", return_value=rows[0].replace("  name:", "  disabled: true\n  name:")),
+                patch("cosmatter.dsh_profile_status.subprocess.run") as launch,
+            ):
+                with self.assertRaisesRegex(DshCompositionCheckError, "disabled in tui"):
+                    open_dsh_workbench(8789, dsh_home=home)
+                launch.assert_not_called()
 
     def test_reports_complete_local_links_without_disclosing_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

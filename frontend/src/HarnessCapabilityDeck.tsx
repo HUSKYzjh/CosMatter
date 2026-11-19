@@ -67,6 +67,7 @@ export function HarnessCapabilityDeck(props: {
   const workbenchLocation = localWorkbenchLocation();
   const loopbackPort = workbenchLocation ? Number(workbenchLocation.port || "80") : null;
   const checkCommand = loopbackPort ? `${PROFILE_CHECK_COMMAND} --loopback-port ${loopbackPort}` : PROFILE_CHECK_COMMAND;
+  const openCommand = loopbackPort ? `cosmatter open-dsh-workbench --port ${loopbackPort}` : null;
   let verdictTitle!: HTMLElement;
   let packageProof: HTMLDetailsElement | undefined;
   let packageSummary: HTMLElement | undefined;
@@ -247,6 +248,17 @@ export function HarnessCapabilityDeck(props: {
           <ActionButton size="sm" onClick={() => handleAction(action())}>{actionLabel(action())}</ActionButton>
         }</Show>
       </div>
+      <Show when={activation().state === "ready" && openCommand}>{(command) =>
+        <section class="harness-session-launch" aria-label={x("打开 DSH 会话", "Open a DSH session")}>
+          <p>{x(`在终端运行，将本次 DSH 会话连接到工作台端口 ${loopbackPort}。`,
+            `Run in your terminal to connect this DSH session to workbench port ${loopbackPort}.`)}</p>
+          <div class="harness-copy-row">
+            <code>{command()}</code>
+            <ActionButton size="sm" onClick={() => void copyCommand(command())}>{x("复制 DSH 启动命令", "Copy DSH launch command")}</ActionButton>
+          </div>
+          <Show when={feedbackFor(command())}>{(feedback) => <p role="status">{copyStatus(feedback().copied)}</p>}</Show>
+        </section>
+      }</Show>
     </section>
     <Show when={props.health === "ready"} fallback={<div class="harness-catalogue-message"><p>{props.health === "loading"
       ? x("正在读取固定的本机能力契约；这不会加载插件、调用工具或授予执行权限。", "Reading the fixed local capability contracts. This does not load a plugin, call a tool, or grant execution permission.")

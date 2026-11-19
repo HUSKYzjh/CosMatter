@@ -86,7 +86,7 @@ from .crossref_relation_expansion import CrossrefRelationExpansionError, build_c
 from .paper_structure import PaperStructureError, paper_structure_from_review, write_paper_structure_for_document
 from .ui_preview import UiPreviewError, serve_ui_preview
 from .dsh_profile_status import (
-    DSH_RUN_READ_TOOLS, DshBundleRepairError, DshCompositionCheckError, check_dsh_composition, read_dsh_evidence_link,
+    DSH_RUN_READ_TOOLS, DshBundleRepairError, DshCompositionCheckError, check_dsh_composition, open_dsh_workbench, read_dsh_evidence_link,
     read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
     repair_dsh_bundles,
 )
@@ -160,6 +160,14 @@ def command_repair_dsh_bundles(args: argparse.Namespace) -> int:
         _json_print({"error": str(error)})
         return 2
     return 0
+
+
+def command_open_dsh_workbench(args: argparse.Namespace) -> int:
+    try:
+        return open_dsh_workbench(args.port, executable=args.dsh_executable)
+    except DshCompositionCheckError as error:
+        _json_print({"error": str(error)})
+        return 2
 
 
 def command_dsh_run_status(args: argparse.Namespace) -> int:
@@ -3681,6 +3689,11 @@ def build_parser() -> argparse.ArgumentParser:
     dsh_repair = commands.add_parser("repair-dsh-bundles", help="link missing CosMatter bundles from this checkout and enable them in the local tui profile")
     dsh_repair.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_repair.set_defaults(handler=command_repair_dsh_bundles)
+
+    dsh_open = commands.add_parser("open-dsh-workbench", help="open the existing DSH tui profile with CosMatter connected to this workbench port")
+    dsh_open.add_argument("--port", type=int, required=True, help="port of the running local CosMatter workbench")
+    dsh_open.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
+    dsh_open.set_defaults(handler=command_open_dsh_workbench)
 
     dsh_status = commands.add_parser("dsh-run-status", help="read an existing local run through DSH observability tools")
     dsh_status.add_argument("run_id", help="existing CosMatter run ID")

@@ -289,6 +289,84 @@ def _enable_dsh_bundles(profile: Path) -> list[str]:
         raise DshBundleRepairError("Bundle files are installed, but DSH could not persist the enabled-bundle list. Run the repair again.") from error
 
 
+def open_dsh_workbench(port: int, *, executable: str = "dsh", dsh_home: Path | None = None) -> int:
+    """Open the usual TUI with a session-local endpoint for the CosMatter group."""
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise DshCompositionCheckError("Port must be between 1 and 65535.")
+    dsh = shutil.which(executable)
+    if not dsh:
+        raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
+    home = (dsh_home or _default_dsh_home()).resolve()
+    if dsh_profile_status(dsh_home=home)["installation_state"] != "installed":
+        raise DshCompositionCheckError("The tui profile needs all seven CosMatter bundles. Run cosmatter repair-dsh-bundles first.")
+    environment = {**os.environ, "DSH_HOME": str(home)}
+    try:
+        with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-workbench-") as temporary:
+            patch_path = Path(temporary) / "workbench.yml"
+            if os.name == "nt" and Path(dsh).suffix.lower() in {".bat", ".cmd"} and re.search(r"[&|<>^()%!\r\n]", str(patch_path)):
+                raise DshCompositionCheckError("The temporary directory contains characters unsupported by the DSH Windows command launcher.")
+            args = ["--profile", "tui"]
+            composed = _run_dsh_diagnostic(dsh, [*args, "--dump-config"], temporary, environment)
+            patch_path.write_text(_dsh_workbench_patch(composed, port), encoding="utf-8")
+            return subprocess.run([dsh, *args, "--patch", str(patch_path)], env=environment, check=False).returncode
+    except (OSError, UnicodeError, subprocess.TimeoutExpired) as error:
+        raise DshCompositionCheckError("DSH could not open the local workbench session.") from error
+    except KeyboardInterrupt:
+        return 130
+
+
+def _dsh_workbench_patch(composed: str, port: int) -> str:
+    # DSH replaces the whole config mapping in a patch. Copy only the seven
+    # verified rows' config nodes so timeouts, limits and YAML tags survive.
+    try:
+        import yaml
+        from yaml.nodes import MappingNode, ScalarNode, SequenceNode
+    except ImportError as error:
+        raise DshCompositionCheckError("Update the CosMatter environment with python -m pip install -e . to open a DSH workbench session.") from error
+
+    string_tag = "tag:yaml.org,2002:str"
+    mapping_tag = "tag:yaml.org,2002:map"
+    sequence_tag = "tag:yaml.org,2002:seq"
+    expected = {
+        "cosmatter-" + name.removeprefix("@cosmatter/dsh-").removesuffix("-plugin"): name
+        for name in EXPECTED_DSH_PACKAGES
+    }
+    try:
+        document = yaml.compose(composed, Loader=yaml.SafeLoader)
+        if not isinstance(document, SequenceNode):
+            raise DshCompositionCheckError("The tui configuration is not a supported DSH entry list.")
+        entries = {}
+        for row in document.value:
+            if not isinstance(row, MappingNode):
+                continue
+            fields = {key.value: value for key, value in row.value if isinstance(key, ScalarNode) and key.tag == string_tag}
+            identifier = fields.get("id")
+            if not isinstance(identifier, ScalarNode) or identifier.tag != string_tag or identifier.value not in expected:
+                continue
+            name = fields.get("name")
+            disabled = fields.get("disabled")
+            if (identifier.value in entries or not isinstance(name, ScalarNode) or name.tag != string_tag
+                or name.value != expected[identifier.value] or (disabled is not None and (
+                    not isinstance(disabled, ScalarNode) or disabled.tag != "tag:yaml.org,2002:bool" or disabled.value != "false"
+                ))):
+                raise DshCompositionCheckError("A CosMatter entry was replaced, duplicated or disabled in tui. Check the profile and rerun verification.")
+            configuration = fields.get("config", MappingNode(mapping_tag, []))
+            if not isinstance(configuration, MappingNode) or configuration.tag != mapping_tag:
+                raise DshCompositionCheckError("A CosMatter bundle has a non-mapping configuration. Check its tui configuration before setting a session port.")
+            options = [(key, value) for key, value in configuration.value if not (isinstance(key, ScalarNode) and key.value == "baseUrl")]
+            options.append((ScalarNode(string_tag, "baseUrl"), ScalarNode(string_tag, f"http://127.0.0.1:{port}")))
+            entries[identifier.value] = MappingNode(mapping_tag, [
+                (ScalarNode(string_tag, "id"), identifier),
+                (ScalarNode(string_tag, "name"), name),
+                (ScalarNode(string_tag, "config"), MappingNode(mapping_tag, options)),
+            ])
+        if len(entries) != len(expected):
+            raise DshCompositionCheckError("The tui configuration must enable all seven CosMatter bundles. Check the profile and rerun verification.")
+        return yaml.serialize(SequenceNode(sequence_tag, list(entries.values())), Dumper=yaml.SafeDumper, allow_unicode=True)
+    except yaml.YAMLError as error:
+        raise DshCompositionCheckError("The tui configuration could not be read as a DSH patch list.") from error
+
+
 def check_dsh_composition(
     *, executable: str = "dsh", dsh_home: Path | None = None, verify_tools: bool = False, loopback_port: int | None = None,
 ) -> dict[str, Any]:

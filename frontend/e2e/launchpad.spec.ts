@@ -473,12 +473,18 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(verdict).toContainText("上次未能读取目录");
   await expect(verdict).toHaveClass(/state-partial/);
+  const sessionLaunch = verdict.getByRole("region", { name: "打开 DSH 会话" });
+  await expect(sessionLaunch).toHaveCount(0);
   await verdict.getByRole("button", { name: "前往终端核验" }).press("Enter");
   await expect(composition.getByRole("button", { name: "复制核验命令" })).toBeFocused();
   loopbackPassed = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(verdict).toHaveClass(/state-ready/);
   await expect(verdict).toContainText("插件注册与本机连通已核验");
+  await expect(sessionLaunch).toContainText(`端口 ${port}`);
+  await sessionLaunch.getByRole("button", { name: "复制 DSH 启动命令" }).press("Enter");
+  await expect(sessionLaunch.getByRole("status")).toHaveText("已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter open-dsh-workbench --port ${port}`);
   compositionIncomplete = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await verdict.getByRole("button", { name: "查看插件清单" }).press("Enter");
@@ -490,6 +496,7 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await expect(composition).toContainText("工具核验已过期");
   await expect(loopback).toContainText("文件已变化，需重新核验");
   await expect(verdict).toHaveClass(/state-partial/);
+  await expect(sessionLaunch).toHaveCount(0);
   await expect(tools.locator(".dsh-tool-registration")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
