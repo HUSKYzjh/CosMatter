@@ -6,6 +6,7 @@ import { ActionButton, StatusBadge } from "./uiPrimitives";
 import type { UiLocale } from "./fleetRegistry";
 import { harnessRuntimeSummary } from "./harnessRuntimeSummary";
 import { DshToolCatalogue } from "./DshToolCatalogue";
+import { localWorkbenchLocation } from "./dshLocalCommands";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
 const PROFILE_CHECK_COMMAND = "cosmatter check-dsh-profile --verify-tools";
@@ -55,10 +56,13 @@ export function HarnessCapabilityDeck(props: {
   const externalCount = createMemo(() => (props.plugins ?? []).filter((plugin) => plugin.automation_class === "external_authorized").length);
   const humanGateCount = createMemo(() => (props.plugins ?? []).filter((plugin) => plugin.requires_human_review || plugin.automation_class === "human_gate").length);
   const runtime = createMemo(() => harnessRuntimeSummary(props.operationalTelemetry));
+  const workbenchLocation = localWorkbenchLocation();
+  const loopbackPort = workbenchLocation ? Number(workbenchLocation.port || "80") : null;
+  const checkCommand = loopbackPort ? `${PROFILE_CHECK_COMMAND} --loopback-port ${loopbackPort}` : PROFILE_CHECK_COMMAND;
   const [copyFeedback, setCopyFeedback] = createSignal<"copied" | "manual" | null>(null);
   const copyCheckCommand = async () => {
     try {
-      await navigator.clipboard.writeText(PROFILE_CHECK_COMMAND);
+      await navigator.clipboard.writeText(checkCommand);
       setCopyFeedback("copied");
     } catch {
       setCopyFeedback("manual");
@@ -66,6 +70,18 @@ export function HarnessCapabilityDeck(props: {
   };
   const composition = () => props.profile?.composition_check;
   const registry = () => props.profileHealth === "ready" ? props.profile?.tool_registry_check : undefined;
+  const loopbackLabel = createMemo(() => {
+    const check = registry();
+    if (!check?.loopback_check || check.loopback_check.port !== loopbackPort) {
+      return { tone: "neutral" as const, text: x("当前端口未核验", "Port not checked") };
+    }
+    if (!check.matches_local_files) return { tone: "attention" as const, text: x("文件已变化，需重新核验", "Files changed; recheck needed") };
+    switch (check.loopback_check.status) {
+      case "verified": return { tone: "ready" as const, text: x("上次连通核验通过", "Last connection check passed") };
+      case "tool_not_registered": return { tone: "attention" as const, text: x("目录工具未注册", "Catalogue tool unregistered") };
+      case "unavailable": return { tone: "attention" as const, text: x("上次未能读取目录", "Last catalogue read failed") };
+    }
+  });
   const registryLabel = createMemo(() => {
     const check = registry();
     if (!check) return { tone: "neutral" as const, text: x("工具注册待核验", "Tool registration unchecked") };
@@ -229,13 +245,19 @@ export function HarnessCapabilityDeck(props: {
               <strong>{x("配置组合与工具注册", "Composition and tool registration")}</strong>
             </div>
             <StatusBadge tone={registryLabel().tone}>{registryLabel().text}</StatusBadge>
-            <p>{x("在 CosMatter 环境运行命令，再刷新核验结果。工具注册在独立 DSH 进程中核验，日常 TUI 启动与任务派发另行确认。", "Run the command in the CosMatter environment, then refresh the results. Registration uses an isolated DSH process. Everyday TUI startup and mission dispatch are checked separately.")}</p>
+            <p>{loopbackPort
+              ? x("在 CosMatter 终端运行命令，再刷新结果。隔离 DSH 进程会核验工具注册，并读取此端口的静态插件目录。", "Run the command in the CosMatter terminal, then refresh. An isolated DSH process checks registration and reads the static catalogue on this port.")
+              : x("在 CosMatter 终端运行命令，再刷新结果。工具注册在独立 DSH 进程中核验。", "Run the command in the CosMatter terminal, then refresh. Tool registration is checked in an isolated DSH process.")}</p>
+            <Show when={loopbackPort}><p class="harness-loopback-proof">
+              <span>{x(`工作台端口 ${loopbackPort}`, `Workbench port ${loopbackPort}`)}</span>
+              <StatusBadge tone={loopbackLabel().tone}>{loopbackLabel().text}</StatusBadge>
+            </p></Show>
             <Show when={registry() ?? composition()}>{(check) => <p class="harness-composition-result">
               <time dateTime={check().checked_at}>{new Intl.DateTimeFormat(props.locale === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(check().checked_at))}</time>
               <span>DSH {check().dsh_version}</span>
             </p>}</Show>
             <div class="harness-installation-footer harness-copy-row">
-              <code>{PROFILE_CHECK_COMMAND}</code>
+              <code>{checkCommand}</code>
               <ActionButton size="sm" onClick={() => void copyCheckCommand()}>{x("复制核验命令", "Copy check command")}</ActionButton>
               <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在读取…", "Reading…")} onClick={() => props.onRefreshProfile?.()}>
                 {x("刷新核验结果", "Refresh check results")}

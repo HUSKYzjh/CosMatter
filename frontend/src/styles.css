@@ -820,6 +820,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .harness-installation-footer > p { flex: 1 1 12rem; }
 .harness-installation-footer > .cm-action { flex: 0 0 auto; white-space: nowrap; }
 .harness-state-ledger > .harness-composition-card { grid-column: 1 / -1; }
+.harness-loopback-proof { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; }
 .harness-composition-result { display: flex; flex-wrap: wrap; gap: .2rem .65rem; }
 .harness-copy-row > code { flex: 1 1 100%; min-width: 0; max-width: 100%; overflow-wrap: anywhere; font: max(.73rem, 12px)/1.45 ui-monospace, "Cascadia Mono", monospace; color: var(--ink); user-select: all; }
 .harness-disclosure { border: 1px solid color-mix(in srgb, var(--signal-blue) 28%, var(--line)); background: color-mix(in srgb, var(--surface) 66%, transparent); }

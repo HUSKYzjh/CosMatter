@@ -48,6 +48,7 @@ export interface DshCompositionCheck {
 export interface DshToolRegistryCheck extends Omit<DshCompositionCheck, "schema_version"> {
   schema_version: "cosmatter.dsh-tool-registry-check/v1";
   registered_tools: string[];
+  loopback_check?: { port: number; status: "verified" | "unavailable" | "tool_not_registered" };
 }
 export interface DshProfileStatus {
   schema_version: "cosmatter.dsh-profile-status/v2";
@@ -305,13 +306,21 @@ function isDshCompositionCheck(value: unknown): value is DshCompositionCheck {
 }
 
 function isDshToolRegistryCheck(value: unknown): value is DshToolRegistryCheck {
-  if (!exactObjectKeys(value, ["schema_version", "checked_at", "dsh_version", "bundles", "matches_local_files", "registered_tools"])) return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const check = value as Record<string, unknown>;
+  const keys = ["schema_version", "checked_at", "dsh_version", "bundles", "matches_local_files", "registered_tools"];
+  const hasLoopback = Object.hasOwn(check, "loopback_check");
+  if (!exactObjectKeys(check, hasLoopback ? [...keys, "loopback_check"] : keys)) return false;
   if (check.schema_version !== "cosmatter.dsh-tool-registry-check/v1" || !isDshCheckFields(check) || !check.bundles.length || !Array.isArray(check.registered_tools)) return false;
   const tools = check.registered_tools;
   const expected = dshBundles.filter(({ package: name }) => check.bundles.includes(name)).flatMap(({ tools }) => tools).sort();
   const filtered = expected.filter((name) => tools.includes(name));
-  return filtered.length === tools.length && filtered.every((name, index) => name === tools[index]);
+  if (filtered.length !== tools.length || !filtered.every((name, index) => name === tools[index])) return false;
+  if (!hasLoopback) return true;
+  if (!exactObjectKeys(check.loopback_check, ["port", "status"])) return false;
+  const { port, status } = check.loopback_check as Record<string, unknown>;
+  return typeof port === "number" && Number.isInteger(port) && port >= 1 && port <= 65535
+    && (tools.includes("cosmatter_plugin_catalogue") ? status === "verified" || status === "unavailable" : status === "tool_not_registered");
 }
 
 function isDshCheckFields(check: Record<string, unknown>): check is Record<string, unknown> & Pick<DshCompositionCheck, "bundles" | "checked_at" | "dsh_version" | "matches_local_files"> {

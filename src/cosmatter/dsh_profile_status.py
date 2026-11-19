@@ -44,6 +44,8 @@ _ARTIFACTS_OUTPUT = "COSMATTER_DSH_RUN_ARTIFACTS "
 _RUN_READ_OUTPUT = "COSMATTER_DSH_RUN_READ "
 _OBSERVABILITY_BUNDLE = "@cosmatter/dsh-observability-plugin"
 _GRAPH_BUNDLE = "@cosmatter/dsh-graph-plugin"
+_POLICY_BUNDLE = "@cosmatter/dsh-policy-plugin"
+_CATALOGUE_TOOL = "cosmatter_plugin_catalogue"
 DSH_RUN_READ_TOOLS = {
     "cosmatter_workflow_status": _OBSERVABILITY_BUNDLE,
     "cosmatter_stage_contract": _OBSERVABILITY_BUNDLE,
@@ -68,7 +70,7 @@ _BUNDLE_TOOLS = dict(zip(EXPECTED_DSH_PACKAGES, (
 _REGISTRY_PROBE = """
 export const name = 'cosmatter-tool-registry-check'
 export const inject = ['tools']
-export async function apply(ctx, { expected }) {
+export async function apply(ctx, { expected, checkLoopback }) {
   const deadline = Date.now() + 6000
   let observed
   do {
@@ -77,7 +79,31 @@ export async function apply(ctx, { expected }) {
     if (observed.length === expected.length) break
     await new Promise(resolve => setTimeout(resolve, 50))
   } while (Date.now() < deadline)
-  process.stdout.write('COSMATTER_TOOL_REGISTRY ' + JSON.stringify(observed) + '\\n', () => process.exit(0))
+  let output = observed
+  if (checkLoopback) {
+    const name = 'cosmatter_plugin_catalogue'
+    let loopbackStatus = 'tool_not_registered'
+    if (observed.includes(name)) {
+      loopbackStatus = 'unavailable'
+      try {
+        const execution = await ctx.tools.execute({
+          calls: [{type: 'tool-call', id: name, name, arguments: '{}'}],
+          signal: AbortSignal.timeout(8000),
+        })
+        const result = execution.results.find(({callId}) => callId === name)?.result
+        const catalogue = result?.value
+        if (result && !result.isError && catalogue?.catalogue_api_version === '2.0' &&
+            catalogue.trust_status === 'static_catalogue_not_plugin_execution_or_evidence_acceptance' &&
+            Array.isArray(catalogue.plugins) && catalogue.plugins.length > 0) {
+          loopbackStatus = 'verified'
+        }
+      } catch {
+        // Record only the fixed outcome. Tool errors may include local details.
+      }
+    }
+    output = { registered_tools: observed, loopback_status: loopbackStatus }
+  }
+  process.stdout.write('COSMATTER_TOOL_REGISTRY ' + JSON.stringify(output) + '\\n', () => process.exit(0))
 }
 """
 _RUN_STATUS_PROBE = """
@@ -194,9 +220,11 @@ def dsh_profile_status(profile_name: str = "tui", *, dsh_home: Path | None = Non
 
 
 def check_dsh_composition(
-    *, executable: str = "dsh", dsh_home: Path | None = None, verify_tools: bool = False,
+    *, executable: str = "dsh", dsh_home: Path | None = None, verify_tools: bool = False, loopback_port: int | None = None,
 ) -> dict[str, Any]:
     """Run the fixed TUI composition diagnostic and save only its redacted result."""
+    if loopback_port is not None and (type(loopback_port) is not int or not 1 <= loopback_port <= 65535):
+        raise DshCompositionCheckError("Port must be between 1 and 65535.")
     dsh = shutil.which(executable)
     if not dsh:
         raise DshCompositionCheckError("DSH executable not found. Set PATH or pass --dsh-executable.")
@@ -222,23 +250,38 @@ def check_dsh_composition(
             "bundles": composed,
         }
         _write_profile_receipt(profile, _COMPOSITION_RECEIPT, {**check, "configuration_stamp": stamp})
-        if verify_tools:
-            registry = _check_tool_registry(dsh, profile, composed, version, stamp)
+        if verify_tools or loopback_port is not None:
+            registry = _check_tool_registry(dsh, profile, composed, version, stamp, loopback_port)
             check["tool_registry_check"] = registry
     except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
         raise DshCompositionCheckError("DSH composition check timed out or could not complete locally.") from exc
     return {**check, "matches_local_files": True}
 
 
-def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: str, stamp: str) -> dict[str, Any]:
+def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: str, stamp: str, loopback_port: int | None) -> dict[str, Any]:
     bundles = [name for name in composed if _bundle_status(profile / "node_modules" / name, name) == "verified"]
     if not bundles:
         raise DshCompositionCheckError("No composed CosMatter bundle has a valid local entry to check.")
     runtime_stamp = _bundle_runtime_stamp(profile, bundles)
     expected = sorted(tool for bundle in bundles for tool in _BUNDLE_TOOLS[bundle])
-    tools = _run_isolated_dsh_probe(dsh, profile, dict.fromkeys(bundles), _REGISTRY_PROBE, {"expected": expected}, _REGISTRY_OUTPUT)
+    bundle_config: dict[str, dict[str, Any] | None] = dict.fromkeys(bundles)
+    probe_config: dict[str, Any] = {"expected": expected}
+    if loopback_port is not None:
+        probe_config["checkLoopback"] = True
+        if _POLICY_BUNDLE in bundle_config:
+            bundle_config[_POLICY_BUNDLE] = {"baseUrl": f"http://127.0.0.1:{loopback_port}"}
+    result = _run_isolated_dsh_probe(dsh, profile, bundle_config, _REGISTRY_PROBE, probe_config, _REGISTRY_OUTPUT)
+    tools = result
+    loopback_check = None
+    if loopback_port is not None:
+        if not isinstance(result, dict) or set(result) != {"registered_tools", "loopback_status"}:
+            raise DshCompositionCheckError("DSH did not return a valid loopback check.")
+        tools = result["registered_tools"]
+        loopback_check = {"port": loopback_port, "status": result["loopback_status"]}
     if not isinstance(tools, list) or tools != [name for name in expected if name in tools]:
         raise DshCompositionCheckError("DSH did not return a valid isolated tool registry.")
+    if loopback_check is not None and not _valid_loopback_check(loopback_check, tools):
+        raise DshCompositionCheckError("DSH did not return a valid loopback check.")
     if stamp != _configuration_stamp(profile) or runtime_stamp != _bundle_runtime_stamp(profile, bundles):
         raise DshCompositionCheckError("The local profile or bundle files changed during the registration check. Run it again.")
     check = {
@@ -246,6 +289,8 @@ def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: 
         "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "dsh_version": version, "bundles": bundles, "registered_tools": tools,
     }
+    if loopback_check is not None:
+        check["loopback_check"] = loopback_check
     _write_profile_receipt(profile, _REGISTRY_RECEIPT, {**check, "configuration_stamp": stamp, "runtime_stamp": runtime_stamp})
     return {**check, "matches_local_files": True}
 
@@ -583,7 +628,7 @@ def _read_composition_check(profile: Path) -> dict[str, Any] | None:
 
 def _read_registry_check(profile: Path) -> dict[str, Any] | None:
     payload = _read_profile_receipt(profile, _REGISTRY_RECEIPT)
-    if payload is None or set(payload) != {"schema_version", "checked_at", "dsh_version", "bundles", "registered_tools", "configuration_stamp", "runtime_stamp"}:
+    if payload is None or set(payload) - {"loopback_check"} != {"schema_version", "checked_at", "dsh_version", "bundles", "registered_tools", "configuration_stamp", "runtime_stamp"}:
         return None
     version, checked_at, bundles = payload["dsh_version"], payload["checked_at"], payload["bundles"]
     tools, stamp, runtime_stamp = payload["registered_tools"], payload["configuration_stamp"], payload["runtime_stamp"]
@@ -598,6 +643,8 @@ def _read_registry_check(profile: Path) -> dict[str, Any] | None:
     expected = sorted(tool for bundle in bundles for tool in _BUNDLE_TOOLS[bundle])
     if not isinstance(tools, list) or tools != [name for name in expected if name in tools]:
         return None
+    if "loopback_check" in payload and not _valid_loopback_check(payload["loopback_check"], tools):
+        return None
     try:
         datetime.fromisoformat(checked_at)
     except ValueError:
@@ -606,7 +653,15 @@ def _read_registry_check(profile: Path) -> dict[str, Any] | None:
         matches = stamp == _configuration_stamp(profile) and runtime_stamp == _bundle_runtime_stamp(profile, bundles)
     except (OSError, RuntimeError, ValueError):
         matches = False
-    return {key: payload[key] for key in ("schema_version", "checked_at", "dsh_version", "bundles", "registered_tools")} | {"matches_local_files": matches}
+    return {key: value for key, value in payload.items() if key not in {"configuration_stamp", "runtime_stamp"}} | {"matches_local_files": matches}
+
+
+def _valid_loopback_check(value: object, tools: list[str]) -> bool:
+    if not isinstance(value, dict) or set(value) != {"port", "status"}:
+        return False
+    port = value["port"]
+    statuses = ("verified", "unavailable") if _CATALOGUE_TOOL in tools else ("tool_not_registered",)
+    return type(port) is int and 1 <= port <= 65535 and value["status"] in statuses
 
 
 def _bundle_status(directory: Path, package_name: str) -> str:

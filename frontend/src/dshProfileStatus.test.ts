@@ -66,4 +66,15 @@ it("limits observed registry tools to the checked bundles and rejects internal f
   expect(isDshProfileStatus({ ...snapshot(), tool_registry_check: { ...tool_registry_check, registered_tools: [] } })).toBe(true);
   expect(isDshProfileStatus({ ...snapshot(), tool_registry_check: { ...tool_registry_check, registered_tools: ["cosmatter_workflow_status"] } })).toBe(false);
   expect(isDshProfileStatus({ ...snapshot(), tool_registry_check: { ...tool_registry_check, runtime_stamp: "private" } })).toBe(false);
+  expect(isDshProfileStatus({ ...snapshot(), tool_registry_check: {
+    ...tool_registry_check, loopback_check: { port: 8789, status: "verified" },
+  } })).toBe(false);
+  const catalogueCheck = {
+    ...tool_registry_check, bundles: [packages[2].package], registered_tools: ["cosmatter_plugin_catalogue"],
+    loopback_check: { port: 8789, status: "verified" },
+  };
+  expect(isDshProfileStatus({ ...snapshot(), tool_registry_check: catalogueCheck })).toBe(true);
+  expect(isDshProfileStatus({ ...snapshot(), tool_registry_check: {
+    ...catalogueCheck, loopback_check: { ...catalogueCheck.loopback_check, url: "http://127.0.0.1" },
+  } })).toBe(false);
 });

@@ -27,7 +27,7 @@ export class CosMatterPolicyClient {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.config.timeoutMs); const outerSignal = init.signal
     const abort = () => controller.abort(); outerSignal?.addEventListener('abort', abort, { once: true })
     try {
-      const response = await this.request(url, { ...init, signal: controller.signal }); if (!response.ok) throw new Error(`CosMatter policy request failed with HTTP ${response.status}`)
+      const response = await this.request(url, { ...init, redirect: 'error', signal: controller.signal }); if (!response.ok) throw new Error(`CosMatter policy request failed with HTTP ${response.status}`)
       const length = Number(response.headers.get('content-length') ?? 0); if (length > this.config.maxCatalogueBytes) throw new Error('CosMatter policy response exceeds configured size')
       const text = await response.text(); if (new TextEncoder().encode(text).byteLength > this.config.maxCatalogueBytes) throw new Error('CosMatter policy response exceeds configured size')
       return JSON.parse(text)

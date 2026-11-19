@@ -144,11 +144,12 @@ def command_check_config(_: argparse.Namespace) -> int:
 
 def command_check_dsh_profile(args: argparse.Namespace) -> int:
     try:
-        _json_print(check_dsh_composition(executable=args.dsh_executable, verify_tools=args.verify_tools))
+        result = check_dsh_composition(executable=args.dsh_executable, verify_tools=args.verify_tools, loopback_port=args.loopback_port)
     except DshCompositionCheckError as error:
         _json_print({"error": str(error)})
         return 2
-    return 0
+    _json_print(result)
+    return 2 if args.loopback_port is not None and result["tool_registry_check"]["loopback_check"]["status"] != "verified" else 0
 
 
 def command_dsh_run_status(args: argparse.Namespace) -> int:
@@ -3663,6 +3664,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     dsh_check = commands.add_parser("check-dsh-profile", help="record a redacted TUI composition check without launching a session")
     dsh_check.add_argument("--verify-tools", action="store_true", help="load the installed CosMatter bundles in an isolated DSH process and report their registered tools")
+    dsh_check.add_argument("--loopback-port", type=int, help="verify tool registration and read the static CosMatter catalogue on this local port")
     dsh_check.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_check.set_defaults(handler=command_check_dsh_profile)
 

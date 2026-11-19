@@ -35,7 +35,7 @@ export class CosMatterPolicyClient {
         const abort = () => controller.abort();
         outerSignal?.addEventListener('abort', abort, { once: true });
         try {
-            const response = await this.request(url, { ...init, signal: controller.signal });
+            const response = await this.request(url, { ...init, redirect: 'error', signal: controller.signal });
             if (!response.ok)
                 throw new Error(`CosMatter policy request failed with HTTP ${response.status}`);
             const length = Number(response.headers.get('content-length') ?? 0);

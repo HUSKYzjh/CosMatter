@@ -171,6 +171,48 @@ class DshProfileStatusTests(unittest.TestCase):
             self.assertFalse(updated["tool_registry_check"]["matches_local_files"])
             self.assertNotIn("runtime_stamp", json.dumps(updated))
 
+    def test_loopback_check_binds_the_policy_probe_and_receipt_to_the_requested_port(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = "@cosmatter/dsh-policy-plugin"
+            self._write_bundle(profile, bundle)
+            (profile / "package.json").write_text(json.dumps({"dependencies": {bundle: "link:private"}}), encoding="utf-8")
+            output = {"registered_tools": ["cosmatter_plugin_catalogue"], "loopback_status": "verified"}
+
+            def diagnostic(_executable, arguments, _cwd, environment):
+                if arguments == ["--version"]:
+                    return "0.2.2-rc.3"
+                if arguments[-1] == "--dump-config":
+                    return f"- id: cosmatter-policy\n  name: '{bundle}'\n"
+                self.assertNotIn("DEEPSEEK_API_KEY", environment)
+                overlay = json.loads(Path(arguments[arguments.index("--patch") + 1]).read_text(encoding="utf-8"))
+                entries = overlay[-1]["insert"]
+                self.assertEqual(entries[0]["config"], {"baseUrl": "http://127.0.0.1:8789"})
+                self.assertEqual(entries[1]["config"], {"expected": sorted(_BUNDLE_TOOLS[bundle]), "checkLoopback": True})
+                return "COSMATTER_TOOL_REGISTRY " + json.dumps(output)
+
+            with patch("cosmatter.dsh_profile_status.shutil.which", return_value="local-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=diagnostic,
+            ), patch.dict("os.environ", {"DEEPSEEK_API_KEY": "credential-not-needed"}):
+                check = check_dsh_composition(dsh_home=home, loopback_port=8789)["tool_registry_check"]
+                self.assertEqual(check["loopback_check"], {"port": 8789, "status": "verified"})
+                self.assertEqual(dsh_profile_status(dsh_home=home)["tool_registry_check"], check)
+                output["loopback_status"] = "unavailable"
+                failed = check_dsh_composition(dsh_home=home, loopback_port=8789)["tool_registry_check"]
+                self.assertEqual(dsh_profile_status(dsh_home=home)["tool_registry_check"], failed)
+                self.assertEqual(failed["loopback_check"]["status"], "unavailable")
+                output.update(registered_tools=[], loopback_status="verified")
+                with self.assertRaisesRegex(DshCompositionCheckError, "valid loopback check"):
+                    check_dsh_composition(dsh_home=home, loopback_port=8789)
+                with self.assertRaisesRegex(DshCompositionCheckError, "Port"):
+                    check_dsh_composition(dsh_home=home, loopback_port=65536)
+            receipt = profile / ".cosmatter-tool-registry-check.json"
+            payload = json.loads(receipt.read_text(encoding="utf-8"))
+            payload["loopback_check"]["private_path"] = "must be rejected"
+            receipt.write_text(json.dumps(payload), encoding="utf-8")
+            self.assertNotIn("tool_registry_check", dsh_profile_status(dsh_home=home))
+
     def test_run_status_uses_installed_observability_bundle_and_requires_the_requested_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)

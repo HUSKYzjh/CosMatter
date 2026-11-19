@@ -364,6 +364,8 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await page.route("**/api/plugins", async (route) => route.fulfill({ status: 503, body: "catalogue unavailable" }));
   let repaired = false;
   let filesChanged = false;
+  let loopbackMatchesPort = false;
+  let loopbackPassed = false;
   let finishCheck: () => void = () => {};
   const checkInProgress = new Promise<void>((resolve) => { finishCheck = resolve; });
   await page.route("**/api/dsh-profile", async (route) => {
@@ -381,9 +383,13 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
         schema_version: "cosmatter.dsh-tool-registry-check/v1",
         checked_at: "2026-11-18T03:00:00Z",
         dsh_version: "0.2.2-rc.3",
-        bundles: dshProfileSnapshot.packages.slice(0, 2).map(({ package: name }) => name),
+        bundles: dshProfileSnapshot.packages.slice(0, 3).map(({ package: name }) => name),
         matches_local_files: !filesChanged,
-        registered_tools: ["cosmatter_workflow_status"],
+        registered_tools: ["cosmatter_plugin_catalogue", "cosmatter_workflow_status"],
+        loopback_check: {
+          port: loopbackMatchesPort ? Number(new URL(route.request().url()).port) : 8765,
+          status: loopbackPassed ? "verified" : "unavailable",
+        },
       },
     } : {
       ...dshProfileSnapshot,
@@ -407,9 +413,13 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await packageProof.locator("summary").press("Enter");
   await expect(packageProof.locator("li").first()).toContainText("文件缺失");
   const composition = deck.getByRole("region", { name: "DSH 终端核验" });
+  const loopback = composition.locator(".harness-loopback-proof");
+  const port = new URL(page.url()).port;
+  await expect(loopback).toContainText(`工作台端口 ${port}`);
+  await expect(loopback).toContainText("当前端口未核验");
   await composition.getByRole("button", { name: "复制核验命令" }).click();
   await expect(composition.getByRole("status")).toHaveText("已复制。");
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cosmatter check-dsh-profile --verify-tools");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter check-dsh-profile --verify-tools --loopback-port ${port}`);
 
   repaired = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
@@ -423,15 +433,23 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await expect(installationCard).toContainText("已验证 7/7");
   await expect(packageProof.locator("li").first().locator(".harness-package-state b")).toHaveText("已验证");
   await expect(deck.locator(".harness-activation-track")).toContainText("上次组合 7/7");
-  await expect(composition).toContainText("已注册 1/20");
+  await expect(composition).toContainText("已注册 2/20");
+  await expect(loopback).toContainText("当前端口未核验");
+  loopbackMatchesPort = true;
+  await composition.getByRole("button", { name: "刷新核验结果" }).click();
+  await expect(loopback).toContainText("上次未能读取目录");
+  loopbackPassed = true;
+  await composition.getByRole("button", { name: "刷新核验结果" }).click();
+  await expect(loopback).toContainText("上次连通核验通过");
   await expect(packageProof.locator("li").first()).toContainText("注册 0/1");
   const tools = deck.locator(".dsh-tool-catalogue");
   await tools.locator(":scope > summary").press("Enter");
-  await expect(tools.getByText("隔离核验已注册", { exact: true })).toHaveCount(1);
-  await expect(tools.getByText("隔离核验未注册", { exact: true })).toHaveCount(6);
+  await expect(tools.getByText("隔离核验已注册", { exact: true })).toHaveCount(2);
+  await expect(tools.getByText("隔离核验未注册", { exact: true })).toHaveCount(7);
   filesChanged = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
   await expect(composition).toContainText("工具核验已过期");
+  await expect(loopback).toContainText("文件已变化，需重新核验");
   await expect(tools.locator(".dsh-tool-registration")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
