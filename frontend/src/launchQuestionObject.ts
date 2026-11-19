@@ -31,6 +31,9 @@ function isChemicalFormula(value: string): boolean {
  * it directly before a known property expression. The result remains editable.
  */
 export function researchObjectFromQuestion(question: string): string | null {
+  // Keep a mixed-occupancy formula intact, including its written composition variable.
+  const mixed = question.match(/\((?:[A-Z][a-w]?(?:_?\{?[0-9₀-₉xyzₓ.−₋+\-]+\}?)?\s*){2,}\)(?:[A-Z][a-z]?(?:_?\{?[0-9₀-₉]+\}?)?)+/u)?.[0];
+  if (mixed) return mixed;
   if (/BiFeO(?:3|₃)/i.test(question)) return "BiFeO₃";
 
   const formula = question.match(/\b[A-Z][A-Za-z0-9₀-₉]{1,24}\b/g)?.find(isChemicalFormula);

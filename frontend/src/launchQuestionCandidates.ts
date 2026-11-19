@@ -1,4 +1,5 @@
 import { researchObjectFromQuestion } from "./launchQuestionObject";
+import { UNCONFIRMED_RESEARCH_OBJECT } from "./launchMissionValidation";
 
 export interface DeterministicLaunchCandidate {
   id: "survey" | "contrast" | "mechanism";
@@ -9,7 +10,7 @@ export interface DeterministicLaunchCandidate {
   kind: "survey" | "contrast" | "mechanism";
 }
 
-type FocusKind = "transition" | "electrochemical" | "transport" | "electronic" | "synthesis" | "mechanism" | "property";
+type FocusKind = "transition" | "electrochemical" | "transport" | "electronic" | "synthesis" | "mechanism" | "property" | "configuration";
 
 /**
  * Local, non-model fallback candidates.  They preserve the user's named
@@ -18,10 +19,11 @@ type FocusKind = "transition" | "electrochemical" | "transport" | "electronic" |
  */
 export function questionBoundFallbackCandidates(question: string, language: "zh" | "en"): DeterministicLaunchCandidate[] {
   const normalized = question.trim().replace(/\s+/g, " ");
-  const material = researchObjectFromQuestion(normalized) ?? (language === "zh" ? "输入中的研究对象，待人工确认" : "Research object in the prompt; confirm manually");
+  const material = researchObjectFromQuestion(normalized) ?? UNCONFIRMED_RESEARCH_OBJECT[language];
   const focus = questionFocus(normalized, language);
   const focusKind = classifyFocus(normalized, focus);
-  const routes = routeText(normalized, material, focus, focusKind, language);
+  const searchBoundary = focusKind === "configuration" ? configurationBoundary(normalized, language) : "";
+  const routes = routeText(normalized, material, focus, focusKind, language, searchBoundary);
   return [
     { id: "survey", kind: "survey", question: routes.survey.question, material, property: focus, scope: routes.survey.scope },
     { id: "contrast", kind: "contrast", question: routes.contrast.question, material, property: focus, scope: routes.contrast.scope },
@@ -30,12 +32,12 @@ export function questionBoundFallbackCandidates(question: string, language: "zh"
 }
 
 function questionFocus(question: string, language: "zh" | "en"): string {
-  if (/相(?:转变|变).*温度|相转变温度|相变温度/i.test(question)) return language === "zh" ? "相转变温度" : "phase-transition temperature";
-  if (/居里温度|Curie temperature/i.test(question)) return language === "zh" ? "居里温度" : "Curie temperature";
-  if (/奈尔温度|N[eé]el temperature/i.test(question)) return language === "zh" ? "奈尔温度" : "Néel temperature";
-  if (/磁(?:转变|相变).*温度|磁转变温度/i.test(question)) return language === "zh" ? "磁转变温度" : "magnetic transition temperature";
-  if (/电(?:转变|相变).*温度|电转变温度/i.test(question)) return language === "zh" ? "电转变温度" : "electric transition temperature";
   const namedFocuses: Array<[RegExp, string, string]> = [
+    [/(?<![磁电])相(?:转变|变)温度|phase[- ]transition temperature/i, "相转变温度", "phase-transition temperature"],
+    [/居里温度|Curie temperature/i, "居里温度", "Curie temperature"],
+    [/[奈尼]尔温度|N[eé]el temperature/i, "奈尔温度", "Néel temperature"],
+    [/磁(?:转变|相变)温度|magnetic transition temperature/i, "磁转变温度", "magnetic transition temperature"],
+    [/电(?:转变|相变)温度|electric(?:al)? transition temperature/i, "电转变温度", "electric transition temperature"],
     [/循环稳定性|cycling stability|cycle life/i, "循环稳定性", "cycling stability"],
     [/容量保持率|capacity retention/i, "容量保持率", "capacity retention"],
     [/带隙|band[ -]?gap/i, "带隙", "band gap"],
@@ -43,16 +45,24 @@ function questionFocus(question: string, language: "zh" | "en"): string {
     [/热导率|thermal conductivity/i, "热导率", "thermal conductivity"],
     [/矫顽场|coercive field/i, "矫顽场", "coercive field"],
     [/剩余极化|remanent polarization/i, "剩余极化", "remanent polarization"],
-    [/介电常数|dielectric (?:constant|permittivity)/i, "介电常数", "dielectric permittivity"],
+    [/介电(?:常数|性质|响应)?|dielectric(?: (?:constant|permittivity|response))?/i, "介电性质", "dielectric properties"],
+    [/压电(?:性质|响应|系数)?|piezoelectric(?: (?:properties|response|coefficients?))?/i, "压电性质", "piezoelectric properties"],
     [/漏电流|leakage current/i, "漏电流", "leakage current"],
     [/催化活性|catalytic activity/i, "催化活性", "catalytic activity"],
     [/吸附能|adsorption energy/i, "吸附能", "adsorption energy"],
     [/形成能|formation energy/i, "形成能", "formation energy"],
     [/晶格常数|lattice constant/i, "晶格常数", "lattice constant"],
-    [/制备|合成|生长|退火|沉积|synthesi[sz]|fabricat|growth|anneal|deposition/i, "制备条件与产物", "synthesis conditions and outcome"],
-    [/机理|机制|mechanism/i, "作用机理", "mechanism"],
   ];
-  for (const [pattern, zh, en] of namedFocuses) if (pattern.test(question)) return language === "zh" ? zh : en;
+  const matches = namedFocuses.flatMap(([pattern, zh, en]) => {
+    const match = pattern.exec(question);
+    if (!match) return [];
+    const original = match[0];
+    const sameLanguage = (language === "zh") === /[\u3400-\u9fff]/u.test(original);
+    return [{ at: match.index, label: sameLanguage ? original : language === "zh" ? zh : en }];
+  });
+  if (matches.length) return matches.sort((a, b) => a.at - b.at).map(({ label }) => label).join(language === "zh" ? "、" : ", ");
+  if (/制备|合成|生长|退火|沉积|synthesi[sz]|fabricat|growth|anneal|deposition/i.test(question)) return language === "zh" ? "制备条件与产物" : "synthesis conditions and outcome";
+  if (/机理|机制|mechanism/i.test(question)) return language === "zh" ? "作用机理" : "mechanism";
   const stripped = question
     .replace(/BiFeO(?:3|₃)/ig, "")
     .replace(/\b[A-Z][A-Za-z0-9₀-₉]{1,24}\b/g, "")
@@ -64,7 +74,8 @@ function questionFocus(question: string, language: "zh" | "en"): string {
 
 function classifyFocus(question: string, focus: string): FocusKind {
   const text = `${question} ${focus}`;
-  if (/相(?:转变|变)|居里|奈尔|transition|Curie|N[eé]el/i.test(text)) return "transition";
+  if (/构型|占位|排列|configuration|occupanc|arrangement/i.test(text) && /搜索|优化|最优|search|optimi[sz]/i.test(text)) return "configuration";
+  if (/相(?:转变|变)|[磁电]转变温度|居里|[奈尼]尔|transition|Curie|N[eé]el/i.test(text)) return "transition";
   if (/循环|容量|倍率|电池|电极|cycle|capacity|battery|electrode/i.test(text)) return "electrochemical";
   if (/电导|热导|漏电|输运|conductiv|transport|leakage/i.test(text)) return "transport";
   if (/带隙|极化|介电|矫顽|band[ -]?gap|polarization|permittivity|coercive/i.test(text)) return "electronic";
@@ -75,15 +86,38 @@ function classifyFocus(question: string, focus: string): FocusKind {
 
 type RouteSet = Record<"survey" | "contrast" | "mechanism", { question: string; scope: string }>;
 
+function configurationBoundary(question: string, language: "zh" | "en"): string {
+  const zh = language === "zh";
+  const parts: string[] = [];
+  const fixed = question.match(/(?:(?<![不非])固定(?:组分|成分|组成)|(?<!not )\bfixed[- ]composition)(?:\s*([xyz](?:\s*=\s*\d+(?:\.\d+)?)?)(?![a-z]))?/i);
+  if (fixed) parts.push((zh ? "固定组分" : "fixed composition") + (fixed[1] ? ` ${fixed[1]}` : ""));
+  const cell = question.replaceAll("\\times", "×").match(/\d+\s*[×x*]\s*\d+\s*[×x*]\s*\d+/i)?.[0].replace(/\s+/g, "");
+  if (cell) parts.push(zh ? `${cell} 超胞` : `${cell} supercell`);
+  const sites = question.match(/\b([AB])\s*[- ]?(?:位|sites?)/i)?.[1]?.toUpperCase();
+  const pair = question.match(/(?<![A-Za-z])([A-Z][a-z]?)\s*(?:\/|和|与|、|and)\s*([A-Z][a-z]?)(?![A-Za-z])/);
+  if (sites) parts.push(zh ? `${sites} 位` : `${sites}-site`);
+  if (pair) parts.push(`${pair[1]}/${pair[2]}`);
+  if (/(?<![非不])随机(?:占[据位]|排列)|(?<!non[- ])\brandom(?:ly)? (?:site )?(?:occup|arrange)/i.test(question)) parts.push(zh ? "随机占位参照" : "random occupancy reference");
+  if (/势场|力场|force field|interatomic potential/i.test(question)) parts.push(zh ? "题述势场" : "specified force field");
+  if (/(?<![不非])(?<!不仅)(?:只能|仅)(?:由|来自|用|通过)\s*(?:分子动力学|MD)|(?<!not )(?:MD|molecular dynamics)[- ]only|(?<!not )\bonly (?:from|by|using) (?:MD|molecular dynamics)/i.test(question)) parts.push(zh ? "性质仅由分子动力学模拟获得" : "property values only from molecular dynamics");
+  if (/(?:不存在|不允许|禁止|没有|不用|不使用|无)(?:训练或调用|使用)?(?:性质(?:预测)?的?)?代理(?:模型)?|(?:no|without) (?:a )?(?:property )?(?:prediction )?surrogate/i.test(question)) parts.push(zh ? "无性质预测代理模型" : "no property surrogate");
+  return parts.join(zh ? "、" : ", ") || (zh ? "题述构型搜索" : "the stated search conditions");
+}
+
 /**
  * Turn a broad prompt into three domain-shaped retrieval questions.  The
  * fallback must not invent an answer, but it should still expose the concrete
  * variables a researcher would search for instead of paraphrasing a generic
  * review workflow.
  */
-function routeText(originalQuestion: string, material: string, focus: string, kind: FocusKind, language: "zh" | "en"): RouteSet {
+function routeText(originalQuestion: string, material: string, focus: string, kind: FocusKind, language: "zh" | "en", searchBoundary: string): RouteSet {
   if (language === "en") {
     const questions = ({
+      configuration: {
+        survey: `Which configuration-search methods for ${material} optimize ${focus} within these constraints (${searchBoundary}), and which objective values and evaluation budgets do they report?`,
+        contrast: `For ${material} (${searchBoundary}), how do configuration-search methods for ${focus} compare at matched evaluation budgets and boundary conditions?`,
+        mechanism: `For a ${material} configuration search (${searchBoundary}), which controls distinguish changes in ${focus} due to occupancy from variation across repeated evaluations?`,
+      },
       transition: {
         survey: `Which transition ranges, phase assignments, and primary structural, thermal, magnetic, or electrical signals are reported for ${material} “${focus}”?`,
         contrast: `How does reported ${material} “${focus}” change across bulk, ceramic, and thin-film sample states, heating or cooling paths, and measurement atmospheres?`,
@@ -128,6 +162,11 @@ function routeText(originalQuestion: string, material: string, focus: string, ki
     };
   }
   const questions = ({
+    configuration: {
+      survey: `${material} 的${focus}构型优化在${searchBoundary}条件下可采用哪些搜索算法，各报告了哪些目标数值和评估预算？`,
+      contrast: `对 ${material} 的${focus}构型优化，在${searchBoundary}条件下对齐评估预算与边界条件后，各搜索算法如何比较？`,
+      mechanism: `对 ${material} 的${focus}构型优化，在${searchBoundary}条件下哪些对照可以区分占位排列的影响和重复评估间的波动？`,
+    },
     transition: {
       survey: `${material} 的“${focus}”研究分别报告了哪些转变温区、相结构指派，以及结构、热学、磁学或电学原始信号？`,
       contrast: `${material} 的“${focus}”在体相、陶瓷与薄膜样品、升降温路径和测试气氛之间是否可直接比较？`,

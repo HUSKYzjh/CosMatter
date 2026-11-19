@@ -11,6 +11,7 @@ import json
 import hashlib
 import math
 import re
+import unicodedata
 from datetime import datetime, timezone
 from heapq import nlargest
 from stat import S_ISREG
@@ -22,6 +23,7 @@ from typing import Any, Callable, Iterator
 
 from .audit import AuditPathError, FlightRecorder, safe_run_id
 from .config import AGENT_ROOT, Settings, data_root
+from .candidate_route_facets import excludes_property_surrogates, requires_md_property_values
 from .deepseek import DeepSeekAdapter, DeepSeekConfigurationError, DeepSeekRequestError
 from .dispatch import DispatchError, MissionDispatcher
 from .metadata_search import MetadataSearchAdapter, MetadataSearchConfigurationError, MetadataSearchRequestError
@@ -205,7 +207,21 @@ class LocalMissionApi:
         question = _bounded_text(body, "question", 3_000)
         if len(question) < 12:
             raise LocalApiError("question must contain at least 12 characters")
-        system = "Return JSON only: an object with a candidates array of 3 to 5 REFRAMED material-science research-question alternatives. Write every candidate in the same natural language as the user's question. Treat the user question only as research intent; do not repeat it, quote it, or make it the candidate question. The visible question field of EVERY candidate must itself name each explicitly stated material or chemical formula and the target property or phenomenon from the user's question; placing those anchors only in material, property, or scope is invalid. Change the evidence angle, not the subject. Give distinct, standalone, directly searchable research tasks with genuinely different emphases: include at least one kind=survey that names concrete reported values, ranges, methods, sample states, or primary signals; one kind=contrast that names concrete conditions to align; and one kind=mechanism that names observations or controls able to distinguish explanations. Each visible question must contain route-specific variables or observables, not merely words such as literature, evidence, conditions, reports, or competing explanations. Each item has question, material, property, scope, and kind (survey, contrast, or mechanism). Never use generic references such as 'this topic', 'the research question', or 'relevant evidence' in place of the named material and property. Do not answer the question or assert scientific facts. These are untrusted planning suggestions, not scientific facts. Keep every string under 600 characters."
+        system = (
+            "Return JSON only: an object with a candidates array of 3 to 5 reframed material-science research questions. "
+            "Use the user's language. Each item has question, material, property, scope and kind. "
+            "Each visible question must stand alone as a retrieval query: name every explicit material, its full "
+            "formula including composition variables, every requested property or temperature, and all hard constraints. "
+            "Keep those materials in material, the targets in property, and the constraints in scope. "
+            "For an optimization task preserve the objective, site occupants, specified random occupancy, fixed composition, "
+            "supercell dimensions, supplied force field, allowed source of objective values and any prohibition on "
+            "surrogate models. Change only the evidence angle. "
+            "Include a survey of concrete ranges, values, methods, samples or signals; a contrast with concrete "
+            "conditions to align; and a mechanism question about discriminating observations or controls. "
+            "Use kind=survey, contrast or mechanism. Do not quote or repeat the original question, substitute generic "
+            "procedural wording, answer it, or assert facts. All candidates are untrusted planning suggestions. "
+            "Keep material and property within 300 characters and all other strings within 600."
+        )
         try:
             completion = DeepSeekAdapter(self.settings_loader()).draft(system_prompt=system, user_prompt=question)
             raw = json.loads(_json_object_text(completion.content))
@@ -2551,7 +2567,8 @@ def _candidate_payload(payload: object, *, original_question: str | None = None)
         candidate: dict[str, str] = {"id": f"candidate_{index + 1}"}
         for field in ("question", "material", "property", "scope", "kind"):
             value = item.get(field)
-            if not isinstance(value, str) or not value.strip() or len(value.strip()) > 600:
+            maximum = 300 if field in {"material", "property"} else 600
+            if not isinstance(value, str) or not value.strip() or len(value.strip()) > maximum:
                 raise ValueError(f"DeepSeek candidate {field} is invalid")
             candidate[field] = value.strip()
         if candidate["kind"] not in {"survey", "contrast", "mechanism"}:
@@ -2566,14 +2583,17 @@ def _candidate_payload(payload: object, *, original_question: str | None = None)
         raise ValueError("DeepSeek candidates must cover survey, contrast, and mechanism focuses")
     if original_question is not None:
         formulas = _explicit_formula_anchors(original_question)
-        focus_patterns = [pattern for pattern in _CANDIDATE_FOCUS_PATTERNS if pattern.search(original_question)]
+        property_patterns = [pattern for pattern in _CANDIDATE_FOCUS_PATTERNS if pattern.search(original_question)]
+        focus_patterns = property_patterns + ([_CANDIDATE_SYNTHESIS_PATTERN] if _CANDIDATE_SYNTHESIS_PATTERN.search(original_question) else [])
+        configuration_search = _is_configuration_search(original_question)
+        constraints = _configuration_constraints(original_question) if configuration_search else set()
         requires_chinese = bool(re.search(r"[\u3400-\u9fff]", original_question))
         for candidate in result:
             candidate_text = " ".join(candidate[field] for field in ("question", "material", "property", "scope"))
             candidate_formulas = set(_explicit_formula_anchors(candidate_text))
             if any(formula not in candidate_formulas for formula in formulas):
                 raise ValueError("DeepSeek candidate must remain anchored to every explicit material formula")
-            if focus_patterns and not any(pattern.search(candidate_text) for pattern in focus_patterns):
+            if any(not pattern.search(candidate_text) for pattern in focus_patterns):
                 raise ValueError("DeepSeek candidate must remain anchored to the target property or phenomenon")
             visible_question = candidate["question"]
             if requires_chinese and not re.search(r"[\u3400-\u9fff]", visible_question):
@@ -2581,8 +2601,18 @@ def _candidate_payload(payload: object, *, original_question: str | None = None)
             visible_formulas = set(_explicit_formula_anchors(visible_question))
             if any(formula not in visible_formulas for formula in formulas):
                 raise ValueError("DeepSeek candidate question must name every explicit material formula")
-            if focus_patterns and not any(pattern.search(visible_question) for pattern in focus_patterns):
+            if any(not pattern.search(visible_question) for pattern in focus_patterns):
                 raise ValueError("DeepSeek candidate question must name the target property or phenomenon")
+            if any(not pattern.search(candidate["property"]) for pattern in property_patterns):
+                raise ValueError("DeepSeek candidate property must retain every target property")
+            if any(formula not in _explicit_formula_anchors(candidate["material"]) for formula in formulas):
+                raise ValueError("DeepSeek candidate material must retain every explicit material formula")
+            if configuration_search and (
+                not _is_configuration_search(visible_question)
+                or not constraints.issubset(_configuration_constraints(visible_question))
+                or not constraints.issubset(_configuration_constraints(candidate["scope"]))
+            ):
+                raise ValueError("DeepSeek candidate question and scope must preserve the configuration-search constraints")
             if not _candidate_question_has_route_detail(candidate["kind"], visible_question):
                 raise ValueError("DeepSeek candidate question must name concrete route variables or observables")
     return result
@@ -2594,12 +2624,12 @@ def _normalized_candidate_question(value: str) -> str:
 
 _CANDIDATE_ROUTE_DETAIL_PATTERNS = {
     "survey": re.compile(
-        r"温区|数值|相结构|晶体结构|样品|谱线|曲线|循环数|倍率|电压窗口|前驱体|化学计量|"
+        r"温区|数值|相结构|晶体结构|样品|谱线|曲线|循环数|倍率|电压窗口|前驱体|化学计量|评估预算|交换操作|"
         r"range|value|phase assignment|crystal structure|sample|spectr|curve|cycle count|current rate|voltage window|precursor|stoichiometry|method",
         re.IGNORECASE,
     ),
     "contrast": re.compile(
-        r"体相|单晶|陶瓷|薄膜|应变|升温|降温|气氛|载量|倍率|电压窗口|接触|频率|边界条件|"
+        r"体相|单晶|陶瓷|薄膜|应变|升温|降温|气氛|载量|倍率|电压窗口|接触|频率|边界条件|相同预算|同等预算|评估预算|"
         r"bulk|single crystal|ceramic|thin[- ]?film|strain|heating|cooling|atmosphere|loading|current rate|voltage window|contact|frequency|boundary condition|preparation|measurement",
         re.IGNORECASE,
     ),
@@ -2619,32 +2649,73 @@ def _candidate_question_has_route_detail(kind: str, question: str) -> bool:
 _CANDIDATE_FOCUS_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
-        r"相(?:转变|变)(?:温度)?|phase[- ]?(?:transition|stability|transformation)",
+        r"(?<![磁电])相(?:转变|变)(?:温度)?|phase[- ]?(?:transition|stability|transformation)",
+        r"(?<![磁电])相(?:转变|变)温度|phase[- ]transition temperature",
         r"居里温度|curie temperature",
-        r"奈尔温度|n[eé]el temperature",
+        r"[奈尼]尔温度|n[eé]el temperature",
         r"磁(?:转变|相变)(?:温度)?|magnetic transition",
+        r"磁(?:转变|相变)温度|magnetic transition temperature",
+        r"电(?:转变|相变)(?:温度)?|electric(?:al)? transition",
+        r"电(?:转变|相变)温度|electric(?:al)? transition temperature",
         r"循环稳定性|容量保持率|cycling stability|cycle life|capacity retention",
         r"带隙|band[- ]?gap",
         r"电导率|electrical conductivity",
         r"热导率|thermal conductivity",
         r"矫顽场|coercive field",
         r"剩余极化|remanent polarization",
+        r"介电|dielectric",
         r"介电常数|dielectric (?:constant|permittivity)",
+        r"压电|piezoelectric",
         r"漏电流|leakage current",
         r"催化活性|catalytic activity",
         r"吸附能|adsorption energy",
         r"形成能|formation energy",
         r"晶格常数|lattice constant",
-        r"制备|合成|生长|退火|沉积|synthesi[sz]|fabricat|growth|anneal|deposition",
     )
 )
+_CANDIDATE_SYNTHESIS_PATTERN = re.compile(r"制备|合成|生长|退火|沉积|synthesi[sz]|fabricat|growth|anneal|deposition", re.IGNORECASE)
 
 
 def _explicit_formula_anchors(value: str) -> tuple[str, ...]:
-    normalized = value.translate(str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789"))
+    normalized = unicodedata.normalize("NFKC", value).replace("−", "-")
+    normalized = re.sub(r"_\{([0-9xyz.+-]+)\}|_([0-9xyz.+-]+)", lambda m: m.group(1) or m.group(2), normalized)
+    mixed_pattern = r"\((?:[A-Z][a-w]?[0-9xyz.+-]*\s*){2,}\)(?:[A-Z][a-z]?\d*)+"
+    mixed = {re.sub(r"\s+", "", match.group()).casefold() for match in re.finditer(mixed_pattern, normalized)}
+    normalized = re.sub(mixed_pattern, " ", normalized)
     formulas = {
         match.group(0).casefold()
         for match in re.finditer(r"(?<![A-Za-z0-9])(?:[A-Z][a-z]?\d*(?:\.\d+)?){2,}(?![A-Za-z0-9])", normalized)
         if any(character.isdigit() for character in match.group(0))
     }
-    return tuple(sorted(formulas))
+    return tuple(sorted(formulas | mixed))
+
+
+def _is_configuration_search(value: str) -> bool:
+    return bool(
+        re.search(r"构型|占位|排列|configuration|occupanc|arrangement", value, re.IGNORECASE)
+        and re.search(r"搜索|优化|最优|筛选|search|optimi[sz]", value, re.IGNORECASE)
+    )
+
+
+def _configuration_constraints(value: str) -> set[str]:
+    constraints = set()
+    if re.search(r"(?<![不非])固定(?:组分|成分|组成)|(?<!not )\bfixed[- ]composition", value, re.IGNORECASE):
+        constraints.add("fixed composition")
+        for variable, fraction in re.findall(r"(?<![A-Za-z0-9])([xyz])\s*=\s*(\d+(?:\.\d+)?)", value, re.IGNORECASE):
+            constraints.add(f"{variable.lower()}={fraction}")
+    if re.search(r"势场|力场|force field|interatomic potential", value, re.IGNORECASE):
+        constraints.add("force field")
+    if requires_md_property_values(value):
+        constraints.add("MD-only property evaluations")
+    if excludes_property_surrogates(value):
+        constraints.add("no property surrogate")
+    if re.search(r"(?<![非不])随机(?:占[据位]|排列)|(?<!non[- ])\brandom(?:ly)? (?:site )?(?:occup|arrange)", value, re.IGNORECASE):
+        constraints.add("random occupancy")
+    dimension_text = value.replace(r"\times", "×")
+    for dimensions in re.findall(r"(\d+)\s*[×x*]\s*(\d+)\s*[×x*]\s*(\d+)", dimension_text, re.IGNORECASE):
+        constraints.add("x".join(dimensions))
+    for site in re.findall(r"(?<![A-Za-z])([AB])\s*[- ]?(?:位|sites?\b)", value, re.IGNORECASE):
+        constraints.add(f"{site.upper()}-site")
+    for elements in re.findall(r"(?<![A-Za-z])([A-Z][a-z]?)\s*(?:/|和|与|、|and)\s*([A-Z][a-z]?)(?![A-Za-z])", value):
+        constraints.add("/".join(sorted(elements)))
+    return constraints

@@ -47,6 +47,19 @@ class CandidateRouteFacetTests(unittest.TestCase):
         self.assertIn("molecular_dynamics_method", result["facet_signals"])
         self.assertNotIn("property_surrogate_method", result["facet_signals"])
 
+    def test_scope_distinguishes_prohibiting_a_property_surrogate_from_allowing_it(self) -> None:
+        candidate = {"title": "Gaussian process surrogate model for dielectric response"}
+        for scope, eligibility in (
+            ("不允许性质预测代理模型", "counterevidence_only"),
+            ("性质评价只能来自 MD", "counterevidence_only"),
+            ("允许性质预测代理模型，另与分子动力学对比", "primary_allowed"),
+            ("目标值不仅由分子动力学获得，也可以来自实验", "primary_allowed"),
+            ("Property values are not only from MD", "primary_allowed"),
+        ):
+            with self.subTest(scope=scope):
+                mission = MissionBrief(question="如何探索构型？", material="固溶体", property_name="介电响应", scope=scope)
+                self.assertEqual(classify_candidate_route(mission, candidate, approved_counterevidence_query=False)["route_eligibility"], eligibility)
+
     def test_approved_counter_query_remains_counterevidence_only(self) -> None:
         result = classify_candidate_route(self.mission, {"title": "A-site ordering in PbSrTiO3 perovskites"}, approved_counterevidence_query=True)
 

@@ -323,8 +323,8 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(packageProof).toContainText("本地链接");
   await expect(packageProof.locator(".harness-package-state b").first()).toHaveText("已验证");
   if (process.platform === "win32") {
-    await deck.screenshot({ animations: "disabled" });
-    expect(await deck.screenshot({ animations: "disabled" })).toMatchSnapshot("dsh-profile-proof.png");
+    await deck.evaluate(element => element.scrollIntoView({ block: "center", behavior: "instant" }));
+    await expect(deck).toHaveScreenshot("dsh-profile-proof.png", { animations: "disabled" });
   }
   await page.setViewportSize({ width: 390, height: 900 });
   const minimumReadableSize = await deck.locator(".cm-status-badge, .harness-state-ledger p").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 11));
@@ -395,6 +395,90 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await filter.selectOption("read");
   await expect(tools.locator(".dsh-tool-item > summary code")).toHaveText(["cosmatter_stage_contract", "cosmatter_artifact_manifest"]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test("copies the original question and edited brief into DSH chat before creating a run", async ({ page, baseURL }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const origin = new URL(baseURL!).origin;
+  const unexpectedRequests: string[] = [];
+  await page.route("**/*", route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.origin !== origin || request.method() !== "GET") {
+      unexpectedRequests.push(`${request.method()} ${url.origin}${url.pathname}`);
+      return route.abort();
+    }
+    if (url.pathname === "/api/status") return route.fulfill({ json: {
+      api_mode: "loopback_only", operation_contracts: operationContracts,
+      providers: { deepseek: false, sciverse: false, mineru: false, openalex: false, crossref: false, crossref_polite_contact: false },
+    } });
+    if (url.pathname === "/api/plugins") return route.fulfill({ json: dshCatalogueFixture });
+    if (url.pathname === "/api/dsh-profile") return route.fulfill({
+      json: verifiedDshProfile(Number(url.port)), headers: { "X-CosMatter-DSH-Receipts": "per-port-v1" },
+    });
+    if (url.pathname.startsWith("/api/")) return route.fulfill({ status: 404, json: {} });
+    return route.continue();
+  });
+  page.on("websocket", socket => {
+    if (new URL(socket.url()).host !== new URL(origin).host) unexpectedRequests.push(`WebSocket ${new URL(socket.url()).origin}`);
+  });
+
+  await page.goto("/?api=local");
+  const original = '初稿中样品 "A" 的测量温度如何影响晶格间距？';
+  const prompt = page.getByLabel("候选航向研究问题");
+  await prompt.fill(original);
+  const homeOpener = page.getByRole("button", { name: "DSH 插件", exact: true });
+  await homeOpener.click();
+  const dialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
+  const session = dialog.getByRole("tabpanel", { name: "DSH 会话" });
+  const draft = session.getByRole("region", { name: "DSH 聊天草稿" });
+  const copyDraft = async () => {
+    await page.evaluate(() => navigator.clipboard.writeText("synthetic clipboard sentinel"));
+    await draft.getByRole("button", { name: "复制到 DSH 聊天" }).click();
+    await expect(draft.getByRole("status")).toHaveText("聊天草稿已复制。");
+    return page.evaluate(() => navigator.clipboard.readText());
+  };
+  const fieldsFrom = (text: string) => JSON.parse(text.slice(text.search(/^\{/m)));
+  const partial = await copyDraft();
+  expect(fieldsFrom(partial)).toEqual({ question: original });
+  for (const field of ["研究对象", "研究目标", "比较范围"]) expect(partial).toContain(field);
+  expect(partial).toContain("等我确认");
+  expect(partial).not.toContain("cosmatter_mission_create");
+  await page.keyboard.press("Escape");
+  await expect(homeOpener).toBeFocused();
+  await expect(prompt).toHaveValue(original);
+
+  await page.getByRole("button", { name: "按原问题填写简报" }).click();
+  const editor = page.locator(".launch-brief-editor");
+  await expect(editor.getByLabel("任务简报研究问题")).toHaveValue(original);
+  const brief = {
+    question: '只比较合成样品 "B" 时，晶格间距怎样变化？', material: '薄膜 "B" 与对照 C',
+    property: "晶格间距", scope: '使用标为 "复测" 的室温数据',
+  };
+  const inputs = [
+    ["任务简报研究问题", brief.question], ["研究对象", brief.material],
+    ["研究目标", brief.property], ["比较范围", brief.scope],
+  ];
+  for (const [label, value] of inputs) await editor.getByLabel(label, { exact: true }).fill(value);
+  const continueInDsh = editor.getByRole("button", { name: "在 DSH 中继续" });
+  await continueInDsh.click();
+  const complete = await copyDraft();
+  expect(fieldsFrom(complete)).toEqual(brief);
+  expect(complete).toContain("cosmatter_mission_create");
+  expect(complete).toContain("workbench_url");
+  expect(complete).not.toContain("初稿中样品");
+  expect(complete).not.toContain("run_id");
+  await page.keyboard.press("Escape");
+  await expect(continueInDsh).toBeFocused();
+  for (const [label, value] of inputs) await expect(editor.getByLabel(label, { exact: true })).toHaveValue(value);
+
+  await editor.getByRole("button", { name: "确认任务并进入编排" }).click();
+  await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  await expect(page.locator(".rail-run-id")).toHaveCount(0);
+  await page.getByRole("button", { name: "DSH 工具与会话", exact: true }).click();
+  await dialog.getByRole("tab", { name: "DSH 会话" }).click();
+  expect(await copyDraft()).toBe(complete);
+  expect(unexpectedRequests).toEqual([]);
 });
 
 test("opens DSH plugins from the launchpad before the first run and preserves the question", async ({ page }) => {
@@ -762,16 +846,24 @@ test("wraps narrow rail handoffs and manifest counts without collisions", async 
 });
 
 test("turns a typed question into an explicit selectable and confirmable mission path", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByLabel("候选航向研究问题").fill("围绕该研究议题，现有文献的研究对象、报告结论与证据边界分别是什么？");
+  const prompt = page.getByLabel("候选航向研究问题");
+  await expect(prompt).toBeVisible();
+  await expect(page.locator("main h1")).not.toBeFocused();
+  await prompt.fill("围绕该研究议题，现有文献的研究对象、报告结论与证据边界分别是什么？");
 
   const handoff = page.locator(".candidate-handoff");
   await expect(handoff).toContainText("候选已生成；请选择一条航向", { timeout: 4_000 });
   const firstRoute = page.getByRole("button", { name: /全景梳理 点击选择此航向/ });
   await expect(firstRoute).toHaveAttribute("aria-pressed", "false");
+  await expect(prompt).toBeFocused();
 
-  await firstRoute.click();
-  await expect(handoff).toContainText("已选择候选航向；请在下方核对并编辑任务边界");
+  await firstRoute.press("Enter");
+  const briefQuestion = page.getByLabel("任务简报研究问题");
+  await expect(briefQuestion).toBeFocused();
+  await expect(briefQuestion).toBeInViewport({ ratio: 1 });
+  await expect(handoff).toContainText("任务简报已打开，可在下方核对并编辑");
   await expect(page.getByRole("region", { name: "下一步 / 任务简报与可编辑边界" })).toBeVisible();
   const confirm = page.getByRole("button", { name: "确认任务并进入编排" });
   await expect(confirm).toBeDisabled();
@@ -780,10 +872,17 @@ test("turns a typed question into an explicit selectable and confirmable mission
 
   await page.getByLabel("研究对象").fill("BiFeO₃ 外延薄膜");
   await expect(confirm).toBeDisabled();
-  await page.getByLabel("任务简报研究问题").fill("BiFeO₃ 外延薄膜的相稳定性在不同应变条件下如何变化？");
+  await briefQuestion.fill("BiFeO₃ 外延薄膜的相稳定性在不同应变条件下如何变化？");
+  await expect(briefQuestion).toBeFocused();
   await expect(confirm).toBeEnabled();
-  await confirm.click();
+  await confirm.press("Enter");
   await expect(page.locator(".workbench")).toHaveClass(/view-workflow/, workspaceLoad);
+  const heading = page.locator(".view-workflow main h1");
+  await expect(heading).toBeFocused(lazyWorkspaceContentLoad);
+  await expect(heading).toBeInViewport({ ratio: 1 });
+  await page.locator('a[href="#bridge-flight"]').first().press("Enter");
+  await expect(page.locator("#bridge-flight")).toBeInViewport();
+  await expect(heading).not.toBeFocused();
   await expect(page.locator(".session-handoff > .cm-action")).toHaveClass(/cm-action--sm/);
   await page.getByRole("button", { name: /任务定义/ }).first().click();
   await expect(page.locator(".workbench")).toHaveClass(/view-discover/, workspaceLoad);
@@ -846,6 +945,114 @@ test("loads an explicitly server-selected UI bundle as a read-only literature ma
   expect(await inspector.locator("dd").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 13))).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(apiRequests).toEqual([]);
+});
+
+test("shows every line of long scientific candidate routes on mobile and desktop", async ({ page }) => {
+  const examples = [
+    { topic: "磁转变温度", question: "BiFeO3的磁转变温度，电转变温度，居里温度，相变温度是？" },
+    { topic: "构型优化", question: "给定分子动力学势场，可描述 (Pb_x Sr_{1-x})TiO_3 钙钛矿固溶体任意组分。对固定组分 x，在 8×8×8 超胞中，A位由 Pb/Sr 随机占据。问：能否设计算法，对于一个给定的组分，在海量构型空间中搜索最优的 Pb/Sr 排列，使体系性质（介电、压电）最优？约束：介电/压电数据只能由分子动力学模拟获得，不存在性质预测的代理模型。" },
+  ];
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [320, 1360]) {
+    await page.setViewportSize({ width, height: 850 });
+    await page.goto("/");
+    for (const { topic, question } of examples) {
+      await page.getByLabel("候选航向研究问题").fill(question);
+      const cards = page.locator(".candidate-planet");
+      await expect(cards.filter({ hasText: topic })).toHaveCount(3);
+      const problems = await cards.evaluateAll(elements => {
+        const errors: string[] = [];
+        const boxes = elements.map(card => card.getBoundingClientRect());
+        if (document.documentElement.scrollWidth > document.documentElement.clientWidth) errors.push("horizontal page overflow");
+        elements.forEach((card, index) => {
+          const box = boxes[index];
+          if (box.left < -1 || box.right > document.documentElement.clientWidth + 1) errors.push(`candidate ${index + 1} extends past the viewport`);
+          const title = card.querySelector("strong")!;
+          const titleBox = title.getBoundingClientRect();
+          const above = title.previousElementSibling!.getBoundingClientRect();
+          const below = title.nextElementSibling!.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(title);
+          const lines = [...range.getClientRects()];
+          const left = Math.max(titleBox.left, box.left, 0);
+          const right = Math.min(titleBox.right, box.right, document.documentElement.clientWidth);
+          const top = Math.max(titleBox.top, box.top, above.bottom);
+          const bottom = Math.min(titleBox.bottom, box.bottom, below.top);
+          if (!lines.length || lines.some(line => line.left < left - 1 || line.right > right + 1 || line.top < top - 1 || line.bottom > bottom + 1)) {
+            errors.push(`candidate ${index + 1} has a clipped or overlapping line`);
+          }
+          if (boxes.slice(0, index).some(other => box.left < other.right - 1 && box.right > other.left + 1 && box.top < other.bottom - 1 && box.bottom > other.top + 1)) {
+            errors.push(`candidate ${index + 1} overlaps another card`);
+          }
+        });
+        return errors;
+      });
+      expect(problems, `${width}px / ${topic}`).toEqual([]);
+    }
+  }
+});
+
+test("offers local routes for all four BFO temperatures and authorizes each question separately", async ({ page }) => {
+  const writes: string[] = [];
+  const modelRequests: unknown[] = [];
+  await page.route("**/*", route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() !== "GET" && request.method() !== "HEAD") {
+      writes.push(`${request.method()} ${path}`);
+      if (path === "/api/question-candidates") {
+        modelRequests.push(request.postDataJSON());
+        return route.fulfill({ status: 503, json: { error: "unavailable" } });
+      }
+      return route.abort();
+    }
+    if (path === "/api/status") return route.fulfill({ json: {
+      api_mode: "loopback_only", operation_contracts: operationContracts,
+      providers: { deepseek: true, sciverse: false, mineru: false, openalex: false, crossref: false, crossref_polite_contact: false },
+    } });
+    return route.continue();
+  });
+
+  await page.goto("/?api=local");
+  const consent = page.getByLabel(/我同意将上述研究问题发送/);
+  await expect(consent).toBeVisible();
+  const prompt = page.getByLabel("候选航向研究问题");
+  const original = "BiFeO3的磁转变温度，电转变温度，居里温度，相变温度是？";
+  const topics = ["磁转变温度", "电转变温度", "居里温度", "相变温度"];
+  await prompt.fill(original);
+  const routes = page.locator(".candidate-planet");
+  const origin = page.getByRole("status", { name: "候选生成来源" });
+  await expect(origin).toContainText("本机候选");
+  await expect(consent).not.toBeChecked();
+  const questions = routes.locator("strong");
+  await expect(questions).toHaveCount(3);
+  for (const question of await questions.allTextContents()) {
+    for (const topic of topics) expect(question).toContain(topic);
+  }
+  expect(writes).toEqual([]);
+
+  await consent.check();
+  await expect(origin).toContainText("模型请求失败");
+  expect(modelRequests).toEqual([{ question: original, candidate_generation_authorized: true }]);
+  await expect(routes).toHaveCount(3);
+  await routes.first().press("Enter");
+  const target = await page.getByLabel("研究目标", { exact: true }).inputValue();
+  for (const topic of topics) expect(target).toContain(topic);
+
+  const revised = "SrTiO3 薄膜的带隙如何随应变变化？";
+  await prompt.fill(revised);
+  await expect(consent).not.toBeChecked();
+  await expect(origin).toContainText("本机候选");
+  await expect(routes.first()).toContainText("SrTiO3");
+  expect(writes).toEqual(["POST /api/question-candidates"]);
+  await consent.check();
+  await expect(origin).toContainText("模型请求失败");
+  await page.getByRole("button", { name: /^文献入港：/ }).click();
+  await page.getByRole("button", { name: /^问题启航：/ }).click();
+  await expect(consent).not.toBeChecked();
+  await expect(origin).toContainText("本机候选");
+  expect(modelRequests).toEqual([original, revised].map(question => ({ question, candidate_generation_authorized: true })));
+  expect(writes).toEqual(["POST /api/question-candidates", "POST /api/question-candidates"]);
 });
 
 test("labels a rejected model result and retries without silently presenting it as DeepSeek output", async ({ page }) => {
@@ -960,12 +1167,16 @@ test("dispatches an automatic metadata mission only from the authorized action",
 });
 
 test("activates a BFO task template through the keyboard with an explicit pressed state", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const bfo = page.getByRole("button", { name: /BFO-01/ });
   await expect(bfo).toHaveAttribute("aria-pressed", "false");
   await bfo.focus();
   await page.keyboard.press("Enter");
   await expect(bfo).toHaveAttribute("aria-pressed", "true");
+  const briefQuestion = page.getByLabel("任务简报研究问题");
+  await expect(briefQuestion).toBeFocused();
+  await expect(briefQuestion).toBeInViewport({ ratio: 1 });
   await expect(page.getByLabel("研究对象")).toHaveValue("BiFeO₃ 外延薄膜");
   await expect(page.getByRole("button", { name: "预览：任务定义" })).toHaveAttribute("aria-current", "step");
 });

@@ -115,6 +115,17 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertTrue((self.runs / "live_001" / "mission.json").is_file())
         self.assertNotIn("test", json.dumps({"status": status, "created": created}))
 
+    def test_mission_creation_keeps_explicit_missing_metadata_in_question_and_scope(self):
+        brief = {
+            "question": "Which dielectric measurements were not specified in the reports?",
+            "material": "BiFeO3", "property": "介电响应", "scope": "分别比较已标注样品和测量频率未指定的样品",
+        }
+        created = self.api.create_mission(brief)
+        stored = json.loads((self.runs / created["run_id"] / "mission.json").read_text("utf-8"))
+        self.assertEqual((stored["question"], stored["scope"]), (brief["question"], brief["scope"]))
+        with self.assertRaisesRegex(LocalApiError, "scope must be a nonempty string"):
+            self.api.create_mission({**brief, "scope": "  "})
+
     def test_recent_runs_orders_limits_and_redacts_saved_missions(self):
         self.assertEqual(self.api.recent_runs()["runs"], [])
         for index in range(14):
@@ -884,6 +895,54 @@ class LocalMissionApiTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "candidate question must name every explicit material formula"):
             _candidate_payload(generic_questions, original_question=original)
+
+    def test_question_candidates_preserve_all_four_bfo_temperature_targets(self):
+        original = "BiFeO3的磁转变温度，电转变温度，居里温度，相变温度是？"
+        targets = "磁转变温度、电转变温度、居里温度、相变温度"
+        rows = [
+            {"kind": kind, "question": f"BiFeO₃ 的{targets}有哪些{detail}？", "material": "BiFeO₃", "property": targets, "scope": "温度报告与样品条件"}
+            for kind, detail in (("survey", "样品与数值记录"), ("contrast", "薄膜与体相差异"), ("mechanism", "原始信号与对照"))
+        ]
+        candidates = _candidate_payload({"candidates": rows}, original_question=original)
+        created = self.api.create_mission(candidates[0])
+        stored = json.loads((self.runs / created["run_id"] / "mission.json").read_text("utf-8"))
+        self.assertEqual((stored["question"], stored["property_name"]), (rows[0]["question"], targets))
+        for omitted in targets.split("、"):
+            for field in ("question", "property"):
+                with self.subTest(omitted=omitted, field=field), self.assertRaisesRegex(ValueError, "target property"):
+                    _candidate_payload({"candidates": [{**row, field: row[field].replace(omitted, "")} for row in rows]}, original_question=original)
+
+    def test_question_candidates_preserve_the_fixed_composition_md_search_through_mission_creation(self):
+        original = r"给定分子动力学势场，可描述 (Pb_x Sr_{1-x})TiO_3 钙钛矿固溶体任意组分。对固定组分 x，在 8\times8\times8 超胞中，A位由 Pb/Sr 随机占据。问：能否设计算法，对于一个给定的组分，在海量构型空间中搜索最优的 Pb/Sr 排列，使体系性质（介电、压电）最优？约束：介电/压电数据只能由分子动力学模拟获得，不存在性质预测的代理模型。"
+        formula = "(PbₓSr₁₋ₓ)TiO₃"
+        constraints = "固定组分，8×8×8 超胞，A 位 Pb/Sr 随机占位，在给定势场下性质只能由分子动力学模拟获得，不允许性质预测代理模型"
+        rows = [
+            {"kind": kind, "question": f"{formula} 介电与压电构型优化在{constraints}时，{detail}？", "material": formula, "property": "介电、压电", "scope": constraints}
+            for kind, detail in (("survey", "有哪些目标数值"), ("contrast", "相同预算下各方法如何比较"), ("mechanism", "哪些对照区分占位效应与噪声"))
+        ]
+        with patch("cosmatter.local_api.DeepSeekAdapter") as adapter:
+            adapter.return_value.draft.return_value = DraftCompletion(content=json.dumps({"candidates": rows}), model="test", request_id="test")
+            response = self.api.question_candidates({"question": original, "candidate_generation_authorized": True})
+        created = self.api.create_mission(response["candidates"][0])
+        stored = json.loads((self.runs / created["run_id"] / "mission.json").read_text("utf-8"))
+        self.assertEqual((stored["question"], stored["material"], stored["property_name"], stored["scope"]), (rows[0]["question"], formula, "介电、压电", constraints))
+        self.assertNotIn(original, stored.values())
+        spaced = r"8 \times 8 \times 8"
+        for field in ("question", "scope"):
+            with self.subTest(latex_field=field):
+                latex_rows = [{**row, field: row[field].replace("8×8×8", spaced)} for row in rows]
+                self.assertEqual(len(_candidate_payload({"candidates": latex_rows}, original_question=original.replace(r"8\times8\times8", spaced))), 3)
+        for field, before, after in (
+            ("material", formula, "TiO₃"), ("question", formula, "TiO₃"),
+            ("question", "8×8×8", "4×4×4"), ("scope", "8×8×8", ""), ("scope", "固定组分", "可变组分"),
+            ("question", "Pb/Sr", "Ba/Sr"), ("question", "A 位", "B 位"),
+            ("scope", "随机占位", "非随机占位"), ("question", "固定组分", "不固定组分"),
+            ("scope", "只能由分子动力学模拟获得", "可用分子动力学模拟获得"),
+            ("question", "不允许性质预测代理模型", "允许性质预测代理模型"),
+            ("property", "压电", ""), ("question", "压电", ""), ("question", "构型优化", "样品"),
+        ):
+            with self.subTest(field=field, before=before), self.assertRaises(ValueError):
+                _candidate_payload({"candidates": [{**row, field: row[field].replace(before, after)} for row in rows]}, original_question=original)
 
     def test_question_candidates_reject_anchored_but_procedural_boilerplate(self):
         original = "BiFeO3的相转变温度是多少？"

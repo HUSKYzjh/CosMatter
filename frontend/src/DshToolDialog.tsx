@@ -1,5 +1,7 @@
 import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 import { DshToolCatalogueContent, type DshToolCatalogueProps } from "./DshToolCatalogue";
+import { DshMissionDraft } from "./DshMissionDraft";
+import type { LaunchMissionBoundary } from "./launchMissionValidation";
 import { DshCommandRow, DshSessionLaunch } from "./DshSessionLaunch";
 import { OtherPortReceiptHelp, WorkbenchUpdateCommand } from "./WorkbenchUpdateCommand";
 import { BUNDLE_REPAIR_COMMAND, dshProfileCheckCommand, localWorkbenchLocation } from "./dshLocalCommands";
@@ -27,6 +29,7 @@ const SESSION_STATUS: Record<DshSessionReadiness, readonly [string, string]> = {
 
 export function DshToolDialog(props: DshToolCatalogueProps & {
   initialView?: DialogView;
+  draft?: LaunchMissionBoundary | null;
   catalogueHealth: HarnessCatalogueHealth;
   onRefreshProfile: () => void;
   onRefreshCatalogue: () => void;
@@ -117,6 +120,7 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
         <OtherPortReceiptHelp locale={props.locale} runId={props.runId} readiness={readiness()}
           port={port} receiptPort={props.profile?.tool_registry_check?.loopback_check?.port} />
       </>}>{(localPort) => <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId} />}</Show>
+      <Show when={!props.runId && props.draft}>{(draft) => <DshMissionDraft locale={props.locale} draft={draft()} />}</Show>
     </div>
   </dialog>;
 }

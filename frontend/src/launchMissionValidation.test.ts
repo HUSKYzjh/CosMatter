@@ -18,4 +18,20 @@ describe("launch mission validation", () => {
     const mission = { question: "What evidence distinguishes competing mechanisms?", material: "Normalize after source location", property: "mechanism", scope: "films" };
     expect(launchMissionMissingFields(mission)).toEqual(["material"]);
   });
+
+  it.each([
+    ["测量频率未指定的样品有何差异？", "分别比较已标注样品和测量频率未指定的样品"],
+    ["Which sample temperatures were not specified?", "Compare measured phases with those still to be confirmed."],
+  ])("accepts a scientific question and scope that describe missing metadata", (question, scope) => {
+    expect(launchMissionMissingFields({ question, scope, material: "BiFeO₃", property: "介电响应" })).toEqual([]);
+  });
+
+  it.each([
+    ["输入中的研究对象，待人工确认", "输入中的研究对象，待人工确认 的介电响应采用了哪些方法？"],
+    ["Research object in the prompt; confirm manually", "Which values are reported for Research object in the prompt; confirm manually?"],
+  ])("requires the generated material label to be replaced in both editable fields", (material, question) => {
+    const draft = { question, material, scope: "films", property: "dielectric response" };
+    expect(launchMissionMissingFields(draft)).toEqual(["question", "material"]);
+    expect(launchMissionMissingFields({ ...draft, material: "BiFeO₃" })).toEqual(["question"]);
+  });
 });

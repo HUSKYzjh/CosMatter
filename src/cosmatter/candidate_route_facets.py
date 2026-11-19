@@ -56,9 +56,21 @@ _FAMILY_PATTERNS = (
 )
 _FORBIDDEN_SURROGATE_PATTERNS = (
     r"\b(?:no|without|absent) (?:a )?(?:property )?(?:prediction )?surrogate\b",
-    r"\bproperty (?:data|values?) (?:are|is) only (?:available|obtained) (?:from|by) (?:molecular dynamics|md)\b",
-    r"不存在性质预测(?:的)?代理模型|无性质预测代理|无代理模型|只能由分子动力学(?:模拟)?获得",
+    r"(?:不存在|不允许|不得|禁止|没有|不使用|不用|无)(?:训练或调用|使用)?(?:性质(?:预测)?的?)?代理(?:模型)?",
 )
+_MD_ONLY_PATTERNS = (
+    r"\bproperty (?:data|values?) (?:are|is) only (?:available|obtained) (?:from|by) (?:molecular dynamics|md)\b",
+    r"(?<!not )\b(?:molecular dynamics|md)[- ]only\b|(?<!not )\bonly (?:from|by|using) (?:molecular dynamics|md)\b",
+    r"(?<![不非])(?<!不仅)(?:只能|仅)(?:由|来自|用|通过)\s*(?:分子动力学|MD)",
+)
+
+
+def excludes_property_surrogates(text: str) -> bool:
+    return _matches_any(text, _FORBIDDEN_SURROGATE_PATTERNS)
+
+
+def requires_md_property_values(text: str) -> bool:
+    return _matches_any(text, _MD_ONLY_PATTERNS)
 
 
 def classify_candidate_route(
@@ -78,7 +90,7 @@ def classify_candidate_route(
     family = _matches_any(title_text, _FAMILY_PATTERNS)
     md = _matches_any(title_text, _MOLECULAR_DYNAMICS_PATTERNS)
     surrogate = _matches_any(title_text, _SURROGATE_PATTERNS)
-    forbids_surrogate = _matches_any(mission_text, _FORBIDDEN_SURROGATE_PATTERNS)
+    forbids_surrogate = excludes_property_surrogates(mission_text) or requires_md_property_values(mission_text)
 
     if exact:
         research_track = "exact_material"
