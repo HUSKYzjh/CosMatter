@@ -817,7 +817,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .dsh-launch-mode label:has(:focus-visible) { outline: 2px solid var(--signal-blue); outline-offset: 2px; }
 .dsh-launch-mode input { flex: none; margin: 0; accent-color: var(--signal-blue); }
 .dsh-command-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.dsh-command-text > span { display: inline-block; max-width: 100%; vertical-align: top; }
+.dsh-command-text > span { white-space: nowrap; font: inherit; }
 .dsh-session-command { display: grid; min-width: 0; gap: .3rem; }
 .dsh-workbench-update { display: grid; min-width: 0; gap: .5rem; }
 .harness-activation-verdict > :is(.dsh-workbench-update, .dsh-port-help) { grid-column: 2 / -1; }
