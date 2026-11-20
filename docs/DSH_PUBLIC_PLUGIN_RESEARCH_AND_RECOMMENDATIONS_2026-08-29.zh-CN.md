@@ -56,6 +56,33 @@
 
 优先试点选 **dsh-kb-rag 的段落定位**。用至少两篇独立公开原始研究，预先标记包含数值、单位和实验判据的页或图注，并加入一篇只在引言提到温度的论文。比较同一问题在两条路线中返回的前三段是否覆盖标记位置，逐条记录错页、漏掉样品条件以及把转述当成独立测量的次数。这个试验能直接检验 CosMatter 当前最关心的证据质量。
 
+### 材料实测曲线、跨论文比较与 DSH 插件
+
+**Starrydata2（日本 NIMS）** 把一条实验曲线关联到论文、图号、样品、坐标轴、单位和测量条件，并提供可下载的坐标。它适合检查 CosMatter 能否从一条数值返回原图及对应样品。**Open Research Knowledge Graph（ORKG）** 则支持从 CSV 导入多篇论文、编辑对照表并保存草稿。可借鉴其列设计，将样品形态、制备工艺、测量频率、温度、原文位置和证据等级逐项并排展示。[Starrydata 录入流程](https://starrydata.nims.go.jp/hp/en/manual/register/) · [ORKG 比较表](https://academy.orkg.org/tutorials/comparison-tutorial-iii.html)
+
+#### 用一张 BiFeO₃ 图检验样品是否会被混在一起
+
+从 Starrydata 2026-11-20 固定发布下载介电项目的 papers、samples、curves 三份 CSV，逐个核对发布清单的 SHA-256。原论文 DOI 为 `10.1016/j.jeurceramsoc.2014.08.016`，论文 SID 为 `41149`。下表两条曲线都关联图 6（figure_id `63226`），成分都记录为 `BiFeO3`，备注均为 500 kHz、25–400 °C。表中列出各条数字化曲线最接近 298.15 K 的已收录坐标。[原论文](https://doi.org/10.1016/j.jeurceramsoc.2014.08.016) · [固定发布](https://github.com/starrydata/starrydata_datasets/releases/tag/data-20261120) · [固定校验清单](https://github.com/starrydata/starrydata_datasets/blob/c1735aa9d067e405ce6d27482f9c693055d6171e/docs/manifest.json)
+
+| 样品及工艺 | sample_id | 该曲线点数 | 温度（K） | 介电常数实部 ε′ |
+|---|---:|---:|---:|---:|
+| (a) SPS，放电等离子烧结 | 96892 | 20 | 298.21 | 491.2 |
+| (b) conventional method，常规烧结 | 96893 | 23 | 307.68 | 13.77 |
+
+两条记录的 `figure_name` 都为 `6`，字母来自样品名称。两点相差 9.47 K，CSV 未给出测量误差。本次核验止于公开的数字化记录，原图逐点核对和独立实验复现仍待开展。CosMatter 可以用这两行验收“同文异样品”显示是否正确，统计独立论文时应计为一篇。[样品 CSV](https://github.com/starrydata/starrydata_datasets/releases/download/data-20261120/DielectricMaterials_samples.csv.gz) · [曲线 CSV](https://github.com/starrydata/starrydata_datasets/releases/download/data-20261120/DielectricMaterials_curves.csv.gz)
+
+#### 两个可评估的 DSH 发布包与一个材料计算参照
+
+| 候选 | 解决的问题 | 发行物和本机核验 |
+|---|---|---|
+| **dsh-refkeeper 0.1.5** | 从选定的 DSH 会话提取文献，按标题、作者、年份向 Crossref 等五个目录核对。结果不一致时保留待核记录，可导出 BibTeX 或 RIS。适合放在报告导出的书目核对步骤。对实验值的核对仍需逐项查看正文或图表。 | npm 包含 Cordis 补丁、主入口和 Web 客户端。本机 rc.3 宿主的版本检查通过。进行在线书目核对时会发出标识符或题名；注释还有单独的模型处理环节。[对应版本源码](https://github.com/ymwang92/dsh-refkeeper/tree/5cec2c0e0b9581840bf61db2d01004ff86bc99f6) · [npm 发布清单](https://registry.npmjs.org/dsh-refkeeper/0.1.5) |
+| **@nashihang777/dsh-solids-world 1.0.1** | DSH Web 原生晶体面板，可在本地拖入 CIF、查看晶胞和原子标签。可用作 Pb/Sr 有序构型的目视核对入口，介电与压电性质仍由给定势场的 MD 输出。 | npm 包含 Cordis 补丁、主入口和 Web 客户端。本机 rc.3 宿主的版本检查通过，作者未声明具体 DSH 版本范围。512 个 A 位和部分占位的显示行为仍待验证。[固定版本使用说明](https://github.com/nashihang777/dsh-solids-world/tree/6b956c606aac585d3ed2a14c3e6ea50d365b590a) · [npm 发布清单](https://registry.npmjs.org/@nashihang777%2fdsh-solids-world/1.0.1) |
+| **mat-dsh** | 材料计算的 DSH 插件族。将本地任务输入、Slurm 作业号、异步状态和回传的结果文件关联起来，可参考它为每个 Pb/Sr 构型保留独立的计算记录。作者列出了 Gaussian、VASP 和 xTB 的工作流。 | 作者的兼容基线是 DSH 0.1.0-rc.8。对固定版本的 `mat-tools` 清单运行本机 0.2.2-rc.3 的兼容检查，system-prompt、jobs、session 三项依赖均不匹配。适合作为架构参照。[作者架构](https://github.com/wangyp163/mat-dsh/tree/e1ae7773836251948d84238e345d28c67c5f541f) · [组件兼容说明](https://github.com/wangyp163/mat-dsh/blob/e1ae7773836251948d84238e345d28c67c5f541f/packages/mat-bundle/README.md) |
+
+两个 npm 发布包均在内存中解包并按注册表的 SHA-512 校验。版本核验使用本机宿主导出的 `evaluatePluginCompatibility`，未安装或运行第三方代码。后续若评估可用性，Refkeeper 可用一组含错配 DOI 的公开书目检查其隔离和导出行为，Solids World 可用已知 Pb/Sr 占位的 CIF 对照原始坐标。[DSH rc.3 兼容判断源码](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/boot/app-boot/src/plugin-compatibility.ts#L68-L93)
+
+继续发现项目可用 DeepSeek 官网链接的 GitHub 主题页、DSH Research 的科研目录，以及独立社区的 DSH Marketplace。后者另有提供 `/store` 入口的 DSH 原生插件，npm 包名为 `dshmarketplace-plugin`。[官网社区入口](https://www.deepseek.com/zh/harness/) · [GitHub 主题页](https://github.com/topics/dsh-plugin) · [科研目录](https://dsh-research.com/en/plugins/) · [DSH Marketplace](https://dshmarketplace.dev/) · [市场插件源码](https://github.com/DshMarketPlace/dsh-plugins-store)
+
 ## 8 月初审结论摘要
 
 CosMatter 当前的七个 DSH bundle 已覆盖任务建立、状态观测、策略、受同意约束的计划/元数据检索、候选筛选、MinerU 任务元数据和已接受证据图投影。它的优势是：Python 领域层仍是唯一事实来源，所有 DSH 包仅经 `127.0.0.1` 的受限投影访问，且不把私有全文、密钥或未核验内容暴露给模型。
