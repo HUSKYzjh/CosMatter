@@ -8,7 +8,7 @@ import { bfoTaskFormation } from "./bfoTaskFormation";
 import { researchObjectFromQuestion } from "./launchQuestionObject";
 import { questionBoundFallbackCandidates } from "./launchQuestionCandidates";
 import { ActionButton } from "./uiPrimitives";
-import { RecentLocalRuns } from "./RecentLocalRuns";
+import { RecentLocalRuns, recentRunActionId } from "./RecentLocalRuns";
 import { RunArtifactRecord, type RunArtifactIdentity } from "./RunArtifactRecord";
 import type { RetrievalSource } from "./localApi";
 import { isLocalRunId } from "./liveRunIdentity";
@@ -395,8 +395,11 @@ export function Launchpad(props: { dshStatus?: ReturnType<typeof dshEntryStatus>
           <h2>{copy("继续研究任务", "Continue a research run")}</h2>
           <Show when={props.runArtifactRecord} keyed>{(run) => <RunArtifactRecord run={run} locale={props.language}
             onOpenRun={props.onOpenExistingRun ? () => props.onOpenExistingRun?.(run.runId) : undefined} onClose={() => {
+            const fromRecentList = recentOpeningId() === run.runId;
+            setRecentOpeningId(undefined);
             props.onCloseRunArtifactRecord();
-            document.getElementById("continuation-run-id")?.focus();
+            const trigger = fromRecentList ? document.getElementById(recentRunActionId(run.runId)) : null;
+            (trigger ?? document.getElementById("continuation-run-id"))?.focus();
           }} />}</Show>
           <Show when={props.onOpenExistingRun}>
             <RecentLocalRuns legacyWorkbench={props.legacyWorkbench} locale={props.language} listOnMount={!props.linkedRunId} activeRunId={props.activeRunId} disabled={continuationBusy()}

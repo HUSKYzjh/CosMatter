@@ -7,6 +7,8 @@ import type { UiLocale } from "./fleetRegistry";
 
 const FIRST_PAGE_SIZE = 4;
 
+export const recentRunActionId = (runId: string) => "recent-run-action-" + runId;
+
 export function RecentLocalRuns(props: {
   locale: UiLocale;
   listOnMount: boolean;
@@ -44,15 +46,18 @@ export function RecentLocalRuns(props: {
       <ul>
         <For each={shown()}>{(run) => <li>
           <div class="recent-run-label">
-            <strong>{run.material} · {run.property}</strong>
-            <div><code>{run.run_id}</code><time dateTime={run.updated_at}>{dateFormat().format(new Date(run.updated_at))}</time></div>
+            <strong id={`recent-run-title-${run.run_id}`}>{run.material} · {run.property}</strong>
+            <div><code>{run.run_id}</code><time id={`recent-run-time-${run.run_id}`} dateTime={run.updated_at}>
+              {x("更新于 ", "Updated ")}{dateFormat().format(new Date(run.updated_at))}
+            </time></div>
           </div>
           <div class="recent-run-actions">
             <Show when={run.stopped}><StatusBadge tone="neutral">{x("已停止", "Stopped")}</StatusBadge></Show>
-            <ActionButton size="sm" disabled={props.disabled}
+            <ActionButton size="sm" id={recentRunActionId(run.run_id)} disabled={props.disabled}
               variant={run.stopped ? "quiet" : "secondary"}
               busy={props.openingRunId === run.run_id} busyLabel={x("正在打开…", "Opening…")}
               aria-label={`${props.openingRunId === run.run_id ? x("正在打开", "Opening") : actionLabel(run)} ${run.run_id}`}
+              aria-describedby={`recent-run-title-${run.run_id} recent-run-time-${run.run_id}`}
               onClick={() => props.onOpen(run.run_id, run.stopped)}>
               {actionLabel(run)}
             </ActionButton>
