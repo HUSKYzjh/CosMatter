@@ -5,6 +5,21 @@
 
 ## 2026-11-20 补充调研：科研产品与 DSH 原生插件
 
+### 固定组分计算与论文定位的插件设计
+
+| 项目 | 上游能力与适用条件 | CosMatter 可采用的做法 |
+|---|---|---|
+| pymatgen 与 icet | pymatgen 可用 enumlib 枚举有序结构，结果受超胞大小和对称性容差影响。icet 可在指定超胞和组分下寻找使簇关联接近理想随机合金的特殊准随机结构（SQS）。[结构枚举](https://pymatgen.org/pymatgen.transformations.html#pymatgen.transformations.advanced_transformations.EnumerateStructureTransformation) · [SQS 原理](https://icet.materialsmodeling.org/advanced_topics/sqs_generation.html) · [固定超胞接口](https://icet.materialsmodeling.org/dev/_modules/icet/tools/structure_generation.html) | 先报告带编号 A 位的排列数。未来若增加结构生成，分别记录对称性去重规则、SQS 所用簇和随机种子。SQS 可作为化学无序对照，介电与压电排序仍需同协议的 MD 测量。 |
+| dsh-document-evidence（DSH Web 原生插件） | 点击引用可回到 PDF 原页，文字层支持高亮，扫描件提供页级定位。上游验证环境为 macOS arm64 和 DSH `0.1.3-alpha.2`，视觉读页会把页面图像发给模型。[固定版本说明](https://github.com/Anduin9527/dsh-document-evidence/blob/d7a4dd35f9df9f83b79894c5df159307c372df81/README.md) | 采用“点引用回原页”的交互。结果标明可定位到页、图表或引文的实际精度，沿用 CosMatter 现有 PDF 版本与数据外发授权。 |
+| GROBID 与 PaperQA2 | GROBID 可为图表等元素返回 PDF 页码与坐标框。PaperQA2 可用模型生成图注参与检索，并保留原始图像。[坐标约定](https://grobid.readthedocs.io/en/latest/Coordinates-in-PDF/) · [多模态检索](https://github.com/Future-House/paper-qa#multimodal-support) | 坐标绑定到具体 PDF 版本。研究者要核对曲线读数时，保留图号、样品、测量条件和读数出处。生成的图注只用于寻找原图。 |
+
+**两组验收用例**
+
+1. **计算配置是否可实现。** 对 8×8×8 个钙钛矿原胞给出 Pb 分数 `1/256`，应返回 512 个 A 位、2 个 Pb、510 个 Sr，以及带编号位点的精确排列数 `C(512,2) = 130816`。改为 `1/3` 时，指出相邻可实现组分为 `170/512` 和 `171/512`，由调用方选择。未提供 MD 结果时，性质排名留空。[无代理模型搜索计划](PST_MD_ONLY_CONFIGURATION_SEARCH_PLAN.zh-CN.md)
+2. **读数能否定位到样品。** 用下文 BiFeO₃ 图 6 的两条数字化记录作夹具。按图号查询应得到同一论文的两个样品，各自保留 500 kHz 及对应温度。按样品 `96892` 应定位到 298.21 K、ε′ = 491.2，按 `96893` 应定位到 307.68 K、ε′ = 13.77。限定这两条记录再查图 7 应返回零条。两条记录的来源均标为二次数字化，原图核对状态独立记录。[原论文](https://doi.org/10.1016/j.jeurceramsoc.2014.08.016) · [数字化数据发布](https://github.com/starrydata/starrydata_datasets/releases/tag/data-20261120)
+
+表中上游能力来自文档核对。本节给出的输入与预期结果供插件验收使用。
+
 ### Orca 如何接入 CosMatter 的研究舰队
 
 这里选用 Stably 的 Orca。它在同一界面组织多个 agent，各自可在独立 Git 工作树中运行。官方把 DeepSeek Harness 列为支持的终端 agent，并列出两个依赖包 `@deepseek-ai/dsh` 和社区提供的 `@deepseek-harness-tui/dsh-tui`。Orca 将多 worker 编排标为实验性。本机通过临时解包的官方 Windows 版 Orca 在工作树终端运行了 DSH，并读回指定的 CosMatter 合成任务。下文区分终端联测与多 worker 调度。[Orca 项目](https://github.com/stablyai/orca) · [终端支持表](https://github.com/stablyai/orca/blob/2920a624132f17f14f4577e4ed48ce1c31ae7f5c/docs/site/content/docs/agents/supported.mdx#L49) · [编排协议](https://orca.dev/docs/cli/orchestration)
@@ -36,6 +51,60 @@ if ($LASTEXITCODE -eq 0) {
 ~~~
 
 **通过条件**　在新开的 DSH 会话中要求「调用 `cosmatter_workflow_status`，省略 `run_id`，显示返回的运行 ID 和下一阶段」。运行 ID 应与原任务一致。要核对端口，用该 ID 调用 `cosmatter_artifact_manifest`，结果的 `workbench_url` 应指向原工作台端口，打开后仍是同一运行。若状态命令报告无法读取运行，先核对这两个值。[只读状态命令](../src/cosmatter/dsh_profile_status.py) · [结果卡链接](../plugins/dsh-cosmatter-observability-plugin/src/index.ts)
+
+#### 在同一个 Orca Run 建立材料计算与文献核对任务
+
+在 Windows PowerShell 中打开已登记在 Orca 的 CosMatter 工作树。当前终端应能调用 `orca`，且 `orca status --json` 的 `result.runtime.reachable` 为 `true`。下面新建一个普通终端作为协调者，并把两份任务说明绑定到它创建的同一个 Orca Run。输入的 CosMatter 运行 ID 和端口用于定位工作台里的论文记录。[Orca 编排文档](https://orca.dev/docs/cli/orchestration)
+
+~~~powershell
+function Invoke-OrcaJson {
+    $outputText = & orca @args
+    if ($LASTEXITCODE -ne 0) { throw ($outputText -join [Environment]::NewLine) }
+    return ($outputText | ConvertFrom-Json).result
+}
+$project = (Get-Location).Path
+$cmRun = Read-Host '包含该论文已接受证据的 CosMatter 运行 ID'
+$cmPort = [int](Read-Host 'CosMatter 工作台端口')
+$coordinator = (Invoke-OrcaJson terminal create --worktree "path:$project" --title 'CosMatter 研究舰队' --json).terminal.handle
+$orcaRun = (Invoke-OrcaJson orchestration run-create --from $coordinator --objective '检查 Pb/Sr 占位与 BiFeO3 图 6 证据' --json).runId
+$calc = 'cosmatter dsh-calculate pst-occupancy --pb-fraction 1/256'
+$read = "cosmatter dsh-evidence --run-id $cmRun --port $cmPort --doi 10.1016/j.jeurceramsoc.2014.08.016 --locator 'Figure 6'"
+$a = Invoke-OrcaJson orchestration task-create --from $coordinator --run $orcaRun --task-title 'PST A 位计数' --spec $calc --json
+$b = Invoke-OrcaJson orchestration task-create --from $coordinator --run $orcaRun --task-title 'BFO 图 6 原文定位' --spec $read --json
+$rows = (Invoke-OrcaJson orchestration task-list --run $orcaRun --full --json).tasks
+$rows | Select-Object id, run_id, task_title, status
+if (@($rows | Where-Object { $_.run_id -eq $orcaRun -and $_.id -in @($a.taskId, $b.taskId) }).Count -ne 2) {
+    throw '两份任务未能同时定位到目标 Orca Run'
+}
+~~~
+
+实测使用官方 Windows 1.4.265、独立临时配置和合成 Git 仓库。`run_28215ac1b4e8` 下的计算任务 `task_64bbc0b8fb21` 与图 6 任务 `task_5bacaf73fe6f` 均返回相同的 `run_id`，状态均为 `ready`，结果均为空。新建任务只保存工作说明。阅读任务实际执行时，`--locator` 应填写该运行中已记录的精确定位。没有对应的已接受证据时，空结果同样需要如实交付。[本机命令实现](../src/cosmatter/cli.py)
+
+同一版本还做了独立的 Orca 普通终端执行验证。DSH 冷启动后注册 7 个 CosMatter 插件的 22 项工具。终端实际执行 5 次命令且退出码均为 0。组分 `1/2` 返回 256 个 Pb 和 256 个 Sr，`1/3` 返回相邻的 170 与 171 个 Pb。合成 MD 均值给出纵向压电系数 50 pm/V。使用合成 DOI 查询 `figure:2` 命中一条已接受证据并给出本机阅读链接，查询 `figure:20` 返回零条。此项验收使用合成输入，图 6 原论文仍须单独核对。
+
+**把已建任务交给一个普通终端。** 下面延用上面的 PowerShell 变量，为计算任务新开一个 Orca PowerShell 终端，记录本次分配的 `dispatch.id`，把实际计算命令送入该终端。先在工作树的环境中确认 `cosmatter` 和 `dsh` 可用。
+
+~~~powershell
+$worker = (Invoke-OrcaJson terminal create --worktree "path:$project" --shell powershell.exe --title 'PST 核算' --json).terminal.handle
+$attempt = (Invoke-OrcaJson orchestration dispatch --from $coordinator --to $worker --run $orcaRun --task $a.taskId --json).dispatch.id
+Invoke-OrcaJson terminal send --terminal $worker --text $calc --enter --json
+~~~
+
+在该终端输入 `$LASTEXITCODE` 确认退出码为 0，核对 `n_pb=2`、`n_sr=510`、`arrangement_count="130816"` 后，从协调终端登记这次尝试的结果，并读回两项任务状态。阅读任务同理，用独立终端、`$b.taskId`、`$read` 和新产生的 `dispatch.id`。其回执应写入实际命中数和来源定位。受监督的 DSH TUI 自动启动仍待单独验收。[完成回执协议](https://orca.dev/docs/cli/orchestration)
+
+~~~powershell
+Invoke-OrcaJson orchestration send --from $worker --to "run:$orcaRun" --run $orcaRun --type worker_done --task-id $a.taskId --dispatch-id $attempt --outcome succeeded --subject 'PST 计数核对完成' --body 'Pb=2，Sr=510，带编号排列数为 130816。' --json
+(Invoke-OrcaJson orchestration task-list --run $orcaRun --full --json).tasks | Select-Object id, status
+~~~
+
+**两个独立终端的派工与回执实测。** 在临时 Run `run_517b230bdf70` 内，两项分配均返回 `injected: false`，随后在各自的受派终端执行 CosMatter 命令，核对产物后发送带任务 ID 与分配 ID 的 `worker_done`。全程在本机执行。
+
+| 终端任务 | taskId / dispatchId | 产物与最终状态 |
+|---|---|---|
+| Pb/Sr 占位 | `task_ce735b29c411` / `ctx_a4d8c3255800` | DSH 插件返回 2 个 Pb、510 个 Sr、130816 种排列。任务与本次分配均为 `completed`。 |
+| 图 6 定位 | `task_fd7bf362b7ce` / `ctx_74c675e6a195` | 临时工作台用上文 DOI 和 `Figure 6` 建立了一条标明为合成的已接受卡。真实查询命中 `synthetic_figure_six`，核对 DOI、图号和本机阅读链接后，任务与本次分配均为 `completed`。这只验证来源定位，论文中的实验数值仍待核读。 |
+
+再次投递第二项任务的完成消息时，Orca 返回 `lifecycle: settled`，将其作为消息递送。重新读取任务列表仍只有原来的两条完成记录。
 
 #### 用两篇 BiFeO₃ 文献验收一次派工
 

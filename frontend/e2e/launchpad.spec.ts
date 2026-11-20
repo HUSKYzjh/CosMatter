@@ -1666,7 +1666,7 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await query.locator("summary").press("Enter");
   await query.getByRole("button", { name: "复制只读查询" }).press("Enter");
   const draftQuery = await query.locator("p").first().innerText();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(draftQuery);
+  await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).replace(/\r\n/g, "\n"))).toBe(draftQuery);
   expect(draftQuery).toContain(`run_id 是否为 ${runId}`);
   expect(draftQuery).toContain(`workbench_url 的端口是否为 ${new URL(page.url()).port}`);
   expect(draftQuery).toContain("用该 run_id 调用 cosmatter_artifact_manifest");
