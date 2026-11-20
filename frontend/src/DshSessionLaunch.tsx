@@ -35,7 +35,7 @@ export function DshSessionLaunch(props: { locale: UiLocale; port: number; runId?
         <label><input type="radio" name={choiceName} checked={mode() === "tui"} onChange={() => setMode("tui")} />{x("在 Orca / 本机终端运行", "Run in Orca / local terminal")}</label>
       </div>
     </fieldset>
-    <p>{mode() === "tui" ? x("在运行本工作台的电脑上，打开 Orca 工作树的普通终端或本机终端，粘贴命令。DSH 的 tui 配置需已安装交互前端。", "Paste the command into an Orca worktree terminal or a local terminal on the workbench computer. The DSH tui profile needs an interactive frontend.")
+    <p>{mode() === "tui" ? x("在这台电脑的 Orca 工作树终端或本机终端粘贴命令。若 DSH 的 tui 配置缺少交互前端，请选「在终端显示链接」打开网页版。", "Paste the command into an Orca worktree terminal or a local terminal on this computer. If your DSH tui profile lacks an interactive frontend, choose “Show link in terminal” to open DSH Web.")
       : mode() === "link" ? x("在 CosMatter 终端运行命令，再打开终端显示的本机链接。", "Run in the CosMatter terminal, then open the local link it prints.")
       : x("在 CosMatter 终端运行命令，DSH 将在浏览器中打开。", "Run in the CosMatter terminal to open DSH in your browser.")}</p>
     <DshCommandRow locale={props.locale} command={command()} label={x("复制 DSH 启动命令", "Copy DSH launch command")} />
