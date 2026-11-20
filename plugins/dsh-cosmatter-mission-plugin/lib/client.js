@@ -43,9 +43,11 @@ export class CosMatterMissionClient {
             const response = await this.request(new URL('/api/missions', this.config.baseUrl), {
                 method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload), signal: controller.signal,
             });
-            const value = await response.json();
+            if (response.status === 409)
+                throw new Error('This CosMatter run ID is already in use. Look up the ID in the local workbench to continue an existing mission. For a new mission, omit run_id or choose a different one.');
             if (!response.ok)
                 throw new Error(`CosMatter mission creation failed with HTTP ${response.status}`);
+            const value = await response.json();
             const mission = validateMissionCreated(value);
             if (payload.run_id !== undefined && mission.run_id !== payload.run_id)
                 throw new Error('CosMatter mission response does not match the requested run');

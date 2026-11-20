@@ -80,6 +80,7 @@ from .external_dispatch import (
 )
 from .accepted_evidence_search import AcceptedEvidenceSearchError, search_accepted_evidence
 from .delegated_trial import has_delegated_test_review_boundary
+from .mission_store import MissionRunConflict, write_new_mission
 from .runtime_invariants import RuntimeInvariantError, audit_runtime_invariants
 from .artifact_contract import ArtifactContractError, ArtifactDownload, approved_artifact_download, artifact_manifest
 from .stage_contract import StageContractError, stage_contract
@@ -243,21 +244,10 @@ class LocalMissionApi:
             if requested_run_id is not None and not isinstance(requested_run_id, str):
                 raise LocalApiError("run_id must be a string")
             run_id = _api_safe_run_id(requested_run_id or brief.mission_id.replace("mission_", "run_"))
-            run_dir = self.runs_dir / run_id
-            if run_dir.exists():
-                raise LocalApiError("run_id already exists; choose another identifier", 409)
-            recorder = FlightRecorder(self.runs_dir, run_id)
-            (recorder.run_dir / "mission.json").write_text(
-                json.dumps(brief.to_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-            )
-            recorder.record(event_type="mission_created", actor="mission_control", state=MissionState.INTAKE, payload=brief.to_dict())
             assignment = MissionDispatcher.from_project().assign(brief, body.get("mission_type") if isinstance(body.get("mission_type"), str) else None)
-            (recorder.run_dir / "fleet_assignment.json").write_text(
-                json.dumps(assignment.to_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-            )
-            recorder.record(
-                event_type="fleet_assigned", actor="mission_dispatch", state=MissionState.INTAKE, payload=assignment.to_dict()
-            )
+            write_new_mission(self.runs_dir, run_id, brief, assignment)
+        except MissionRunConflict as error:
+            raise LocalApiError(str(error), 409) from error
         except (ValueError, AuditPathError, DispatchError) as error:
             if isinstance(error, LocalApiError):
                 raise

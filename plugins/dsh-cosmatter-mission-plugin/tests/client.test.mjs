@@ -35,6 +35,13 @@ test('client rejects invalid endpoints and sensitive responses', async () => {
   await assert.rejects(() => client.create({ question: 'A valid research question', material: 'BiFeO3', property: 'phase stability', scope: 'thin films' }), /forbidden field/)
 })
 
+test('a run ID conflict gives creation guidance without handing off the existing mission', async () => {
+  const client = new CosMatterMissionClient({}, async () => new Response(null, { status: 409 }))
+  await assert.rejects(() => client.create({
+    run_id: 'bfo_001', question: 'A different question?', material: 'other material', property: 'other property', scope: 'other scope',
+  }), /already in use.*local workbench.*omit run_id or choose a different one/)
+})
+
 test('DSH apply registers only bounded mission creation', async () => {
   const tools = []
   const events = []

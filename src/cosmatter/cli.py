@@ -124,6 +124,7 @@ from .pst_configuration_search import (
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .sciverse_context_review import SciverseContextReviewError, load_sciverse_context_review_pool, prepare_sciverse_context_review_pool, require_current_sciverse_context_review_pool, sciverse_automated_trial_selection, sciverse_source_map_review_template, sciverse_source_map_selection_from_review, write_sciverse_source_map_review
 from .ui_export import UiExportError, _evidence_cards_from_payloads, _last_recorded_state, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
+from .mission_store import MissionRunConflict, write_new_mission
 
 
 def _json_print(payload: object) -> None:
@@ -273,10 +274,11 @@ def command_create_mission(args: argparse.Namespace) -> int:
         **({"mission_id": args.mission_id} if args.mission_id else {}),
     )
     run_id = args.run_id or brief.mission_id.replace("mission_", "run_")
-    recorder = FlightRecorder(_runs_dir(), run_id)
-    mission_path = recorder.run_dir / "mission.json"
-    mission_path.write_text(json.dumps(brief.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-    recorder.record(event_type="mission_created", actor="mission_control", state=MissionState.INTAKE, payload=brief.to_dict())
+    try:
+        mission_path = write_new_mission(_runs_dir(), run_id, brief) / "mission.json"
+    except MissionRunConflict as error:
+        _json_print({"error": str(error), "run_id": run_id})
+        return 2
     _json_print({"run_id": run_id, "mission_path": str(mission_path), "state": MissionState.INTAKE.value})
     return 0
 
