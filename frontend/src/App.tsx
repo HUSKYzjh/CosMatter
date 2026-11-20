@@ -9,7 +9,7 @@ import type { RunArtifactIdentity } from "./RunArtifactRecord";
 import type { RunStatus } from "./localApi";
 import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget } from "./Launchpad";
 import { type LaunchPreviewStage } from "./launchStages";
-import { launchMissionMissingFields, type LaunchMissionBoundary } from "./launchMissionValidation";
+import { launchMissionMissingFields, type LaunchMissionBoundary, type LaunchMissionField } from "./launchMissionValidation";
 import { continuationStageLabel, localRunLanding, reconcileRestoredStage } from "./continuationStage";
 import { fleetVisualState } from "./fleetVisualState";
 import { ReadOnlyPreviewContext } from "./ReadOnlyPreviewContext";
@@ -300,7 +300,10 @@ export function App() {
   const [resumeSubmissionPending, setResumeSubmissionPending] = createSignal(false);
   const [existingRunReadPending, setExistingRunReadPending] = createSignal(false);
   const [runArtifactRecord, setRunArtifactRecord] = createSignal<RunArtifactIdentity | null>(null);
-  const [dshPanel, setDshPanel] = createSignal<{ draft: LaunchMissionBoundary | null } | null>(null);
+  const [dshPanel, setDshPanel] = createSignal<{
+    draft: LaunchMissionBoundary | null;
+    focusField?: (field: LaunchMissionField) => void;
+  } | null>(null);
   const [localBriefAvailable, setLocalBriefAvailable] = createSignal(false);
   const [uiImportPending, setUiImportPending] = createSignal(false);
   const [uiImportReceipt, setUiImportReceipt] = createSignal<LocalImportReceipt | null>(null);
@@ -337,7 +340,12 @@ export function App() {
   const selectedDocumentId = createMemo(() => documentIdForReviewablePaper(researchSession().selectedNode));
   const localApiUsable = createMemo(() => localApiEnabled() && apiCapabilityHealth() === "ready");
   const previewCanActOnRun = createMemo(() => previewAllowsRunAction(launchPreview(), liveRunId()));
-  const localBriefForDsh = () => localBriefAvailable() && !launchPreview() && !liveRunId() && Boolean(localWorkbenchLocation());
+  const confirmedLocalBrief = createMemo<LaunchMissionBoundary | null>(() => {
+    if (!localBriefAvailable() || launchPreview() || liveRunId()) return null;
+    const { question, material, property, scope } = bundle().mission;
+    return { question, material, property, scope };
+  });
+  const localBriefForDsh = () => confirmedLocalBrief() && Boolean(localWorkbenchLocation());
   const canOpenDshToolDialog = createMemo(() => localApiEnabled() && (view() === "launch" ? Boolean(localWorkbenchLocation()) : previewCanActOnRun() || localBriefForDsh()));
   const dshEvidenceTarget = createMemo(() => {
     if (view() !== "reader" || !previewCanActOnRun()) return null;
@@ -347,7 +355,7 @@ export function App() {
   });
   createEffect(() => {
     view();
-    liveRunId();
+    if (liveRunId()) setLocalBriefAvailable(false);
     launchPreview();
     setDshPanel(null);
   });
@@ -514,7 +522,7 @@ export function App() {
       return;
     }
     const stage = journey().find((item) => item.view === next);
-    if (stage?.state === "blocked" && !(next === "horizon" && hasNavigableEvaluationAudit())) {
+    if (next !== "discover" && stage?.state === "blocked" && !(next === "horizon" && hasNavigableEvaluationAudit())) {
       setStatus(language() === "zh" ? stage.reasonZh ?? "上一步尚未完成。" : stage.reasonEn ?? "The preceding stage is not ready.");
       const recovery = ({ workflow: { view: "discover", zh: "返回任务定义补齐边界", en: "Return to task definition and complete boundaries" }, graph: { view: "workflow", zh: "返回舰桥建立任务工件", en: "Return to bridge and create mission artifacts" }, reader: { view: "graph", zh: "返回文献星图选择论文", en: "Return to literature map and select a paper" }, horizon: { view: "reader", zh: "返回证据核对补齐审计链路", en: "Return to evidence verification and complete the audit chain" } } as Partial<Record<View, RouteRecovery>>)[next];
       setRouteRecovery(recovery ?? null);
@@ -566,6 +574,33 @@ export function App() {
       setView("workflow");
       setStatus(text("已返回当前本机任务。", "Returned to the current local run."));
       if (lastActiveWorkspace?.runId === runId && lastActiveWorkspace.view !== "workflow") navigate(lastActiveWorkspace.view);
+    });
+  }
+
+  function returnToConfirmedBrief(field?: LaunchMissionField) {
+    if (!confirmedLocalBrief()) return;
+    existingRunReadGate.invalidate();
+    setExistingRunReadPending(false);
+    setRouteRecovery(null);
+    setView(field ? "discover" : "workflow");
+    setStatus(text("已返回本次会话确认的本地简报。", "Returned to the local brief confirmed in this session."));
+    if (field) document.querySelector<HTMLElement>(`.mission-definition-form [data-mission-field="${field}"]`)?.focus({ preventScroll: true });
+  }
+
+  function openDraftDsh(draft: LaunchMissionBoundary | null, focusField?: (field: LaunchMissionField) => void) {
+    setDshPanel({ draft, focusField });
+  }
+
+  function editDshDraftField(field: LaunchMissionField) {
+    const focusField = dshPanel()?.focusField;
+    if (!focusField) return;
+    setDshPanel(null);
+    requestAnimationFrame(() => {
+      focusField(field);
+      const control = document.activeElement;
+      if (control instanceof HTMLTextAreaElement || control instanceof HTMLInputElement) {
+        control.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+      }
     });
   }
 
@@ -2137,7 +2172,7 @@ export function App() {
 
   return <DshReadProfile.Provider value={{ profile: dshProfile, health: dshProfileHealth, refresh: refreshDshProfile }}>
     <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad onOpenDsh={canOpenDshToolDialog() ? (draft) => setDshPanel({ draft }) : undefined} legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+    <Show when={view() === "launch"}><Launchpad onOpenDsh={canOpenDshToolDialog() ? openDraftDsh : undefined} confirmedBrief={confirmedLocalBrief()} onReturnToConfirmedBrief={returnToConfirmedBrief} legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>
@@ -2147,7 +2182,7 @@ export function App() {
         <For each={journey()}>{(stage, index) => <li class={`journey-${stage.state}`}><button type="button" aria-current={stage.view === view() ? "step" : undefined} title={journeyStateLabel(stage)} onClick={() => navigate(stage.view)}><span>{String(index() + 1).padStart(2, "0")}</span><div><strong>{language() === "zh" ? stage.zh : stage.en}</strong><small>{journeyStateLabel(stage)}</small></div></button></li>}</For>
       </ol>
       <Show when={localApiEnabled() && localBriefForDsh()}>
-        <ActionButton class="rail-dsh-tools" size="sm" aria-haspopup="dialog" onClick={() => setDshPanel({ draft: { question: question(), ...missionBoundary() } })}>
+        <ActionButton class="rail-dsh-tools" size="sm" aria-haspopup="dialog" onClick={() => openDraftDsh(confirmedLocalBrief(), returnToConfirmedBrief)}>
           {text("DSH 工具与会话", "DSH tools and sessions")}
         </ActionButton>
       </Show>
@@ -2322,11 +2357,11 @@ export function App() {
         <Show when={launchPreview()}><ReadOnlyPreviewContext locale={language()} onExit={returnToLaunch} /></Show>
         <section class="mission-definition-form" aria-label={text("任务草稿", "Mission draft")}>
           <header><p class="stage-kicker">{text("任务草稿", "MISSION DRAFT")}</p><h2>{text("明确可比较的研究边界", "Define comparable research boundaries")}</h2><p>{text("先写清问题，再列出需要共同检索、抽取和核验的对象、维度与范围。以下修改仅在确认后成为当前任务。", "State the question, then list the objects, dimensions, and boundaries to retrieve, extract, and verify together. Changes become the current mission only after confirmation.")}</p></header>
-          <label class="question-label"><span>{text("研究问题", "Research question")}</span><textarea ref={questionTextarea} value={question()} onInput={(event) => updateQuestion(event.currentTarget.value)} rows="3" placeholder={text("提出一个可由文献证据回答的问题", "Ask a question that can be answered from literature evidence")} /></label>
+          <label class="question-label"><span>{text("研究问题", "Research question")}</span><textarea data-mission-field="question" ref={questionTextarea} value={question()} onInput={(event) => updateQuestion(event.currentTarget.value)} rows="3" placeholder={text("提出一个可由文献证据回答的问题", "Ask a question that can be answered from literature evidence")} /></label>
           <section class="scope-editor" aria-label={text("任务边界", "Task boundaries")}>
-            <label><span>{text("研究对象（可多个）", "Research objects (multiple allowed)")}</span><textarea value={missionBoundary().material} onInput={(event) => updateMissionBoundary("material", event.currentTarget.value)} rows="2" placeholder={text("例如：BiFeO₃；BaTiO₃；SrTiO₃", "e.g. BiFeO₃; BaTiO₃; SrTiO₃")} /></label>
-            <label><span>{text("研究目标／比较维度", "Research targets / comparison dimensions")}</span><textarea value={missionBoundary().property} onInput={(event) => updateMissionBoundary("property", event.currentTarget.value)} rows="2" placeholder={text("例如：相稳定性；铁电极化；磁有序", "e.g. phase stability; ferroelectric polarization; magnetic order")} /></label>
-            <label><span>{text("研究边界／比较范围", "Research boundaries / comparison scope")}</span><textarea value={missionBoundary().scope} onInput={(event) => updateMissionBoundary("scope", event.currentTarget.value)} rows="2" placeholder={text("例如：外延薄膜；应变、厚度与氧分压", "e.g. epitaxial films; strain, thickness, and oxygen pressure")} /></label>
+            <label><span>{text("研究对象（可多个）", "Research objects (multiple allowed)")}</span><textarea data-mission-field="material" value={missionBoundary().material} onInput={(event) => updateMissionBoundary("material", event.currentTarget.value)} rows="2" placeholder={text("例如：BiFeO₃；BaTiO₃；SrTiO₃", "e.g. BiFeO₃; BaTiO₃; SrTiO₃")} /></label>
+            <label><span>{text("研究目标／比较维度", "Research targets / comparison dimensions")}</span><textarea data-mission-field="property" value={missionBoundary().property} onInput={(event) => updateMissionBoundary("property", event.currentTarget.value)} rows="2" placeholder={text("例如：相稳定性；铁电极化；磁有序", "e.g. phase stability; ferroelectric polarization; magnetic order")} /></label>
+            <label><span>{text("研究边界／比较范围", "Research boundaries / comparison scope")}</span><textarea data-mission-field="scope" value={missionBoundary().scope} onInput={(event) => updateMissionBoundary("scope", event.currentTarget.value)} rows="2" placeholder={text("例如：外延薄膜；应变、厚度与氧分压", "e.g. epitaxial films; strain, thickness, and oxygen pressure")} /></label>
             <p>{text("使用分号、逗号或换行分隔多个对象与维度；确认后，系统将把它们作为同一研究任务的边界。", "Separate multiple objects or dimensions with semicolons, commas, or new lines. On confirmation, they become boundaries of one research task.")}</p>
           </section>
           <footer class="mission-definition-actions"><span classList={{ "draft-changed": !missionDraftReady() || missionDraftChanged(), "draft-synced": missionDraftReady() && !missionDraftChanged() }}>{launchPreview() ? text("只读预览：任务确认已锁定", "Read-only preview: mission confirmation is locked") : !missionDraftReady() ? text(`还需填写：${missionDraftMissing().join("、")}`, `Still required: ${missionDraftMissing().join(", ")}`) : missionDraftChanged() ? text("存在尚未确认的任务变更", "Unconfirmed task changes") : text("草稿与当前任务已同步", "Draft matches the current mission")}</span><ActionButton variant="primary" size="lg" disabled={launchPreview() || !missionDraftReady()} onClick={enterBridge}>{launchPreview() ? text("只读预览：不能确认任务", "Read-only preview: confirmation unavailable") : text("确认任务并进入受控编排", "Confirm mission and enter orchestration")}</ActionButton></footer>
@@ -2339,7 +2374,7 @@ export function App() {
     </Suspense>
     </Show>
     <Show when={canOpenDshToolDialog() && dshPanel()}>
-      <DshToolDialog draft={dshPanel()?.draft} initialView={view() === "launch" || !liveRunId() ? "session" : "catalogue"} locale={language()} plugins={harnessCatalogueHealth() === "ready" ? harnessPlugins() ?? [] : []}
+      <DshToolDialog draft={dshPanel()?.draft} onEditDraftField={dshPanel()?.focusField ? editDshDraftField : undefined} initialView={view() === "launch" || !liveRunId() ? "session" : "catalogue"} locale={language()} plugins={harnessCatalogueHealth() === "ready" ? harnessPlugins() ?? [] : []}
         catalogueHealth={harnessCatalogueHealth()} onRefreshCatalogue={() => void refreshHarnessCatalogue()}
         profile={dshProfile()} profileHealth={dshProfileHealth()} onRefreshProfile={() => void refreshDshProfile()}
         currentStage={view() === "launch" ? null : dshCurrentStage()} runId={view() === "launch" ? null : liveRunId()} evidence={dshEvidenceTarget()} onDismiss={() => setDshPanel(null)} />

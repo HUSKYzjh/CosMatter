@@ -53,3 +53,32 @@ test('DSH apply registers only bounded mission creation', async () => {
   dispose()
   globalThis.fetch = originalFetch
 })
+
+test('the native result card presents only the created run and its verified workbench URL', async (t) => {
+  const baseUrl = 'http://127.0.0.1:8791'
+  const args = { question: 'Synthetic question?', material: 'Sample', property: 'Example', scope: 'Local trial' }
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(created), { status: 201 }))
+  let tool
+  apply({ tools: { register: item => { tool = item } }, emit() {}, effect() {} }, { baseUrl })
+  const value = await tool.execute(args, { signal: new AbortController().signal })
+  const content = tool.output.render(args, value)
+  assert.deepEqual(JSON.parse(content[0].text), value)
+  const workbench_url = `${baseUrl}/?api=local#run=${created.run_id}`
+  const meta = tool.output.presentationMeta(args, value)
+  assert.deepEqual(meta, { run_id: created.run_id, workbench_url })
+  const result = { content, isError: false, meta }
+  const card = { card: 'generic', title: 'CosMatter mission created', content: [
+    { type: 'text', text: `${created.run_id}\n${workbench_url}` },
+  ] }
+  assert.deepEqual(tool.presentResult(args, result), card)
+  assert.deepEqual(tool.presentResult({ ...args, run_id: created.run_id }, result), card)
+  assert.equal(tool.presentResult({ ...args, run_id: 'another_run' }, result), undefined)
+  assert.equal(tool.presentResult(args, { ...result, isError: true }), undefined)
+  for (const badMeta of [null, [], { run_id: '../example', workbench_url }, { run_id: created.run_id },
+    { ...meta, workbench_url: workbench_url.replace(':8791', ':8792') },
+    { ...meta, workbench_url: workbench_url.replace('127.0.0.1', 'example.org') },
+    { ...meta, workbench_url: workbench_url.replace(created.run_id, 'another_run') },
+    { ...meta, workbench_url: workbench_url + '&artifacts=1' }]) {
+    assert.equal(tool.presentResult(args, { ...result, meta: badMeta }), undefined)
+  }
+})

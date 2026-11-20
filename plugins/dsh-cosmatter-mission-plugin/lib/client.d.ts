@@ -17,6 +17,8 @@ export interface MissionCreated {
 export interface MissionHandoff extends MissionCreated {
     workbench_url: string;
 }
+export declare function isMissionRunId(value: unknown): value is string;
+export declare function missionWorkbenchUrl(baseUrl: string, runId: string): string;
 export declare class CosMatterMissionClient {
     private readonly request;
     readonly config: NormalizedConfig;

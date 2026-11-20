@@ -24,6 +24,16 @@ export interface MissionHandoff extends MissionCreated {
 const safeRunId = /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/
 const sensitiveKey = /(token|secret|password|authorization|api[_-]?key|path|quote|content)/i
 
+export function isMissionRunId(value: unknown): value is string {
+  return typeof value === 'string' && safeRunId.test(value)
+}
+
+export function missionWorkbenchUrl(baseUrl: string, runId: string): string {
+  const workbench = new URL('/?api=local', baseUrl)
+  workbench.hash = `run=${runId}`
+  return workbench.href
+}
+
 function bounded(value: string, field: string, max: number): string {
   if (!value.trim() || value.trim().length > max) throw new Error(`${field} is invalid`)
   return value.trim()
@@ -44,7 +54,7 @@ export class CosMatterMissionClient {
       scope: bounded(input.scope, 'scope', 1_000),
     }
     if (input.run_id !== undefined) {
-      if (!safeRunId.test(input.run_id)) throw new Error('run_id is invalid')
+      if (!isMissionRunId(input.run_id)) throw new Error('run_id is invalid')
       payload.run_id = input.run_id
     }
     if (input.mission_type !== undefined) payload.mission_type = bounded(input.mission_type, 'mission_type', 80)
@@ -60,9 +70,7 @@ export class CosMatterMissionClient {
       if (!response.ok) throw new Error(`CosMatter mission creation failed with HTTP ${response.status}`)
       const mission = validateMissionCreated(value)
       if (payload.run_id !== undefined && mission.run_id !== payload.run_id) throw new Error('CosMatter mission response does not match the requested run')
-      const workbench = new URL('/?api=local', this.config.baseUrl)
-      workbench.hash = `run=${mission.run_id}`
-      return { ...mission, workbench_url: workbench.href }
+      return { ...mission, workbench_url: missionWorkbenchUrl(this.config.baseUrl, mission.run_id) }
     } finally {
       clearTimeout(timer)
       signal?.removeEventListener('abort', abort)
@@ -75,7 +83,7 @@ export function validateMissionCreated(value: unknown): MissionCreated {
   const result = value as Record<string, unknown>
   if (Object.keys(result).some(key => sensitiveKey.test(key))) throw new Error('CosMatter mission response contains a forbidden field')
   const { run_id, mission_id, fleet_type, mission_type, state } = result
-  if (typeof run_id !== 'string' || !safeRunId.test(run_id) || typeof mission_id !== 'string' || !/^mission_[a-z0-9_]{8,128}$/i.test(mission_id) || typeof fleet_type !== 'string' || typeof mission_type !== 'string' || state !== 'INTAKE') {
+  if (!isMissionRunId(run_id) || typeof mission_id !== 'string' || !/^mission_[a-z0-9_]{8,128}$/i.test(mission_id) || typeof fleet_type !== 'string' || typeof mission_type !== 'string' || state !== 'INTAKE') {
     throw new Error('CosMatter mission response is invalid')
   }
   return { run_id, mission_id, fleet_type, mission_type, state }

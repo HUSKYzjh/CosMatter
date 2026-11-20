@@ -14,7 +14,7 @@ async function dispatch(ctx, name, args) {
   const { callId: resultId, result } = batch.results[0]
   assert.equal(resultId, callId)
   if (result.isError) throw new Error(`DSH dispatch failed for ${name}: ${result.error.code}`)
-  return result.value
+  return result
 }
 
 async function browserRead(webOrigin, path) {
@@ -34,20 +34,28 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin }) {
       await sleep(50)
     }
     assert.deepEqual(registeredCosMatterTools(), [...expectedTools].sort())
-    const discovered = await dispatch(ctx, 'cosmatter_plugin_catalogue', {})
+    const { value: discovered } = await dispatch(ctx, 'cosmatter_plugin_catalogue', {})
     assert.deepEqual(JSON.parse(JSON.stringify(discovered)), catalogue)
     const runId = 'cosmatter_release_probe'
-    const mission = await dispatch(ctx, 'cosmatter_mission_create', {
+    const missionArgs = {
       run_id: runId,
       question: 'How would epitaxial strain affect phase stability in a BiFeO3 thin film?',
       material: 'BiFeO3',
       property: 'phase stability',
       scope: 'Synthetic thin-film mission for the local DSH release check',
-    })
+    }
+    const missionResult = await dispatch(ctx, 'cosmatter_mission_create', missionArgs)
+    const mission = missionResult.value
     assert.equal(mission.run_id, runId)
     assert.equal(mission.state, 'INTAKE')
     assert.equal(mission.workbench_url, `${webOrigin}/?api=local#run=${runId}`)
-    const recentRuns = await dispatch(ctx, 'cosmatter_recent_runs', {})
+    assert.deepEqual(JSON.parse(missionResult.content[0].text), JSON.parse(JSON.stringify(mission)))
+    assert.deepEqual(JSON.parse(JSON.stringify(missionResult.meta)), { run_id: runId, workbench_url: mission.workbench_url })
+    const missionTool = ctx.tools.definitions().find(({ name }) => name === 'cosmatter_mission_create')
+    const missionCard = missionTool.presentResult(missionArgs, missionResult)
+    assert.equal(missionCard?.card, 'generic')
+    assert.deepEqual(missionCard.content, [{ type: 'text', text: `${runId}\n${mission.workbench_url}` }])
+    const { value: recentRuns } = await dispatch(ctx, 'cosmatter_recent_runs', {})
     assert.equal(recentRuns.schema_version, 'cosmatter.recent-run-links/v1')
     assert.equal(recentRuns.runs.length, 1)
     const recent = recentRuns.runs[0]
@@ -55,7 +63,7 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin }) {
     assert.equal(recent.run_id, runId)
     assert.equal(recent.workbench_url, mission.workbench_url)
     assert.equal(recent.stopped, false)
-    const workflow = await dispatch(ctx, 'cosmatter_workflow_status', { run_id: runId })
+    const { value: workflow } = await dispatch(ctx, 'cosmatter_workflow_status', { run_id: runId })
     assert.equal(workflow.run_id, runId)
     assert.equal(workflow.mission_id, mission.mission_id)
     assert.equal(workflow.next_stage, 'plan')
@@ -70,7 +78,7 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin }) {
     assert.equal(browserBundle.mission.mission_id, mission.mission_id)
     assert.equal(pdfRegistry.run_id, runId)
     assert.deepEqual(pdfRegistry.tasks, [])
-    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission, and browser handoff verified\n`, () => process.exit(0))
+    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission result card, and browser handoff verified\n`, () => process.exit(0))
   } catch (error) {
     process.stderr.write(`CosMatter release probe failed: ${error.message}\n`, () => process.exit(1))
   }

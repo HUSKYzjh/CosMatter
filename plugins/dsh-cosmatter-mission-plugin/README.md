@@ -9,9 +9,9 @@ This independent DSH bundle exposes one bounded tool:
 
 Only `http://127.0.0.1` is accepted as the API endpoint. The tool rejects
 oversized inputs and response objects containing sensitive-looking fields.
-The result includes `workbench_url`. Open it in a browser on the same machine
-to load the existing run in CosMatter. The link uses the configured API port
-and carries the run ID in its fragment.
+After creation, the DSH result card shows the run ID and its workbench URL.
+Open that URL in a browser on the same machine to continue the run in CosMatter.
+The structured tool result includes the same link as `workbench_url`.
 
 ```powershell
 npm install

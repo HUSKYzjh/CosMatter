@@ -907,6 +907,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .dsh-registry-gaps li button:focus-visible { outline: 2px solid var(--signal-blue); outline-offset: -2px; }
 .dsh-registry-gaps li code { padding-inline: .4rem; color: var(--muted); font-size: max(.75rem, 12px); overflow-wrap: anywhere; }
 .dsh-mission-draft { display: grid; gap: .45rem; min-width: 0; border-top: 1px solid var(--line); padding-top: .65rem; }
+.launch-confirmed-brief > div { min-width: 0; }
+.launch-confirmed-brief p { overflow-wrap: anywhere; font-size: max(.8rem, 14px); }
+.launch-confirmed-brief strong { font-size: max(.8rem, 14px); }
+.launch-confirmed-brief > .cm-action { min-height: 44px; font-size: max(.75rem, 13px); }
+.launch-confirmed-brief > .cm-action:focus-visible { outline: 2px solid var(--signal-blue); outline-offset: 2px; }
 .dsh-mission-draft > .cm-action { justify-self: start; }
 .dsh-draft-preview pre { margin: .5rem; color: var(--ink); font: max(.8rem, 13px)/1.45 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dsh-dialog-session .harness-session-launch { grid-column: 1 / -1; padding: 0; border: 0; }

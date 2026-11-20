@@ -70,12 +70,21 @@ describe("DSH mission draft handoff", () => {
       const value = "🧪".repeat(max / 2);
       const result = prepareDshMissionHandoff({ ...brief, [key]: ` ${value} ` }, "en")!;
       expect(copiedFields(result.message!)[key]).toBe(value);
+      expect(result.overLimit).toEqual([]);
       const oversized = { ...brief, [key]: `${value}a` };
       const blocked = prepareDshMissionHandoff(oversized, "en")!;
       expect(blocked.message).toBeNull();
-      expect(blocked.hint).toContain(String(max));
+      expect(blocked.overLimit).toEqual([{ field: key, label: expect.any(String), length: max + 1, limit: max }]);
       expect(blocked.hint).not.toContain(value);
       expect(oversized[key]).toBe(`${value}a`);
     },
   );
+
+  it("reports every oversized field with its localized label and trimmed length", () => {
+    const oversized = { ...brief, material: ` ${"材".repeat(301)} `, scope: "🧪".repeat(501) };
+    expect(prepareDshMissionHandoff(oversized, "zh")?.overLimit).toEqual([
+      { field: "material", label: "研究对象", length: 301, limit: 300 },
+      { field: "scope", label: "比较范围", length: 1002, limit: 1000 },
+    ]);
+  });
 });
