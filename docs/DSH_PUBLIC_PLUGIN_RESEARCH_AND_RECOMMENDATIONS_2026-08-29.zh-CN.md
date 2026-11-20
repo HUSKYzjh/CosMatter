@@ -20,6 +20,7 @@
 | Vncntvx/dsh-zotero | 从自己的 Zotero 库检索、读文献，在 DSH Web 文献面板查看引用并审批写入。适合设计“库中已有论文 → 已选摘录 → Source Map”的入口。 | `v1.2.0` 明确要求 DSH `>=0.2.2-rc.3 <0.3.0`、Node `>=24.15.0`，是本项目最值得先用公开 PDF 试验的版本。 [固定版本包清单](https://github.com/Vncntvx/dsh-zotero/blob/v1.2.0/package.json) |
 | Cjrrrrrrrr/dsh-plugins 的 dsh-scholar | 综合多源书目检索、引用查询和 Unpaywall 开放 PDF 地址解析。适合在 SciVerse 已有元数据而全文不可用时查找开放版本。 | 子目录内有独立 Cordis 补丁和 DSH 工具依赖声明；实际取得 PDF、核对 DOI 和版本后，再计为全文成功。 [插件目录与清单](https://github.com/Cjrrrrrrrr/dsh-plugins/tree/9be158a6b51c24753efc894c88b2af1506946fc4/packages/dsh-scholar) |
 | NanmiCoder/dsh-agent-teams | 组织多 Agent 团队、分配带依赖的任务，并在 Web 界面查看成员和任务进度。适合对照 CosMatter 舰队的分工、等待原因与交付物。 | `v0.1.31` 有独立兼容表，本机 rc.3 仍需单独验证。 [作者仓库](https://github.com/NanmiCoder/dsh-agent-teams/tree/v0.1.31) · [兼容矩阵](https://github.com/NanmiCoder/dsh-agent-teams/blob/v0.1.31/compatibility.json) |
+| TYEclipse/dsh-chem | 按化学式求摩尔质量与元素质量分数，也可从给定的元素质量分数反算经验式。可用理想 BiFeO₃ 的整数化学式校核材料表中的计量换算。 | `v0.4.0` 提供已编译入口和 Cordis 补丁；其开发依赖使用 DSH SDK `0.1.0-rc.6`，本机 rc.3 的运行兼容性待测。 [工具定义](https://github.com/TYEclipse/dsh-chem/blob/v0.4.0/dist/tools.js) · [固定版本清单](https://github.com/TYEclipse/dsh-chem/blob/v0.4.0/package.json) |
 
 检索时有两个同名 Zotero 项目。上表推荐评估的版本由 **Vncntvx** 发布；**kuangdang123** 的另一个包能读取批注、增改条目和移至回收站，声明版本为 `0.1.3`。需要独立 MCP 服务时，另有 **Zotero MCP**，含 PDF 注释提取和按工具组配置的接口。 [kuangdang123 的清单](https://github.com/kuangdang123/dsh-zotero/blob/84d2239c1c150ed477490f6e53d3b5afeb7aa25c/package.json) · [Zotero MCP](https://github.com/54yyyu/zotero-mcp)
 
