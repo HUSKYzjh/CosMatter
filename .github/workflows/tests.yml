@@ -23,8 +23,10 @@ jobs:
         run: npm ci
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
-      - name: Check frontend types
-        run: npm run check
+      - name: Type-check and build the workbench
+        run: npm run build
+      - name: Run frontend unit tests
+        run: npm test
       - name: Run frontend end-to-end tests
         run: npm run test:e2e
 

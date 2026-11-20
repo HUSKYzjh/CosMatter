@@ -147,57 +147,30 @@ def build_pst_configuration_search_plan(payload: object) -> dict[str, Any]:
     if not isinstance(payload, dict) or set(payload) != fields:
         raise PstConfigurationSearchError("PST plan input has unsupported or missing fields")
     n_pb, n_sr, realized = realizable_composition(payload["composition_requested"])
-    for field in ("potential_id", "md_protocol_id", "promotion_rule", "failure_policy", "stopping_rule"):
-        if not isinstance(payload[field], str) or not payload[field].strip() or len(payload[field]) > 500:
-            raise PstConfigurationSearchError(f"{field} must be bounded nonempty text")
-    for field in ("potential_hash", "md_protocol_hash"):
-        _require_sha256(payload[field], field)
-    objective = payload["objective_spec"]
-    if not isinstance(objective, dict) or set(objective) != {"mode", "components", "conditions_hash", "uncertainty_method"}:
-        raise PstConfigurationSearchError("objective_spec has unsupported or missing fields")
-    if objective["mode"] not in {"scalar", "pareto"} or not isinstance(objective["components"], list) or not objective["components"] or len(objective["components"]) > 8 or any(not isinstance(item, str) or not item.strip() for item in objective["components"]):
-        raise PstConfigurationSearchError("objective_spec mode or components are invalid")
-    _require_sha256(objective["conditions_hash"], "objective_spec.conditions_hash")
-    if not isinstance(objective["uncertainty_method"], str) or not objective["uncertainty_method"].strip():
-        raise PstConfigurationSearchError("objective_spec uncertainty_method is invalid")
-    integer_fields = ("chain_count", "random_baseline_count", "short_md_steps", "short_md_repeats", "long_md_steps", "max_evaluations", "aggregate_md_step_budget")
-    if any(not isinstance(payload[field], int) or isinstance(payload[field], bool) or payload[field] < 1 for field in integer_fields):
-        raise PstConfigurationSearchError("PST plan integer budgets must be positive")
-    seeds = payload["long_md_independent_seeds"]
-    if not isinstance(seeds, list) or len(seeds) < 3 or len(set(seeds)) != len(seeds) or any(not isinstance(seed, int) or isinstance(seed, bool) or seed < 0 for seed in seeds):
-        raise PstConfigurationSearchError("long MD validation requires at least three unique nonnegative seeds")
-    for field in ("max_wallclock_hours", "max_accelerator_hours"):
-        if not isinstance(payload[field], (int, float)) or isinstance(payload[field], bool) or not math.isfinite(payload[field]) or payload[field] <= 0:
-            raise PstConfigurationSearchError(f"{field} must be a positive finite number")
-    return {
+    plan = {
         "schema_version": PLAN_SCHEMA_VERSION,
         "trust_status": PLAN_TRUST_STATUS,
         "material_system": "(Pb_xSr_1-x)TiO3",
-        "potential": {"potential_id": payload["potential_id"].strip(), "sha256": payload["potential_hash"]},
+        "potential": {"potential_id": payload["potential_id"], "sha256": payload["potential_hash"]},
         "supercell": list(SUPERCELL),
         "a_site_count": A_SITE_COUNT,
         "composition": {"requested": str(payload["composition_requested"]), "n_pb": n_pb, "n_sr": n_sr, "realized": realized},
-        "objective_spec": {
-            "mode": objective["mode"],
-            "components": list(objective["components"]),
-            "conditions_hash": objective["conditions_hash"],
-            "uncertainty_method": objective["uncertainty_method"].strip(),
-        },
-        "md_protocol": {"protocol_id": payload["md_protocol_id"].strip(), "sha256": payload["md_protocol_hash"]},
+        "objective_spec": payload["objective_spec"],
+        "md_protocol": {"protocol_id": payload["md_protocol_id"], "sha256": payload["md_protocol_hash"]},
         "proposal_method": "md_response_guided_motif_tempering",
         "chain_count": payload["chain_count"],
         "random_baseline_spec": {"configuration_count": payload["random_baseline_count"], "fixed_composition": True},
         "short_md_stage": {"steps": payload["short_md_steps"], "independent_repeats": payload["short_md_repeats"]},
-        "promotion_rule": payload["promotion_rule"].strip(),
-        "long_md_validation": {"steps": payload["long_md_steps"], "independent_seeds": seeds},
+        "promotion_rule": payload["promotion_rule"],
+        "long_md_validation": {"steps": payload["long_md_steps"], "independent_seeds": payload["long_md_independent_seeds"]},
         "evaluation_budget": {
             "max_evaluations": payload["max_evaluations"],
             "aggregate_md_step_budget": payload["aggregate_md_step_budget"],
-            "max_wallclock_hours": float(payload["max_wallclock_hours"]),
-            "max_accelerator_hours": float(payload["max_accelerator_hours"]),
+            "max_wallclock_hours": payload["max_wallclock_hours"],
+            "max_accelerator_hours": payload["max_accelerator_hours"],
         },
-        "failure_policy": payload["failure_policy"].strip(),
-        "stopping_rule": payload["stopping_rule"].strip(),
+        "failure_policy": payload["failure_policy"],
+        "stopping_rule": payload["stopping_rule"],
         "configuration_hashes": [],
         "run_receipt_ids": [],
         "pareto_archive_or_best_found": [],
@@ -205,6 +178,28 @@ def build_pst_configuration_search_plan(payload: object) -> dict[str, Any]:
         "execution_authorized": False,
         "claim_boundary": "best_found_under_frozen_potential_protocol_and_budget_not_global_optimum",
     }
+    validate_pst_configuration_search_plan(plan)
+    plan["potential"]["potential_id"] = payload["potential_id"].strip()
+    plan["md_protocol"]["protocol_id"] = payload["md_protocol_id"].strip()
+    objective = payload["objective_spec"]
+    plan["objective_spec"] = {
+        **objective,
+        "components": list(objective["components"]),
+        "uncertainty_method": objective["uncertainty_method"].strip(),
+    }
+    plan["long_md_validation"]["independent_seeds"] = list(payload["long_md_independent_seeds"])
+    for field in ("promotion_rule", "failure_policy", "stopping_rule"):
+        plan[field] = payload[field].strip()
+    for field in ("max_wallclock_hours", "max_accelerator_hours"):
+        plan["evaluation_budget"][field] = float(payload[field])
+    return plan
+
+
+def _plan_section(plan: dict[str, Any], name: str, *fields: str) -> dict[str, Any]:
+    value = plan[name]
+    if not isinstance(value, dict) or set(value) != set(fields):
+        raise PstConfigurationSearchError(f"{name} has unsupported or missing fields")
+    return value
 
 
 def validate_pst_configuration_search_plan(plan: object) -> None:
@@ -222,7 +217,9 @@ def validate_pst_configuration_search_plan(plan: object) -> None:
         raise PstConfigurationSearchError("PST configuration search plan has unsupported or missing fields")
     if plan.get("material_system") != "(Pb_xSr_1-x)TiO3" or plan.get("proposal_method") != "md_response_guided_motif_tempering" or plan.get("claim_boundary") != "best_found_under_frozen_potential_protocol_and_budget_not_global_optimum":
         raise PstConfigurationSearchError("PST configuration search plan scope boundary is invalid")
-    if plan.get("supercell") != list(SUPERCELL) or plan.get("a_site_count") != A_SITE_COUNT or plan.get("execution_authorized") is not False or plan.get("property_prediction_count") != 0:
+    prediction_count = plan["property_prediction_count"]
+    if (plan.get("supercell") != list(SUPERCELL) or plan.get("a_site_count") != A_SITE_COUNT
+            or plan.get("execution_authorized") is not False or type(prediction_count) is not int or prediction_count != 0):
         raise PstConfigurationSearchError("PST configuration search plan violates its plan-only boundary")
     composition = plan.get("composition")
     if not isinstance(composition, dict) or set(composition) != {"requested", "n_pb", "n_sr", "realized"}:
@@ -234,14 +231,50 @@ def validate_pst_configuration_search_plan(plan: object) -> None:
     n_pb, n_sr, realized = realizable_composition(composition["requested"])
     if (composition["n_pb"], composition["n_sr"], composition["realized"]) != (n_pb, n_sr, realized):
         raise PstConfigurationSearchError("PST configuration search plan realized composition is inconsistent")
-    potential = plan.get("potential")
-    protocol = plan.get("md_protocol")
-    if not isinstance(potential, dict) or set(potential) != {"potential_id", "sha256"} or not isinstance(protocol, dict) or set(protocol) != {"protocol_id", "sha256"}:
-        raise PstConfigurationSearchError("PST configuration search plan provenance is invalid")
+    potential = _plan_section(plan, "potential", "potential_id", "sha256")
+    protocol = _plan_section(plan, "md_protocol", "protocol_id", "sha256")
     _require_sha256(potential["sha256"], "potential.sha256")
     _require_sha256(protocol["sha256"], "md_protocol.sha256")
-    if plan.get("configuration_hashes") or plan.get("run_receipt_ids") or plan.get("pareto_archive_or_best_found"):
-        raise PstConfigurationSearchError("plan-only PST artifact cannot contain execution results")
+    text_fields = {
+        "potential_id": potential["potential_id"],
+        "md_protocol_id": protocol["protocol_id"],
+        "promotion_rule": plan["promotion_rule"],
+        "failure_policy": plan["failure_policy"],
+        "stopping_rule": plan["stopping_rule"],
+    }
+    for field, value in text_fields.items():
+        if not isinstance(value, str) or not value.strip() or len(value) > 500:
+            raise PstConfigurationSearchError(f"{field} must be bounded nonempty text")
+    objective = _plan_section(plan, "objective_spec", "mode", "components", "conditions_hash", "uncertainty_method")
+    components = objective["components"]
+    if (objective["mode"] not in ("scalar", "pareto") or not isinstance(components, list)
+            or not 1 <= len(components) <= 8 or any(not isinstance(item, str) or not item.strip() for item in components)):
+        raise PstConfigurationSearchError("objective_spec mode or components are invalid")
+    _require_sha256(objective["conditions_hash"], "objective_spec.conditions_hash")
+    if not isinstance(objective["uncertainty_method"], str) or not objective["uncertainty_method"].strip():
+        raise PstConfigurationSearchError("objective_spec uncertainty_method is invalid")
+    baseline = _plan_section(plan, "random_baseline_spec", "configuration_count", "fixed_composition")
+    if baseline["fixed_composition"] is not True:
+        raise PstConfigurationSearchError("PST plan random baseline must have fixed composition")
+    short_md = _plan_section(plan, "short_md_stage", "steps", "independent_repeats")
+    long_md = _plan_section(plan, "long_md_validation", "steps", "independent_seeds")
+    budget = _plan_section(plan, "evaluation_budget", "max_evaluations", "aggregate_md_step_budget",
+                           "max_wallclock_hours", "max_accelerator_hours")
+    counts = (plan["chain_count"], baseline["configuration_count"], short_md["steps"], short_md["independent_repeats"],
+              long_md["steps"], budget["max_evaluations"], budget["aggregate_md_step_budget"])
+    if any(type(count) is not int or count < 1 for count in counts):
+        raise PstConfigurationSearchError("PST plan integer budgets must be positive")
+    seeds = long_md["independent_seeds"]
+    if (not isinstance(seeds, list) or len(seeds) < 3 or any(type(seed) is not int or seed < 0 for seed in seeds)
+            or len(set(seeds)) != len(seeds)):
+        raise PstConfigurationSearchError("long MD validation requires at least three unique nonnegative seeds")
+    for field in ("max_wallclock_hours", "max_accelerator_hours"):
+        value = budget[field]
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            raise PstConfigurationSearchError(f"{field} must be a positive finite number")
+    for field in ("configuration_hashes", "run_receipt_ids", "pareto_archive_or_best_found"):
+        if plan[field] != []:
+            raise PstConfigurationSearchError(f"plan-only PST artifact requires {field} to be an empty array")
 
 
 def write_pst_configuration_search_plan(path: Path, plan: dict[str, Any]) -> Path:

@@ -12,6 +12,7 @@ from .gap_analysis import GapAnalysisError, load_gap_candidates
 from .models import MissionBrief
 from .planning import PlanApprovalError, load_approved_flight_plan
 from .provider_receipts import ProviderReceiptError, audit_candidate_receipt_links, audit_source_parse_receipt_links
+from .source_map import SourceMapError, iter_source_maps
 from .source_parse import SourceParseArtifactError, load_source_parse_tasks
 
 
@@ -29,7 +30,10 @@ def workflow_readiness(run_dir: Path, mission: MissionBrief) -> dict[str, Any]:
     retrieval = _retrieval(run_dir, plan)
     screening = _screening(run_dir, mission, retrieval)
     parse = _parse_progress(run_dir, mission.mission_id)
-    map_count = _document_count(run_dir / "source_maps", "mission_id", mission.mission_id)
+    try:
+        map_count = len(iter_source_maps(run_dir, mission.mission_id))
+    except (OSError, UnicodeError, SourceMapError) as error:
+        raise WorkflowReadinessError("reviewed Source Maps could not be validated") from error
     fact_count = _fact_count(run_dir / "material_facts", mission.mission_id)
     gap = _gap_progress(run_dir / "research_gap_candidates.json")
     gap_count = gap["counts"]["gap_candidate_count"]
@@ -413,10 +417,6 @@ def _evaluation_progress(
 
 def _task_count(path: Path, mission_id: str) -> int:
     return _array_field_count(path, mission_id, "tasks")
-
-
-def _document_count(directory: Path, mission_field: str, mission_id: str) -> int:
-    return sum(_object_has_mission(path, mission_field, mission_id) for path in directory.glob("*.json")) if directory.exists() else 0
 
 
 def _fact_count(directory: Path, mission_id: str) -> int:

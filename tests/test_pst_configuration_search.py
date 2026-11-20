@@ -113,7 +113,9 @@ class PstConfigurationPlanTests(unittest.TestCase):
         self.assertEqual(plan["configuration_hashes"], [])
         with tempfile.TemporaryDirectory() as directory:
             path = write_pst_configuration_search_plan(Path(directory) / "pst_configuration_search_plan.json", plan)
-            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), plan)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            validate_pst_configuration_search_plan(saved)
+            self.assertEqual(saved, plan)
             self.assertEqual(write_pst_configuration_search_plan(path, plan), path)
             changed = copy.deepcopy(plan)
             changed["chain_count"] += 1
@@ -124,6 +126,50 @@ class PstConfigurationPlanTests(unittest.TestCase):
         tampered["configuration_hashes"] = ["d" * 64]
         with self.assertRaises(PstConfigurationSearchError):
             validate_pst_configuration_search_plan(tampered)
+
+    def test_plan_creation_and_readback_reject_the_same_invalid_reviewed_fields(self) -> None:
+        cases = (
+            ("max_evaluations", "evaluation_budget", "max_evaluations", -1),
+            ("aggregate_md_step_budget", "evaluation_budget", "aggregate_md_step_budget", True),
+            ("max_wallclock_hours", "evaluation_budget", "max_wallclock_hours", -0.5),
+            ("max_accelerator_hours", "evaluation_budget", "max_accelerator_hours", 0),
+            ("objective_spec", "objective_spec", "components", []),
+            ("objective_spec", "objective_spec", "components", [" "]),
+            ("objective_spec", "objective_spec", "conditions_hash", "unreviewed"),
+            ("random_baseline_count", "random_baseline_spec", "configuration_count", 0),
+            ("short_md_repeats", "short_md_stage", "independent_repeats", 0),
+            ("long_md_independent_seeds", "long_md_validation", "independent_seeds", [1, 1, 3]),
+            ("potential_id", "potential", "potential_id", ""),
+        )
+        for input_field, section, key, bad_value in cases:
+            with self.subTest(section=section, key=key, bad_value=bad_value):
+                payload = _plan_payload()
+                saved = json.loads(json.dumps(build_pst_configuration_search_plan(payload)))
+                if input_field == "objective_spec":
+                    payload[input_field][key] = bad_value
+                else:
+                    payload[input_field] = bad_value
+                saved[section][key] = bad_value
+                with self.assertRaises(PstConfigurationSearchError) as create_error:
+                    build_pst_configuration_search_plan(payload)
+                with self.assertRaises(PstConfigurationSearchError) as read_error:
+                    validate_pst_configuration_search_plan(saved)
+                self.assertEqual(str(create_error.exception), str(read_error.exception))
+
+    def test_plan_readback_requires_integer_zero_and_empty_result_arrays(self) -> None:
+        plan = build_pst_configuration_search_plan(_plan_payload())
+        invalid_values = {
+            "property_prediction_count": (False, 0.0, None, 1),
+            "configuration_hashes": (False, None, {}, 0, "", ["hash"]),
+            "run_receipt_ids": (False, None, {}, 0, "", ["receipt"]),
+            "pareto_archive_or_best_found": (False, None, {}, 0, "", ["result"]),
+        }
+        for field, values in invalid_values.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    saved = json.loads(json.dumps({**plan, field: value}))
+                    with self.assertRaises(PstConfigurationSearchError):
+                        validate_pst_configuration_search_plan(saved)
 
     def test_plan_rejects_unrealizable_composition_and_incomplete_review_contract(self) -> None:
         payload = _plan_payload()

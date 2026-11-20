@@ -3,7 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cosmatter.ui_export import _audit_summary_from_run
+from cosmatter.human_evaluation import retrieval_evaluation_from_gold, write_human_retrieval_evaluation
+from cosmatter.ui_export import UiExportError, _audit_summary_from_run
 from cosmatter.question_set import REVIEWED_STATUS, bfo_question_set_review_template, freeze_reviewed_question_set, write_frozen_question_set
 from cosmatter.models import MissionBrief
 from cosmatter.planning import approved_flight_plan_from_payload, write_approved_flight_plan
@@ -126,6 +127,26 @@ class UiAuditSummaryTests(unittest.TestCase):
         self.assertEqual(summary["evaluation"]["material_facts"]["f1"], 0.782609)
         self.assertEqual(summary["evaluation"]["research_gaps"]["mean_actionability_rating"], 4.0)
         self.assertNotIn("private-corpus", json.dumps(summary))
+
+    def test_projects_current_and_previous_frozen_identity_policies(self) -> None:
+        mission_id = "mission_identity"
+        evaluation = retrieval_evaluation_from_gold(
+            mission_id=mission_id, corpus_id="frozen", gold={"doc": "relevant"}, search_index=0, k=1,
+            candidate_artifact={"searches": [{"candidates": [{"document_id": "doc"}]}]},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            path = write_human_retrieval_evaluation(run, evaluation)
+            current = _audit_summary_from_run(run, mission_id)["evaluation"]["retrieval"]
+            self.assertEqual(current["precision_at_k"], 1.0)
+            previous = evaluation | {"identity_resolution_policy": "exact_document_id_or_normalized_doi_to_frozen_manifest"}
+            path.write_text(json.dumps(previous), encoding="utf-8")
+            self.assertEqual(_audit_summary_from_run(run, mission_id)["evaluation"]["retrieval"], current)
+            for update in ({"identity_resolution_policy": "unknown"}, {"schema_version": "unknown"}):
+                with self.subTest(update=update):
+                    path.write_text(json.dumps(evaluation | update), encoding="utf-8")
+                    with self.assertRaisesRegex(UiExportError, "human retrieval evaluation is invalid"):
+                        _audit_summary_from_run(run, mission_id)
 
     def test_projects_submission_readiness_without_private_corpus_identifiers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

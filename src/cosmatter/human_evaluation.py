@@ -11,6 +11,7 @@ from .models import normalized_doi_or_none
 
 
 HUMAN_GOLD_SCHEMA_VERSION = "1.0"
+RETRIEVAL_IDENTITY_POLICY = "exact_document_id_or_normalized_doi_reject_conflicts_v2"
 _EVALUATION_SCHEMA_VERSION = "1.1"
 _GOLD_FIELDS = {"schema_version", "mission_id", "corpus_id", "trust_status", "annotation_instructions", "documents"}
 _GOLD_INSTRUCTION_FIELDS = {
@@ -129,7 +130,10 @@ def retrieval_evaluation_from_gold(
         if not isinstance(item, dict) or not isinstance(item.get("document_id"), str):
             raise HumanEvaluationError("selected retrieval candidate is invalid")
         raw_retrieved_count += 1
-        document_id, resolved_by_doi = _resolve_frozen_document_id(item, gold, doi_to_document)
+        try:
+            document_id, resolved_by_doi = _resolve_frozen_document_id(item, gold, doi_to_document, corpus_document_dois)
+        except HumanEvaluationError as error:
+            raise HumanEvaluationError(f"search {search_index}, candidate {raw_retrieved_count}: {error}") from error
         if resolved_by_doi:
             doi_resolved_count += 1
         if document_id in seen:
@@ -149,7 +153,7 @@ def retrieval_evaluation_from_gold(
         "mission_id": mission_id,
         "corpus_id": corpus_id,
         "trust_status": "metrics_from_human_reviewed_gold_standard",
-        "identity_resolution_policy": "exact_document_id_or_normalized_doi_to_frozen_manifest",
+        "identity_resolution_policy": RETRIEVAL_IDENTITY_POLICY,
         "search_index": search_index,
         "k": k,
         "raw_retrieved_count": raw_retrieved_count,
@@ -184,13 +188,18 @@ def _frozen_doi_index(
 
 def _resolve_frozen_document_id(
     candidate: dict[str, Any], gold: dict[str, str], doi_to_document: dict[str, str],
+    corpus_document_dois: dict[str, str | None] | None,
 ) -> tuple[str, bool]:
     document_id = candidate["document_id"].strip()
-    if document_id in gold:
-        return document_id, False
     doi = normalized_doi_or_none(candidate.get("doi"))
-    if doi is not None and doi in doi_to_document:
-        return doi_to_document[doi], True
+    doi_match = doi_to_document.get(doi) if doi else None
+    if document_id in gold:
+        expected_doi = normalized_doi_or_none(corpus_document_dois.get(document_id)) if corpus_document_dois else None
+        if (doi_match and doi_match != document_id) or (expected_doi and doi and doi != expected_doi):
+            raise HumanEvaluationError("document ID and DOI conflict with the frozen corpus; reconcile candidate identity before scoring")
+        return document_id, False
+    if doi_match:
+        return doi_match, True
     raise HumanEvaluationError("selected retrieval candidate cannot be matched exactly to the frozen corpus")
 
 

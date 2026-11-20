@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
@@ -21,6 +22,47 @@ from cosmatter.dsh_profile_status import (
 
 
 class DshProfileStatusTests(unittest.TestCase):
+    def test_cli_explicit_tool_checks_require_the_whole_group_and_keep_the_receipt(self) -> None:
+        from cosmatter.cli import main
+
+        all_tools = sorted(tool for tools in _BUNDLE_TOOLS.values() for tool in tools)
+        missing = "cosmatter_mission_create"
+        partial = [tool for tool in all_tools if tool != missing]
+        port_args = ["--loopback-port", "8789"]
+        for options, registered, loopback, expected_exit in (
+            ([], None, None, 0),
+            (["--verify-tools"], all_tools, None, 0),
+            (["--verify-tools"], partial, None, 2),
+            (port_args, all_tools, "verified", 0),
+            (port_args, partial, "verified", 2),
+            (["--verify-tools", *port_args], partial, "verified", 2),
+            (port_args, all_tools, "unavailable", 2),
+        ):
+            with self.subTest(options=options, loopback=loopback, expected_exit=expected_exit):
+                # A composition-only report may describe a partially composed profile.
+                bundles = list(EXPECTED_DSH_PACKAGES) if registered is not None else [EXPECTED_DSH_PACKAGES[0]]
+                receipt = {"bundles": bundles, "matches_local_files": True}
+                if registered is not None:
+                    registry = {"bundles": bundles, "registered_tools": registered, "matches_local_files": True}
+                    if loopback is not None:
+                        registry["loopback_check"] = {"port": 8789, "status": loopback}
+                    receipt["tool_registry_check"] = registry
+                with (
+                    patch("cosmatter.cli.check_dsh_composition", return_value=receipt) as check,
+                    patch("sys.stdout", new_callable=io.StringIO) as stdout,
+                    patch("sys.stderr", new_callable=io.StringIO) as stderr,
+                ):
+                    self.assertEqual(main(["check-dsh-profile", *options]), expected_exit)
+                check.assert_called_once_with(
+                    executable="dsh", verify_tools="--verify-tools" in options, loopback_port=8789 if loopback else None,
+                )
+                self.assertEqual(json.loads(stdout.getvalue()), receipt)
+                if registered == partial:
+                    self.assertIn(missing, stderr.getvalue())
+                    self.assertIn(f"{len(partial)}/{len(all_tools)}", stderr.getvalue())
+                else:
+                    self.assertEqual(stderr.getvalue(), "")
+
     def test_isolated_probe_timeout_survives_process_and_directory_cleanup(self) -> None:
         for shutdown_timeout in (False, True):
             for locked_directory in (False, True):
@@ -559,6 +601,44 @@ class DshProfileStatusTests(unittest.TestCase):
             primary.unlink()
             self.assertIsNone(snapshot(8765))
 
+    def test_registered_tool_changes_expire_other_ports_in_existing_and_new_history(self) -> None:
+        from cosmatter.dsh_profile_status import _bundle_runtime_stamp, _configuration_stamp, _save_registry_check
+
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundles = list(EXPECTED_DSH_PACKAGES)
+            for package in bundles:
+                self._write_bundle(profile, package)
+            (profile / "package.json").write_text(json.dumps({"dependencies": dict.fromkeys(bundles, "0.2.0")}), encoding="utf-8")
+            tools = sorted(tool for group in _BUNDLE_TOOLS.values() for tool in group)
+            partial = {
+                "schema_version": "cosmatter.dsh-tool-registry-check/v1", "checked_at": "2026-11-19T01:00:00Z",
+                "dsh_version": "0.2.2", "bundles": bundles, "registered_tools": [t for t in tools if t != "cosmatter_mission_create"],
+                "configuration_stamp": _configuration_stamp(profile), "runtime_stamp": _bundle_runtime_stamp(profile, bundles),
+                "loopback_check": {"port": 8765, "status": "verified"},
+            }
+            full = {**partial, "registered_tools": tools, "loopback_check": {"port": 8766, "status": "verified"}}
+            _save_registry_check(profile, partial)
+            _save_registry_check(profile, full)
+            sidecar = profile / ".cosmatter-tool-registry-ports.json"
+            history = json.loads(sidecar.read_text(encoding="utf-8"))
+            self.assertEqual(history["receipts"], [full])
+
+            # An older writer could persist ports from both tool inventories.
+            history["receipts"].append(partial)
+            sidecar.write_text(json.dumps(history), encoding="utf-8")
+            old_port = dsh_profile_status(dsh_home=home, loopback_port=8765)["tool_registry_check"]
+            self.assertEqual(old_port["registered_tools"], tools)
+            self.assertNotIn("loopback_check", old_port)
+            new_port = dsh_profile_status(dsh_home=home, loopback_port=8766)["tool_registry_check"]
+            self.assertEqual(new_port["loopback_check"], full["loopback_check"])
+            _save_registry_check(profile, {**full, "loopback_check": partial["loopback_check"]})
+            self.assertEqual(
+                [receipt["registered_tools"] for receipt in json.loads(sidecar.read_text(encoding="utf-8"))["receipts"]],
+                [tools, tools],
+            )
+
     def test_repair_links_only_unverified_bundles_and_is_repeatable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -601,6 +681,76 @@ class DshProfileStatusTests(unittest.TestCase):
             retained = json.loads(profile_manifest.read_text(encoding="utf-8"))["dependencies"]
             self.assertEqual(retained[installed], "link:existing")
             self.assertEqual(retained["user-fixture"], "link:retained")
+
+    def test_repair_uses_only_fresh_registration_gaps_in_checked_composed_bundles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            home = base / "dsh-home"
+            profile = home / "profiles" / "tui"
+            for package in EXPECTED_DSH_PACKAGES:
+                self._write_bundle(profile, package)
+            (profile / "package.json").write_text(json.dumps({
+                "dependencies": dict.fromkeys(EXPECTED_DSH_PACKAGES, "0.2.0"),
+            }), encoding="utf-8")
+            mission, observability = EXPECTED_DSH_PACKAGES[:2]
+            config = f"- id: cosmatter-observability\n  name: '{observability}'\n"
+            mission_entry = f"- id: cosmatter-mission\n  name: '{mission}'\n"
+            version = "0.2.2"
+            with (
+                patch("cosmatter.dsh_profile_status.resolve_dsh_executable", return_value="local-dsh"),
+                patch("cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=lambda _, args, *_rest: version if args == ["--version"] else config),
+                patch("cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=sorted(_BUNDLE_TOOLS[observability])),
+                patch("cosmatter.dsh_profile_status.subprocess.run") as link,
+            ):
+                def no_relink():
+                    self.assertEqual(repair_dsh_bundles(base, dsh_home=home)["status"], "already_installed")
+                    link.assert_not_called()
+
+                no_relink()
+                check_dsh_composition(dsh_home=home, verify_tools=True)
+                config += mission_entry
+                check_dsh_composition(dsh_home=home)  # Mission is composed but has never been checked.
+                no_relink()
+                check_dsh_composition(dsh_home=home, verify_tools=True)
+                config = config.removesuffix(mission_entry)
+                check_dsh_composition(dsh_home=home)  # The latest composition no longer includes mission.
+                no_relink()
+                config += mission_entry
+                version = "0.3.0"
+                check_dsh_composition(dsh_home=home)
+                no_relink()
+                version = "0.2.2"
+                check_dsh_composition(dsh_home=home)
+                registry_input = profile / "node_modules" / mission / "lib" / "client.js"
+                registry_input.write_text("export const changed = true", encoding="utf-8")
+                no_relink()
+                registry_input.unlink()
+
+                installed = profile / "node_modules" / mission
+                source = base / "plugins" / "dsh-cosmatter-mission-plugin"
+                self._write_bundle(base / "staging", mission)
+                source.parent.mkdir()
+                (base / "staging" / "node_modules" / mission).rename(source)
+                link.return_value = CompletedProcess([], 0)
+                with self.assertRaisesRegex(DshBundleRepairError, "did not link"):
+                    repair_dsh_bundles(base, dsh_home=home)
+                self.assertEqual(link.call_args.args[0][7:], [f"link:{source.as_posix()}"])
+
+                def relink(arguments, **_options):
+                    installed.rename(base / "previous-mission")
+                    if os.name == "nt":
+                        import _winapi
+                        _winapi.CreateJunction(str(source), str(installed))
+                    else:
+                        installed.symlink_to(source, target_is_directory=True)
+                    return CompletedProcess(arguments, 0)
+
+                link.side_effect = relink
+                repaired = repair_dsh_bundles(base, dsh_home=home)
+                self.assertEqual(repaired["repaired_bundles"], [mission])
+                self.assertEqual(repaired["status"], "installed")
+                self.assertIs(repaired["tool_verification_required"], True)
+                self.assertFalse(dsh_profile_status(dsh_home=home)["tool_registry_check"]["matches_local_files"])
 
     def test_repair_requires_checkout_sources_before_running_dsh(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

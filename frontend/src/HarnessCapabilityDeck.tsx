@@ -11,7 +11,8 @@ import { createDshClipboard, DshManualCopy } from "./DshManualCopy";
 import { OtherPortReceiptHelp, WorkbenchUpdateCommand } from "./WorkbenchUpdateCommand";
 import { BUNDLE_REPAIR_COMMAND, dshProfileCheckCommand, localWorkbenchLocation } from "./dshLocalCommands";
 import { DshSessionLaunch } from "./DshSessionLaunch";
-import { DSH_TOOL_COUNT as TOOL_COUNT, dshSessionReadiness } from "./dshSessionReadiness";
+import { DSH_TOOL_COUNT as TOOL_COUNT, dshSessionReadiness, missingRegisteredTools } from "./dshSessionReadiness";
+import { canRepairBundleRegistration, registryMatchesComposition } from "./dshReadProfile";
 
 const t = (locale: UiLocale, zh: string, en: string) => locale === "zh" ? zh : en;
 type ActivationAction = "bundles" | "terminal" | "profile" | "catalogue";
@@ -95,6 +96,7 @@ export function HarnessCapabilityDeck(props: {
       return { tone: "neutral" as const, text: x("当前端口未核验", "Port not checked") };
     }
     if (!check.matches_local_files) return { tone: "attention" as const, text: x("文件已变化，需重新核验", "Files changed; recheck needed") };
+    if (!registryMatchesComposition(props.profile)) return { tone: "attention" as const, text: x("需重新核验当前组合", "Recheck the current composition") };
     switch (check.loopback_check.status) {
       case "verified": return { tone: "ready" as const, text: x("上次连通核验通过", "Last connection check passed") };
       case "tool_not_registered": return { tone: "attention" as const, text: x("目录工具未注册", "Catalogue tool unregistered") };
@@ -105,10 +107,10 @@ export function HarnessCapabilityDeck(props: {
     if (props.profileHealth === "legacy") return { tone: "attention" as const, text: x("待更新工作台", "Workbench update needed") };
     const check = registry();
     if (!check) return { tone: "neutral" as const, text: x("工具注册待核验", "Tool registration unchecked") };
-    if (!check.matches_local_files) return { tone: "attention" as const, text: x("工具核验已过期", "Tool check out of date") };
+    if (!registryMatchesComposition(props.profile)) return { tone: "attention" as const, text: x("工具核验已过期", "Tool check out of date") };
     const count = check.registered_tools.length;
     return {
-      tone: count === TOOL_COUNT ? "ready" as const : "attention" as const,
+      tone: count === TOOL_COUNT && check.bundles.length === props.profile?.expected_bundle_count ? "ready" as const : "attention" as const,
       text: x(`已注册 ${count}/${TOOL_COUNT}`, `Registered ${count}/${TOOL_COUNT}`),
     };
   });
@@ -131,6 +133,7 @@ export function HarnessCapabilityDeck(props: {
     return { tone: profile.installation_state === "installed" ? "ready" as const : "attention" as const, copy: x(`已验证 ${count}`, `Verified ${count}`) };
   });
   const sessionReadiness = createMemo(() => dshSessionReadiness(props.profile, props.profileHealth, props.health, loopbackPort));
+  const registrationNeedsRepair = createMemo(() => sessionReadiness() === "registry-check" && missingRegisteredTools(props.profile).length > 0);
   const activation = createMemo<ActivationVerdict>(() => {
     const readiness = sessionReadiness();
     if (readiness === "workbench-update") return {
@@ -174,6 +177,10 @@ export function HarnessCapabilityDeck(props: {
       title: x("安装与契约已就绪，工具注册待核验", "Installation and contracts ready; tool registration unchecked"),
       detail: x("终端命令可一并核验配置组合和工具注册。", "The terminal command checks both composition and tool registration."),
     };
+    if (workbenchLocation && registrationNeedsRepair()) return {
+      state: "partial", action: "bundles", title: registryLabel().text,
+      detail: x("查看缺少注册工具的插件，补齐后重新核验当前端口。", "Inspect the bundles with missing tools, repair them, then recheck this port."),
+    };
     if (readiness === "repair-composition" || readiness === "composition-check" || readiness === "registry-check") return {
       state: "partial", action: readiness === "repair-composition" ? "bundles" : terminal,
       title: readiness === "registry-check" ? registryLabel().text : compositionLabel().text,
@@ -194,7 +201,7 @@ export function HarnessCapabilityDeck(props: {
     };
   });
   const actionLabel = (action: ActivationAction) => ({
-    bundles: bundleListIncomplete() ? x("查看插件清单", "Inspect bundles") : x("查看安装问题", "Inspect installation"),
+    bundles: bundleListIncomplete() || registrationNeedsRepair() ? x("查看插件清单", "Inspect bundles") : x("查看安装问题", "Inspect installation"),
     terminal: x("前往终端核验", "Go to terminal checks"),
     profile: x("重读安装状态", "Reload installation status"),
     catalogue: x("重试目录连接", "Retry catalogue connection"),
@@ -344,7 +351,7 @@ export function HarnessCapabilityDeck(props: {
             const role = () => BUNDLE_ROLES[packageStatus.package] ?? [packageStatus.package, packageStatus.package] as const;
             const registration = () => {
               const check = registry();
-              if (!check?.matches_local_files || !check.bundles.includes(packageStatus.package)) return null;
+              if (!check || !canRepairBundleRegistration(props.profile, packageStatus.package)) return null;
               const tools = packages.find(({ package: name }) => name === packageStatus.package)?.tools ?? [];
               return `${tools.filter((name) => check.registered_tools.includes(name)).length}/${tools.length}`;
             };
@@ -365,10 +372,13 @@ export function HarnessCapabilityDeck(props: {
           }}</For>
         </ul>
         <Show when={workbenchLocation && props.profileHealth === "ready"
-          && (profile().installed_bundle_count < profile().expected_bundle_count || bundleListIncomplete())}>
+          && (profile().installed_bundle_count < profile().expected_bundle_count || bundleListIncomplete() || registrationNeedsRepair())}>
           <section class="harness-bundle-repair" aria-label={x("补齐本机 DSH 插件", "Repair local DSH bundles")}>
-            <p>{x("在 CosMatter 仓库根目录的终端运行。命令会补齐缺失或异常的本地链接，并将 CosMatter 插件加入 tui 启用清单。",
-              "Run from the CosMatter repository root. The command repairs missing or invalid local links and enables the CosMatter bundles in TUI.")}</p>
+            <p>{registrationNeedsRepair()
+              ? x("在仓库根目录运行补齐命令，重新链接缺少注册工具的插件。随后复制终端核验命令，检查当前端口并刷新结果。",
+                "Run the repair command from the repository root to relink the affected bundles. Then run the terminal check for this port and refresh the results.")
+              : x("在 CosMatter 仓库根目录的终端运行。命令会补齐缺失或异常的本地链接，并将 CosMatter 插件加入 tui 启用清单。",
+                "Run from the CosMatter repository root. The command repairs missing or invalid local links and enables the CosMatter bundles in TUI.")}</p>
             <div class="harness-copy-row">
               <DshCommandText command={BUNDLE_REPAIR_COMMAND} />
               <ActionButton size="sm" onClick={(event) => void clipboard.copy("repair", () => BUNDLE_REPAIR_COMMAND, event.currentTarget)}>{x("复制补齐命令", "Copy repair command")}</ActionButton>

@@ -162,6 +162,11 @@ class CliMinerUTests(unittest.TestCase):
             review = {"document_id": "doc_1", "human_confirmed": True, "segments": segments}
             with self.assertRaisesRegex(LocalApiError, "line range"):
                 api.record_fetched_source_map(run_id, review | {"segments": [segments[0] | {"locator": "markdown_line:1-1"}]})
+            with patch("cosmatter.audit.FlightRecorder.record", side_effect=OSError("synthetic audit interruption")), self.assertRaises(LocalApiError) as pending:
+                api.record_fetched_source_map(run_id, review)
+            self.assertEqual(pending.exception.status, 500)
+            self.assertEqual(api.fetched_source_map_context(run_id, "doc_1")["segment_count"], 0)
+            self.assertEqual(api.source_parse_status(run_id)["tasks"][0]["source_map_segment_count"], 0)
             result = api.record_fetched_source_map(run_id, review)
             self.assertEqual(result["segments"], [{"segment_id": "private_md_001", "locator": "markdown_line:2-3", "kind": "paragraph", "markdown_range": {"start": 2, "end": 3}}])
             trace = api.private_markdown_lines(run_id, "doc_1", 2, fetched_source=True, segment_id="private_md_001")
@@ -170,6 +175,10 @@ class CliMinerUTests(unittest.TestCase):
                 api.private_markdown_lines(run_id, "doc_1", 2, fetched_source=True, segment_id="wrong")
             self.assertEqual(unknown_segment.exception.status, 409)
             self.assertEqual(api.record_fetched_source_map(run_id, review), result)
+            alternative = {"locator": "markdown_line:2-2", "kind": "paragraph", "quote": selected[0]["text"]}
+            with self.assertRaises(LocalApiError) as conflict:
+                api.record_fetched_source_map(run_id, review | {"segments": [alternative]})
+            self.assertEqual(conflict.exception.status, 409)
             self.assertEqual(api.fetched_source_map_context(run_id, "doc_1"), result)
             self.assertEqual(api.source_parse_status(run_id)["tasks"][0]["source_map_segment_count"], 1)
             facts = [{"fact_id": "phase_boundary", "segment_id": "private_md_001", "category": "property", "name": "phase boundary", "value": "synthetic", "unit": None, "normalized_value": "synthetic", "normalized_unit": None, "qualifiers": {}}]
@@ -253,11 +262,33 @@ class CliMinerUTests(unittest.TestCase):
             )
             output = io.StringIO()
             with patch("cosmatter.cli._runs_dir", return_value=runs_dir), contextlib.redirect_stdout(output):
-                status = main(["record-source-map", "--run-id", "source_map_cli", "--document-id", "doc_1", "--input", str(selection_path)])
+                args = ["record-source-map", "--run-id", "source_map_cli", "--document-id", "doc_1", "--input", str(selection_path)]
+                with patch("cosmatter.audit.FlightRecorder.record", side_effect=OSError("synthetic audit interruption")):
+                    self.assertEqual(main(args), 2)
+                before_retry = (run_dir / "source_map.json").read_bytes()
+                self.assertEqual(next((run_dir / "source_maps").glob("*.json")).read_bytes(), before_retry)
+                self.assertEqual(len(list((run_dir / "source_maps").glob("*.audit-pending"))), 1)
+                from cosmatter.source_map import iter_source_maps, load_source_map, load_source_map_for_document
+
+                self.assertIsNone(load_source_map(run_dir / "source_map.json", mission.mission_id))
+                self.assertIsNone(load_source_map_for_document(run_dir, mission.mission_id, None))
+                self.assertIsNone(load_source_map_for_document(run_dir, mission.mission_id, "doc_1"))
+                self.assertEqual(iter_source_maps(run_dir, mission.mission_id), ())
+                status = main(args)
+                self.assertEqual(main(args), 0)
+                self.assertEqual((run_dir / "source_map.json").read_bytes(), before_retry)
+                self.assertFalse(list((run_dir / "source_maps").glob("*.audit-pending")))
+                self.assertEqual(len(iter_source_maps(run_dir, mission.mission_id)), 1)
+                changed = json.loads(selection_path.read_text(encoding="utf-8"))
+                changed["segments"][0]["locator"] = "p. 3"
+                selection_path.write_text(json.dumps(changed), encoding="utf-8")
+                self.assertEqual(main(args), 2)
             audit = (run_dir / "events.jsonl").read_text(encoding="utf-8")
             source_map = (run_dir / "source_map.json").read_text(encoding="utf-8")
 
         self.assertEqual(status, 0, output.getvalue())
         self.assertNotIn(quote, output.getvalue())
         self.assertNotIn(quote, audit)
+        self.assertEqual(audit.count('"source_map_reviewed"'), 1)
+        self.assertIn("different reviewed Source Map", output.getvalue())
         self.assertIn(quote, source_map)

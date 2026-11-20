@@ -149,6 +149,26 @@ class HumanEvaluationTests(unittest.TestCase):
                 search_index=0, k=1, corpus_document_dois={"doc_1": "10.1000/one"},
             )
 
+    def test_known_id_and_doi_must_agree_before_scoring(self) -> None:
+        labels = {"doc_1": "relevant", "doc_2": "not_relevant"}
+        for manifest_doi, candidate_doi in (
+            ("10.1000/one", "10.1000/two"), (None, "10.1000/two"), ("10.1000/one", "10.1000/outside"),
+        ):
+            with self.subTest(manifest_doi=manifest_doi, candidate_doi=candidate_doi):
+                with self.assertRaisesRegex(HumanEvaluationError, "search 0, candidate 1: document ID and DOI conflict"):
+                    retrieval_evaluation_from_gold(
+                        mission_id="mission_1", corpus_id="bfo_test", gold=labels, search_index=0, k=1,
+                        candidate_artifact={"searches": [{"candidates": [{"document_id": "doc_1", "doi": candidate_doi}]}]},
+                        corpus_document_dois={"doc_1": manifest_doi, "doc_2": "10.1000/two"},
+                    )
+        result = retrieval_evaluation_from_gold(
+            mission_id="mission_1", corpus_id="bfo_test", gold=labels, search_index=0, k=1,
+            candidate_artifact={"searches": [{"candidates": [{"document_id": "doc_1", "doi": "https://doi.org/10.1000/ONE"}]}]},
+            corpus_document_dois={"doc_1": "10.1000/one", "doc_2": "10.1000/two"},
+        )
+        self.assertEqual(result["identity_resolution_policy"], "exact_document_id_or_normalized_doi_reject_conflicts_v2")
+        self.assertEqual(result["precision_at_k"], 1.0)
+
     def test_blank_template_is_rejected(self) -> None:
         bad = gold_payload() | {"trust_status": "blank_human_annotation_template_not_evaluation_result"}
         with tempfile.TemporaryDirectory() as directory:

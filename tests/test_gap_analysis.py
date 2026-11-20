@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from cosmatter.counterevidence import CounterevidenceExecution
@@ -47,6 +48,31 @@ class GapAnalysisTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(GapAnalysisError, "counterevidence execution is incomplete"):
                 write_gap_candidates(Path(directory), unexecuted)
+
+    def test_legacy_matrix_can_only_generate_conflicts_present_in_its_cited_cards(self):
+        cards, decisions, matrix = self.accepted_fixture()
+        context = self.card("e3", Stance.CONTEXT, 1.0)
+        context = replace(context, conditions={**context.conditions, "temperature_k": 700})
+        cards += (context,)
+        decisions += (VerificationDecision("m1", "e3", ReviewStatus.ACCEPTED, "ok"),)
+        row = matrix.rows[0]
+
+        def generate(legacy_fields):
+            legacy = replace(matrix, rows=(replace(row, differing_fields=legacy_fields),))
+            return candidates_from_discrepancies("m1", "BiFeO3", "phase stability", cards, decisions, legacy)
+
+        with self.assertRaisesRegex(GapAnalysisError, "no current-mission accepted conflict"):
+            generate(("temperature_k",))
+        candidate, = generate(("strain_percent", "temperature_k"))
+        self.assertEqual(candidate.evidence_ids, ("e1", "e2"))
+        self.assertEqual(candidate.conflict_or_missing_evidence, ("conflicting_condition:strain_percent",))
+        self.assertNotIn("temperature_k", candidate.falsifiable_hypothesis)
+
+        misattributed = replace(row, contradicting_evidence_ids=("e3",), differing_fields=("temperature_k",))
+        with self.assertRaisesRegex(GapAnalysisError, "no current-mission accepted conflict"):
+            candidates_from_discrepancies(
+                "m1", "BiFeO3", "phase stability", cards, decisions, replace(matrix, rows=(misattributed,)),
+            )
 
     def test_rejects_malformed_in_memory_execution_boundary(self):
         cards, decisions, matrix = self.accepted_fixture()

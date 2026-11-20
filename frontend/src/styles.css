@@ -900,6 +900,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .dsh-dialog-session:not([hidden]) { display: grid; align-content: start; gap: .55rem; min-height: 0; padding: .8rem; overflow: auto; overscroll-behavior: contain; }
 .dsh-dialog-session p { margin: 0; color: var(--muted); font-size: max(.8rem, 13px); line-height: 1.5; overflow-wrap: anywhere; }
 .dsh-dialog-session > .cm-action { justify-self: start; }
+.dsh-registry-gaps { min-width: 0; }
+.dsh-registry-gaps ul { display: grid; gap: .4rem; margin: 0; padding: .25rem .65rem .65rem; list-style: none; }
+.dsh-registry-gaps li { display: grid; min-width: 0; gap: .1rem; }
+.dsh-registry-gaps li button { justify-self: start; max-width: 100%; min-height: 2.75rem; padding: .25rem .4rem; border: 0; color: var(--signal-blue); background: transparent; font: inherit; font-weight: 650; text-align: start; text-decoration: underline; text-underline-offset: .15em; overflow-wrap: anywhere; cursor: pointer; }
+.dsh-registry-gaps li button:focus-visible { outline: 2px solid var(--signal-blue); outline-offset: -2px; }
+.dsh-registry-gaps li code { padding-inline: .4rem; color: var(--muted); font-size: max(.75rem, 12px); overflow-wrap: anywhere; }
 .dsh-mission-draft { display: grid; gap: .45rem; min-width: 0; border-top: 1px solid var(--line); padding-top: .65rem; }
 .dsh-mission-draft > .cm-action { justify-self: start; }
 .dsh-draft-preview pre { margin: .5rem; color: var(--ink); font: max(.8rem, 13px)/1.45 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -907,7 +913,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .dsh-dialog-session .harness-copy-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .65rem; min-width: 0; }
 .dsh-tool-dialog .dsh-tool-controls { flex: none; padding: .6rem .7rem .3rem; }
 .dsh-tool-dialog .dsh-tool-results { min-height: 0; padding: .55rem .7rem .7rem; overflow: auto; overscroll-behavior: contain; overflow-anchor: none; border-top: 1px solid var(--line); }
-.dsh-tool-dialog .dsh-tool-results:focus-visible { outline: 2px solid var(--signal-blue); outline-offset: -2px; }
+.dsh-dialog-session:focus-visible, .dsh-tool-dialog .dsh-tool-results:focus-visible { outline: 2px solid var(--signal-blue); outline-offset: -2px; }
 html:has(.dsh-tool-dialog[open]) { overflow: hidden; }
 .dsh-tool-body { display: grid; gap: .6rem; min-width: 0; padding: .65rem; border-top: 1px solid var(--line); }
 .dsh-tool-body p { margin: 0; color: var(--muted); font-size: max(.73rem, 12px); line-height: 1.5; overflow-wrap: anywhere; }

@@ -5,7 +5,8 @@ import type { LaunchMissionBoundary } from "./launchMissionValidation";
 import { DshCommandRow, DshSessionLaunch } from "./DshSessionLaunch";
 import { OtherPortReceiptHelp, WorkbenchUpdateCommand } from "./WorkbenchUpdateCommand";
 import { BUNDLE_REPAIR_COMMAND, dshProfileCheckCommand, localWorkbenchLocation } from "./dshLocalCommands";
-import { dshSessionReadiness, type DshSessionReadiness } from "./dshSessionReadiness";
+import { DSH_TOOL_COUNT, dshSessionReadiness, missingRegisteredTools, type DshSessionReadiness } from "./dshSessionReadiness";
+import { registryMatchesComposition } from "./dshReadProfile";
 import type { HarnessCatalogueHealth } from "./localApi";
 import { ActionButton } from "./uiPrimitives";
 
@@ -43,6 +44,18 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
   const location = localWorkbenchLocation();
   const port = location ? Number(location.port || "80") : null;
   const readiness = createMemo(() => dshSessionReadiness(props.profile, props.profileHealth, props.catalogueHealth, port));
+  const missingTools = createMemo(() => readiness() === "registry-check" ? missingRegisteredTools(props.profile) : []);
+  let lookupTool: ((name: string) => void) | undefined;
+  const statusLabel = () => {
+    const state = readiness();
+    const registry = props.profile?.tool_registry_check;
+    if (state === "registry-check" && registry) {
+      if (!registryMatchesComposition(props.profile)) return x("工具注册回执已过期，请重新核验。", "The tool registration check is out of date. Run it again.");
+      if (!missingTools().length) return x("核验未覆盖全部插件，请重新核验。", "Run the check again to cover every bundle.");
+      return x(`已注册 ${registry.registered_tools.length}/${DSH_TOOL_COUNT} 个工具`, `Registered ${registry.registered_tools.length} of ${DSH_TOOL_COUNT} tools`);
+    }
+    return x(...SESSION_STATUS[state]);
+  };
   const recoveryCommand = createMemo(() => {
     if (!port) return null;
     switch (readiness()) {
@@ -60,6 +73,7 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
     dialog.querySelector<HTMLButtonElement>(`#dsh-${tab}-tab`)?.focus();
   };
   const navigateTabs = (event: KeyboardEvent) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     let next: DialogView;
     switch (event.key) {
       case "Home": next = "catalogue"; break;
@@ -70,6 +84,18 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
     }
     event.preventDefault();
     selectTab(next);
+  };
+  const wrapDialogFocus = (event: KeyboardEvent) => {
+    if (event.key !== "Tab" || event.ctrlKey || event.altKey || event.metaKey || event.defaultPrevented) return;
+    const first = dialog.querySelector<HTMLButtonElement>("header button");
+    const active = document.activeElement;
+    if (event.shiftKey && active !== first && active !== heading) return;
+    const controls = dialog.querySelectorAll<HTMLElement>("button, input, select, textarea, summary, a[href], [tabindex]");
+    const last = Array.from(controls).reverse().find(element =>
+      element.tabIndex >= 0 && !element.matches(":disabled") && element.checkVisibility({ visibilityProperty: true }));
+    if (!first || !last || (!event.shiftKey && active !== last)) return;
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
   };
   const refreshSession = () => {
     const state = readiness();
@@ -85,7 +111,7 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
     initialFocus?.focus();
   });
 
-  return <dialog ref={dialog} class="dsh-tool-dialog" aria-labelledby="dsh-tool-dialog-title" onClose={() => props.onDismiss()}>
+  return <dialog ref={dialog} class="dsh-tool-dialog" aria-labelledby="dsh-tool-dialog-title" onKeyDown={wrapDialogFocus} onClose={() => props.onDismiss()}>
     <header>
       <h2 id="dsh-tool-dialog-title" ref={heading} tabIndex={-1}>{x("DSH 工具与会话", "DSH tools and sessions")}</h2>
       <ActionButton size="sm" variant="quiet" aria-label={x("关闭 DSH 面板", "Close DSH panel")}
@@ -99,11 +125,24 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
     </div>
     <div class="dsh-dialog-catalogue" role="tabpanel" id="dsh-catalogue-panel" aria-labelledby="dsh-catalogue-tab" hidden={view() !== "catalogue"}>
       <DshToolCatalogueContent locale={props.locale} plugins={props.plugins} profile={props.profile} profileHealth={props.profileHealth}
-        currentStage={props.currentStage} runId={props.runId} evidence={props.evidence} onRefreshProfile={props.onRefreshProfile} initialStage={initialStage} scrollResults />
+        currentStage={props.currentStage} runId={props.runId} evidence={props.evidence} onRefreshProfile={props.onRefreshProfile} initialStage={initialStage}
+        onLookupReady={openTool => { lookupTool = openTool; }} scrollResults />
     </div>
-    <div class="dsh-dialog-session" role="tabpanel" id="dsh-session-panel" aria-labelledby="dsh-session-tab" hidden={view() !== "session"}>
+    <div class="dsh-dialog-session" role="tabpanel" id="dsh-session-panel" aria-labelledby="dsh-session-tab" tabIndex={0} hidden={view() !== "session"}>
       <Show when={readiness() === "ready" && port} fallback={<>
-        <p role="status">{x(...SESSION_STATUS[readiness()])}</p>
+        <p role="status">{statusLabel()}</p>
+        <Show when={missingTools().length > 0}>
+          <details class="harness-disclosure dsh-registry-gaps" open={missingTools().length <= 3}>
+            <summary><span>{x("注册缺项", "Missing registrations")}</span><strong>{missingTools().length}</strong></summary>
+            <ul><For each={missingTools()}>{tool => <li>
+              <button type="button" aria-label={x(`在目录中查看 ${tool.name}`, `View ${tool.name} in catalogue`)}
+                onClick={() => { selectTab("catalogue"); lookupTool?.(tool.name); }}>{tool.name}</button>
+              <code>{tool.bundle}</code>
+            </li>}</For></ul>
+          </details>
+          <p>{x("在 CosMatter 仓库根目录运行补齐命令，重新链接缺少工具的插件包。", "Run the repair command from the CosMatter repository root to relink the bundles missing tools.")}</p>
+          <DshCommandRow locale={props.locale} command={BUNDLE_REPAIR_COMMAND} label={x("复制补齐命令", "Copy repair command")} />
+        </Show>
         <Show when={readiness() === "workbench-update"}><WorkbenchUpdateCommand locale={props.locale} runId={props.runId} /></Show>
         <Show when={recoveryCommand()}>{(command) => <>
           <p>{command() === BUNDLE_REPAIR_COMMAND

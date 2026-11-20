@@ -132,6 +132,12 @@ partially_relevant gain 1). It does not contain per-paper relevance labels,
 paths, source text, or prompts. A blank template is rejected rather than
 reported as a measurement.
 
+The evaluator checks a candidate's normalized DOI against the frozen manifest even when its
+document ID matches. A conflicting DOI stops scoring and identifies the search index and
+candidate position for reconciliation. Exact DOI aliases still collapse to one paper. New
+results record the identity policy `exact_document_id_or_normalized_doi_reject_conflicts_v2`.
+Rerun older routes with the same policy before comparing their scores.
+
 
 ## Same-boundary retrieval route comparison
 

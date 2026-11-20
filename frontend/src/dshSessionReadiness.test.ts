@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { packages } from "../../plugins/dsh-plugin-group.json";
 import type { DshProfileStatus } from "./localApi";
-import { dshSessionReadiness } from "./dshSessionReadiness";
+import { dshSessionReadiness, missingRegisteredTools } from "./dshSessionReadiness";
 
 const port = 8789;
 const receipt = {
@@ -58,4 +58,22 @@ it("requires current registration for all tools and a successful check of the wo
   expect(dshSessionReadiness(profile, "ready", "ready", port + 1)).toBe("loopback-check");
   expect(dshSessionReadiness(profile, "ready", "ready", port)).toBe("ready");
   expect(dshSessionReadiness(failed, "ready", "ready", null)).toBe("ready");
+});
+
+it("diagnoses omissions only for bundles covered by matching checks", () => {
+  const [{ package: bundle, tools: [name] }] = packages;
+  const partial = { ...registry, registered_tools: registry.registered_tools.filter(tool => tool !== name) };
+  expect(missingRegisteredTools({ ...profile, tool_registry_check: partial })).toEqual([{ name, bundle }]);
+  const uncheckedBundles = receipt.bundles.filter(checked => checked !== bundle);
+  for (const check of [
+    { ...partial, matches_local_files: false }, { ...partial, dsh_version: "older" },
+    { ...partial, bundles: uncheckedBundles },
+  ]) {
+    const snapshot = { ...profile, tool_registry_check: check };
+    expect(missingRegisteredTools(snapshot)).toEqual([]);
+    expect(dshSessionReadiness(snapshot, "ready", "ready", port)).toBe("registry-check");
+  }
+  expect(missingRegisteredTools({ ...profile, composition_check: { ...composition, bundles: uncheckedBundles }, tool_registry_check: partial })).toEqual([]);
+  const differentVersion = { ...profile, tool_registry_check: { ...registry, dsh_version: "older" } };
+  expect(dshSessionReadiness(differentVersion, "ready", "ready", port)).toBe("registry-check");
 });

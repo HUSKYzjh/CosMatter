@@ -121,6 +121,8 @@ Set-Location D:\CosMatter\development\CosMatter
 `cosmatter repair-dsh-bundles`。命令用 DSH 离线链接仓库中缺失或无效的已编译插件，再将
 CosMatter 插件补入 `tui` 的启用清单。返回工作台刷新安装状态后，再做终端注册和连通核验。
 末尾端口随工作台地址变化，例如 `cosmatter check-dsh-profile --verify-tools --loopback-port 8765`。
+如果目录可达但只注册了 19/20 个工具，核验命令会退出 `2`，会话面板会列出已确认的缺项和所属插件。用键盘选中缺项可直接查看对应工具说明，切回会话可继续处理。
+只有配置组合和注册回执均匹配本机文件、DSH 版本相同且都覆盖该包时，补齐命令才会按注册缺项重连该插件。运行 `cosmatter repair-dsh-bundles` 后，用当前端口再次运行完整核验命令，再点「刷新会话状态」。配置变化或回执过期时，先重新核验。
 当前端口核验通过后，舰桥提供「复制 DSH 启动命令」。在 CosMatter 终端运行
 `cosmatter open-dsh-workbench --port <当前端口>`，DSH 会打开本地网页，并为会话载入 `tui` 中已安装的七个 CosMatter 插件。
 首次使用可从本机工作台首页点「DSH 插件」。面板直接打开「DSH 会话」，根据当前端口给出补齐、核验或启动命令。首页的启动命令始终打开独立会话。要继续已有任务，可从任务页打开同一面板，复制带运行 ID 的启动命令。

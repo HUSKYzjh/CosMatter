@@ -22,6 +22,9 @@
 - 数据与安全边界：[数据治理](docs/data-governance.md)、[评测规范](docs/evaluation.md)、[安全政策](SECURITY.md)。
 - 进阶势函数边界框架：计划、人工执行协议、外部汇总结果比较与待批准的边界加密任务；不会自行提交外部计算。
 - 引用与贡献：[CITATION.cff](CITATION.cff)、[CONTRIBUTING.md](CONTRIBUTING.md)；修订要求的逐项映射见 [docs/competition_requirement_traceability.zh-CN.md](docs/competition_requirement_traceability.zh-CN.md)。
+
+材料证据、检索评分、DSH 启用和 MD 计划的已知问题、修复状态与验收顺序见[全项目审查与优化方案](docs/PROJECT_OPTIMIZATION_REVIEW_2026-11-19.zh-CN.md)。
+
 ## 快速开始
 
 在 PowerShell 中（推荐在独立虚拟环境内）：

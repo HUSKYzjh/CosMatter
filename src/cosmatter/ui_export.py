@@ -32,6 +32,7 @@ from cosmatter.models import (
 
 from .dispatch import MissionDispatcher
 from .gap_analysis import GapAnalysisError, load_gap_candidates
+from .human_evaluation import RETRIEVAL_IDENTITY_POLICY
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance
 from .material_extraction import MaterialExtractionError, iter_material_facts, load_material_facts, validate_material_fact_source_links
 from .reading_guide import ReadingGuideError, load_reading_guide
@@ -944,9 +945,15 @@ def _retrieval_evaluation_summary(path: Path, mission_id: str) -> dict[str, Any]
     expected = legacy_fields if payload.get("schema_version") == "1.0" else resolved_identity_fields
     if (
         set(payload) != expected
+        or payload.get("schema_version") not in ("1.0", "1.1")
         or payload.get("mission_id") != mission_id
         or payload.get("trust_status") != "metrics_from_human_reviewed_gold_standard"
-        or (payload.get("schema_version") == "1.1" and payload.get("identity_resolution_policy") != "exact_document_id_or_normalized_doi_to_frozen_manifest")
+        or (
+            payload.get("schema_version") == "1.1"
+            and payload.get("identity_resolution_policy") not in (
+                "exact_document_id_or_normalized_doi_to_frozen_manifest", RETRIEVAL_IDENTITY_POLICY,
+            )
+        )
     ):
         raise UiExportError("human retrieval evaluation is invalid for this mission")
     if payload.get("schema_version") == "1.1":

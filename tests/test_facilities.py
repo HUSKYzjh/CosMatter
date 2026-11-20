@@ -58,6 +58,16 @@ class FacilityTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(payload[0]["supporting_evidence_ids"], ["e_support"])
         self.assertNotIn("quote", json.dumps(payload))
+
+    def test_context_card_cannot_change_conditions_attributed_to_opposing_cards(self) -> None:
+        shared = dict(sample_form="film", substrate="LAO", thickness_nm=30, temperature_k=300, method="XRD")
+        support = card("e_support", Stance.SUPPORT, **shared, strain_percent=-2)
+        contradict = card("e_contradict", Stance.CONTRADICT, **shared, strain_percent=-2.0)
+        context = card("e_context", Stance.CONTEXT, **shared, strain_percent=1)
+        queries = ("counterexample",)
+        baseline = condition_differential((support, contradict), queries)
+        self.assertEqual(condition_differential((context, support, contradict), queries), baseline)
+
     def test_diagnostics_requires_accepted_opposing_evidence_and_counterquery(self) -> None:
         shared = dict(sample_form="film", substrate="LAO", thickness_nm=30, temperature_k=300, method="XRD")
         support = card("e_support", Stance.SUPPORT, **shared, strain_percent=-2.0)

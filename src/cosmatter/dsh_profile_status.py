@@ -78,6 +78,7 @@ _BUNDLE_TOOLS = dict(zip(EXPECTED_DSH_PACKAGES, (
     ("cosmatter_mineru_source_submit", "cosmatter_mineru_task_poll"),
     ("cosmatter_graph_query", "cosmatter_accepted_evidence_search", "cosmatter_graph_plan", "cosmatter_graph_review_request"),
 ), strict=True))
+EXPECTED_DSH_TOOLS = frozenset(tool for tools in _BUNDLE_TOOLS.values() for tool in tools)
 _REGISTRY_PROBE = """
 export const name = 'cosmatter-tool-registry-check'
 export const inject = ['tools']
@@ -238,17 +239,34 @@ def dsh_profile_status(
     return snapshot
 
 
+def _bundles_with_missing_tools(snapshot: dict[str, Any]) -> set[str]:
+    composition = snapshot.get("composition_check")
+    registry = snapshot.get("tool_registry_check")
+    if not composition or not registry:
+        return set()
+    if (not composition["matches_local_files"] or not registry["matches_local_files"]
+            or registry["dsh_version"] != composition["dsh_version"]):
+        return set()
+    registered = set(registry["registered_tools"])
+    return {
+        package for package in registry["bundles"]
+        if package in composition["bundles"] and not registered.issuperset(_BUNDLE_TOOLS[package])
+    }
+
+
 def repair_dsh_bundles(
     project_root: Path, *, executable: str = "dsh", dsh_home: Path | None = None,
 ) -> dict[str, Any]:
-    """Link missing CosMatter bundles and enable the installed group in TUI."""
+    """Link missing files or bundles with verified registration gaps, then enable the group."""
     home = (dsh_home or _default_dsh_home()).resolve()
     before = dsh_profile_status(dsh_home=home)
     if before["installation_state"] == "unavailable":
         raise DshBundleRepairError("The local tui manifest could not be read. Check its contents before repairing bundles.")
-    missing = [item["package"] for item in before["packages"] if item["install_status"] != "verified"]
+    incomplete_registry = _bundles_with_missing_tools(before)
+    to_link = [item["package"] for item in before["packages"]
+               if item["install_status"] != "verified" or item["package"] in incomplete_registry]
     profile = home / "profiles" / "tui"
-    if not missing:
+    if not to_link:
         enabled = _enable_dsh_bundles(profile)
         return {"profile_name": "tui", "status": "activated" if enabled else "already_installed", "repaired_bundles": [], "enabled_bundles": enabled}
     dsh = resolve_dsh_executable(executable)
@@ -256,13 +274,13 @@ def repair_dsh_bundles(
         raise DshBundleRepairError("DSH executable not found. Set PATH or pass --dsh-executable.")
     root = project_root.resolve()
     plugin_root = root / "plugins"
-    sources = []
-    for package in missing:
+    sources = {}
+    for package in to_link:
         name = package.removeprefix("@cosmatter/dsh-").removesuffix("-plugin")
         source = plugin_root / f"dsh-cosmatter-{name}-plugin"
         if source.resolve() != source or _bundle_status(source, package) != "verified":
             raise DshBundleRepairError(f"Compiled checkout bundle unavailable for {package}. Run from the CosMatter repository root.")
-        sources.append(f"link:{source.as_posix()}")
+        sources[package] = source
     if os.name == "nt" and Path(dsh).suffix.lower() in {".bat", ".cmd"} and re.search(r"[&|<>^()%!\r\n]", str(root)):
         raise DshBundleRepairError("The checkout path contains characters unsupported by the DSH Windows command launcher.")
     inherited = _BOOTSTRAP_ENV | {"home", "userprofile", "appdata", "localappdata"}
@@ -270,7 +288,7 @@ def repair_dsh_bundles(
     environment.update(DSH_HOME=str(home), CI="1")
     try:
         result = subprocess.run(
-            [dsh, "plugin", "--profile", "tui", "add", "--offline", "--ignore-scripts", *sources],
+            [dsh, "plugin", "--profile", "tui", "add", "--offline", "--ignore-scripts", *(f"link:{source.as_posix()}" for source in sources.values())],
             cwd=root, env=environment, stdin=subprocess.DEVNULL, capture_output=True, timeout=60, check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
@@ -279,8 +297,14 @@ def repair_dsh_bundles(
         raise DshBundleRepairError("DSH could not link the bundles offline. Check pnpm and the local tui profile dependencies.")
     if dsh_profile_status(dsh_home=home)["installation_state"] != "installed":
         raise DshBundleRepairError("Some CosMatter bundle files are still missing or invalid. Refresh the installation checklist.")
+    for package in sorted(incomplete_registry):
+        if (profile / "node_modules" / package).resolve() != sources[package]:
+            raise DshBundleRepairError(f"DSH did not link {package} to the compiled checkout bundle. Check the tui profile dependency.")
     enabled = _enable_dsh_bundles(profile)
-    return {"profile_name": "tui", "status": "installed", "repaired_bundles": missing, "enabled_bundles": enabled}
+    result = {"profile_name": "tui", "status": "installed", "repaired_bundles": to_link, "enabled_bundles": enabled}
+    if incomplete_registry:
+        result["tool_verification_required"] = True
+    return result
 
 
 def _enable_dsh_bundles(profile: Path) -> list[str]:
@@ -1010,7 +1034,8 @@ def _save_registry_check(profile: Path, check: dict[str, Any]) -> None:
 
 
 def _same_registry_generation(first: dict[str, Any], second: dict[str, Any]) -> bool:
-    return all(first[key] == second[key] for key in ("configuration_stamp", "runtime_stamp", "dsh_version", "bundles"))
+    fields = ("configuration_stamp", "runtime_stamp", "dsh_version", "bundles", "registered_tools")
+    return all(first[key] == second[key] for key in fields)
 
 
 def _load_registry_receipts(profile: Path, *, include_history: bool = True) -> list[dict[str, Any]]:

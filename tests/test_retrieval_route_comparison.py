@@ -1,5 +1,6 @@
 import unittest
 
+from cosmatter.human_evaluation import RETRIEVAL_IDENTITY_POLICY
 from cosmatter.retrieval_route_comparison import RetrievalRouteComparisonError, compare_human_retrieval_routes
 
 
@@ -7,7 +8,7 @@ def evaluation(*, precision: float, recall: float, ndcg: float, k: int = 10) -> 
     return {
         "schema_version": "1.1", "mission_id": "mission_90", "corpus_id": "bfo_90",
         "trust_status": "metrics_from_human_reviewed_gold_standard",
-        "identity_resolution_policy": "exact_document_id_or_normalized_doi_to_frozen_manifest",
+        "identity_resolution_policy": RETRIEVAL_IDENTITY_POLICY,
         "search_index": 0, "k": k, "raw_retrieved_count": 12, "retrieved_count": 10,
         "doi_resolved_candidate_count": 4, "duplicate_alias_count": 2,
         "gold_relevant_count": 8, "gold_partially_relevant_count": 5,
@@ -36,6 +37,15 @@ class RetrievalRouteComparisonTests(unittest.TestCase):
                     {"route_id": "keyword", "evaluation": evaluation(precision=0.4, recall=0.5, ndcg=0.48)},
                     {"route_id": "semantic", "evaluation": evaluation(precision=0.5, recall=0.6, ndcg=0.58, k=20)},
                 ],
+                baseline_route_id="keyword",
+            )
+
+    def test_rejects_mixed_identity_policies_even_when_metrics_match(self) -> None:
+        current = evaluation(precision=0.4, recall=0.5, ndcg=0.48)
+        previous = current | {"identity_resolution_policy": "exact_document_id_or_normalized_doi_to_frozen_manifest"}
+        with self.assertRaisesRegex(RetrievalRouteComparisonError, "identity-resolution policy"):
+            compare_human_retrieval_routes(
+                routes=[{"route_id": "keyword", "evaluation": previous}, {"route_id": "semantic", "evaluation": current}],
                 baseline_route_id="keyword",
             )
 

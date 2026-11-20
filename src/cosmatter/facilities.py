@@ -75,6 +75,18 @@ def _condition_comparison_key(value: Any) -> tuple[str, object]:
     return ("text", value.strip())
 
 
+def differing_evidence_conditions(cards: tuple[EvidenceCard, ...]) -> tuple[str, ...]:
+    """Return differences supported by explicit values on every cited card."""
+    differing = []
+    for field in _CONDITION_FIELDS:
+        values = [card.conditions.get(field) for card in cards]
+        if any(_condition_is_missing_or_invalid(value) for value in values):
+            continue
+        if len({_condition_comparison_key(value) for value in values}) > 1:
+            differing.append(field)
+    return tuple(differing)
+
+
 def review_evidence(card: EvidenceCard) -> EvidenceReview:
     """Accept only located evidence whose material conditions are explicit."""
     conditions = record_conditions(card)
@@ -103,13 +115,9 @@ def condition_differential(cards: tuple[EvidenceCard, ...], counterevidence_quer
     contradicts = tuple(card for card in cards if card.stance is Stance.CONTRADICT)
     if not supports or not contradicts:
         raise FacilityGateError("diagnostics requires both supporting and contradicting evidence")
-    profiles = {card.evidence_id: record_conditions(card) for card in cards}
-    differing = tuple(
-        field
-        for field in _CONDITION_FIELDS
-        if len({_condition_comparison_key(profiles[card.evidence_id][field]) for card in cards}) > 1
-    )
-    cluster = " / ".join(f"{field}={profiles[cards[0].evidence_id][field]}" for field in _CONDITION_FIELDS if field not in differing)
+    compared = tuple(card for card in cards if card.stance in (Stance.SUPPORT, Stance.CONTRADICT))
+    differing = differing_evidence_conditions(compared)
+    cluster = " / ".join(f"{field}={compared[0].conditions[field]}" for field in _CONDITION_FIELDS if field not in differing)
     return DiscrepancyMatrix(
         rows=(DiscrepancyRow(cluster or "no shared explicit conditions", tuple(card.evidence_id for card in supports), tuple(card.evidence_id for card in contradicts), differing, ()),),
         counterevidence_queries=counterevidence_queries,

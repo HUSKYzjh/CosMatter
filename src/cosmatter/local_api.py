@@ -51,7 +51,7 @@ from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexReque
 from .crossref import CrossrefAdapter, CrossrefRequestError
 from .citation_expansion import CitationExpansionError, build_citation_expansion, validate_citation_expansion, write_citation_expansion
 from .run_package import RunPackageError, export_run_package, restore_run_package
-from .source_map import HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_pool_review, source_map_from_review, write_source_map_for_document
+from .source_map import HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapAuditError, SourceMapConflictError, SourceMapError, iter_source_maps, load_source_map_for_document, record_confirmed_source_map, source_map_from_pool_review, source_map_from_review
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance, matching_source_segments, write_evidence_provenance_audit
 from .material_extraction import MaterialExtractionError, material_facts_from_review, write_material_facts_for_document
 from .ingestion import EvidenceIngestionError, ingest_evidence_draft, require_eligible_candidate
@@ -1202,19 +1202,13 @@ class LocalMissionApi:
                     mission_id=mission.mission_id, document_id=document_id, source_task=task,
                     selection=selection, source_markdown_sha256=receipt["source_markdown_sha256"],
                 )
-                existing = load_source_map_for_document(run_dir, mission.mission_id, document_id)
-                if existing is not None:
-                    if existing != source_map:
-                        raise LocalApiError("this candidate already has a reviewed Source Map", 409)
-                    return _source_map_response(run_id, document_id, existing, receipt["source_markdown_sha256"])
-                write_source_map_for_document(run_dir, source_map)
+                record_confirmed_source_map(run_dir, source_map, access_mode="screened_candidate")
+            except SourceMapConflictError as error:
+                raise LocalApiError(str(error), 409) from error
+            except SourceMapAuditError as error:
+                raise LocalApiError(str(error), 500) from error
             except (OSError, UnicodeDecodeError, SourceMapError) as error:
                 raise LocalApiError("could not record the reviewed source locations") from error
-        FlightRecorder(self.runs_dir, run_id).record(
-            event_type="source_map_reviewed", actor="human_source_reviewer", state=MissionState.EXTRACT,
-            payload={"document_id": document_id, "segment_count": len(source_map["segments"]),
-                     "access_mode": "screened_candidate", "trust_status": "human_reviewed_parser_selection_not_evidence_card"},
-        )
         return _source_map_response(run_id, document_id, source_map, receipt["source_markdown_sha256"])
 
     def _fetched_source_context(self, run_id: str, document_id: str) -> tuple[Path, MissionBrief, dict[str, Any], dict[str, Any]]:
@@ -1319,20 +1313,16 @@ class LocalMissionApi:
             )
             source_map["schema_version"] = "1.1"
             source_map["source_markdown_sha256"] = intake["markdown_sha256"]
-            write_source_map_for_document(run_dir, source_map)
+            record_confirmed_source_map(
+                run_dir, source_map,
+                access_mode="screened_candidate" if candidate_document_id else "human_authorized_private_pdf",
+            )
+        except SourceMapConflictError as error:
+            raise LocalApiError(str(error), 409) from error
+        except SourceMapAuditError as error:
+            raise LocalApiError(str(error), 500) from error
         except (PrivateStorageError, SourceParseArtifactError, SourceMapError, UnicodeDecodeError, ValueError) as error:
             raise LocalApiError(str(error)) from error
-        FlightRecorder(self.runs_dir, run_id).record(
-            event_type="source_map_reviewed",
-            actor="human_source_reviewer",
-            state=MissionState.EXTRACT,
-            payload={
-                "document_id": audit_document_id,
-                "segment_count": len(source_map["segments"]),
-                "access_mode": "screened_candidate" if candidate_document_id else "human_authorized_private_pdf",
-                "trust_status": "human_reviewed_parser_selection_not_evidence_card",
-            },
-        )
         return _source_map_response(run_id, audit_document_id, source_map, intake["markdown_sha256"])
     def record_pdf_material_facts(self, run_id: str, payload: object, *, fetched_source: bool = False) -> dict[str, object]:
         """Persist human-reviewed structured facts tied to an existing Source Map."""

@@ -9,9 +9,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from .audit import FlightRecorder
+from .models import MissionState
 from .operation_parameter_contracts import SCIVERSE_CONTENT_LIMIT_MAX, SCIVERSE_CONTENT_LIMIT_MIN
 
 
@@ -35,6 +41,14 @@ _KINDS = {"paragraph", "table", "formula", "figure_caption"}
 
 class SourceMapError(ValueError):
     """Raised when a proposed reviewer selection exceeds the bounded contract."""
+
+
+class SourceMapConflictError(SourceMapError):
+    """An existing review cannot be replaced by this recording operation."""
+
+
+class SourceMapAuditError(SourceMapError):
+    """A confirmed review could not be verified against the run's audit log."""
 
 
 def source_map_from_review(
@@ -143,15 +157,145 @@ def source_map_document_path(run_dir: Path, document_id: str) -> Path:
 
 
 def write_source_map_for_document(run_dir: Path, source_map: dict[str, Any]) -> Path:
-    """Persist a document-scoped map without replacing maps for earlier papers."""
-    _validate_source_map(source_map)
-    path = source_map_document_path(run_dir, source_map["document_id"])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(source_map, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    legacy = run_dir / "source_map.json"
-    if not legacy.exists():
-        legacy.write_text(json.dumps(source_map, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    """Return the document-scoped path for an immutable review."""
+    path, _ = record_source_map_for_document(run_dir, source_map)
     return path
+
+
+def record_source_map_for_document(run_dir: Path, source_map: dict[str, Any]) -> tuple[Path, bool]:
+    """Return the document path and whether this call first recorded its review."""
+    return _store_source_map(run_dir, source_map, legacy_only=False)
+
+
+def record_confirmed_source_map(run_dir: Path, source_map: dict[str, Any], *, access_mode: str | None = None) -> Path:
+    """Persist an explicit review and finish its audit event on an identical retry."""
+    _validate_source_map(source_map)
+    payload = {"document_id": source_map["document_id"], "segment_count": len(source_map["segments"]),
+               "trust_status": source_map["trust_status"]}
+    delegated = source_map["trust_status"] == AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS
+    actor = "delegated_automated_trial_reviewer" if delegated else "source_reviewer"
+    if source_map["provider"] == "sciverse":
+        event_type = "delegated_automated_trial_sciverse_source_map_recorded" if delegated else "human_reviewed_sciverse_source_map_recorded"
+    else:
+        event_type = "delegated_automated_trial_source_map_recorded" if delegated else "source_map_reviewed"
+    if access_mode is not None:
+        if (access_mode not in {"screened_candidate", "human_authorized_private_pdf"} or delegated
+                or source_map["provider"] != "mineru"):
+            raise SourceMapError("a private Markdown review requires a human-confirmed MinerU selection")
+        actor = "human_source_reviewer"
+        payload.update(access_mode=access_mode, trust_status="human_reviewed_parser_selection_not_evidence_card")
+    event = {"event_type": event_type, "actor": actor, "payload": payload}
+    bound = json.dumps([run_dir.name, source_map, event], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    payload["source_map_review_id"] = hashlib.sha256(bound.encode("utf-8")).hexdigest()
+    path, _ = _store_source_map(run_dir, source_map, legacy_only=False, event=event)
+    return path
+
+
+@contextmanager
+def _source_map_write_lock(run_dir: Path) -> Iterator[None]:
+    # Both filenames belong to one review. A stable per-run lock coordinates
+    # independent CLI processes, HTTP servers and the legacy writer.
+    with (run_dir / ".source-map.lock").open("a+b") as stream:
+        if os.name == "nt":
+            import msvcrt
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        yield
+
+
+def _publish_json(path: Path, payload: dict[str, Any]) -> None:
+    stream = tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False)
+    temporary = Path(stream.name)
+    try:
+        with stream:
+            json.dump(payload, stream, ensure_ascii=False, indent=2, sort_keys=True)
+            stream.write("\n")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _review_log_state(run_dir: Path, event: dict[str, Any]) -> tuple[bool, bool]:
+    """Check all historical rows and whether appending needs a final line separator."""
+    try:
+        stream = (run_dir / "events.jsonl").open("rb")
+    except FileNotFoundError:
+        return False, False
+    found = False
+    needs_newline = False
+    with stream:
+        for number, raw in enumerate(stream, 1):
+            try:
+                row = json.loads(raw)
+                if (not isinstance(row, dict) or not isinstance(row.get("event_type"), str)
+                        or not isinstance(row.get("payload"), dict)):
+                    raise ValueError
+            except (UnicodeDecodeError, ValueError) as error:
+                raise SourceMapAuditError(f"events.jsonl contains an invalid or incomplete event on line {number}") from error
+            needs_newline = not raw.endswith(b"\n")
+            if row["payload"].get("source_map_review_id") == event["payload"]["source_map_review_id"]:
+                if (found or row.get("run_id") != run_dir.name or row.get("state") != MissionState.EXTRACT.value
+                        or any(row.get(key) != value for key, value in event.items())):
+                    raise SourceMapAuditError("events.jsonl contains conflicting records for this Source Map review")
+                found = True
+    return found, needs_newline
+
+
+def _store_source_map(run_dir: Path, source_map: dict[str, Any], *, legacy_only: bool,
+                      event: dict[str, Any] | None = None) -> tuple[Path, bool]:
+    _validate_source_map(source_map)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    scoped_path = source_map_document_path(run_dir, source_map["document_id"])
+    legacy_path = run_dir / "source_map.json"
+    with _source_map_write_lock(run_dir):
+        try:
+            scoped = _read_source_map(scoped_path)
+            legacy = _read_source_map(legacy_path)
+        except (SourceMapError, UnicodeDecodeError) as error:
+            raise SourceMapConflictError("an existing Source Map could not be validated and was preserved") from error
+        same_document = legacy is not None and legacy["document_id"] == source_map["document_id"]
+        if legacy is not None and legacy["mission_id"] != source_map["mission_id"]:
+            raise SourceMapConflictError("Source Map conflict with the stored mission identity")
+        if ((scoped is not None and scoped != source_map)
+                or (legacy is not None and (legacy_only or same_document) and legacy != source_map)):
+            raise SourceMapConflictError("this document already has a different reviewed Source Map")
+        created = scoped is None and not same_document
+        pending_path = scoped_path.with_suffix(".audit-pending")
+        try:
+            pending = json.loads(pending_path.read_bytes())
+            if not isinstance(pending, dict) or set(pending) != {"review_id"} or not _sha256(pending["review_id"]):
+                raise ValueError
+        except FileNotFoundError:
+            pending = None
+        except (UnicodeDecodeError, ValueError) as error:
+            raise SourceMapAuditError("the pending Source Map review record is invalid") from error
+        marker = {"review_id": event["payload"]["source_map_review_id"]} if event else None
+        if pending is not None and pending != marker:
+            raise SourceMapConflictError("a different Source Map confirmation is pending for this document")
+        logged, needs_newline = _review_log_state(run_dir, event) if event is not None else (False, False)
+        if marker is not None and created and pending is None:
+            scoped_path.parent.mkdir(parents=True, exist_ok=True)
+            _publish_json(pending_path, marker)
+            pending = marker
+        if legacy is None:
+            _publish_json(legacy_path, source_map)
+        if not legacy_only and scoped is None:
+            scoped_path.parent.mkdir(parents=True, exist_ok=True)
+            _publish_json(scoped_path, source_map)
+        if event is not None and pending is not None:
+            if not logged:
+                try:
+                    if needs_newline:
+                        with (run_dir / "events.jsonl").open("ab") as stream:
+                            stream.write(b"\n")
+                    FlightRecorder(run_dir.parent, run_dir.name).record(state=MissionState.EXTRACT, **event)
+                except OSError as error:
+                    raise SourceMapAuditError("could not write the Source Map review event. Retry the same confirmation.") from error
+            pending_path.unlink()
+        return (legacy_path if legacy_only else scoped_path), created
 
 
 def load_source_map_for_document(run_dir: Path, mission_id: str, document_id: str | None) -> dict[str, Any] | None:
@@ -160,7 +304,10 @@ def load_source_map_for_document(run_dir: Path, mission_id: str, document_id: st
         return load_source_map(run_dir / "source_map.json", mission_id)
     path = source_map_document_path(run_dir, document_id)
     if path.exists():
-        return load_source_map(path, mission_id)
+        item = load_source_map(path, mission_id)
+        if item is not None and item["document_id"] != document_id:
+            raise SourceMapError("stored Source Map document identity does not match its path")
+        return item
     legacy = load_source_map(run_dir / "source_map.json", mission_id)
     if legacy is not None and legacy["document_id"] == document_id:
         return legacy
@@ -178,27 +325,47 @@ def iter_source_maps(run_dir: Path, mission_id: str) -> tuple[dict[str, Any], ..
         for path in sorted(directory.glob("*.json")):
             item = load_source_map(path, mission_id)
             if item is not None:
+                if path.name != source_map_document_path(run_dir, item["document_id"]).name:
+                    raise SourceMapError("stored Source Map document identity does not match its path")
                 maps[item["document_id"]] = item
     return tuple(maps[key] for key in sorted(maps))
 
 def write_source_map(run_dir: Path, source_map: dict[str, Any]) -> Path:
-    _validate_source_map(source_map)
-    run_dir.mkdir(parents=True, exist_ok=True)
-    path = run_dir / "source_map.json"
-    path.write_text(json.dumps(source_map, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path, _ = _store_source_map(run_dir, source_map, legacy_only=True)
     return path
 
 
 def load_source_map(path: Path, mission_id: str) -> dict[str, Any] | None:
-    if not path.exists():
+    payload = _read_source_map(path)
+    if payload is None:
         return None
+    if payload["mission_id"] != mission_id:
+        raise SourceMapError("source map does not belong to mission")
+    if path.name == "source_map.json":
+        scoped = source_map_document_path(path.parent, payload["document_id"])
+    elif path.parent.name == "source_maps":
+        scoped = source_map_document_path(path.parent.parent, payload["document_id"])
+        if scoped != path:
+            raise SourceMapError("stored Source Map document identity does not match its path")
+    else:
+        return payload
+    # The writer publishes this marker before either map and removes it only
+    # after the audit event commits. Check it after reading the complete file.
+    try:
+        scoped.with_suffix(".audit-pending").lstat()
+    except FileNotFoundError:
+        return payload
+    return None
+
+
+def _read_source_map(path: Path) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
     except json.JSONDecodeError as error:
         raise SourceMapError("source_map.json is invalid JSON") from error
     _validate_source_map(payload)
-    if payload["mission_id"] != mission_id:
-        raise SourceMapError("source map does not belong to mission")
     return payload
 
 

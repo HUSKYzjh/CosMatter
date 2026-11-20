@@ -14,16 +14,25 @@ function DshReadRecovery(props: { issue: DshReadIssue; locale: UiLocale; focusAf
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const hint = () => {
     const issue = props.issue;
+    if (issue.kind === "repair" && issue.missingTools) return x(
+      `隔离核验未注册 ${issue.missingTools.join("、")}。在 CosMatter 仓库根目录运行补齐命令，接着核验当前端口，再刷新插件状态。`,
+      `The isolated check did not register ${issue.missingTools.join(", ")}. Run the repair from the CosMatter repository root, then check this port and refresh the bundle status.`);
     if (issue.kind === "repair") return x(
       `插件 ${issue.bundle} 缺少有效文件。在 CosMatter 仓库根目录运行补齐命令，然后刷新插件状态。`,
       `Bundle ${issue.bundle} is missing valid files. Run the repair from the CosMatter repository root and refresh the bundle status.`);
-    return x(`隔离核验未注册 ${issue.missingTools.join("、")}。核对已安装的插件版本后，在终端运行核验命令并刷新插件状态。`,
-      `The isolated check did not register ${issue.missingTools.join(", ")}. Check the installed bundle version, run the terminal check and refresh the bundle status.`);
+    if (issue.missingTools) return x(
+      `注册回执缺少 ${issue.missingTools.join("、")}。请核验当前插件组合和此端口，再刷新插件状态。`,
+      `The registry check is missing ${issue.missingTools.join(", ")}. Check the current bundle composition and this port, then refresh the bundle status.`);
+    return x("在终端重新核验当前插件文件和此端口，再刷新插件状态。",
+      "Check the current bundle files and this port in the terminal, then refresh the bundle status.");
   };
   return <div class="dsh-read-recovery">
     <p>{hint()}</p>
     <DshCommandRow locale={props.locale} command={props.issue.kind === "repair" ? BUNDLE_REPAIR_COMMAND : dshProfileCheckCommand(port)}
       label={props.issue.kind === "repair" ? x("复制补齐命令", "Copy repair command") : x("复制核验命令", "Copy check command")} />
+    <Show when={props.issue.kind === "repair" && props.issue.missingTools}>
+      <DshCommandRow locale={props.locale} command={dshProfileCheckCommand(port)} label={x("复制核验命令", "Copy check command")} />
+    </Show>
     <ActionButton size="sm" busy={profile.health() === "loading"} busyLabel={x("正在读取…", "Reading…")}
       onClick={() => { props.focusAfterRefresh(); profile.refresh(); }}>{x("刷新插件状态", "Refresh bundle status")}</ActionButton>
   </div>;

@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .counterevidence import CounterevidenceExecution
-from .facilities import DiscrepancyMatrix
-from .models import EvidenceCard, ReviewStatus
+from .facilities import DiscrepancyMatrix, differing_evidence_conditions
+from .models import EvidenceCard, ReviewStatus, Stance
 from .verification import VerificationDecision
 
 
@@ -149,15 +149,24 @@ def candidates_from_discrepancies(
     result: list[ResearchGapCandidate] = []
     for index, row in enumerate(matrix.rows, 1):
         ids = tuple(dict.fromkeys((*row.supporting_evidence_ids, *row.contradicting_evidence_ids)))
-        if len(ids) < 2 or not row.differing_fields:
+        if not row.supporting_evidence_ids or not row.contradicting_evidence_ids or not row.differing_fields:
             continue
-        row_cards = tuple(by_id.get(evidence_id) for evidence_id in ids)
-        if any(card is None or card.evidence_id not in accepted for card in row_cards):
+        if any(evidence_id not in by_id or evidence_id not in accepted for evidence_id in ids):
             continue
-        if any(card.material != material or card.property_name != property_name for card in row_cards if card is not None):
+        row_cards = tuple(by_id[evidence_id] for evidence_id in ids)
+        if any(card.material != material or card.property_name != property_name for card in row_cards):
             continue
-        fields = ", ".join(dict.fromkeys(row.differing_fields))
-        conflict_fields = tuple(dict.fromkeys(f"conflicting_condition:{field}" for field in row.differing_fields))
+        # Older matrices could attribute a background card's conditions to the cited pair.
+        if any(by_id[key].stance is not Stance.SUPPORT for key in row.supporting_evidence_ids):
+            continue
+        if any(by_id[key].stance is not Stance.CONTRADICT for key in row.contradicting_evidence_ids):
+            continue
+        observed = differing_evidence_conditions(row_cards)
+        supported_fields = tuple(dict.fromkeys(field for field in row.differing_fields if field in observed))
+        if not supported_fields:
+            continue
+        fields = ", ".join(supported_fields)
+        conflict_fields = tuple(f"conflicting_condition:{field}" for field in supported_fields)
         result.append(ResearchGapCandidate(
             gap_id=f"gap_{index:03d}", material=material, property_name=property_name,
             problem_description=f"Under comparable recorded scope, opposing {property_name} evidence differs across {fields}.",

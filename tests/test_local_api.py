@@ -495,7 +495,8 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertEqual(set(candidate["evidence_ids"]), {"ev_support", "ev_contradict"})
         self.assertEqual(candidate["counterevidence_boundary"]["status"], "all_approved_counterevidence_queries_recorded")
 
-        cards[1]["provenance"]["document_id"] = cards[0]["provenance"]["document_id"]
+        for card in cards:
+            card["provenance"]["document_id"] = "doi:10.1000/same-document"
         (run_dir / "evidence_cards.json").write_text(json.dumps(cards), encoding="utf-8")
         # Keep the altered fixture exactly source-mapped so the next gate—not
         # provenance integrity—explains why one document cannot form a comparison.
@@ -676,6 +677,8 @@ class LocalMissionApiTests(unittest.TestCase):
             storage.assert_not_called()
 
     def test_private_pdf_source_map_requires_human_confirmation_and_matching_lines(self):
+        from cosmatter.audit import FlightRecorder
+
         mission = self._mission()
         run_dir = self.runs / "live_001"
         markdown = b"# Title\nThe phase boundary shifts with strain.\n"
@@ -693,7 +696,28 @@ class LocalMissionApiTests(unittest.TestCase):
                 self.api.record_pdf_source_map("live_001", selection)
             with self.assertRaisesRegex(LocalApiError, "does not match"):
                 self.api.record_pdf_source_map("live_001", {"human_confirmed": True, "segments": [{"locator": "markdown_line:2-2", "kind": "paragraph", "quote": "Invented claim"}]})
+            original_record = FlightRecorder.record
+
+            def append_then_fail(recorder, **kwargs):
+                original_record(recorder, **kwargs)
+                raise OSError("synthetic interruption after append")
+
+            with patch.object(FlightRecorder, "record", append_then_fail), self.assertRaises(LocalApiError) as failed:
+                self.api.record_pdf_source_map("live_001", {"human_confirmed": True, **selection})
+            self.assertEqual(failed.exception.status, 500)
+            self.assertEqual(next((run_dir / "source_maps").glob("*.json")).read_bytes(), (run_dir / "source_map.json").read_bytes())
+            self.assertEqual((run_dir / "events.jsonl").read_text(encoding="utf-8").count('"source_map_reviewed"'), 1)
+            pending = self.api.pdf_status("live_001")
+            self.assertEqual((pending["source_map_review_status"], pending["source_map_segment_count"]), ("absent", 0))
+            pending_context = self.api.pdf_source_map_context("live_001")
+            self.assertEqual(pending_context["segments"], [])
+            self.assertEqual(pending_context["trust_status"], "no_human_reviewed_source_map")
             result = self.api.record_pdf_source_map("live_001", {"human_confirmed": True, **selection})
+            self.assertEqual(self.api.record_pdf_source_map("live_001", {"human_confirmed": True, **selection}), result)
+            alternative = {"locator": "markdown_line:1-1", "kind": "paragraph", "quote": "# Title"}
+            with self.assertRaises(LocalApiError) as conflict:
+                self.api.record_pdf_source_map("live_001", {"human_confirmed": True, "segments": [alternative]})
+            self.assertEqual(conflict.exception.status, 409)
         self.assertEqual(result["document_id"], intake["document_id"])
         self.assertEqual(result["segment_count"], 1)
         status = self.api.pdf_status("live_001")
@@ -708,7 +732,7 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertEqual(source_map["schema_version"], "1.1")
         self.assertEqual(source_map["source_markdown_sha256"], intake["markdown_sha256"])
         self.assertNotIn("private", stored.read_text(encoding="utf-8").replace("private_md", ""))
-        self.assertIn("source_map_reviewed", (run_dir / "events.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual((run_dir / "events.jsonl").read_text(encoding="utf-8").count('"source_map_reviewed"'), 1)
         with self.assertRaisesRegex(LocalApiError, "explicit human confirmation"):
             self.api.record_pdf_material_facts("live_001", {"facts": []})
         facts = [{"fact_id": "phase_boundary", "segment_id": "private_md_001", "category": "property", "name": "phase boundary", "value": "shifts with strain", "unit": None, "normalized_value": "shifts with strain", "normalized_unit": None, "qualifiers": {}}]

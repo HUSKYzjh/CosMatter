@@ -77,7 +77,7 @@ from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError
 from .mineru_local_review import MinerULocalReviewError, load_mineru_markdown_review_pool, prepare_mineru_markdown_review_pool, source_map_pool_review_template, source_map_selection_from_pool_review, write_source_map_pool_review_selection, write_source_map_pool_review_template
 from .mcp_server import serve_stdio
 from .source_parse import SourceParseArtifactError, load_source_parse_tasks, migrate_legacy_source_parse_task_ids, private_task_id_for_document, record_source_parse_task, task_for_document, update_source_parse_task, write_fetched_markdown
-from .source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map_for_document, source_map_from_pool_review, source_map_from_review, source_map_from_sciverse_context_review, write_source_map_for_document
+from .source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, HUMAN_SOURCE_MAP_TRUST_STATUS, SourceMapError, iter_source_maps, load_source_map_for_document, record_confirmed_source_map, source_map_from_pool_review, source_map_from_review, source_map_from_sciverse_context_review
 from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexRequestError
 from .relation_expansion import RelationExpansionError, build_relation_expansion, write_relation_expansion
@@ -86,7 +86,7 @@ from .crossref_relation_expansion import CrossrefRelationExpansionError, build_c
 from .paper_structure import PaperStructureError, paper_structure_from_review, write_paper_structure_for_document
 from .ui_preview import UiPreviewError, serve_ui_preview
 from .dsh_profile_status import (
-    DSH_RUN_READ_TOOLS, DshBundleRepairError, DshCompositionCheckError, check_dsh_composition, open_dsh_workbench, read_dsh_evidence_link,
+    DSH_RUN_READ_TOOLS, EXPECTED_DSH_TOOLS, DshBundleRepairError, DshCompositionCheckError, check_dsh_composition, open_dsh_workbench, read_dsh_evidence_link,
     read_dsh_catalogue, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
     repair_dsh_bundles,
 )
@@ -150,7 +150,17 @@ def command_check_dsh_profile(args: argparse.Namespace) -> int:
         _json_print({"error": str(error)})
         return 2
     _json_print(result)
-    return 2 if args.loopback_port is not None and result["tool_registry_check"]["loopback_check"]["status"] != "verified" else 0
+    if not args.verify_tools and args.loopback_port is None:
+        return 0
+    registry = result["tool_registry_check"]
+    missing = sorted(EXPECTED_DSH_TOOLS.difference(registry["registered_tools"]))
+    if missing:
+        print(
+            f"DSH registered {len(registry['registered_tools'])}/{len(EXPECTED_DSH_TOOLS)} expected tools. "
+            f"The registry is missing {', '.join(missing)}.", file=sys.stderr,
+        )
+        return 2
+    return 2 if args.loopback_port is not None and registry["loopback_check"]["status"] != "verified" else 0
 
 
 def command_repair_dsh_bundles(args: argparse.Namespace) -> int:
@@ -1292,17 +1302,10 @@ def command_record_source_map(args: argparse.Namespace) -> int:
                 selection=selection,
                 trust_status=AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS if delegated_trial else "human_reviewed_parser_selection",
             )
-        source_map_path = write_source_map_for_document(run_dir, source_map)
+        source_map_path = record_confirmed_source_map(run_dir, source_map)
     except (OSError, json.JSONDecodeError, UiExportError, CandidateScreeningError, EvidenceIngestionError, SourceParseArtifactError, SourceMapError, MinerULocalReviewError) as error:
         _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
         return 2
-    recorder = FlightRecorder(_runs_dir(), args.run_id)
-    recorder.record(
-        event_type="delegated_automated_trial_source_map_recorded" if delegated_trial else "source_map_reviewed",
-        actor="delegated_automated_trial_reviewer" if delegated_trial else "source_reviewer",
-        state=MissionState.EXTRACT,
-        payload={"document_id": args.document_id, "segment_count": len(source_map["segments"]), "trust_status": source_map["trust_status"]},
-    )
     _json_print({"run_id": args.run_id, "document_id": args.document_id, "segment_count": len(source_map["segments"]), "source_map_path": str(source_map_path)})
     return 0
 
@@ -3599,20 +3602,10 @@ def command_record_sciverse_context_source_map(args: argparse.Namespace) -> int:
             content_limit=pool["limit"],
             trust_status=(AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS if delegated_trial else HUMAN_SOURCE_MAP_TRUST_STATUS),
         )
-        source_map_path = write_source_map_for_document(run_dir, source_map)
+        source_map_path = record_confirmed_source_map(run_dir, source_map)
     except (OSError, json.JSONDecodeError, UiExportError, CandidateScreeningError, ContentAccessError, ProviderReceiptError, SciverseContextReviewError, SourceMapError) as error:
         _json_print({"error": str(error), "run_id": args.run_id, "document_id": args.document_id})
         return 2
-    FlightRecorder(_runs_dir(), args.run_id).record(
-        event_type=("delegated_automated_trial_sciverse_source_map_recorded" if delegated_trial else "human_reviewed_sciverse_source_map_recorded"),
-        actor="delegated_automated_trial_reviewer" if delegated_trial else "source_reviewer",
-        state=MissionState.EXTRACT,
-        payload={
-            "document_id": args.document_id,
-            "segment_count": len(source_map["segments"]),
-            "trust_status": source_map["trust_status"],
-        },
-    )
     _json_print({
         "run_id": args.run_id,
         "document_id": args.document_id,
@@ -3696,12 +3689,12 @@ def build_parser() -> argparse.ArgumentParser:
     check.set_defaults(handler=command_check_config)
 
     dsh_check = commands.add_parser("check-dsh-profile", help="record a redacted TUI composition check without launching a session")
-    dsh_check.add_argument("--verify-tools", action="store_true", help="load the installed CosMatter bundles in an isolated DSH process and report their registered tools")
-    dsh_check.add_argument("--loopback-port", type=int, help="verify tool registration and read the static CosMatter catalogue on this local port")
+    dsh_check.add_argument("--verify-tools", action="store_true", help="check that all expected CosMatter tools register in an isolated DSH process")
+    dsh_check.add_argument("--loopback-port", type=int, help="check that all expected tools register and read the static CosMatter catalogue on this local port")
     dsh_check.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_check.set_defaults(handler=command_check_dsh_profile)
 
-    dsh_repair = commands.add_parser("repair-dsh-bundles", help="link missing CosMatter bundles from this checkout and enable them in the local tui profile")
+    dsh_repair = commands.add_parser("repair-dsh-bundles", help="link missing bundles or bundles with verified registration gaps from this checkout and enable them in TUI")
     dsh_repair.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_repair.set_defaults(handler=command_repair_dsh_bundles)
 

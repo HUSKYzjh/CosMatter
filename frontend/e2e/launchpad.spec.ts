@@ -481,6 +481,183 @@ test("copies the original question and edited brief into DSH chat before creatin
   expect(unexpectedRequests).toEqual([]);
 });
 
+test("keeps keyboard focus inside both DSH panels and restores their selections", async ({ page }) => {
+  const pressTo = async (key: string, target: Locator) => {
+    await page.keyboard.press(key);
+    await expect(target).toBeFocused();
+  };
+  await page.setViewportSize({ width: 320, height: 420 });
+  await page.route("**/api/plugins", route => route.fulfill({ json: dshCatalogueFixture }));
+  await page.route("**/api/dsh-profile", route => route.fulfill({
+    json: verifiedDshProfile(Number(new URL(route.request().url()).port)),
+    headers: { "X-CosMatter-DSH-Receipts": "per-port-v1" },
+  }));
+  await page.goto("/?api=local");
+  const opener = page.getByRole("button", { name: "DSH 插件", exact: true });
+  await expect(opener).toBeVisible();
+  await pressTo("Tab", opener);
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
+  const close = dialog.getByRole("button", { name: "关闭 DSH 面板" });
+  const sessionTab = dialog.getByRole("tab", { name: "DSH 会话" });
+  const catalogueTab = dialog.getByRole("tab", { name: "工具目录" });
+  const session = dialog.getByRole("tabpanel", { name: "DSH 会话" });
+  const catalogue = dialog.getByRole("tabpanel", { name: "工具目录" });
+  await expect(sessionTab).toBeFocused();
+  await expect(sessionTab).toHaveAttribute("aria-controls", await session.getAttribute("id") as string);
+  const copy = session.getByRole("button", { name: "复制 DSH 启动命令" });
+  await expect(copy).toBeVisible();
+  await pressTo("Tab", session);
+  await pressTo("Tab", session.getByRole("radio", { name: "自动打开网页" }));
+  await page.keyboard.press("ArrowRight");
+  const showLink = session.getByRole("radio", { name: "在终端显示链接" });
+  await expect(showLink).toBeChecked();
+  await pressTo("Tab", copy);
+  await pressTo("Tab", close);
+  await pressTo("Shift+Tab", copy);
+  await page.keyboard.press("Tab");
+  await pressTo("Tab", sessionTab);
+
+  await pressTo("Home", catalogueTab);
+  await expect(catalogueTab).toHaveAttribute("aria-controls", await catalogue.getAttribute("id") as string);
+  await page.keyboard.press("Tab");
+  const search = catalogue.getByRole("searchbox");
+  await expect(search).toBeFocused();
+  await page.keyboard.type("cosmatter_mission_create");
+  await page.keyboard.press("Enter");
+  const tool = catalogue.locator("details.dsh-tool-item");
+  await expect(tool.locator("summary")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await pressTo("Tab", close);
+  await pressTo("Shift+Tab", tool.locator("summary"));
+  await page.keyboard.press("Enter");
+  await pressTo("Tab", tool.getByRole("button", { name: "复制工具名" }));
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await pressTo("End", sessionTab);
+  await expect(showLink).toBeChecked();
+  await pressTo("ArrowLeft", catalogueTab);
+  await expect(search).toHaveValue("cosmatter_mission_create");
+  await expect(tool).toHaveAttribute("open", "");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+});
+
+test("refreshes stale and incomplete DSH registry receipts from the session using the keyboard", async ({ page, baseURL }) => {
+  const origin = new URL(baseURL!).origin;
+  const missingTool = "cosmatter_candidate_screening_template";
+  const owner = "@cosmatter/dsh-review-plugin";
+  const unexpected: string[] = [];
+  let receipt: "stale" | "partial" | "ready" = "stale";
+  await page.route("**/*", route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.origin !== origin || request.method() !== "GET") {
+      unexpected.push(`${request.method()} ${url.origin}${url.pathname}`);
+      return route.abort();
+    }
+    if (url.pathname === "/api/status") return route.fulfill({ json: {
+      api_mode: "loopback_only", operation_contracts: operationContracts,
+      providers: { deepseek: false, sciverse: false, mineru: false, openalex: false, crossref: false, crossref_polite_contact: false },
+    } });
+    if (url.pathname === "/api/plugins") return route.fulfill({ json: dshCatalogueFixture });
+    if (url.pathname === "/api/dsh-profile") {
+      const profile = verifiedDshProfile(Number(url.port));
+      const registry = profile.tool_registry_check;
+      if (receipt !== "ready") registry.registered_tools = registry.registered_tools.filter(name => name !== missingTool);
+      registry.matches_local_files = receipt !== "stale";
+      return route.fulfill({ json: profile, headers: { "X-CosMatter-DSH-Receipts": "per-port-v1" } });
+    }
+    if (url.pathname.startsWith("/api/")) return route.fulfill({ status: 404, json: {} });
+    return route.continue();
+  });
+  await page.routeWebSocket("**/*", socket => {
+    if (new URL(socket.url()).host === new URL(origin).host) socket.connectToServer();
+    else unexpected.push(`WebSocket ${socket.url()}`);
+  });
+
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto("/?api=local");
+  const opener = page.getByRole("button", { name: "DSH 插件", exact: true });
+  await expect(opener).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(opener).toBeFocused();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
+  const tab = dialog.getByRole("tab", { name: "DSH 会话" });
+  const session = dialog.getByRole("tabpanel", { name: "DSH 会话" });
+  const catalogueTab = dialog.getByRole("tab", { name: "工具目录" });
+  const catalogue = dialog.getByRole("tabpanel", { name: "工具目录" });
+  const search = catalogue.getByRole("searchbox");
+  const refresh = session.getByRole("button", { name: "刷新会话状态" });
+  const launch = session.getByRole("button", { name: "复制 DSH 启动命令" });
+  const repair = session.getByRole("button", { name: "复制补齐命令" });
+  const count = session.getByText("已注册 19/20 个工具", { exact: false });
+  const tool = session.getByText(missingTool, { exact: true });
+  const tabTo = async (target: Locator, key = "Tab") => {
+    for (let step = 0; step < 12 && !await target.evaluate(element => element === document.activeElement); step++) {
+      await page.keyboard.press(key);
+    }
+    await expect(target).toBeFocused();
+  };
+  const refreshTo = async (next: "partial" | "ready") => {
+    await expect(tab).toBeFocused();
+    await tabTo(refresh);
+    receipt = next;
+    const response = page.waitForResponse(res => new URL(res.url()).pathname === "/api/dsh-profile");
+    await page.keyboard.press("Enter");
+    await response;
+    await expect(tab).toBeFocused();
+  };
+
+  await expect(session).toContainText("已过期");
+  await expect(count).toHaveCount(0);
+  await expect(tool).toHaveCount(0);
+  await expect(launch).toHaveCount(0);
+  await expect(repair).toHaveCount(0);
+  await page.keyboard.press("Home");
+  await expect(catalogueTab).toBeFocused();
+  await tabTo(search);
+  await page.keyboard.type("screening_template");
+  await tabTo(catalogueTab, "Shift+Tab");
+  await page.keyboard.press("End");
+  await refreshTo("partial");
+  await expect(count).toBeVisible();
+  const missing = session.getByRole("listitem").filter({ hasText: missingTool });
+  await expect(missing).toContainText(owner);
+  await expect(tool).toBeInViewport({ ratio: 1 });
+  expect(await tool.evaluate(element => {
+    const row = element.closest("li")!.getBoundingClientRect();
+    const panel = element.closest<HTMLElement>('[role="tabpanel"]')!;
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const lines = [...range.getClientRects()];
+    return lines.length > 0 && lines.every(line => line.left >= row.left - 1 && line.right <= row.right + 1)
+      && panel.scrollWidth <= panel.clientWidth && document.documentElement.scrollWidth <= innerWidth;
+  })).toBe(true);
+  await expect(repair).toBeVisible();
+  await expect(session.getByRole("button", { name: "复制核验命令" })).toBeVisible();
+  await expect(launch).toHaveCount(0);
+  await tabTo(missing.getByRole("button", { name: `在目录中查看 ${missingTool}` }));
+  await page.keyboard.press("Enter");
+  await expect(catalogueTab).toHaveAttribute("aria-selected", "true");
+  const openedTool = catalogue.locator("details.dsh-tool-item").filter({ hasText: missingTool });
+  await expect(openedTool).toHaveAttribute("open", "");
+  await expect(openedTool.locator("summary")).toBeFocused();
+  await expect(search).toHaveValue("screening_template");
+  await tabTo(catalogueTab, "Shift+Tab");
+  await page.keyboard.press("End");
+  await refreshTo("ready");
+  await expect(launch).toBeVisible();
+  await expect(session).toContainText(`cosmatter open-dsh-workbench --port ${new URL(origin).port}`);
+  await expect(tool).toHaveCount(0);
+  await expect(count).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(opener).toBeFocused();
+  expect(unexpected).toEqual([]);
+});
+
 test("opens DSH plugins from the launchpad before the first run and preserves the question", async ({ page }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   const question = page.getByLabel("候选航向研究问题");
@@ -755,9 +932,10 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   await expect(packageProof.locator("li").first()).toContainText("注册 0/1");
   await expect(tools.getByText("隔离核验已注册", { exact: true })).toHaveCount(2);
   await expect(tools.getByText("隔离核验未注册", { exact: true })).toHaveCount(7);
-  await missionTool.getByRole("button", { name: "复制核验命令" }).press("Enter");
-  await expect(missionTool.getByRole("status")).toHaveText("核验命令已复制。");
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`cosmatter check-dsh-profile --verify-tools --loopback-port ${port}`);
+  await missionTool.getByRole("button", { name: "复制补齐命令" }).press("Enter");
+  await expect(missionTool.getByRole("status")).toHaveText("补齐命令已复制。");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cosmatter repair-dsh-bundles");
+  await expect(missionTool.getByRole("button", { name: "复制核验命令" })).toBeVisible();
   const policyTool = tools.locator(".dsh-tool-item").filter({ hasText: "cosmatter_plugin_catalogue" });
   await policyTool.locator("summary").press("Enter");
   await policyTool.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
@@ -1263,6 +1441,7 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   observability = "incomplete";
   await handoff.getByRole("button", { name: "刷新插件状态" }).press("Enter");
   await expect(handoff).toContainText("cosmatter_stage_contract");
+  await expect(handoff.getByRole("button", { name: "复制补齐命令" })).toBeVisible();
   await expect(handoff.getByRole("button", { name: "复制核验命令" })).toBeVisible();
   observability = "ready";
   await handoff.getByRole("button", { name: "刷新插件状态" }).press("Enter");
@@ -1704,10 +1883,15 @@ test("resumes browser screening drafts and requires the current checklist revisi
     if (path === "source-map") {
       if (route.request().method() === "POST") {
         sourceMapPosts.push(route.request().postDataJSON());
+        if (sourceMapPosts.length === 1) return route.fulfill({ status: 500, json: { error: "Source Map audit is pending" } });
         sourceTasks = [{ document_id: "paper_a", state: "done", markdown_ready: true, source_map_segment_count: 2 }];
         return route.fulfill({ json: sourceMap });
       }
-      if (url.searchParams.get("document_id") === "paper_a") return route.fulfill({ json: sourceMap });
+      if (url.searchParams.get("document_id") === "paper_a") {
+        return route.fulfill({ json: sourceMapPosts.length < 2 ? {
+          run_id: runId, document_id: "paper_a", segment_count: 0, segments: [], trust_status: "no_human_reviewed_source_map",
+        } : sourceMap });
+      }
     }
     if (path === "candidate-screening") {
       if (route.request().method() === "GET") return route.fulfill({ json: screening });
@@ -1841,12 +2025,28 @@ test("resumes browser screening drafts and requires the current checklist revisi
   const save = page.getByRole("button", { name: "登记人工 Source Map" });
   await expect(save).toBeDisabled();
   await confirmation.check();
-  await save.click();
+  await save.press("Enter");
+  await expect(page.getByText("无法登记来源定位；请检查段落范围、短片段和人工确认。")).toBeVisible();
+  await expect(quotes.nth(1)).toHaveValue(`${reviewedExcerpt}\n${conditionLine}`);
+  await expect(save).toBeEnabled();
+  await page.getByRole("button", { name: "更换论文" }).click();
+  await queue.getByRole("button", { name: "刷新本机解析记录" }).press("Enter");
+  await expect(queue.getByText("本机 Markdown 就绪", { exact: true })).toBeVisible();
+  await queue.getByRole("button", { name: "进入阅读页 · Candidate A" }).press("Enter");
+  await expect(page.locator(".recorded-source-map")).toHaveCount(0);
+  await locators.first().fill("markdown_line:1-1");
+  await quotes.first().fill("# Candidate A");
+  await page.getByRole("button", { name: "添加片段" }).press("Enter");
+  await locators.nth(1).fill("markdown_line:2-3");
+  await quotes.nth(1).fill(`${reviewedExcerpt}\n${conditionLine}`);
+  await confirmation.check();
+  await save.press("Enter");
   await expect(page.locator(".recorded-source-map")).toContainText("markdown_line:2-3");
-  expect(sourceMapPosts).toEqual([{ document_id: "paper_a", human_confirmed: true, segments: [
+  const confirmedMap = { document_id: "paper_a", human_confirmed: true, segments: [
     { locator: "markdown_line:1-1", kind: "paragraph", quote: "# Candidate A" },
     { locator: "markdown_line:2-3", kind: "paragraph", quote: `${reviewedExcerpt}\n${conditionLine}` },
-  ] }]);
+  ] };
+  expect(sourceMapPosts).toEqual([confirmedMap, confirmedMap]);
   await page.getByRole("button", { name: "更换论文" }).click();
   await expect(queue.getByText("已登记来源定位", { exact: true })).toBeVisible();
   await queue.getByRole("button", { name: "进入阅读页 · Candidate A" }).press("Enter");
@@ -1868,7 +2068,7 @@ test("resumes browser screening drafts and requires the current checklist revisi
   await expect(source.getByText("该来源定位与当前原文无法对应。", { exact: true })).toBeVisible();
   await expect(source.locator("li.selected")).toHaveCount(0);
   expect(tracedSegments).toEqual(Array(4).fill("private_md_002"));
-  expect(sourceMapPosts).toHaveLength(1);
+  expect(sourceMapPosts).toHaveLength(2);
   await page.getByRole("button", { name: "更换论文" }).click();
   await expect(queue.getByText("已登记来源定位", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);

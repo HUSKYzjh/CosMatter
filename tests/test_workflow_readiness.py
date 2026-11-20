@@ -16,6 +16,7 @@ from cosmatter.verification import VerificationDecision
 from cosmatter.provider_receipts import append_provider_receipt, mineru_task_receipt
 from cosmatter.cli import main
 from cosmatter.models import FlightPlan, MissionBrief
+from cosmatter.source_map import SourceMapAuditError, record_confirmed_source_map, source_map_from_review, write_source_map
 from cosmatter.workflow_readiness import _evaluation_progress, workflow_readiness, write_workflow_readiness
 
 
@@ -27,6 +28,31 @@ class WorkflowReadinessTests(unittest.TestCase):
             "candidates": [{"document_id": "doc_1", "title": "private title"}],
             "searches": [{"query": "search primary"}, {"query": "search counter"}],
         }
+
+    def test_extraction_counts_legacy_maps_and_waits_for_pending_reviews(self) -> None:
+        document_id = "doc_1"
+        source_map = source_map_from_review(
+            mission_id=self.mission.mission_id, document_id=document_id,
+            source_task={"provider": "mineru", "document_id": document_id, "task_id": "task_1", "state": "done"},
+            selection={"document_id": document_id, "segments": [
+                {"segment_id": "s1", "kind": "paragraph", "locator": "page:1", "quote": "Synthetic excerpt."},
+            ]},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+
+            def count():
+                stages = workflow_readiness(run, self.mission)["stages"]
+                return next(stage for stage in stages if stage["stage"] == "extraction")["counts"]["source_map_document_count"]
+
+            write_source_map(run, source_map)
+            self.assertEqual(count(), 1)
+            second = source_map | {"document_id": "doc_2", "task_id_sha256": "2" * 64}
+            with patch("cosmatter.audit.FlightRecorder.record", side_effect=OSError("synthetic interruption")), self.assertRaises(SourceMapAuditError):
+                record_confirmed_source_map(run, second)
+            self.assertEqual(count(), 1)
+            record_confirmed_source_map(run, second)
+            self.assertEqual(count(), 2)
 
     def test_distinguishes_completed_execution_from_pending_parse(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

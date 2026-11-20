@@ -100,7 +100,13 @@ it("only interrupts a direct read for the bundle and tools that command loads", 
     };
     const intact = { ...snapshot(), tool_registry_check: registry };
     expect(dshReadIssue(command, intact, "ready")).toEqual({ kind: "verify", missingTools: [tool] });
-    expect(dshReadIssue(command, { ...intact, tool_registry_check: { ...registry, matches_local_files: false } }, "ready")).toBeNull();
+    const composition: NonNullable<DshProfileStatus["composition_check"]> = {
+      schema_version: "cosmatter.dsh-composition-check/v1", checked_at: registry.checked_at,
+      dsh_version: registry.dsh_version, matches_local_files: true, bundles: [bundle],
+    };
+    expect(dshReadIssue(command, { ...intact, composition_check: composition }, "ready")).toEqual({ kind: "repair", bundle, missingTools: [tool] });
+    expect(dshReadIssue(command, { ...intact, composition_check: { ...composition, dsh_version: "other" } }, "ready")).toEqual({ kind: "verify" });
+    expect(dshReadIssue(command, { ...intact, tool_registry_check: { ...registry, matches_local_files: false } }, "ready")).toEqual({ kind: "verify" });
     expect(dshReadIssue(command, { ...intact, tool_registry_check: { ...registry, bundles: ["@cosmatter/dsh-policy-plugin"] } }, "ready")).toBeNull();
     expect(dshReadIssue(command, { ...intact, tool_registry_check: { ...registry, registered_tools: [...registry.registered_tools, tool] } }, "ready")).toBeNull();
     expect(dshReadIssue(command, profile, "unavailable")).toBeNull();
