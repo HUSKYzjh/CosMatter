@@ -1,4 +1,4 @@
-import { researchObjectFromQuestion } from "./launchQuestionObject";
+import { questionWithoutMaterialFormulas, researchObjectFromQuestion } from "./launchQuestionObject";
 import { UNCONFIRMED_RESEARCH_OBJECT } from "./launchMissionValidation";
 
 export interface DeterministicLaunchCandidate {
@@ -63,11 +63,11 @@ function questionFocus(question: string, language: "zh" | "en"): string {
   if (matches.length) return matches.sort((a, b) => a.at - b.at).map(({ label }) => label).join(language === "zh" ? "、" : ", ");
   if (/制备|合成|生长|退火|沉积|synthesi[sz]|fabricat|growth|anneal|deposition/i.test(question)) return language === "zh" ? "制备条件与产物" : "synthesis conditions and outcome";
   if (/机理|机制|mechanism/i.test(question)) return language === "zh" ? "作用机理" : "mechanism";
-  const stripped = question
-    .replace(/BiFeO(?:3|₃)/ig, "")
-    .replace(/\b[A-Z][A-Za-z0-9₀-₉]{1,24}\b/g, "")
+  const stripped = questionWithoutMaterialFormulas(question)
     .replace(/^(?:请问|请比较|请评估|如何|怎样|为什么|为何|what|which|how|why|is|are)\s*/i, "")
-    .replace(/[？?。.!！]/g, "")
+    .trimEnd()
+    .replace(/[？?。.!！]+$/, "")
+    .replace(/\s+(?:in|of|for|on)\s*$/i, "")
     .trim();
   return stripped || (language === "zh" ? "问题中指定的研究性质" : "the property specified in the question");
 }

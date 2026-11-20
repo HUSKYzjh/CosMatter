@@ -88,6 +88,25 @@ describe("question-bound local candidate routes", () => {
     expect(routes[2].question).not.toContain("循环后结构");
   });
 
+  it("keeps both compared materials in all visible directions and editable briefs", () => {
+    const input = "比较 BaTiO₃ 和 BiFeO₃ 的居里温度，实验判据是否一致？";
+    for (const route of questionBoundFallbackCandidates(input, "zh")) {
+      expect(route.material).toBe("BaTiO₃ 和 BiFeO₃");
+      expect(route.question).toContain(route.material);
+      expect(route.property).toBe("居里温度");
+      expect(route.scope).toContain(input);
+      expect(isLaunchMissionReady(route)).toBe(true);
+    }
+  });
+
+  it("retains a named technique in an open-ended focus", () => {
+    const [route] = questionBoundFallbackCandidates("Which Raman modes soften at 0.25 GPa in MoS₂?", "en");
+    expect(route.material).toBe("MoS₂");
+    expect(route.property).toContain("Raman modes soften");
+    expect(route.property).toContain("0.25 GPa");
+    expect(route.property).not.toContain("₂");
+  });
+
   it("never returns the three generic workflow prompts reported by the launch UI", () => {
     const routes = questionBoundFallbackCandidates("BiFeO3的相转变温度是", "zh");
     const visible = routes.map((route) => route.question).join(" ");
