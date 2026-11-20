@@ -1,0 +1,30 @@
+.screening-reasons { min-width: 0; }
+.screening-reasons ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin: .45rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.screening-reasons li button {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .32rem .55rem;
+  border: 1px solid var(--line);
+  border-radius: .3rem;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: max(.8rem, 13px);
+  cursor: pointer;
+}
+.screening-reasons li button:focus-visible {
+  outline: 2px solid var(--signal-blue);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .screening-reasons li button { min-height: 44px; }
+}

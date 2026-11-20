@@ -1,4 +1,5 @@
 import { DshCommandText } from "./DshCommandText";
+import { formatDshCommand } from "./dshTerminalCommand";
 import { createMemo, Show, useContext } from "solid-js";
 import { createDshClipboard, DshManualCopy } from "./DshManualCopy";
 import { DshCommandRow } from "./DshSessionLaunch";
@@ -43,6 +44,7 @@ function DshCommandHandoff(props: { read: DshReadCommand; command: string; label
   const profile = useContext(DshReadProfile);
   const issue = createMemo(() => profile && dshReadIssue(props.read, profile.profile(), profile.health()));
   const { copy, feedback } = createDshClipboard<"command">();
+  const command = () => formatDshCommand(props.command);
   let summary!: HTMLElement;
 
   return <details class="harness-disclosure dsh-run-handoff">
@@ -50,8 +52,8 @@ function DshCommandHandoff(props: { read: DshReadCommand; command: string; label
     <div>
       <Show when={issue()} fallback={<>
       <Show when={props.description}><p>{props.description}</p></Show>
-      <DshCommandText command={props.command} />
-      <ActionButton size="sm" onClick={(event) => void copy("command", () => issue() ? null : props.command, event.currentTarget)}>{x("复制 DSH 命令", "Copy DSH command")}</ActionButton>
+      <DshCommandText command={command()} />
+      <ActionButton size="sm" onClick={(event) => void copy("command", () => issue() ? null : command(), event.currentTarget)}>{x("复制 DSH 命令", "Copy DSH command")}</ActionButton>
       <Show when={feedback()}>{(state) => <Show when={state().copied} fallback={<DshManualCopy locale={props.locale}
         label={x("DSH 命令", "DSH command")} value={state().value} source={state().source} />}>
         <p role="status">{x("DSH 命令已复制。", "DSH command copied.")}</p>
@@ -122,10 +124,11 @@ function DshLinkedHandoff(props: { read: DshReadCommand; locale: UiLocale; link:
   const issue = createMemo(() => profile && dshReadIssue(props.read, profile.profile(), profile.health()));
   let linkButton!: HTMLButtonElement;
   const { copy, feedback } = createDshClipboard<"link" | "command">();
+  const command = () => formatDshCommand(props.command);
   let preview!: HTMLDetailsElement;
 
   const copyCommand = async (button: HTMLButtonElement) => {
-    if (await copy("command", () => issue() ? null : props.command, button) === false) preview.open = true;
+    if (await copy("command", () => issue() ? null : command(), button) === false) preview.open = true;
   };
 
   return <div class="dsh-linked-handoff">
@@ -141,7 +144,7 @@ function DshLinkedHandoff(props: { read: DshReadCommand; locale: UiLocale; link:
       <summary><span>{props.commandLabel}</span></summary>
       <div>
         <Show when={props.description}><p>{props.description}</p></Show>
-        <DshCommandText command={props.command} />
+        <DshCommandText command={command()} />
       </div>
     </details>}>{(problem) => <DshReadRecovery locale={props.locale} issue={problem()} focusAfterRefresh={() => linkButton.focus()} />}</Show>
   </div>;

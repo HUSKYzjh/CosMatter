@@ -52,3 +52,47 @@ test('generates links from the configured origin and verified request identifier
     await assert.rejects(() => client.poll('run_1', input, 'call-0006'), /response is invalid/)
   }
 })
+
+test('native submit and poll cards show the saved task state and the exact local document', async t => {
+  const origin = 'http://127.0.0.1:8790'
+  const documentId = 'BiFeO₃ film & XRD/1'
+  const url = new URL('/?api=local', origin)
+  url.hash = new URLSearchParams({ run: 'run_1', document: documentId }).toString()
+  const input = { run_id: 'run_1', authorizations: auth, document_id: documentId }
+  const submitInput = { ...input, source_url: 'https://example.invalid/source.pdf?temporary=hidden' }
+  let response
+  t.mock.method(globalThis, 'fetch', async () => Response.json(response))
+  const tools = new Map()
+  apply({ tools: { register: tool => tools.set(tool.name, tool) }, emit() {}, effect() {} }, { baseUrl: origin })
+  const submit = tools.get('cosmatter_mineru_source_submit')
+  const poll = tools.get('cosmatter_mineru_task_poll')
+  assert.deepEqual(submit.presentCall(submitInput), { card: 'generic', kind: 'execute', title: 'Submit a document to MinerU' })
+  assert.deepEqual(poll.presentCall(input), { card: 'generic', kind: 'fetch', title: 'Check MinerU parsing status' })
+  for (const [state, guidance] of [
+    ['pending', 'Parsing is queued. Open the document to see its saved task status.'],
+    ['running', 'Parsing is in progress. Open the document to see its saved task status.'],
+    ['failed', 'Parsing failed. Open the document to inspect its saved task status.'],
+    ['done', 'Parsing finished. Open the document in CosMatter for human review.'],
+  ]) {
+    const tool = state === 'pending' ? submit : poll
+    const args = tool === submit ? submitInput : input
+    const replayed = state === 'done'
+    response = { ...(tool === submit ? submitted : polled), document_id: documentId, task_state: state,
+      ...(replayed ? { idempotency_status: 'duplicate_completed' } : {}) }
+    const value = await tool.execute(args, { callId: 'test-parse-receipt', signal: new AbortController().signal })
+    const content = tool.output.render(args, value)
+    assert.deepEqual(JSON.parse(content[0].text), { ...response, workbench_url: url.href })
+    const meta = tool.output.presentationMeta(args, value)
+    assert.deepEqual(meta, { workbench_url: url.href, task_state: state, replayed })
+    const result = { isError: false, content, meta }
+    const text = ['Run: run_1', `Document: ${documentId}`, guidance, ...(replayed ? ['Showing the saved receipt for this call.'] : []), url.href].join('\n')
+    assert.deepEqual(tool.presentResult(args, result).content, [{ type: 'text', text }])
+    assert.equal(tool.presentResult(args, { ...result, isError: true }), undefined)
+    assert.equal(tool.presentResult({ ...args, document_id: 'another document' }, result), undefined)
+    assert.equal(tool.presentResult({ ...args, run_id: 'run_other' }, result), undefined)
+    for (const changed of [{ workbench_url: url.href.replace(':8790', ':8791') }, { workbench_url: submitInput.source_url },
+      { task_state: 'unknown' }, { replayed: 'yes' }]) {
+      assert.equal(tool.presentResult(args, { ...result, meta: { ...meta, ...changed } }), undefined)
+    }
+  }
+})

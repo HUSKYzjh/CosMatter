@@ -514,8 +514,10 @@ test("keeps keyboard focus inside both DSH panels and restores their selections"
   const showLink = session.getByRole("radio", { name: "在终端显示链接" });
   await expect(showLink).toBeChecked();
   await pressTo("Tab", copy);
+  const environment = session.getByRole("combobox", { name: "命令运行环境" });
+  await pressTo("Tab", environment);
   await pressTo("Tab", close);
-  await pressTo("Shift+Tab", copy);
+  await pressTo("Shift+Tab", environment);
   await page.keyboard.press("Tab");
   await pressTo("Tab", sessionTab);
 
@@ -629,6 +631,64 @@ for (const width of [320, 1360]) {
     expect(writes).toEqual([]);
   });
 }
+
+test("recovers both offline DSH endpoints in one retry and copies commands for the selected terminal", async ({ page, baseURL }) => {
+  const port = Number(new URL(baseURL!).port);
+  const windows = ".\\.venv\\Scripts\\cosmatter.exe";
+  let available = false;
+  const writes: string[] = [];
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.route("**/api/**", route => {
+    const request = route.request();
+    if (request.method() !== "GET") writes.push(request.method());
+    const path = new URL(request.url()).pathname;
+    if (available && path === "/api/plugins") return route.fulfill({ json: dshCatalogueFixture });
+    if (available && path === "/api/dsh-profile") return route.fulfill({ json: verifiedDshProfile(port),
+      headers: { "X-CosMatter-DSH-Receipts": "per-port-v1" } });
+    return route.fulfill({ status: 503, json: {} });
+  });
+  await page.setViewportSize({ width: 320, height: 560 });
+  await page.goto("/?api=local");
+  const question = page.getByLabel("候选航向研究问题");
+  await question.fill("BiFeO₃ 的磁相变在不同测量方法下如何比较？");
+  const opener = page.getByRole("button", { name: "DSH 插件", exact: true });
+  await opener.click();
+  const dialog = page.getByRole("dialog");
+  const panel = dialog.getByRole("tabpanel", { name: "DSH 会话" });
+  const environment = panel.getByRole("combobox", { name: "命令运行环境" });
+  const start = panel.getByRole("region", { name: "启动本机工作台" });
+  const offlineCommand = " preview-ui --solid --api --port 0";
+  await expect(start.locator("code")).toHaveText("cosmatter" + offlineCommand);
+  await environment.selectOption("windows-venv");
+  await expect(start.locator("code")).toHaveText(windows + offlineCommand);
+  await start.getByRole("button", { name: "复制本机工作台命令" }).press("Enter");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(windows + offlineCommand);
+  available = true;
+  await panel.getByRole("button", { name: "刷新会话状态" }).press("Enter");
+  const launchCommand = ` open-dsh-workbench --port ${port}`;
+  await expect(panel.locator(".dsh-session-command code")).toHaveText(windows + launchCommand);
+  await expect(environment).toHaveValue("windows-venv");
+  await expect(start).toHaveCount(0);
+  await environment.selectOption("posix-venv");
+  await expect(panel.locator(".dsh-session-command code")).toHaveText("./.venv/bin/cosmatter" + launchCommand);
+  await dialog.getByRole("tab", { name: "工具目录" }).click();
+  const search = dialog.getByRole("searchbox");
+  await search.fill("plugin_catalogue");
+  await search.press("Enter");
+  const tool = dialog.locator(".dsh-tool-item[open]");
+  const catalogueCommand = `./.venv/bin/cosmatter dsh-catalogue --port ${port}`;
+  await expect(tool.locator(".dsh-tool-terminal code")).toHaveText(catalogueCommand);
+  await tool.getByRole("button", { name: "复制 DSH 命令" }).press("Enter");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(catalogueCommand);
+  await page.keyboard.press("Escape");
+  await expect(question).toHaveValue("BiFeO₃ 的磁相变在不同测量方法下如何比较？");
+  await page.reload();
+  await opener.click();
+  await expect(environment).toHaveValue("posix-venv");
+  await environment.selectOption("path");
+  await expect(panel.locator(".dsh-session-command code")).toHaveText("cosmatter" + launchCommand);
+  expect(writes).toEqual([]);
+});
 
 test("refreshes stale and incomplete DSH registry receipts from the session using the keyboard", async ({ page, baseURL }) => {
   const origin = new URL(baseURL!).origin;

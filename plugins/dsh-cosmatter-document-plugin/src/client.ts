@@ -9,6 +9,18 @@ export interface MinerUTaskStatus { run_id: string; document_id: string; provide
 const statusKeys = new Set(['run_id', 'document_id', 'provider', 'task_state', 'trust_status', 'idempotency_status'])
 type MinerURequest = { document_id: string; authorizations: string[]; dsh_call_id: string; source_url?: string }
 
+function validDocumentTarget(run: string, document: string): boolean {
+  return typeof run === 'string' && runId.test(run) && typeof document === 'string' && document.length > 0
+    && document.trim() === document && document.length <= 255 && !/[\u0000-\u001f\u007f]/.test(document)
+}
+
+export function documentWorkbenchUrl(baseUrl: string, run: string, document: string): string {
+  if (!validDocumentTarget(run, document)) throw new Error('invalid CosMatter document target')
+  const url = new URL('/?api=local', baseUrl)
+  url.hash = new URLSearchParams({ run, document }).toString()
+  return url.href
+}
+
 export class CosMatterDocumentClient {
   readonly config: NormalizedConfig
   constructor(config: CosMatterDocumentConfig = {}, private readonly request: typeof fetch = fetch) { this.config = normalizeConfig(config) }
@@ -40,16 +52,13 @@ export class CosMatterDocumentClient {
         || typeof value.trust_status !== 'string' || !['authorized_parse_dispatch_not_evidence_acceptance', 'authorized_parse_status_not_evidence_acceptance'].includes(value.trust_status)
         || (value.idempotency_status !== undefined && value.idempotency_status !== 'duplicate_completed')
         || Object.keys(value).some(key => !statusKeys.has(key))) throw new Error('CosMatter document response is invalid')
-      const workbench = new URL('/?api=local', this.config.baseUrl)
-      workbench.hash = new URLSearchParams({ run, document: body.document_id }).toString()
-      return { ...value, workbench_url: workbench.href } as unknown as MinerUTaskStatus
+      return { ...value, workbench_url: documentWorkbenchUrl(this.config.baseUrl, run, body.document_id) } as unknown as MinerUTaskStatus
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
   }
 }
 
 function assertInput(runIdValue: string, authorizations: string[], documentId: string): void {
-  if (!runId.test(runIdValue) || typeof documentId !== 'string' || !documentId || documentId.trim() !== documentId
-    || documentId.length > 255 || /[\u0000-\u001f\u007f]/.test(documentId)
+  if (!validDocumentTarget(runIdValue, documentId)
     || !Array.isArray(authorizations) || authorizations.length !== requiredAuthorizations.length
     || authorizations.some(value => !authorization.test(value)) || !requiredAuthorizations.every(value => authorizations.includes(value))) {
     throw new Error('explicit MinerU authorization input is invalid')

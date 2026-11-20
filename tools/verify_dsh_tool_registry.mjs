@@ -23,7 +23,7 @@ async function browserRead(webOrigin, path) {
   return await response.json()
 }
 
-export async function apply(ctx, { expectedTools, catalogue, webOrigin, runId }) {
+export async function apply(ctx, { expectedTools, catalogue, webOrigin, runId, savedDocument }) {
   try {
     const registeredCosMatterTools = () => ctx.tools.definitions()
       .map(({ name }) => name)
@@ -56,8 +56,8 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin, runId })
     assert.deepEqual(missionCard.content, [{ type: 'text', text: `${runId}\n${mission.workbench_url}` }])
     const { value: recentRuns } = await dispatch(ctx, 'cosmatter_recent_runs', {})
     assert.equal(recentRuns.schema_version, 'cosmatter.recent-run-links/v1')
-    assert.equal(recentRuns.runs.length, 1)
-    const recent = recentRuns.runs[0]
+    assert.deepEqual(recentRuns.runs.map(row => row.run_id).sort(), [runId, savedDocument.run_id].sort())
+    const recent = recentRuns.runs.find(row => row.run_id === runId)
     assert.deepEqual(Object.keys(recent).sort(), ['run_id', 'stopped', 'updated_at', 'workbench_url'])
     assert.equal(recent.run_id, runId)
     assert.equal(recent.workbench_url, mission.workbench_url)
@@ -86,7 +86,19 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin, runId })
     assert.equal(browserBundle.mission.mission_id, mission.mission_id)
     assert.equal(pdfRegistry.run_id, runId)
     assert.deepEqual(pdfRegistry.tasks, [])
-    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission result card, bound stage contract, and browser handoff verified\n`, () => process.exit(0))
+    const documentTool = ctx.tools.definitions().find(({ name }) => name === 'cosmatter_mineru_source_submit')
+    const documentResult = await dispatch(ctx, documentTool.name, savedDocument)
+    const documentUrl = new URL('/?api=local', webOrigin)
+    documentUrl.hash = new URLSearchParams({ run: savedDocument.run_id, document: savedDocument.document_id }).toString()
+    assert.equal(documentResult.value.idempotency_status, 'duplicate_completed')
+    assert.equal(documentResult.value.workbench_url, documentUrl.href)
+    assert.deepEqual(JSON.parse(documentResult.content[0].text), JSON.parse(JSON.stringify(documentResult.value)))
+    const receiptText = [`Run: ${savedDocument.run_id}`, `Document: ${savedDocument.document_id}`, 'Parsing finished. Open the document in CosMatter for human review.',
+      'Showing the saved receipt for this call.', documentUrl.href].join('\n')
+    assert.deepEqual(documentTool.presentResult(savedDocument, documentResult)?.content, [{ type: 'text', text: receiptText }])
+    const saved = await browserRead(webOrigin, `/api/runs/${savedDocument.run_id}/source-parse-status`)
+    assert.equal(saved.tasks.find(task => task.document_id === savedDocument.document_id)?.state, 'done')
+    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission result card, bound stage contract, document receipt card, and browser handoff verified\n`, () => process.exit(0))
   } catch (error) {
     process.stderr.write(`CosMatter release probe failed: ${error.message}\n`, () => process.exit(1))
   }

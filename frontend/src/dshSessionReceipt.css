@@ -17,3 +17,33 @@
   color: var(--muted);
   font-size: max(.75rem, 12px);
 }
+
+.dsh-terminal-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .3rem .7rem;
+  border-top: 1px solid var(--line);
+  padding-block-start: .6rem;
+}
+
+.dsh-terminal-choice select {
+  max-width: 100%;
+  min-height: 2.5rem;
+  padding-inline: .4rem;
+  border: 1px solid var(--line);
+  border-radius: .25rem;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+}
+
+.dsh-terminal-choice select:focus-visible {
+  outline: 2px solid var(--signal-blue);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .dsh-terminal-choice select { min-height: 44px; }
+}

@@ -1,4 +1,5 @@
 import { DshCommandText } from "./DshCommandText";
+import { formatDshCommand } from "./dshTerminalCommand";
 import { For, Show, createMemo } from "solid-js";
 import { packages } from "../../plugins/dsh-plugin-group.json";
 
@@ -69,7 +70,8 @@ export function HarnessCapabilityDeck(props: {
   const runtime = createMemo(() => harnessRuntimeSummary(props.operationalTelemetry));
   const workbenchLocation = localWorkbenchLocation();
   const loopbackPort = workbenchLocation ? Number(workbenchLocation.port || "80") : null;
-  const checkCommand = dshProfileCheckCommand(loopbackPort);
+  const checkCommand = () => formatDshCommand(dshProfileCheckCommand(loopbackPort));
+  const repairCommand = () => formatDshCommand(BUNDLE_REPAIR_COMMAND);
   let verdictTitle!: HTMLElement;
   let packageProof: HTMLDetailsElement | undefined;
   let packageSummary: HTMLElement | undefined;
@@ -329,8 +331,8 @@ export function HarnessCapabilityDeck(props: {
               <span>DSH {check().dsh_version}</span>
             </p>}</Show>
             <div class="harness-installation-footer harness-copy-row">
-              <DshCommandText command={checkCommand} />
-              <ActionButton ref={terminalCopy} size="sm" onClick={(event) => void clipboard.copy("check", () => checkCommand, event.currentTarget)}>{x("复制核验命令", "Copy check command")}</ActionButton>
+              <DshCommandText command={checkCommand()} />
+              <ActionButton ref={terminalCopy} size="sm" onClick={(event) => void clipboard.copy("check", checkCommand, event.currentTarget)}>{x("复制核验命令", "Copy check command")}</ActionButton>
               <ActionButton size="sm" busy={props.profileHealth === "loading"} busyLabel={x("正在读取…", "Reading…")} onClick={() => props.onRefreshProfile?.()}>
                 {x("刷新核验结果", "Refresh check results")}
               </ActionButton>
@@ -380,8 +382,8 @@ export function HarnessCapabilityDeck(props: {
               : x("在 CosMatter 仓库根目录的终端运行。命令会补齐缺失或异常的本地链接，并将 CosMatter 插件加入 tui 启用清单。",
                 "Run from the CosMatter repository root. The command repairs missing or invalid local links and enables the CosMatter bundles in TUI.")}</p>
             <div class="harness-copy-row">
-              <DshCommandText command={BUNDLE_REPAIR_COMMAND} />
-              <ActionButton size="sm" onClick={(event) => void clipboard.copy("repair", () => BUNDLE_REPAIR_COMMAND, event.currentTarget)}>{x("复制补齐命令", "Copy repair command")}</ActionButton>
+              <DshCommandText command={repairCommand()} />
+              <ActionButton size="sm" onClick={(event) => void clipboard.copy("repair", repairCommand, event.currentTarget)}>{x("复制补齐命令", "Copy repair command")}</ActionButton>
               <Show when={props.onRefreshProfile}>
                 <ActionButton size="sm" onClick={() => { packageSummary?.focus(); props.onRefreshProfile?.(); }}>
                   {x("刷新安装状态", "Refresh installation status")}

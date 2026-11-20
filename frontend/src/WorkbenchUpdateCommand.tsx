@@ -5,15 +5,18 @@ import type { UiLocale } from "./fleetRegistry";
 import { isLocalRunId } from "./liveRunIdentity";
 import { updatedWorkbenchCommand } from "./dshLocalCommands";
 
-export function WorkbenchUpdateCommand(props: { locale: UiLocale; runId?: string | null }) {
+export function WorkbenchUpdateCommand(props: { locale: UiLocale; runId?: string | null; offline?: boolean }) {
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const run = () => props.runId && isLocalRunId(props.runId) ? props.runId : null;
-  return <section class="dsh-workbench-update" aria-label={x("启动新版工作台", "Start the updated workbench")}>
-    <p>{x("新开终端，进入安装了新版 CosMatter 的环境，再运行下方命令。",
+  return <section class="dsh-workbench-update" aria-label={props.offline ? x("启动本机工作台", "Start the local workbench") : x("启动新版工作台", "Start the updated workbench")}>
+    <p>{props.offline ? x("此地址未返回插件状态或目录。可在终端运行下方命令，启动带本机 API 的工作台。",
+      "This address returned neither plugin status nor the catalogue. Run the command below to start a workbench with the local API.")
+      : x("新开终端，进入安装了新版 CosMatter 的环境，再运行下方命令。",
       "Open a new terminal in the environment where the updated CosMatter CLI is installed and run the command below.")}{" "}
       {run() ? x("打开终端打印的地址，即可继续当前任务。", "Open the printed URL to continue this run.")
         : x("打开终端打印的地址，端口由系统分配。", "Open the printed URL on the newly allocated port.")}</p>
-    <DshCommandRow locale={props.locale} command={updatedWorkbenchCommand(run())} label={x("复制新版工作台命令", "Copy workbench command")} />
+    <DshCommandRow locale={props.locale} command={updatedWorkbenchCommand(run())} label={props.offline
+      ? x("复制本机工作台命令", "Copy local workbench command") : x("复制新版工作台命令", "Copy workbench command")} />
   </section>;
 }
 

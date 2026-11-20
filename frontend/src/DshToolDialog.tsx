@@ -9,6 +9,7 @@ import { DSH_TOOL_COUNT, dshSessionReadiness, missingRegisteredTools, type DshSe
 import { registryMatchesComposition } from "./dshReadProfile";
 import type { HarnessCatalogueHealth } from "./localApi";
 import { ActionButton } from "./uiPrimitives";
+import { chooseDshTerminal, dshTerminal, type DshTerminal } from "./dshTerminalCommand";
 import "./dshSessionReceipt.css";
 
 const views = ["catalogue", "session"] as const;
@@ -106,11 +107,11 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
     (event.shiftKey ? last : first).focus();
   };
   const refreshSession = () => {
-    const state = readiness();
     selectTab("session");
     props.onRefreshProfile();
-    if (state === "ready" || state === "catalogue-unavailable" || state === "disconnected") props.onRefreshCatalogue();
+    props.onRefreshCatalogue();
   };
+  const workbenchOffline = () => !props.profile && props.profileHealth === "unavailable" && props.catalogueHealth === "unavailable";
 
   onMount(() => {
     dialog.showModal();
@@ -151,7 +152,7 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
           <p>{x("在 CosMatter 仓库根目录运行补齐命令，重新链接缺少工具的插件包。", "Run the repair command from the CosMatter repository root to relink the bundles missing tools.")}</p>
           <DshCommandRow locale={props.locale} command={BUNDLE_REPAIR_COMMAND} label={x("复制补齐命令", "Copy repair command")} />
         </Show>
-        <Show when={readiness() === "workbench-update"}><WorkbenchUpdateCommand locale={props.locale} runId={props.runId} /></Show>
+        <Show when={readiness() === "workbench-update" || workbenchOffline()}><WorkbenchUpdateCommand locale={props.locale} runId={props.runId} offline={workbenchOffline()} /></Show>
         <Show when={recoveryCommand()}>{(command) => <>
           <p>{command() === BUNDLE_REPAIR_COMMAND
             ? x("在 CosMatter 仓库根目录运行补齐命令，然后刷新会话状态。", "Run the repair command from the CosMatter repository root, then refresh the session status.")
@@ -177,6 +178,14 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
         <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId}
           portInReceipt={Boolean(props.profile?.tool_registry_check)} showLinkPreference={showLinkPreference} />
       </>}</Show>
+      <label class="dsh-terminal-choice">
+        <span>{x("命令运行环境", "Command environment")}</span>
+        <select value={dshTerminal()} onChange={event => chooseDshTerminal(event.currentTarget.value as DshTerminal)}>
+          <option value="path">{x("已激活环境或全局安装", "Activated environment or global install")}</option>
+          <option value="windows-venv">{x("Windows · 仓库根目录 .venv", "Windows · repository root .venv")}</option>
+          <option value="posix-venv">{x("macOS / Linux · 仓库根目录 .venv", "macOS / Linux · repository root .venv")}</option>
+        </select>
+      </label>
       <Show when={!props.runId && props.draft}>{(draft) => <DshMissionDraft locale={props.locale} draft={draft()} onEditField={props.onEditDraftField} />}</Show>
     </div>
   </dialog>;

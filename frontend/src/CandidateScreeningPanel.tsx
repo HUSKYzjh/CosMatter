@@ -5,6 +5,7 @@ import { DshScreeningHandoff } from "./DshRunHandoff";
 import { hasScreeningDecision, isScreeningComplete, sameScreeningDecision, screeningDraftChanges, screeningDraftForCandidates, screeningSubmission, type ScreeningDraft } from "./candidateScreeningDraft";
 import { safeOperationFeedback } from "./importFeedback";
 import { ActionButton } from "./uiPrimitives";
+import "./screeningReasons.css";
 
 type Locale = "zh" | "en";
 const copy = (locale: Locale, zh: string, en: string) => locale === "zh" ? zh : en;
@@ -143,8 +144,9 @@ export function CandidateScreeningPanel(props: {
       setDraftNotice("storage_unavailable");
     }
   };
-  const updateDecision = (documentId: string, decision: string) => updateDraft({ document_id: documentId, decision, reason_codes: [] });
-  const updateReason = (documentId: string, reason: string) => updateDraft({ ...draft()[documentId], reason_codes: reason ? [reason] : [] });
+  const updateDecision = (documentId: string, decision: string) => {
+    if (draft()[documentId]?.decision !== decision) updateDraft({ document_id: documentId, decision, reason_codes: [] });
+  };
   const moveCandidate = (offset: number) => {
     const list = candidates();
     if (!list.length) return;
@@ -223,6 +225,9 @@ export function CandidateScreeningPanel(props: {
       </nav>
       <Show when={activeCandidate()}>{(candidate) => {
         const decision = () => draft()[candidate().document_id] ?? { document_id: candidate().document_id, decision: "unreviewed", reason_codes: [] };
+        const reasons = () => REASONS[decision().decision] ?? [];
+        const selectedReasons = () => reasons().filter(([code]) => decision().reason_codes.includes(code));
+        let reasonPicker: HTMLSelectElement | undefined;
         return <article class="screening-queue-card" classList={{ focused: candidate().document_id === props.focusDocumentId }}>
           <header>
             <div><small>{t("当前候选", "CURRENT CANDIDATE")} · {activeIndex() + 1} / {candidates().length}</small><strong>{candidate().title}</strong><span>{candidate().source}{candidate().publication_year ? ` · ${candidate().publication_year}` : ""}</span></div>
@@ -235,7 +240,26 @@ export function CandidateScreeningPanel(props: {
           <div class="screening-decision-fields">
             <label>{t("决定", "Decision")}<select disabled={busy()} value={decision().decision} onChange={(event) => updateDecision(candidate().document_id, event.currentTarget.value)}><option value="unreviewed">{t("请选择", "Select")}</option><For each={DECISIONS}>{([value, zh, en]) => <option value={value}>{t(zh, en)}</option>}</For></select></label>
             <Show when={decision().decision !== "unreviewed"}>
-              <label>{t("理由", "Reason")}<select disabled={busy()} value={decision().reason_codes[0] ?? ""} onChange={(event) => updateReason(candidate().document_id, event.currentTarget.value)}><option value="">{t("请选择理由", "Select reason")}</option><For each={REASONS[decision().decision] ?? []}>{([value, zh, en]) => <option value={value}>{t(zh, en)}</option>}</For></select></label>
+              <div class="screening-reasons">
+                <label>{t("理由", "Reason")}<select ref={reasonPicker} disabled={busy()} onChange={(event) => {
+                  const code = event.currentTarget.value;
+                  event.currentTarget.value = "";
+                  const current = decision();
+                  if (code && !current.reason_codes.includes(code)) updateDraft({ ...current, reason_codes: [...current.reason_codes, code] });
+                }}>
+                  <option value="">{selectedReasons().length === reasons().length
+                    ? t("已选全部理由", "All reasons selected") : t("添加理由（可多选）", "Add a reason (one or more)")}</option>
+                  <For each={reasons()}>{([code, zh, en]) => <option value={code} disabled={decision().reason_codes.includes(code)}>{t(zh, en)}</option>}</For>
+                </select></label>
+                <Show when={selectedReasons().length}><ul aria-label={t("已选理由", "Selected reasons")}>
+                  <For each={selectedReasons()}>{([code, zh, en]) => <li><button type="button" disabled={busy()}
+                    aria-label={t(`移除理由：${zh}`, `Remove reason: ${en}`)} onClick={() => {
+                      const current = decision();
+                      updateDraft({ ...current, reason_codes: current.reason_codes.filter(reason => reason !== code) });
+                      reasonPicker?.focus();
+                    }}>{t(zh, en)} <span aria-hidden="true">×</span></button></li>}</For>
+                </ul></Show>
+              </div>
             </Show>
           </div>
         </article>;

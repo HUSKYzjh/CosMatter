@@ -1,4 +1,5 @@
 import { DshCommandText } from "./DshCommandText";
+import { formatDshCommand } from "./dshTerminalCommand";
 import { canRepairBundleRegistration } from "./dshReadProfile";
 import { For, Show, batch, createEffect, createMemo, createSignal, createUniqueId, on, onMount } from "solid-js";
 import { packages } from "../../plugins/dsh-plugin-group.json";
@@ -41,20 +42,25 @@ const TOOL_COPY: Readonly<Partial<Record<string, ToolCopy>>> = {
   cosmatter_graph_review_request: { label: ["提交图谱人工复核请求", "Request human graph review"], access: "local", note: ["提交待复核请求，由人工决定后续操作。", "Queues a review request for a human decision."] },
 };
 
-const normalizeSearch = (text: string) => text.normalize("NFKC").toLowerCase();
-const TOOLS = packages.flatMap((bundle) => bundle.tools.map((name) => {
-  const copy = TOOL_COPY[name];
-  const searchText = normalizeSearch([name, bundle.package, ...(copy?.label ?? []), ...(copy?.note ?? []), copy?.descriptor].join(" "));
-  return { name, bundle: bundle.package, copy, searchText };
-}));
-
 const ACCESS_LABELS: Record<Access, readonly [string, string]> = {
   read: ["本机读取", "Local read"],
   local: ["本机登记", "Local record"],
   review: ["人工审核后登记", "Human review required"],
   external: ["需逐任务授权", "Mission authorization required"],
 };
+const ACCESS_FILTER_EN: Partial<Record<Access, string>> = { review: "Human review", external: "Mission consent" };
 const ACCESS_TYPES = Object.keys(ACCESS_LABELS) as Access[];
+const normalizeSearch = (text: string) => text.normalize("NFKC").toLowerCase();
+const TOOLS = packages.flatMap((bundle) => bundle.tools.map((name) => {
+  const copy = TOOL_COPY[name];
+  const terms = copy ? [
+    ...copy.label, ...(copy.note ?? []), copy.descriptor,
+    ...ACCESS_LABELS[copy.access], ACCESS_FILTER_EN[copy.access],
+  ] : [];
+  const searchText = normalizeSearch([name, bundle.package, ...terms].join(" "));
+  return { name, bundle: bundle.package, copy, searchText };
+}));
+
 type CommandKind = "repair" | "verify" | "read" | "update";
 const COMMAND_COPY: Record<CommandKind, Record<"hint" | "button" | "copied", readonly [string, string]>> = {
   update: {
@@ -70,11 +76,10 @@ const COMMAND_COPY: Record<CommandKind, Record<"hint" | "button" | "copied", rea
     button: ["复制核验命令", "Copy check command"], copied: ["核验命令已复制。", "Check command copied."],
   },
   read: {
-    hint: ["在 CosMatter 的 PowerShell 终端运行命令。", "Run this command in the CosMatter PowerShell environment."],
+    hint: ["在所选的 CosMatter 终端环境中运行命令。", "Run this command in the selected CosMatter terminal environment."],
     button: ["复制 DSH 命令", "Copy DSH command"], copied: ["DSH 命令已复制。", "DSH command copied."],
   },
 };
-const ACCESS_FILTER_EN: Partial<Record<Access, string>> = { review: "Human review", external: "Mission consent" };
 const STAGE_FILTER_EN: Record<WorkflowStageName, string> = {
   intake: "Mission setup",
   plan: "Plan review",
@@ -120,6 +125,7 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
   const searchId = createUniqueId();
   const location = localWorkbenchLocation();
   const checkCommand = location ? dshProfileCheckCommand(Number(location.port || "80")) : null;
+  const formattedCheckCommand = () => checkCommand ? formatDshCommand(checkCommand) : null;
   if (props.scrollResults) {
     createEffect(on([query, filter, stageFilter], () => { results.scrollTop = 0; }, { defer: true }));
   }
@@ -303,11 +309,13 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
               return "read";
             };
             const commandCopy = () => COMMAND_COPY[commandKind()];
+            const additionalCheck = () => repairRegistration() ? formattedCheckCommand() : null;
             const command = createMemo(() => {
-              if (commandKind() === "update") return updatedWorkbenchCommand(props.runId);
-              if (commandKind() === "repair") return BUNDLE_REPAIR_COMMAND;
-              if (commandKind() === "verify") return checkCommand;
-              return dshCatalogueCommand(tool.name, props.runId, props.evidence);
+              if (commandKind() === "update") return formatDshCommand(updatedWorkbenchCommand(props.runId));
+              if (commandKind() === "repair") return formatDshCommand(BUNDLE_REPAIR_COMMAND);
+              if (commandKind() === "verify") return formattedCheckCommand();
+              const read = dshCatalogueCommand(tool.name, props.runId, props.evidence);
+              return read ? formatDshCommand(read) : null;
             });
             const toolStatus = () => {
               const status = clipboard.feedback();
@@ -344,14 +352,14 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
                       ? x("在终端重新核验当前插件文件和注册状态，再刷新本卡。", "Run the check against the current bundle files and tool registry, then refresh this card.")
                       : x(...commandCopy().hint)}</p>
                     <DshCommandText command={line()} />
-                    <Show when={repairRegistration() && checkCommand}>{(next) => <DshCommandText command={next()} />}</Show>
+                    <Show when={additionalCheck()}>{(next) => <DshCommandText command={next()} />}</Show>
                   </div>}</Show>
                   <div class="dsh-tool-actions">
                     <Show when={command()}>
                       <ActionButton size="sm" onClick={(event) => void clipboard.copy({ name: tool.name, kind: "command" }, command, event.currentTarget)}>{x(...commandCopy().button)}</ActionButton>
                     </Show>
-                    <Show when={repairRegistration() && checkCommand}>
-                      <ActionButton size="sm" onClick={(event) => void clipboard.copy({ name: tool.name, kind: "check" }, () => repairRegistration() ? checkCommand : null, event.currentTarget)}>
+                    <Show when={additionalCheck()}>
+                      <ActionButton size="sm" onClick={(event) => void clipboard.copy({ name: tool.name, kind: "check" }, additionalCheck, event.currentTarget)}>
                         {x(...COMMAND_COPY.verify.button)}
                       </ActionButton>
                     </Show>

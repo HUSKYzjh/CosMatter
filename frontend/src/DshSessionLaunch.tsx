@@ -1,4 +1,5 @@
 import { DshCommandText } from "./DshCommandText";
+import { formatDshCommand } from "./dshTerminalCommand";
 import { Show, createSignal, createUniqueId, type Signal } from "solid-js";
 import { createDshClipboard, DshManualCopy } from "./DshManualCopy";
 import type { UiLocale } from "./fleetRegistry";
@@ -6,13 +7,14 @@ import { isLocalRunId } from "./liveRunIdentity";
 import { ActionButton } from "./uiPrimitives";
 
 export function DshCommandRow(props: { locale: UiLocale; command: string; label: string }) {
+  const command = () => formatDshCommand(props.command);
   const { copy, feedback: current } = createDshClipboard<"command">(2500);
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   return <div class="dsh-session-command">
     <div class="harness-copy-row">
-      <DshCommandText command={props.command} />
+      <DshCommandText command={command()} />
       <div class="dsh-copy-control" classList={{ copied: current()?.copied }}>
-        <ActionButton size="sm" aria-label={props.label} onClick={(event) => void copy("command", () => props.command, event.currentTarget)}>
+        <ActionButton size="sm" aria-label={props.label} onClick={(event) => void copy("command", command, event.currentTarget)}>
           <span class="dsh-copy-icon" aria-hidden="true">⧉</span>{props.label}
         </ActionButton>
         <Show when={current()?.copied}><span role="status">{x("已复制。", "Copied.")}</span></Show>

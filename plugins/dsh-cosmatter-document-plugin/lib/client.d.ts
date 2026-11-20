@@ -8,6 +8,7 @@ export interface MinerUTaskStatus {
     idempotency_status?: 'duplicate_completed';
     workbench_url: string;
 }
+export declare function documentWorkbenchUrl(baseUrl: string, run: string, document: string): string;
 export declare class CosMatterDocumentClient {
     private readonly request;
     readonly config: NormalizedConfig;

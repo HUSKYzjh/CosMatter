@@ -46,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         report["loopback_mission_roundtrip_verified"] = True
         report["mission_result_card_verified"] = True
         report["bound_stage_contract_verified"] = True
+        report["document_receipt_card_verified"] = True
         report["browser_run_handoff_verified"] = True
     print(json.dumps(report, ensure_ascii=False))
     return 0
@@ -151,6 +152,40 @@ def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, t
         return _verify_tool_registry(dsh, profile, manifest, temporary, environment, timeout_seconds, dump.stdout)
 
 
+def _seed_saved_document(runs_dir: Path) -> dict[str, Any]:
+    """Prepare a completed synthetic receipt that the native submit call can replay offline."""
+    from unittest.mock import patch
+
+    from cosmatter.config import Settings
+    from cosmatter.local_api import LocalMissionApi
+    from cosmatter.mineru import MinerUTask
+    from cosmatter.sciverse import SciverseResponse
+
+    api = LocalMissionApi(runs_dir, settings_loader=lambda: Settings.load({"SCIVERSE_API_TOKEN": "synthetic-fixture"}))
+    run_id = "cosmatter_document_release_probe"
+    api.create_mission({
+        "run_id": run_id, "question": "How do synthetic diffraction patterns vary across oxide films?",
+        "material": "oxide films", "property": "diffraction", "scope": "Synthetic receipt for the DSH document card",
+    })
+    api.approve_plan(run_id, {"subquestions": ["Which film was measured?"], "queries": ["oxide film diffraction"],
+                              "counter_queries": ["oxide film diffraction counterexamples"]})
+    document_id, source = "synthetic film & XRD", "https://example.invalid/synthetic.pdf"
+    with patch("cosmatter.local_api.SciverseAdapter", autospec=True) as sciverse:
+        sciverse.return_value.agentic_search.return_value = SciverseResponse(
+            {"hits": [{"doc_id": document_id, "title": "Synthetic diffraction measurement", "is_content_accessible": True}]}, 200, None,
+        )
+        api.execute_plan_query(run_id, {"query_index": 0, "sources": ["sciverse"]})
+    api.record_candidate_screening(run_id, {"decisions": [
+        {"document_id": document_id, "decision": "include_for_fulltext", "reason_codes": ["material_match", "property_match"]},
+    ]})
+    args = {"run_id": run_id, "document_id": document_id, "source_url": source,
+            "authorizations": ["mission_scoped_egress_consent", "mineru_file_consent", "private_content_to_mineru"]}
+    with patch("cosmatter.local_api.MinerUAdapter", autospec=True) as mineru:
+        mineru.return_value.submit_remote_source.return_value = MinerUTask(task_id="synthetic-parse", state="done", request_id=None)
+        api.submit_authorized_mineru_source(run_id, {**args, "dsh_call_id": "release-probe-cosmatter_mineru_source_submit"})
+    return args
+
+
 def _verify_tool_registry(
     dsh: str, profile: str, manifest: dict[str, Any], temporary: Path, environment: dict[str, str], timeout_seconds: int,
     composed: str,
@@ -165,6 +200,7 @@ def _verify_tool_registry(
         raise ReleaseGateError("provider settings are disabled for the DSH release probe")
 
     api = LocalMissionApi(temporary / "probe-runs", settings_loader=provider_settings_disabled)
+    saved_document = _seed_saved_document(api.runs_dir)
     catalogue = api.plugin_catalogue()
     web_dir = temporary / "probe-web"
     web_dir.mkdir()
@@ -182,7 +218,8 @@ def _verify_tool_registry(
             {"insert": [{
                 "id": "cosmatter-release-registry-probe",
                 "name": "./registry-probe.mjs",
-                "config": {"expectedTools": expected_tools, "catalogue": catalogue, "webOrigin": f"http://127.0.0.1:{server.server_port}", "runId": run_id},
+                "config": {"expectedTools": expected_tools, "catalogue": catalogue, "webOrigin": f"http://127.0.0.1:{server.server_port}",
+                           "runId": run_id, "savedDocument": saved_document},
             }]},
         ]), encoding="utf-8")
         worker = Thread(target=server.serve_forever, daemon=True)
@@ -195,7 +232,7 @@ def _verify_tool_registry(
         finally:
             server.shutdown()
             worker.join()
-    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue, mission result card, bound stage contract, and browser handoff verified"
+    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue, mission result card, bound stage contract, document receipt card, and browser handoff verified"
     if probe.returncode or marker not in probe.stdout:
         raise ReleaseGateError(f"installed bundle tool registry failed: {probe.stderr.strip() or 'missing tool registry result'}")
     return len(expected_tools)
