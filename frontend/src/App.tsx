@@ -7,7 +7,7 @@ import { DshToolDialog } from "./DshToolDialog";
 import { localWorkbenchLocation } from "./dshLocalCommands";
 import type { RunArtifactIdentity } from "./RunArtifactRecord";
 import type { RunStatus } from "./localApi";
-import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget } from "./Launchpad";
+import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget, type LaunchPreviewDraft } from "./Launchpad";
 import { type LaunchPreviewStage } from "./launchStages";
 import { launchMissionMissingFields, type LaunchMissionBoundary, type LaunchMissionField } from "./launchMissionValidation";
 import { continuationStageLabel, localRunLanding, reconcileRestoredStage } from "./continuationStage";
@@ -232,6 +232,7 @@ export function App() {
   const [theme, setTheme] = createSignal<Theme>("light");
   const [language, setLanguage] = createSignal(uiLanguage());
   const [view, setView] = createSignal<View>("launch");
+  let previewQuestionDraft: LaunchPreviewDraft | undefined;
   let lastActiveWorkspace: { runId: string; view: Exclude<View, "launch"> } | null = null;
   const [launchPreview, setLaunchPreview] = createSignal(
     serverUiPreviewRequested(window.location.search),
@@ -533,7 +534,14 @@ export function App() {
     setRouteRecovery(null);
     setView(next);
   }
-  function openLaunchPreview(stage: LaunchPreviewStage) {
+  function takePreviewDraft() {
+    const draft = previewQuestionDraft;
+    previewQuestionDraft = undefined;
+    return draft;
+  }
+
+  function openLaunchPreview(stage: LaunchPreviewStage, draft?: LaunchPreviewDraft) {
+    previewQuestionDraft = draft;
     existingRunReadGate.invalidate();
     setExistingRunReadPending(false);
     // Effects stop scheduling remote refreshes in preview mode, but a request
@@ -551,6 +559,7 @@ export function App() {
   }
 
   function returnToLaunch() {
+    if (!launchPreview()) previewQuestionDraft = undefined;
     const runId = liveRunId();
     const currentView = view();
     if (runId && currentView !== "launch" && !launchPreview()) lastActiveWorkspace = { runId, view: currentView };
@@ -708,6 +717,7 @@ export function App() {
     automaticOperationId = null;
   }
   function supersedeActiveRun(previousRun: "cancel" | "keep" = "cancel") {
+    previewQuestionDraft = undefined;
     taskEpoch += 1;
     automaticRefreshGate.invalidate();
     runtimeProjectionRefreshGate.invalidate();
@@ -2185,7 +2195,7 @@ export function App() {
 
   return <DshReadProfile.Provider value={{ profile: dshProfile, health: dshProfileHealth, refresh: refreshDshProfile }}>
     <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad onOpenDsh={canOpenDshToolDialog() ? openDraftDsh : undefined} confirmedBrief={confirmedLocalBrief()} onReturnToConfirmedBrief={returnToConfirmedBrief} legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+    <Show when={view() === "launch"}><Launchpad takePreviewDraft={takePreviewDraft} onOpenDsh={canOpenDshToolDialog() ? openDraftDsh : undefined} confirmedBrief={confirmedLocalBrief()} onReturnToConfirmedBrief={returnToConfirmedBrief} legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>

@@ -1,4 +1,4 @@
-import { For, Show, batch, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
+import { For, Show, batch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import { uiLanguage } from "./zh";
 import { LAUNCH_STAGES, launchModeStatus, stageForLaunchMode, type LaunchPreviewStage } from "./launchStages";
 import { isCurrentCandidateResponse } from "./launchCandidateRequest";
@@ -22,6 +22,19 @@ export interface LaunchPdfCandidateTarget { runId: string; documentId: string; t
 
 type Theme = "light" | "dark" | "eye";
 type CandidateOrigin = "deepseek" | "local" | "local_no_api" | "local_after_failure" | null;
+type LaunchDirection = LaunchMissionBoundary & { id: string };
+export interface LaunchPreviewDraft {
+  prompt: string;
+  selected: LaunchDirection | null;
+  edits: Array<[string, LaunchDirection]>;
+  candidates: LaunchCandidate[];
+  candidateOrigin: CandidateOrigin;
+}
+
+function directionKey({ id, question, material, property, scope }: LaunchDirection) {
+  // Regenerated suggestions may reuse an ID with a different research boundary.
+  return JSON.stringify([id, question, material, property, scope]);
+}
 const copy = (zh: string, en: string) => uiLanguage() === "zh" ? zh : en;
 const launchFleetMasks = ["/ambient-backgrounds/launch-masks/fleet-01-flagship-mask.png", "/ambient-backgrounds/launch-masks/fleet-02-formation-mask.png", "/ambient-backgrounds/launch-masks/fleet-03-flotilla-mask.png", "/ambient-backgrounds/launch-masks/fleet-04-expedition-mask.png", "/ambient-backgrounds/launch-masks/fleet-05-surveyor-mask.png"] as const;
 
@@ -47,17 +60,25 @@ const MODES: Array<{ id: LaunchMode; icon: string; zh: string; en: string; zhDet
   { id: "resume", icon: "↗", zh: "续航任务", en: "Resume", zhDetail: "本机运行 / 运行包", enDetail: "Local run / run package" },
 ];
 
-export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | null, focusField?: (field: LaunchMissionField) => void) => void; confirmedBrief?: LaunchMissionBoundary | null; onReturnToConfirmedBrief?: (field?: LaunchMissionField) => void; legacyWorkbench?: boolean; onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; linkedRunId?: string; existingRunReadPending?: boolean; runArtifactRecord?: RunArtifactIdentity | null; onCloseRunArtifactRecord: () => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; onPreviewStage: (stage: LaunchPreviewStage) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
+export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | null, focusField?: (field: LaunchMissionField) => void) => void; confirmedBrief?: LaunchMissionBoundary | null; onReturnToConfirmedBrief?: (field?: LaunchMissionField) => void; legacyWorkbench?: boolean; onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; linkedRunId?: string; existingRunReadPending?: boolean; runArtifactRecord?: RunArtifactIdentity | null; onCloseRunArtifactRecord: () => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; takePreviewDraft?: () => LaunchPreviewDraft | undefined; onPreviewStage: (stage: LaunchPreviewStage, draft?: LaunchPreviewDraft) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
   const [foregroundIndex, setForegroundIndex] = createSignal(nextFleetIndex());
   const [mode, setMode] = createSignal<LaunchMode>(props.candidatePdfTarget ? "pdf" : props.linkedRunId ? "resume" : "question");
   const activeStage = () => stageForLaunchMode(mode());
-  const [prompt, setPrompt] = createSignal("");
-  const [candidates, setCandidates] = createSignal<LaunchCandidate[]>([]);
+  const initial = props.takePreviewDraft?.();
+  const [prompt, setPrompt] = createSignal(initial?.prompt ?? "");
+  const [candidates, setCandidates] = createSignal<LaunchCandidate[]>(initial?.candidates ?? []);
   const [candidatePending, setCandidatePending] = createSignal(false);
   const [candidateConsent, setCandidateConsent] = createSignal(false);
-  const [candidateOrigin, setCandidateOrigin] = createSignal<CandidateOrigin>(null);
+  const [candidateOrigin, setCandidateOrigin] = createSignal<CandidateOrigin>(initial?.candidateOrigin ?? null);
   const [candidateAttempt, setCandidateAttempt] = createSignal(0);
-  const [selected, setSelected] = createSignal<(LaunchMissionBoundary & { id: string }) | null>(null);
+  const [selectedSource, setSelectedSource] = createSignal<LaunchDirection | null>(initial?.selected ?? null);
+  const [directionEdits, setDirectionEdits] = createSignal(new Map<string, LaunchDirection>(initial?.edits));
+  const selectedKey = createMemo(() => {
+    const source = selectedSource();
+    return source ? directionKey(source) : "";
+  });
+  const selected = createMemo(() => directionEdits().get(selectedKey()) ?? selectedSource());
+  const isSelectedDirection = (direction: LaunchDirection) => selectedKey() === directionKey(direction);
   const [launchExecution, setLaunchExecution] = createSignal<LaunchExecutionMode | null>(null);
   const jumping = () => launchExecution() !== null;
   const automaticExecutionAvailable = () => Boolean(props.automaticExecutionSources?.length);
@@ -142,8 +163,10 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
     }
   }
 
+  let restoredCandidatePrompt = initial?.candidates.length ? initial.prompt.trim() : null;
   createEffect(() => {
     const question = prompt().trim();
+    const questionMode = mode() === "question";
     candidateAttempt();
     // Provider health is refreshed independently every 30 seconds. Reading
     // this conditional prop reactively would resend the same authorized
@@ -153,12 +176,18 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
     const requestId = ++latestCandidateRequest;
     const authorized = candidateConsent();
     const useModel = Boolean(modelCandidateRequest && authorized);
+    if (restoredCandidatePrompt !== null) {
+      // Returning from a preview restores published suggestions without replaying their generation.
+      const alreadyGenerated = questionMode && !authorized && question === restoredCandidatePrompt;
+      restoredCandidatePrompt = null;
+      if (alreadyGenerated) return;
+    }
     setCandidateOrigin(null);
-    if (mode() !== "question" || question.length < 12) {
+    if (!questionMode || question.length < 12) {
       setCandidates([]);
       setCandidatePending(false);
       // Returning from another intake tab must not resend a previous request.
-      if (mode() !== "question") setCandidateConsent(false);
+      if (!questionMode) setCandidateConsent(false);
       return;
     }
     setCandidates([]);
@@ -177,16 +206,29 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
           }
         });
     }, 800);
-    onCleanup(() => window.clearTimeout(timer));
+    onCleanup(() => {
+      window.clearTimeout(timer);
+      latestCandidateRequest++;
+    });
   });
 
   function updatePrompt(value: string) {
-    setSelected(null);
+    setSelectedSource(null);
+    setDirectionEdits(new Map());
     setAutomaticConsent(false);
     setCandidateConsent(false);
     setPrompt(value);
   }
   let promptInput: HTMLTextAreaElement | undefined;
+  onMount(() => { if (initial?.prompt && promptInput) resizeQuestionInput(promptInput); });
+  function openPreview(stage: LaunchPreviewStage) {
+    if (jumping()) return;
+    const draft = mode() === "question" ? {
+      prompt: prompt(), selected: selectedSource(), edits: [...directionEdits()],
+      candidates: candidates(), candidateOrigin: candidateOrigin(),
+    } : undefined;
+    props.onPreviewStage(stage, draft);
+  }
   const retainedBrief = () => mode() === "question" && !selected() && !prompt().trim() && !continuationBusy() && !props.activeRunId
     ? props.confirmedBrief : null;
   function openDsh() {
@@ -210,12 +252,12 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
   function updateCandidate(field: LaunchMissionField, value: string) {
     setAutomaticConsent(false);
     const current = selected();
-    if (current) setSelected({ ...current, [field]: value });
+    if (current) setDirectionEdits(edits => new Map(edits).set(selectedKey(), { ...current, [field]: value }));
   }
   let briefQuestion: HTMLTextAreaElement | undefined;
-  function selectCandidate(candidate: LaunchMissionBoundary & { id: string }, event: MouseEvent) {
-    if (selected()?.id !== candidate.id) {
-      setSelected({ ...candidate });
+  function selectCandidate(candidate: LaunchDirection, event: MouseEvent) {
+    if (!isSelectedDirection(candidate)) {
+      setSelectedSource(candidate);
       setAutomaticConsent(false);
     }
     if (event.detail === 0) briefQuestion?.focus();
@@ -228,14 +270,14 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
     if (execution === "authorized-retrieval" && (!sources.length || !automaticConsent())) return;
     const authorizedExecution: LaunchExecution = execution === "local" ? { kind: "local" } : { kind: execution, sources };
     setLaunchExecution(execution);
-    window.setTimeout(() => props.onQuestion({ ...candidate, templateId: isBfoTaskPresetId(candidate.id) ? candidate.id : undefined }, authorizedExecution), 680);
+    props.onQuestion({ ...candidate, templateId: isBfoTaskPresetId(candidate.id) ? candidate.id : undefined }, authorizedExecution);
   }
   function resizeQuestionInput(textarea: HTMLTextAreaElement) {
     textarea.style.height = "auto";
     textarea.style.height = Math.min(textarea.scrollHeight, 208) + "px";
   }
 
-  return <main classList={{ launchpad: true, "launch-jumping": jumping() }}>
+  return <main inert={jumping()} aria-busy={jumping()} classList={{ launchpad: true, "launch-jumping": jumping() }}>
     <div class="launch-sky" aria-hidden="true"><i /><i /><i /><i /></div>
     <div class="launch-fleet-extract" ref={(node) => { fleetNode = node; }} aria-hidden="true"><img class="launch-fleet-main" src={launchFleetMasks[foregroundIndex()]} alt="" /><img class="launch-fleet-echo" src={launchFleetMasks[foregroundIndex()]} alt="" /></div>
     <section class="launch-controls" classList={{ "has-dsh": Boolean(props.onOpenDsh) }} aria-label={copy("工作台工具与显示设置", "Workbench tools and display settings")}>
@@ -266,7 +308,7 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
         <header><p>RESEARCH EVIDENCE ROUTE</p><strong>{copy("科研闭环", "Research evidence loop")}</strong><span>{launchModeStatus(mode(), props.language)}</span></header>
         <ol>
           <For each={LAUNCH_STAGES}>{(stage, index) => <li classList={{ active: activeStage() === stage.id }}>
-            <button type="button" onClick={() => props.onPreviewStage(stage.id)} aria-current={activeStage() === stage.id ? "step" : undefined} aria-label={copy(`预览：${stage.zh}`, `Preview: ${stage.en}`)}>
+            <button type="button" disabled={jumping()} onClick={() => openPreview(stage.id)} aria-current={activeStage() === stage.id ? "step" : undefined} aria-label={copy(`预览：${stage.zh}`, `Preview: ${stage.en}`)}>
               <span class="launch-stage-index">{String(index() + 1).padStart(2, "0")}</span>
               <span class="launch-stage-copy"><strong>{copy(stage.zh, stage.en)}</strong><small>{copy(stage.inputZh, stage.inputEn)} → {copy(stage.outputZh, stage.outputEn)}</small><em>{copy(stage.gateZh, stage.gateEn)}</em></span>
               <b aria-hidden="true">↗</b>
@@ -285,7 +327,7 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
         <ActionButton size="sm" onClick={() => props.onReturnToConfirmedBrief?.()}>{copy("返回已确认简报", "Return to confirmed brief")}</ActionButton>
       </section>}</Show>
       <Show when={mode() === "question"}>
-        <section class="signal-receiver"><header><p class="launch-kicker">QUESTION SIGNAL</p><h2>{copy("提出一个可由文献证据回答的问题", "Ask a question answerable with literature evidence")}</h2><ol><li>{copy("输入研究问题", "Enter a research question")}</li><li>{copy("生成未受信候选航向", "Generate untrusted candidate routes")}</li><li>{copy("确认任务边界", "Confirm the task boundary")}</li></ol></header><section class="bfo-task-deck" aria-label={copy("BiFeO₃ 任务模板", "BiFeO₃ task templates")}><header><small>{copy("BFO 任务模板 / 只填入本地简报", "BFO TASK TEMPLATES / LOCAL BRIEF ONLY")}</small><span>{copy("选择后仍可编辑，并须确认；不会检索、上传或创建任务。", "Selection remains editable and requires confirmation; it does not retrieve, upload, or create a task.")}</span></header><div><For each={bfoPresets()}>{(preset, index) => <button type="button" aria-pressed={selected()?.id === preset.id} classList={{ selected: selected()?.id === preset.id }} onClick={(event) => selectCandidate(preset, event)}><small>BFO-{String(index() + 1).padStart(2, "0")}</small><strong>{preset.question}</strong><span>{preset.material} · {preset.property}</span><em>{preset.scope}</em></button>}</For></div></section><label>{copy("候选航向研究问题", "Candidate-route research question")}<textarea ref={promptInput} value={prompt()} rows="3" onInput={(event) => { updatePrompt(event.currentTarget.value); resizeQuestionInput(event.currentTarget); }} placeholder={copy("例如：为什么不同薄膜研究对 BiFeO₃ 相稳定性有相反结论？", "Example: Why do thin-film studies disagree about BiFeO₃ phase stability?")} /></label><small>{props.onCandidates ? copy("输入至少 12 个字符可生成本机候选。也可授权 DeepSeek 为当前问题提出候选。", "Enter at least 12 characters for local suggestions. You can also authorize DeepSeek to suggest routes for this question.") : copy("输入至少 12 个字符后，系统将在约 0.8 秒后形成候选航向。", "After at least 12 characters, candidate routes appear in about 0.8 seconds.")}</small>
+        <section class="signal-receiver"><header><p class="launch-kicker">QUESTION SIGNAL</p><h2>{copy("提出一个可由文献证据回答的问题", "Ask a question answerable with literature evidence")}</h2><ol><li>{copy("输入研究问题", "Enter a research question")}</li><li>{copy("生成未受信候选航向", "Generate untrusted candidate routes")}</li><li>{copy("确认任务边界", "Confirm the task boundary")}</li></ol></header><section class="bfo-task-deck" aria-label={copy("BiFeO₃ 任务模板", "BiFeO₃ task templates")}><header><small>{copy("BFO 任务模板 / 只填入本地简报", "BFO TASK TEMPLATES / LOCAL BRIEF ONLY")}</small><span>{copy("选择后仍可编辑，并须确认；不会检索、上传或创建任务。", "Selection remains editable and requires confirmation; it does not retrieve, upload, or create a task.")}</span></header><div><For each={bfoPresets()}>{(preset, index) => <button type="button" aria-pressed={isSelectedDirection(preset)} classList={{ selected: isSelectedDirection(preset) }} onClick={(event) => selectCandidate(preset, event)}><small>BFO-{String(index() + 1).padStart(2, "0")}</small><strong>{preset.question}</strong><span>{preset.material} · {preset.property}</span><em>{preset.scope}</em></button>}</For></div></section><label>{copy("候选航向研究问题", "Candidate-route research question")}<textarea ref={promptInput} value={prompt()} rows="3" onInput={(event) => { updatePrompt(event.currentTarget.value); resizeQuestionInput(event.currentTarget); }} placeholder={copy("例如：为什么不同薄膜研究对 BiFeO₃ 相稳定性有相反结论？", "Example: Why do thin-film studies disagree about BiFeO₃ phase stability?")} /></label><small>{props.onCandidates ? copy("输入至少 12 个字符可生成本机候选。也可授权 DeepSeek 为当前问题提出候选。", "Enter at least 12 characters for local suggestions. You can also authorize DeepSeek to suggest routes for this question.") : copy("输入至少 12 个字符后，系统将在约 0.8 秒后形成候选航向。", "After at least 12 characters, candidate routes appear in about 0.8 seconds.")}</small>
           <Show when={prompt().trim()}><div class="launch-original-brief"><ActionButton size="sm" disabled={jumping()} aria-pressed={selected()?.id === "original"}
             onClick={(event) => selectCandidate({ id: "original", question: prompt(), material: researchObjectFromQuestion(prompt()) ?? "", property: "", scope: "" }, event)}>
             {copy("按原问题填写简报", "Use my original question")}
@@ -293,7 +335,7 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
           <Show when={props.onCandidates}><label class="consent launch-candidate-consent"><input type="checkbox" checked={candidateConsent()} onChange={(event) => setCandidateConsent(event.currentTarget.checked)} />{copy("我同意将上述研究问题发送至已配置的候选生成模型，以形成未受信候选航向；不会检索、上传全文或创建任务。", "I authorize sending the research question above to the configured candidate-generation model for untrusted route suggestions. This does not retrieve, upload full text, or create a task.")}</label></Show>
           <Show when={candidates().length > 0}><section class="candidate-handoff" aria-live="polite"><div><p>{copy("下一步 / 选择一个候选航向", "NEXT / SELECT A CANDIDATE ROUTE")}</p><strong>{selected() ? copy("任务简报已打开，可在下方核对并编辑。", "The mission brief is open for review and editing below.") : copy("候选已生成；请选择一条航向以打开可编辑的任务简报。", "Candidate routes are ready; select one to open an editable mission brief.")}</strong><span>{copy("选择不会检索、上传全文或创建任务。", "Selection does not retrieve, upload full text, or create a task.")}</span></div><b>{selected() ? copy("已选择", "SELECTED") : copy("待选择", "SELECT")}</b></section></Show>
           <Show when={candidateOrigin()}>{(origin) => <section classList={{ "candidate-origin": true, warning: origin() === "local_after_failure" }} role="status" aria-label={copy("候选生成来源", "Candidate generation source")}><div><strong>{origin() === "deepseek" ? copy("DeepSeek 候选生成 · 已通过问题锚点校验", "DeepSeek candidate generation · question anchors validated") : origin() === "local" ? copy("本机候选", "Local suggestions") : copy("本地问题绑定回退", "Question-bound local fallback")}</strong><span>{origin() === "deepseek" ? copy("每条可见问题均保留原问题中的材料与目标性质；候选仍是未受信建议。", "Every visible question retains the material and target property from the original question; candidates remain untrusted suggestions.") : origin() === "local" ? copy("当前候选由本机规则生成。", "These suggestions were generated on this device.") : origin() === "local_after_failure" ? copy("模型请求失败或输出未通过相关性校验；失配结果未显示，当前候选由本机规则生成。", "The model request failed or its output did not pass relevance validation. The mismatched result was withheld and these routes were generated locally.") : copy("当前页面未连接本机候选生成 API；这些候选由本机规则生成，不是模型回答。", "This page is not connected to the local candidate-generation API. These routes were generated locally and are not a model response.")}</span></div><Show when={origin() === "local_after_failure" && props.onCandidates}><button type="button" disabled={candidatePending()} onClick={() => setCandidateAttempt((value) => value + 1)}>{copy("重新请求模型", "Retry model")}</button></Show></section>}</Show>
-          <div classList={{ "candidate-orbits": true, ready: candidates().length > 0 }}><Show when={candidates().length > 0} fallback={<p class="launch-empty" role="status">{candidatePending() ? copy("正在生成未受信候选航向；不会创建任务或调用检索。", "Generating untrusted candidate routes; no task or retrieval is started.") : copy("等待研究信号。", "Waiting for a research signal.")}</p>}><For each={candidates()}>{(candidate, index) => <button type="button" aria-pressed={selected()?.id === candidate.id} disabled={jumping()} classList={{ "candidate-planet": true, selected: selected()?.id === candidate.id, [`planet-${candidate.kind}`]: true }} style={{ "--orbit-delay": `${index() * 110}ms` }} onClick={(event) => selectCandidate(candidate, event)}><small>{selected()?.id === candidate.id ? copy("已选航向", "SELECTED") : `0${index() + 1}`}</small><strong>{candidate.question}</strong><span>{candidate.kind === "survey" ? copy("全景梳理", "Landscape") : candidate.kind === "contrast" ? copy("条件分歧", "Contrast") : copy("机制核验", "Mechanism")}</span><em>{selected()?.id === candidate.id ? copy("继续：核对任务边界", "Next: review boundary") : copy("点击选择此航向", "Select this route")}</em></button>}</For></Show></div>
+          <div classList={{ "candidate-orbits": true, ready: candidates().length > 0 }}><Show when={candidates().length > 0} fallback={<p class="launch-empty" role="status">{candidatePending() ? copy("正在生成未受信候选航向；不会创建任务或调用检索。", "Generating untrusted candidate routes; no task or retrieval is started.") : copy("等待研究信号。", "Waiting for a research signal.")}</p>}><For each={candidates()}>{(candidate, index) => <button type="button" aria-pressed={isSelectedDirection(candidate)} disabled={jumping()} classList={{ "candidate-planet": true, selected: isSelectedDirection(candidate), [`planet-${candidate.kind}`]: true }} style={{ "--orbit-delay": `${index() * 110}ms` }} onClick={(event) => selectCandidate(candidate, event)}><small>{isSelectedDirection(candidate) ? copy("已选航向", "SELECTED") : `0${index() + 1}`}</small><strong>{candidate.question}</strong><span>{candidate.kind === "survey" ? copy("全景梳理", "Landscape") : candidate.kind === "contrast" ? copy("条件分歧", "Contrast") : copy("机制核验", "Mechanism")}</span><em>{isSelectedDirection(candidate) ? copy("继续：核对任务边界", "Next: review boundary") : copy("点击选择此航向", "Select this route")}</em></button>}</For></Show></div>
           <Show when={selected()}>{(candidate) => <section ref={briefEditor} class="launch-brief-editor" aria-labelledby="mission-brief-heading"><div><p id="mission-brief-heading">{copy("下一步 / 任务简报与可编辑边界", "NEXT / MISSION BRIEF AND EDITABLE BOUNDARY")}</p><label>{copy("任务简报研究问题", "Mission-brief research question")}<textarea data-mission-field="question" ref={briefQuestion} rows={3} value={candidate().question} onInput={(event) => updateCandidate("question", event.currentTarget.value)} /></label><label>{copy("研究对象", "Research objects")}<input data-mission-field="material" value={candidate().material} onInput={(event) => updateCandidate("material", event.currentTarget.value)} /></label><label>{copy("研究目标", "Research target")}<input data-mission-field="property" value={candidate().property} onInput={(event) => updateCandidate("property", event.currentTarget.value)} /></label><label>{copy("比较范围", "Comparison scope")}<textarea rows={3} data-mission-field="scope" value={candidate().scope} onInput={(event) => updateCandidate("scope", event.currentTarget.value)} /></label></div><div class="launch-confirmation"><Show when={selectedMissing().length}><p class="launch-brief-warning">{copy("仍需人工确认：", "Still requires human confirmation: ")}<For each={selectedMissing()}>{(field, index) => <>{index() ? "、" : ""}{fieldLabel(field)}</>}</For>{copy("。候选航向不会直接成为检索任务。", ". A candidate route cannot directly become a retrieval task.")}</p></Show><Show when={automaticExecutionAvailable()}><p class="launch-auto-sources" role="status">{copy("本次元数据将发送至：", "Metadata will be sent to: ")}<strong>{props.automaticExecutionSources?.map(({ label }) => label).join(copy("、", ", "))}</strong></p><label class="consent launch-auto-consent"><input type="checkbox" checked={automaticConsent()} onChange={(event) => setAutomaticConsent(event.currentTarget.checked)} />{copy("我确认本次任务可向上列书目服务发送问题、对象、目标与范围，用于受控元数据检索；单一来源失败时其余来源仍可安全完成。该授权不接受 EvidenceCard，也不上传全文。", "I authorize this task to send its question, objects, target, and scope to the bibliographic services listed above for controlled metadata retrieval. Other sources may safely complete if one source fails. This does not accept EvidenceCards or upload full text.")}</label></Show>
             <div class="launch-confirm-actions">
               <ActionButton
