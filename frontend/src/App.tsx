@@ -238,8 +238,8 @@ export function App() {
   const [launchPreview, setLaunchPreview] = createSignal(
     serverUiPreviewRequested(window.location.search),
   );
-  const readLocalRunLink = () => localApiEnabled() && !serverUiPreviewRequested(window.location.search)
-    ? parseLocalRunLink(window.location.hash)
+  const readLocalRunLink = (hash = window.location.hash) => localApiEnabled() && !serverUiPreviewRequested(window.location.search)
+    ? parseLocalRunLink(hash)
     : null;
   const [linkedLaunchRunId, setLinkedLaunchRunId] = createSignal(readLocalRunLink()?.runId);
   const [launchNotice, setLaunchNotice] = createSignal<string | null>(null);
@@ -1723,7 +1723,9 @@ export function App() {
     if (!localApiEnabled() || !isLocalRunId(runId) || resumeSubmissionPending()) return;
     const previousEpoch = taskEpoch;
     const isLatest = existingRunReadGate.begin();
-    const stillOnLaunch = () => isLatest() && isCurrentTask(previousEpoch) && view() === "launch" && !launchPreview();
+    const requestedHash = window.location.hash;
+    const stillOnLaunch = () => isLatest() && isCurrentTask(previousEpoch) && view() === "launch"
+      && !launchPreview() && window.location.hash === requestedHash;
     setLaunchNotice(null);
     setRunArtifactRecord(null);
     setExistingRunReadPending(true);
@@ -2134,9 +2136,22 @@ export function App() {
   }
   onMount(() => {
     if (window.matchMedia("(max-width: 1040px)").matches) setRailContextOpen(false);
-    const followLocalRunLink = () => {
+    const followLocalRunLink = (event?: HashChangeEvent) => {
+      if (resumeSubmissionPending()) return;
       const target = readLocalRunLink();
-      if (!target || resumeSubmissionPending() || (!target.documentId && !target.screeningRevision && !target.artifactList && liveRunId() === target.runId && view() !== "launch" && !launchPreview())) return;
+      if (!target) {
+        const hash = window.location.hash;
+        const leftRun = event?.oldURL && readLocalRunLink(new URL(event.oldURL).hash);
+        if (leftRun && (!hash || new URLSearchParams(hash.slice(1)).has("run"))) {
+          existingRunReadGate.invalidate();
+          batch(() => {
+            setExistingRunReadPending(false);
+            setLaunchNotice(null);
+            returnToLaunch();
+          });
+        }
+        return;
+      }
       batch(() => {
         setLinkedLaunchRunId(target.runId);
         setLaunchPreview(false);
