@@ -5,6 +5,30 @@
 
 ## 2026-11-20 补充调研：科研产品与 DSH 原生插件
 
+### Orca 如何接入 CosMatter 的研究舰队
+
+这里选用 Stably 的 Orca。它在同一界面组织多个 agent，各自可在独立 Git 工作树中运行。官方把 DeepSeek Harness 列为支持的终端 agent，并列出两个依赖包 `@deepseek-ai/dsh` 和社区提供的 `@deepseek-harness-tui/dsh-tui`。Orca 将多 worker 编排标为实验性。当前 PowerShell 找不到 `orca` 命令，这次核查覆盖官方协议、插件源码和 CosMatter 现有入口，三者在本机的联合运行仍待验证。[Orca 项目](https://github.com/stablyai/orca) · [终端支持表](https://github.com/stablyai/orca/blob/c4776883dc43bd26b07e1a3bfc4e9d6c90f3a866/docs/site/content/docs/agents/supported.mdx#L49) · [编排协议](https://orca.dev/docs/cli/orchestration)
+
+| 可以采用的路线 | 给 CosMatter 带来的能力 | 当前适用条件 |
+|---|---|---|
+| Orca 打开 DSH，DSH 调用 CosMatter | 在 Orca 的终端里检查指定研究任务的进度和交付物。 | 优先验证这条路线。CosMatter 已有 `open-dsh-workbench --port … --surface tui --run-id …`，会针对当前工作台端口生成插件配置，并给观测工具绑定运行 ID。Orca 内置 DSH 入口使用自己的 TUI profile，可先在 Orca 普通终端运行现有 CosMatter 命令，单独核对工具读取的任务。[Orca 的 DSH 支持](https://orca.dev/docs/agents/supported) · [CosMatter 启动与绑定实现](../src/cosmatter/dsh_profile_status.py) |
+| DSH 通过社区插件 `dsh-orca-agents` 派工给 Orca | 在 DSH 对话中创建工作树，交给 Orca 中的 agent 执行，完成后通知 DSH。 | 作者列出的环境为 Orca 1.4.193 和 DSH 0.1.5-rc.2，CosMatter 的基线是 0.2.2-rc.3。该插件按工作树观察 agent，有一个返回 done 就可能报告完成。文件枚举仅接受以 `/` 开头的路径，收到 Windows 盘符路径时会返回空列表。用于科研任务前需要验证回执归属及实际文件。[插件说明](https://github.com/aa2246740/dsh-orca-agents/blob/51b8b23e0b466ddf15b085d039c157e01d76dce8/README.md#L22-L31) · [完成判断和文件枚举](https://github.com/aa2246740/dsh-orca-agents/blob/51b8b23e0b466ddf15b085d039c157e01d76dce8/src/watch.ts#L9-L44) |
+| 在 DSH 内协调或查看分工 | 官方 Agent Teams 可领取共享任务，更新时核对负责人和修订版本。社区插件 `dsh-task-dag` 可显示子会话、任务依赖和通信关系。 | DSH 方案可作为对照组。官方工具需要在根会话启用 Team 模式。`dsh-task-dag` 1.5.1 的包清单限定 DSH 低于 0.2.0，适合作为依赖图、节点详情和键盘交互的设计参考。[官方任务工具](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/team/tool-agent-team/README.md) · [DAG 交互](https://github.com/LeemanCheung/dsh-task-dag/tree/8fe407f525823091523cd31bc940342feb83b7d1) · [版本范围](https://github.com/LeemanCheung/dsh-task-dag/blob/8fe407f525823091523cd31bc940342feb83b7d1/package.json#L45-L52) |
+
+#### 用两篇 BiFeO₃ 文献验收一次派工
+
+选两篇有公开全文的论文，提出同一个问题：“样品是什么，用什么测量判据得到哪一种转变温度？”给每篇分配一个子任务。每份交付记录 DOI、PDF 版本、页码或图号、样品条件、转变类型、数值及单位。遇到只有摘要、只有转述、图中无法读数或全文未报告该指标的情形，交付中写明哪一项缺失。这样首页能直接展示两项具体工作，研究者也能判断两篇结果能否放到同一列比较。
+
+| 验收情形 | 操作与通过条件 |
+|---|---|
+| 工作台绑定 | 在两个本地端口分别打开不同的合成任务，从 Orca 中按各自的端口和运行 ID 启动 DSH。两次状态读取都须返回对应任务，结果卡各自能回到原工作台。 |
+| 重试和迟到结果 | 借用 Orca 的 `taskId` 和 `dispatchId`，分别标识核对哪篇论文、这是第几次派工。对同一篇派工两次，先收到第二次回执，再送达第一次并重复投递。当前状态只随有效尝试变更一次。历史记录可查看两次尝试及各自产物。[Orca 的完成与重试约定](https://orca.dev/docs/cli/orchestration) |
+| 看板与证据 | 任务卡显示论文、执行者、当前尝试及交付物，点击后能回到相应页或图。当两篇收到完成回执而只有一篇具备可定位数据时，两项执行均可显示完成，证据层级按每条主张的原文和审核记录分别显示。CosMatter 已有产物哈希和执行回执，可直接用来交叉核对。[舰队阶段映射](../frontend/src/fleetRuntimeState.ts) · [执行回执](../src/cosmatter/harness_receipts.py) |
+
+优先顺序是先验证两个端口的只读交接，再引入每次派工的标识和可点击的交付物。独立工作树适合放脚本和中间产物，同一公开 PDF 用内容哈希标识。两个 worker 核对同一份 PDF 仅产生两次核对记录，独立文献数仍为一篇。
+
+### 科研产品与文献工具
+
 本次从“BFO 实验条件能否回到原文”和“舰队各自交付什么”两个实际需求选项目。当前本机 DSH 版本为 `0.2.2-rc.3`。下表的第三方能力和版本来自作者文档及包清单。本轮未安装第三方插件，也未向这些服务发送文献或研究问题。
 
 | 项目 | 作者提供的能力 | CosMatter 可直接对照的用例 |
