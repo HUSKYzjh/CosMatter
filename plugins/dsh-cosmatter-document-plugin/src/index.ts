@@ -11,10 +11,10 @@ export const inject = ['tools']
 declare module '@deepseek-ai/cordis' { interface Events { 'cosmatter-document/submitted'(payload: { run_id: string; document_id: string; task_state: string }): void; 'cosmatter-document/polled'(payload: { run_id: string; document_id: string; task_state: string }): void } }
 
 const taskGuidance = new Map([
-  ['pending', 'Parsing is queued. Open the document to see its saved task status.'],
-  ['running', 'Parsing is in progress. Open the document to see its saved task status.'],
-  ['done', 'Parsing finished. Open the document in CosMatter for human review.'],
-  ['failed', 'Parsing failed. Open the document to inspect its saved task status.'],
+  ['pending', 'Parsing is queued. Check its saved status in CosMatter.'],
+  ['running', 'Parsing is in progress. Check its saved status in CosMatter.'],
+  ['done', 'Parsing finished. Open CosMatter to continue the run’s current review step.'],
+  ['failed', 'Parsing failed. Review its saved status in CosMatter.'],
 ])
 
 const taskOutput = {

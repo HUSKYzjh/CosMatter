@@ -217,7 +217,10 @@ export function HarnessCapabilityDeck(props: {
     } else {
       verdictTitle.focus();
       if (action === "profile") props.onRefreshProfile?.();
-      if (action === "catalogue") props.onRefresh?.();
+      if (action === "catalogue") {
+        props.onRefreshProfile?.();
+        props.onRefresh?.();
+      }
     }
   };
   const badge = () => props.health === "ready"
@@ -277,7 +280,7 @@ export function HarnessCapabilityDeck(props: {
       ? x("正在读取固定的本机能力契约；这不会加载插件、调用工具或授予执行权限。", "Reading the fixed local capability contracts. This does not load a plugin, call a tool, or grant execution permission.")
       : props.health === "unavailable"
         ? x("未能验证本机插件目录，因此本页不显示任何可用能力。任务工件与门禁保持不变。", "The local plugin catalogue could not be verified, so no capability is shown as available. Mission artifacts and gates remain unchanged.")
-        : x("只读预览或未启用本地 API 时，插件桥保持断开。", "The plugin bridge stays disconnected in read-only preview or when the local API is disabled.")}</p><Show when={props.health === "unavailable" && props.onRefresh && activation().action !== "catalogue"}><ActionButton size="sm" variant="secondary" onClick={() => props.onRefresh?.()}>{x("重试目录连接", "Retry catalogue connection")}</ActionButton></Show></div>}>
+        : x("只读预览或未启用本地 API 时，插件桥保持断开。", "The plugin bridge stays disconnected in read-only preview or when the local API is disabled.")}</p><Show when={props.health === "unavailable" && props.onRefresh && activation().action !== "catalogue"}><ActionButton size="sm" variant="secondary" onClick={() => handleAction("catalogue")}>{x("重试目录连接", "Retry catalogue connection")}</ActionButton></Show></div>}>
       <div class="harness-capability-metrics">
         <div><small>{x("已验证契约", "VERIFIED CONTRACTS")}</small><strong>{props.plugins?.length ?? 0}</strong><span>{x("静态描述符", "static descriptors")}</span></div>
         <div><small>{x("需外部授权", "EXTERNAL CONSENT")}</small><strong>{externalCount()}</strong><span>{x("逐任务批准", "mission-scoped")}</span></div>

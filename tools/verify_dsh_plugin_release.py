@@ -175,15 +175,16 @@ def _seed_saved_document(runs_dir: Path) -> dict[str, Any]:
             {"hits": [{"doc_id": document_id, "title": "Synthetic diffraction measurement", "is_content_accessible": True}]}, 200, None,
         )
         api.execute_plan_query(run_id, {"query_index": 0, "sources": ["sciverse"]})
+        api.execute_plan_query(run_id, {"query_index": 0, "counter": True, "sources": ["sciverse"]})
     api.record_candidate_screening(run_id, {"decisions": [
         {"document_id": document_id, "decision": "include_for_fulltext", "reason_codes": ["material_match", "property_match"]},
     ]})
-    args = {"run_id": run_id, "document_id": document_id, "source_url": source,
+    args = {"document_id": document_id, "source_url": source,
             "authorizations": ["mission_scoped_egress_consent", "mineru_file_consent", "private_content_to_mineru"]}
     with patch("cosmatter.local_api.MinerUAdapter", autospec=True) as mineru:
         mineru.return_value.submit_remote_source.return_value = MinerUTask(task_id="synthetic-parse", state="done", request_id=None)
         api.submit_authorized_mineru_source(run_id, {**args, "dsh_call_id": "release-probe-cosmatter_mineru_source_submit"})
-    return args
+    return {"run_id": run_id, **args}
 
 
 def _verify_tool_registry(

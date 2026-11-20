@@ -2493,12 +2493,13 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
     const rect = dialog.getBoundingClientRect();
     return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight && dialog.scrollWidth <= dialog.clientWidth;
   })).toBe(true);
-  const controls = await sessionPanel.locator("label, button").evaluateAll(elements =>
+  await expect(sessionPanel.getByRole("combobox", { name: "命令运行环境" })).toBeVisible();
+  const controls = await sessionPanel.locator("label:has(input), button, select").evaluateAll(elements =>
     elements.map(element => {
       const { left, right, top, bottom } = element.getBoundingClientRect();
       return { left, right, top, bottom };
     }));
-  expect(controls).toHaveLength(4);
+  expect(controls).toHaveLength(5);
   for (const [index, box] of controls.entries()) {
     expect(box.left).toBeGreaterThanOrEqual(0);
     expect(box.right).toBeLessThanOrEqual(320);

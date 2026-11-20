@@ -69,10 +69,10 @@ test('native submit and poll cards show the saved task state and the exact local
   assert.deepEqual(submit.presentCall(submitInput), { card: 'generic', kind: 'execute', title: 'Submit a document to MinerU' })
   assert.deepEqual(poll.presentCall(input), { card: 'generic', kind: 'fetch', title: 'Check MinerU parsing status' })
   for (const [state, guidance] of [
-    ['pending', 'Parsing is queued. Open the document to see its saved task status.'],
-    ['running', 'Parsing is in progress. Open the document to see its saved task status.'],
-    ['failed', 'Parsing failed. Open the document to inspect its saved task status.'],
-    ['done', 'Parsing finished. Open the document in CosMatter for human review.'],
+    ['pending', 'Parsing is queued. Check its saved status in CosMatter.'],
+    ['running', 'Parsing is in progress. Check its saved status in CosMatter.'],
+    ['failed', 'Parsing failed. Review its saved status in CosMatter.'],
+    ['done', 'Parsing finished. Open CosMatter to continue the run’s current review step.'],
   ]) {
     const tool = state === 'pending' ? submit : poll
     const args = tool === submit ? submitInput : input

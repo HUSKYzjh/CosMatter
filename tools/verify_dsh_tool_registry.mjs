@@ -93,11 +93,19 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin, runId, s
     assert.equal(documentResult.value.idempotency_status, 'duplicate_completed')
     assert.equal(documentResult.value.workbench_url, documentUrl.href)
     assert.deepEqual(JSON.parse(documentResult.content[0].text), JSON.parse(JSON.stringify(documentResult.value)))
-    const receiptText = [`Run: ${savedDocument.run_id}`, `Document: ${savedDocument.document_id}`, 'Parsing finished. Open the document in CosMatter for human review.',
+    const receiptText = [`Run: ${savedDocument.run_id}`, `Document: ${savedDocument.document_id}`, 'Parsing finished. Open CosMatter to continue the run’s current review step.',
       'Showing the saved receipt for this call.', documentUrl.href].join('\n')
     assert.deepEqual(documentTool.presentResult(savedDocument, documentResult)?.content, [{ type: 'text', text: receiptText }])
-    const saved = await browserRead(webOrigin, `/api/runs/${savedDocument.run_id}/source-parse-status`)
+    const documentRoute = `/api/runs/${savedDocument.run_id}`
+    const [saved, documentStage, documentBundle] = await Promise.all([
+      browserRead(webOrigin, `${documentRoute}/source-parse-status`),
+      browserRead(webOrigin, `${documentRoute}/stage-contract`),
+      browserRead(webOrigin, `${documentRoute}/ui`),
+    ])
     assert.equal(saved.tasks.find(task => task.document_id === savedDocument.document_id)?.state, 'done')
+    assert.equal(documentStage.runtime_safety, 'verified')
+    assert.equal(documentStage.next_stage, 'extraction')
+    assert.ok(documentBundle.literature_graph.nodes.some(node => node.node_id === `paper:${savedDocument.document_id}`))
     process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission result card, bound stage contract, document receipt card, and browser handoff verified\n`, () => process.exit(0))
   } catch (error) {
     process.stderr.write(`CosMatter release probe failed: ${error.message}\n`, () => process.exit(1))
