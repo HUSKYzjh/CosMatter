@@ -62,18 +62,39 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin, runId, s
     assert.equal(recent.run_id, runId)
     assert.equal(recent.workbench_url, mission.workbench_url)
     assert.equal(recent.stopped, false)
-    const { value: workflow } = await dispatch(ctx, 'cosmatter_workflow_status', { run_id: runId })
+    const workflowResult = await dispatch(ctx, 'cosmatter_workflow_status', {})
+    const workflow = workflowResult.value
     assert.equal(workflow.run_id, runId)
     assert.equal(workflow.mission_id, mission.mission_id)
     assert.equal(workflow.next_stage, 'plan')
+    assert.deepEqual(JSON.parse(workflowResult.content[0].text), JSON.parse(JSON.stringify(workflow)))
+    const workflowTool = ctx.tools.definitions().find(({ name }) => name === 'cosmatter_workflow_status')
+    assert.deepEqual(workflowTool.presentResult({}, workflowResult)?.content, [{
+      type: 'text', text: `${runId}\nNext stage: plan\n${mission.workbench_url}`,
+    }])
+    // Follow the workbench chat draft using only content visible to the model.
+    const readRunId = JSON.parse(workflowResult.content[0].text).run_id
+    const artifacts = await dispatch(ctx, 'cosmatter_artifact_manifest', { run_id: readRunId })
+    const manifest = JSON.parse(artifacts.content[0].text)
+    assert.equal(manifest.run_id, readRunId)
+    assert.equal(manifest.workbench_url, `${webOrigin}/?api=local#run=${readRunId}&artifacts=1`)
     const contract = await dispatch(ctx, 'cosmatter_stage_contract', {})
     assert.equal(contract.value.run_id, runId)
     assert.equal(contract.value.mission_id, mission.mission_id)
     assert.equal(contract.value.next_stage, workflow.next_stage)
-    assert.deepEqual(JSON.parse(contract.content[0].text), JSON.parse(JSON.stringify(contract.value)))
+    const stageResponse = JSON.parse(contract.content[0].text)
+    assert.deepEqual(stageResponse, JSON.parse(JSON.stringify(contract.value)))
+    assert.equal(stageResponse.run_id, readRunId)
+    assert.equal(stageResponse.stages.find(row => row.stage === stageResponse.next_stage)?.human_gate, 'plan_approval')
     const contractTool = ctx.tools.definitions().find(({ name }) => name === 'cosmatter_stage_contract')
     assert.deepEqual(contractTool.presentResult({}, contract)?.content, [{
-      type: 'text', text: `${runId}\nNext stage: plan\nHuman review: plan approval\nCompletion requires: approved flight plan`,
+      type: 'text', text: `${runId}\nNext stage: plan\nHuman review: plan approval\nCompletion requires: approved flight plan\n${mission.workbench_url}`,
+    }])
+    const overrideArgs = { run_id: savedDocument.run_id }
+    const overrideResult = await dispatch(ctx, 'cosmatter_workflow_status', overrideArgs)
+    assert.equal(overrideResult.value.run_id, savedDocument.run_id)
+    assert.deepEqual(workflowTool.presentResult(overrideArgs, overrideResult)?.content, [{
+      type: 'text', text: `${savedDocument.run_id}\nNext stage: extraction\n${webOrigin}/?api=local#run=${savedDocument.run_id}`,
     }])
     const runRoute = `/api/runs/${runId}`
     const [browserStatus, browserBundle, pdfRegistry] = await Promise.all([
@@ -106,7 +127,7 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin, runId, s
     assert.equal(documentStage.runtime_safety, 'verified')
     assert.equal(documentStage.next_stage, 'extraction')
     assert.ok(documentBundle.literature_graph.nodes.some(node => node.node_id === `paper:${savedDocument.document_id}`))
-    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission result card, bound stage contract, document receipt card, and browser handoff verified\n`, () => process.exit(0))
+    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission result card, workflow and stage card links, document receipt card, and browser handoff verified\n`, () => process.exit(0))
   } catch (error) {
     process.stderr.write(`CosMatter release probe failed: ${error.message}\n`, () => process.exit(1))
   }

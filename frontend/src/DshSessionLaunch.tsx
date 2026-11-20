@@ -46,8 +46,8 @@ export function DshSessionLaunch(props: { locale: UiLocale; port: number; runId?
       "To create a run, give DSH your question, material, target property and study scope. Open the workbench link it returns.")}</p>}>
       {id => {
         const query = () => x(
-          `以 {} 调用 cosmatter_workflow_status，核对返回的 run_id 是否为 ${id}。匹配后，用该 run_id 调用 cosmatter_artifact_manifest，核对 workbench_url 的端口是否为 ${props.port}。两项均匹配时，以 {} 调用 cosmatter_stage_contract，告诉我下一步、需要人工确认的事项，并附上已核对的工件链接。核对失败时，报告实际返回值并停止。`,
-          `Call cosmatter_workflow_status with {} and check that run_id is ${id}. If it matches, call cosmatter_artifact_manifest with that run_id and check that the port in workbench_url is ${props.port}. If both match, call cosmatter_stage_contract with {}. Show the next step, any required human review, and the verified artifact link. If a check fails, report the returned value and stop.`,
+          `以 {} 调用 cosmatter_workflow_status，核对返回的 run_id 是否为 ${id}。\n匹配后，用该 run_id 调用 cosmatter_artifact_manifest，核对 workbench_url 的端口是否为 ${props.port}。\n两项均匹配时，以 {} 调用 cosmatter_stage_contract。说明下一步与人工审核要求，并将 workbench_url 原样作为「查看本次运行的工件」的 Markdown 链接。核对失败时，报告实际返回值并停止。`,
+          `Call cosmatter_workflow_status with {} and check that run_id is ${id}.\nIf it matches, call cosmatter_artifact_manifest with that run_id and check that the port in workbench_url is ${props.port}.\nIf both match, call cosmatter_stage_contract with {}. Show the next step and any required human review. Use the exact workbench_url for a Markdown link titled “View artifacts for this run”. If a check fails, report the returned value and stop.`,
         );
         return <details class="harness-disclosure dsh-run-query">
           <summary><span>{x("在 DSH 聊天中查询下一步", "Check the next step in DSH chat")}</span></summary>

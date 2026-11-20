@@ -45,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         report["loopback_catalogue_verified"] = True
         report["loopback_mission_roundtrip_verified"] = True
         report["mission_result_card_verified"] = True
+        report["workflow_result_card_verified"] = True
         report["bound_stage_contract_verified"] = True
         report["document_receipt_card_verified"] = True
         report["browser_run_handoff_verified"] = True
@@ -233,7 +234,7 @@ def _verify_tool_registry(
         finally:
             server.shutdown()
             worker.join()
-    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue, mission result card, bound stage contract, document receipt card, and browser handoff verified"
+    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue, mission result card, workflow and stage card links, document receipt card, and browser handoff verified"
     if probe.returncode or marker not in probe.stdout:
         raise ReleaseGateError(f"installed bundle tool registry failed: {probe.stderr.strip() or 'missing tool registry result'}")
     return len(expected_tools)

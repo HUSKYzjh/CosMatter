@@ -195,13 +195,34 @@ test('workflow status and stage contract use the selected run and accept explici
   })
   const tools = new Map()
   const ctx = { tools: { register: tool => tools.set(tool.name, tool) }, emit() {}, effect() {} }
-  apply(ctx, { workbenchRunId: 'run_selected' })
+  apply(ctx, { workbenchRunId: 'run_selected', baseUrl: 'http://127.0.0.1:8791' })
   const execution = { signal: new AbortController().signal }
   const reads = ['cosmatter_workflow_status', 'cosmatter_stage_contract']
   for (const name of reads) {
     const read = tools.get(name)
-    assert.equal((await read.execute({}, execution)).run_id, 'run_selected')
-    assert.equal((await read.execute({ run_id: 'run_other' }, execution)).run_id, 'run_other')
+    for (const [args, expected] of [[{}, 'run_selected'], [{ run_id: 'run_other' }, 'run_other']]) {
+      const value = await read.execute(args, execution)
+      assert.equal(value.run_id, expected)
+      const content = read.output.render(args, value)
+      assert.deepEqual(JSON.parse(content[0].text), value)
+      assert.equal('workbench_url' in value, false)
+      const meta = read.output.presentationMeta(args, value)
+      const outcome = { isError: false, content, meta }
+      const lines = read.presentResult(args, outcome).content[0].text.split('\n')
+      assert.equal(lines[0], expected)
+      assert.equal(lines[1], 'Next stage: screening')
+      assert.equal(lines.at(-1), `http://127.0.0.1:8791/?api=local#run=${expected}`)
+      assert.equal(read.presentResult({ run_id: 'unrelated' }, outcome), undefined)
+      assert.equal(read.presentResult(args, { ...outcome, isError: true }), undefined)
+      for (const change of [{ workbench_url: `http://127.0.0.1:8792/?api=local#run=${expected}` },
+        { workbench_url: 'http://127.0.0.1:8791/?api=local#run=unrelated' }, { next_stage: 'unknown' }]) {
+        assert.equal(read.presentResult(args, { ...outcome, meta: { ...meta, ...change } }), undefined)
+      }
+      if (name === 'cosmatter_workflow_status') {
+        const complete = read.presentResult(args, { ...outcome, meta: { ...meta, next_stage: null } })
+        assert.match(complete.content[0].text, /No next stage listed\./)
+      }
+    }
   }
   apply(ctx)
   for (const name of reads) {
@@ -226,9 +247,12 @@ test('stage result card presents the next review gate with the canonical contrac
     return { isError: false, content, meta: tool.output.presentationMeta({}, value) }
   }
   const outcome = await result()
-  assert.deepEqual(outcome.meta, { run_id: 'run_001', next_stage: 'screening', runtime_safety: 'verified' })
-  assert.equal(tool.presentResult({}, outcome).content[0].text,
-    'run_001\nNext stage: screening\nHuman review: candidate screening\nCompletion requires: candidate fingerprint current, human candidate screening complete')
+  const workbenchUrl = 'http://127.0.0.1:8765/?api=local#run=run_001'
+  const oldMeta = { run_id: 'run_001', next_stage: 'screening', runtime_safety: 'verified' }
+  const summary = 'run_001\nNext stage: screening\nHuman review: candidate screening\nCompletion requires: candidate fingerprint current, human candidate screening complete'
+  assert.deepEqual(outcome.meta, { ...oldMeta, workbench_url: workbenchUrl })
+  assert.equal(tool.presentResult({}, outcome).content[0].text, summary + '\n' + workbenchUrl)
+  assert.equal(tool.presentResult({}, { ...outcome, meta: oldMeta }).content[0].text, summary)
   assert.equal(tool.presentResult({ run_id: 'other' }, outcome), undefined)
   assert.equal(tool.presentResult({}, { ...outcome, isError: true }), undefined)
   for (const change of [{ next_stage: 'toString' }, { run_id: '../other' }, { runtime_safety: 'unknown' }]) {
@@ -237,7 +261,7 @@ test('stage result card presents the next review gate with the canonical contrac
   snapshot = { ...contract, runtime_safety: 'attention_required', next_stage: null,
     stages: contract.stages.map(stage => ({ ...stage, status: 'completed' })) }
   assert.equal(tool.presentResult({}, await result()).content[0].text,
-    'run_001\nRuntime checks require attention.\nNo next stage listed.')
+    'run_001\nRuntime checks require attention.\nNo next stage listed.\n' + workbenchUrl)
 })
 
 test('DSH presents loopback links and concise summaries while preserving canonical results', async t => {

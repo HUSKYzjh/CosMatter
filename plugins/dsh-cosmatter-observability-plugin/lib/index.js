@@ -28,6 +28,15 @@ export function apply(ctx, config = {}) {
             throw new Error('A CosMatter run ID is required');
         return requested;
     }
+    function readCardMeta(value) {
+        return {
+            run_id: value.run_id, next_stage: value.next_stage,
+            workbench_url: typeof value.run_id === 'string' ? localWorkbenchUrl(client.config.baseUrl, value.run_id) : null,
+        };
+    }
+    function matchesReadRun(run, requested) {
+        return typeof run === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(run) && run === (requested ?? sessionRun);
+    }
     ctx.tools.register(defineTool({
         name: 'cosmatter_recent_runs',
         description: 'List up to twelve recent local CosMatter run IDs, update times, stopped flags and workbench links. Use it when a run ID is unknown.',
@@ -64,7 +73,24 @@ export function apply(ctx, config = {}) {
         description: 'Read a count-only, loopback-only CosMatter workflow status. It never invokes providers, reads source content, accepts evidence, grants consent, or changes a run.'
             + sessionRunHint,
         parameters: runParameters,
-        output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+        output: {
+            schema: { type: 'object', additionalProperties: true },
+            render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+            presentationMeta: (_args, value) => readCardMeta(value),
+        },
+        presentCall: () => ({ card: 'generic', kind: 'read', title: 'Read CosMatter workflow status' }),
+        presentResult: ({ run_id }, { isError, meta }) => {
+            if (isError || !meta || typeof meta !== 'object' || Array.isArray(meta))
+                return;
+            const { run_id: run, next_stage: stage, workbench_url } = meta;
+            if (!matchesReadRun(run, run_id) || workbench_url !== localWorkbenchUrl(client.config.baseUrl, run)
+                || (stage !== null && (typeof stage !== 'string' || !stageContractTemplate(stage))))
+                return;
+            const next = stage === null ? 'No next stage listed.' : `Next stage: ${stage}`;
+            return { card: 'generic', title: 'CosMatter workflow status', content: [
+                    { type: 'text', text: `${run}\n${next}\n${workbench_url}` },
+                ] };
+        },
         async execute(args, exec) {
             const result = await client.workflowStatus(selectedRunId(args.run_id), exec.signal);
             ctx.emit('cosmatter-observability/workflow-read', { run_id: result.run_id, next_stage: result.next_stage });
@@ -106,14 +132,15 @@ export function apply(ctx, config = {}) {
         output: {
             schema: { type: 'object', additionalProperties: true },
             render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
-            presentationMeta: (_args, value) => ({ run_id: value.run_id, next_stage: value.next_stage, runtime_safety: value.runtime_safety }),
+            presentationMeta: (_args, value) => ({ ...readCardMeta(value), runtime_safety: value.runtime_safety }),
         },
         presentCall: () => ({ card: 'generic', kind: 'read', title: 'Read CosMatter stage requirements' }),
         presentResult: ({ run_id }, { isError, meta }) => {
             if (isError || !meta || typeof meta !== 'object' || Array.isArray(meta))
                 return;
-            const { run_id: run, next_stage: stage, runtime_safety: safety } = meta;
-            if (typeof run !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(run) || run !== (run_id ?? sessionRun)
+            const { run_id: run, next_stage: stage, runtime_safety: safety, workbench_url } = meta;
+            if (!matchesReadRun(run, run_id)
+                || (workbench_url !== undefined && workbench_url !== localWorkbenchUrl(client.config.baseUrl, run))
                 || (safety !== 'verified' && safety !== 'attention_required'))
                 return;
             const lines = [run];
@@ -128,6 +155,9 @@ export function apply(ctx, config = {}) {
                     return;
                 lines.push(`Next stage: ${stage}`, `Human review: ${template.humanGate.replaceAll('_', ' ')}`, `Completion requires: ${template.requirements.map(label => label.replaceAll('_', ' ')).join(', ')}`);
             }
+            // Saved cards from older versions have no record of the workbench port.
+            if (typeof workbench_url === 'string')
+                lines.push(workbench_url);
             return { card: 'generic', title: 'CosMatter stage requirements', content: [{ type: 'text', text: lines.join('\n') }] };
         },
         async execute(args, exec) {
