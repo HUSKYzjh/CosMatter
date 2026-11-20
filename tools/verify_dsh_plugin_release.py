@@ -4,7 +4,7 @@ Default mode is deliberately local and keyless: it validates the compatibility
 matrix, every package manifest and published-file allowlist.  ``--profile-smoke``
 installs the packed tarballs in a temporary DSH home, checks profile
 composition and startup, and dispatches catalogue, mission creation, and
-workflow status through an isolated CosMatter loopback API. It never loads
+workflow status and the selected run's stage contract through an isolated CosMatter loopback API. It never loads
 ``.env`` or starts a provider-backed agent turn.
 """
 
@@ -45,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         report["loopback_catalogue_verified"] = True
         report["loopback_mission_roundtrip_verified"] = True
         report["mission_result_card_verified"] = True
+        report["bound_stage_contract_verified"] = True
         report["browser_run_handoff_verified"] = True
     print(json.dumps(report, ensure_ascii=False))
     return 0
@@ -147,12 +148,16 @@ def _profile_smoke(compatibility: dict[str, Any], manifest: dict[str, Any], *, t
         startup = _run([dsh, "--profile", profile, "--help"], cwd=temporary, env=environment, timeout=timeout_seconds)
         if startup.returncode or "Usage: dsh --profile headless" not in startup.stdout:
             raise ReleaseGateError(f"clean profile failed to reach the headless app: {startup.stderr.strip()}")
-        return _verify_tool_registry(dsh, profile, manifest, temporary, environment, timeout_seconds)
+        return _verify_tool_registry(dsh, profile, manifest, temporary, environment, timeout_seconds, dump.stdout)
 
 
 def _verify_tool_registry(
     dsh: str, profile: str, manifest: dict[str, Any], temporary: Path, environment: dict[str, str], timeout_seconds: int,
+    composed: str,
 ) -> int:
+    import yaml
+
+    from cosmatter.dsh_profile_status import _dsh_workbench_patch
     from cosmatter.local_api import LocalMissionApi
     from cosmatter.ui_preview import build_ui_preview_server
 
@@ -166,20 +171,18 @@ def _verify_tool_registry(
     (web_dir / "index.html").write_text("<title>CosMatter DSH release probe</title>", encoding="utf-8")
 
     expected_tools = [tool for entry in manifest["packages"] for tool in entry["tools"]]
+    run_id = "cosmatter_release_probe"
     with build_ui_preview_server(0, web_dir, api=api) as server:
         patch = temporary / "registry-probe.json"
         shutil.copyfile(ROOT / "tools" / "verify_dsh_tool_registry.mjs", temporary / "registry-probe.mjs")
         patch.write_text(json.dumps([
             {"id": "headless-runner", "disabled": True},
             {"id": "llm-deepseek-account", "disabled": True},
-            *({
-                "id": f"cosmatter-{bundle}",
-                "config": {"baseUrl": f"http://127.0.0.1:{server.server_port}", "timeoutMs": 5000},
-            } for bundle in ("policy", "mission", "observability")),
+            *yaml.safe_load(_dsh_workbench_patch(composed, server.server_port, run_id)),
             {"insert": [{
                 "id": "cosmatter-release-registry-probe",
                 "name": "./registry-probe.mjs",
-                "config": {"expectedTools": expected_tools, "catalogue": catalogue, "webOrigin": f"http://127.0.0.1:{server.server_port}"},
+                "config": {"expectedTools": expected_tools, "catalogue": catalogue, "webOrigin": f"http://127.0.0.1:{server.server_port}", "runId": run_id},
             }]},
         ]), encoding="utf-8")
         worker = Thread(target=server.serve_forever, daemon=True)
@@ -192,7 +195,7 @@ def _verify_tool_registry(
         finally:
             server.shutdown()
             worker.join()
-    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue, mission result card, and browser handoff verified"
+    marker = f"CosMatter release probe: {len(expected_tools)} tools, loopback catalogue, mission result card, bound stage contract, and browser handoff verified"
     if probe.returncode or marker not in probe.stdout:
         raise ReleaseGateError(f"installed bundle tool registry failed: {probe.stderr.strip() or 'missing tool registry result'}")
     return len(expected_tools)

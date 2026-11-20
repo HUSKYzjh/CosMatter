@@ -210,6 +210,10 @@ export function validateArtifactManifest(value: unknown, expectedRunId: string):
   return result as unknown as ArtifactManifest
 }
 
+export function stageContractTemplate(stage: unknown) {
+  return typeof stage === 'string' && stages.has(stage) ? stageContracts[stage] : undefined
+}
+
 export function validateStageContract(value: unknown, expectedRunId: string): StageContract {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('CosMatter stage contract response is invalid')
   const result = value as Record<string, unknown>
@@ -222,7 +226,7 @@ export function validateStageContract(value: unknown, expectedRunId: string): St
     const item = stage as Record<string, unknown>
     const fields = new Set(['stage', 'status', 'completion_requirements', 'human_gate', 'expected_outputs', 'recovery_route', 'metrics'])
     if (Object.keys(item).length !== fields.size || Object.keys(item).some(key => !fields.has(key) || sensitiveKey.test(key)) || typeof item.stage !== 'string' || !stages.has(item.stage) || seen.has(item.stage) || typeof item.status !== 'string' || !states.has(item.status) || !Array.isArray(item.completion_requirements) || !Array.isArray(item.expected_outputs) || typeof item.human_gate !== 'string' || typeof item.recovery_route !== 'string' || !item.metrics || typeof item.metrics !== 'object' || Array.isArray(item.metrics)) throw new Error('CosMatter stage contract stage is invalid')
-    const contract = stageContracts[item.stage]
+    const contract = stageContractTemplate(item.stage)
     if (!contract || JSON.stringify(item.completion_requirements) !== JSON.stringify(contract.requirements) || item.human_gate !== contract.humanGate || JSON.stringify(item.expected_outputs) !== JSON.stringify(contract.outputs) || item.recovery_route !== contract.recoveryRoute) throw new Error('CosMatter stage contract template is invalid')
     for (const [key, count] of Object.entries(item.metrics as Record<string, unknown>)) {
       if (!key || sensitiveKey.test(key) || typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > 1_000_000) throw new Error('CosMatter stage contract metric is invalid')

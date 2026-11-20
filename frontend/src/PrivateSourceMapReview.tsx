@@ -6,7 +6,8 @@ import { PrivateMarkdownLines } from "./PrivateMarkdownLines";
 import { sourceMapTaskKey } from "./readerSourceIntake";
 import { shouldAutoLoadRecordedSourceMap } from "./sourceMapLoadRecovery";
 import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateMarkdownLineSource, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
-import { isMarkdownLineRange, type EvidenceMarkdownLocation, type RecordedMarkdownLocation, type RecordedSourceMapSegment } from "./localApi";
+import { isMarkdownLineRange, type RecordedMarkdownLocation, type RecordedSourceMapSegment } from "./localApi";
+import type { ReaderEvidenceLocation } from "./readerEvidenceQuote";
 import { uiLanguage } from "./zh";
 import { safeOperationFeedback } from "./importFeedback";
 import { ActionButton, ActionLink } from "./uiPrimitives";
@@ -27,7 +28,7 @@ export function PrivateSourceMapReview(props: {
   onRecordFacts?: (facts: HumanMaterialFactInput[]) => Promise<void>;
   materialFactsRecorded?: boolean;
   onRecordEvidence?: (input: HumanEvidenceReviewInput) => Promise<EvidenceReviewResult>;
-  evidenceLocation?: EvidenceMarkdownLocation | null;
+  evidenceLocation?: ReaderEvidenceLocation | null;
   onClearEvidenceLocation?: () => void;
 }) {
   const [segments, setSegments] = createSignal<DraftSegment[]>([emptySegment()]);

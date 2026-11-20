@@ -23,6 +23,11 @@ reads source content, writes run artifacts, accepts evidence, changes consent,
 accepts arbitrary paths, or exposes PDFs, MinerU Markdown, source URLs, private paths,
 provider payloads, audit details, or credentials.
 
+When a session is opened with `cosmatter open-dsh-workbench --port <port> --run-id <run_id>`,
+both `cosmatter_workflow_status` and `cosmatter_stage_contract` use that run by default.
+An explicit `run_id` selects another run for that call. The stage contract card shows the
+next stage, its human review gate and the conditions required for completion.
+
 Only a bare `http://127.0.0.1` endpoint is accepted.
 
 ```powershell

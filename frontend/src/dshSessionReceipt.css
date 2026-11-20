@@ -1,0 +1,19 @@
+.dsh-session-receipt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .35rem .75rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: .55rem;
+}
+
+.dsh-session-receipt p {
+  display: grid;
+  gap: .1rem;
+}
+
+.dsh-session-receipt time {
+  color: var(--muted);
+  font-size: max(.75rem, 12px);
+}

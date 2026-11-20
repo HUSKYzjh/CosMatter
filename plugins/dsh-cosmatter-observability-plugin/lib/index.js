@@ -1,6 +1,6 @@
 import '@deepseek-ai/cordis';
 import { defineTool } from '@deepseek-ai/dsh-tools';
-import { CosMatterObservabilityClient, localWorkbenchUrl } from './client.js';
+import { CosMatterObservabilityClient, localWorkbenchUrl, stageContractTemplate } from './client.js';
 export const name = 'cosmatter-observability';
 export const inject = ['tools'];
 function isWorkbenchLink(value, runId, artifactList = false) {
@@ -20,6 +20,13 @@ export function apply(ctx, config = {}) {
     const sessionRun = config.workbenchRunId;
     if (sessionRun !== undefined && (typeof sessionRun !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(sessionRun))) {
         throw new Error('Invalid CosMatter workbench run ID');
+    }
+    const runParameters = { run_id: sessionRun ? { type: 'string' } : { type: 'string', required: true } };
+    const sessionRunHint = sessionRun ? ' Omit run_id to read the run selected in the workbench.' : '';
+    function selectedRunId(requested = sessionRun) {
+        if (typeof requested !== 'string')
+            throw new Error('A CosMatter run ID is required');
+        return requested;
     }
     ctx.tools.register(defineTool({
         name: 'cosmatter_recent_runs',
@@ -55,14 +62,11 @@ export function apply(ctx, config = {}) {
     ctx.tools.register(defineTool({
         name: 'cosmatter_workflow_status',
         description: 'Read a count-only, loopback-only CosMatter workflow status. It never invokes providers, reads source content, accepts evidence, grants consent, or changes a run.'
-            + (sessionRun ? ' Omit run_id to read the run selected in the workbench.' : ''),
-        parameters: { run_id: sessionRun ? { type: 'string' } : { type: 'string', required: true } },
+            + sessionRunHint,
+        parameters: runParameters,
         output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
         async execute(args, exec) {
-            const runId = args.run_id === undefined ? sessionRun : args.run_id;
-            if (typeof runId !== 'string')
-                throw new Error('A CosMatter run ID is required');
-            const result = await client.workflowStatus(runId, exec.signal);
+            const result = await client.workflowStatus(selectedRunId(args.run_id), exec.signal);
             ctx.emit('cosmatter-observability/workflow-read', { run_id: result.run_id, next_stage: result.next_stage });
             return result;
         },
@@ -97,11 +101,37 @@ export function apply(ctx, config = {}) {
     }));
     ctx.tools.register(defineTool({
         name: 'cosmatter_stage_contract',
-        description: 'Read fixed completion requirements, human gates, expected symbolic outputs, and non-executing recovery routes for every CosMatter stage. It is loopback-only and cannot grant consent, dispatch providers, expose audit details, or change a run.',
-        parameters: { run_id: { type: 'string', required: true } },
-        output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+        description: 'Read the next stage and its human review gate, plus fixed completion requirements, expected outputs and recovery routes for every CosMatter stage. It is loopback-only and cannot grant consent, dispatch providers, expose audit details, or change a run.' + sessionRunHint,
+        parameters: runParameters,
+        output: {
+            schema: { type: 'object', additionalProperties: true },
+            render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+            presentationMeta: (_args, value) => ({ run_id: value.run_id, next_stage: value.next_stage, runtime_safety: value.runtime_safety }),
+        },
+        presentCall: () => ({ card: 'generic', kind: 'read', title: 'Read CosMatter stage requirements' }),
+        presentResult: ({ run_id }, { isError, meta }) => {
+            if (isError || !meta || typeof meta !== 'object' || Array.isArray(meta))
+                return;
+            const { run_id: run, next_stage: stage, runtime_safety: safety } = meta;
+            if (typeof run !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(run) || run !== (run_id ?? sessionRun)
+                || (safety !== 'verified' && safety !== 'attention_required'))
+                return;
+            const lines = [run];
+            if (safety === 'attention_required')
+                lines.push('Runtime checks require attention.');
+            if (stage === null) {
+                lines.push('No next stage listed.');
+            }
+            else {
+                const template = stageContractTemplate(stage);
+                if (!template || typeof stage !== 'string')
+                    return;
+                lines.push(`Next stage: ${stage}`, `Human review: ${template.humanGate.replaceAll('_', ' ')}`, `Completion requires: ${template.requirements.map(label => label.replaceAll('_', ' ')).join(', ')}`);
+            }
+            return { card: 'generic', title: 'CosMatter stage requirements', content: [{ type: 'text', text: lines.join('\n') }] };
+        },
         async execute(args, exec) {
-            const result = await client.stageContract(String(args.run_id), exec.signal);
+            const result = await client.stageContract(selectedRunId(args.run_id), exec.signal);
             ctx.emit('cosmatter-observability/stage-contract-read', { run_id: result.run_id, next_stage: result.next_stage, runtime_safety: result.runtime_safety });
             return result;
         },

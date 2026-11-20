@@ -186,23 +186,58 @@ test('DSH apply registers only read-only observability tools', async () => {
   globalThis.fetch = originalFetch
 })
 
-test('only the status read defaults to the workbench run and an explicit run takes precedence', async t => {
+test('workflow status and stage contract use the selected run and accept explicit overrides', async t => {
   const requested = []
   t.mock.method(globalThis, 'fetch', async url => {
-    const id = new URL(url).pathname.split('/')[3]
-    requested.push(id)
-    return Response.json({ ...status, run_id: id })
+    const [, , , id, route] = new URL(url).pathname.split('/')
+    requested.push([id, route])
+    return Response.json({ ...(route === 'stage-contract' ? contract : status), run_id: id })
   })
   const tools = new Map()
   const ctx = { tools: { register: tool => tools.set(tool.name, tool) }, emit() {}, effect() {} }
   apply(ctx, { workbenchRunId: 'run_selected' })
-  const read = tools.get('cosmatter_workflow_status')
   const execution = { signal: new AbortController().signal }
-  assert.equal((await read.execute({}, execution)).run_id, 'run_selected')
-  assert.equal((await read.execute({ run_id: 'run_other' }, execution)).run_id, 'run_other')
+  const reads = ['cosmatter_workflow_status', 'cosmatter_stage_contract']
+  for (const name of reads) {
+    const read = tools.get(name)
+    assert.equal((await read.execute({}, execution)).run_id, 'run_selected')
+    assert.equal((await read.execute({ run_id: 'run_other' }, execution)).run_id, 'run_other')
+  }
   apply(ctx)
-  await assert.rejects(() => tools.get('cosmatter_workflow_status').execute({}, execution), /missing required property "run_id"/)
-  assert.deepEqual(requested, ['run_selected', 'run_other'])
+  for (const name of reads) {
+    await assert.rejects(() => tools.get(name).execute({}, execution), /missing required property "run_id"/)
+  }
+  assert.deepEqual(requested, [
+    ['run_selected', 'workflow-status'], ['run_other', 'workflow-status'],
+    ['run_selected', 'stage-contract'], ['run_other', 'stage-contract'],
+  ])
+})
+
+test('stage result card presents the next review gate with the canonical contract available', async t => {
+  let snapshot = contract
+  t.mock.method(globalThis, 'fetch', async () => Response.json(snapshot))
+  const tools = new Map()
+  apply({ tools: { register: tool => tools.set(tool.name, tool) }, emit() {}, effect() {} }, { workbenchRunId: 'run_001' })
+  const tool = tools.get('cosmatter_stage_contract')
+  async function result() {
+    const value = await tool.execute({}, { signal: new AbortController().signal })
+    const content = tool.output.render({}, value)
+    assert.deepEqual(JSON.parse(content[0].text), snapshot)
+    return { isError: false, content, meta: tool.output.presentationMeta({}, value) }
+  }
+  const outcome = await result()
+  assert.deepEqual(outcome.meta, { run_id: 'run_001', next_stage: 'screening', runtime_safety: 'verified' })
+  assert.equal(tool.presentResult({}, outcome).content[0].text,
+    'run_001\nNext stage: screening\nHuman review: candidate screening\nCompletion requires: candidate fingerprint current, human candidate screening complete')
+  assert.equal(tool.presentResult({ run_id: 'other' }, outcome), undefined)
+  assert.equal(tool.presentResult({}, { ...outcome, isError: true }), undefined)
+  for (const change of [{ next_stage: 'toString' }, { run_id: '../other' }, { runtime_safety: 'unknown' }]) {
+    assert.equal(tool.presentResult({}, { ...outcome, meta: { ...outcome.meta, ...change } }), undefined)
+  }
+  snapshot = { ...contract, runtime_safety: 'attention_required', next_stage: null,
+    stages: contract.stages.map(stage => ({ ...stage, status: 'completed' })) }
+  assert.equal(tool.presentResult({}, await result()).content[0].text,
+    'run_001\nRuntime checks require attention.\nNo next stage listed.')
 })
 
 test('DSH presents loopback links and concise summaries while preserving canonical results', async t => {

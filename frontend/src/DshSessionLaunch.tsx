@@ -1,5 +1,5 @@
 import { DshCommandText } from "./DshCommandText";
-import { Show, createSignal, createUniqueId } from "solid-js";
+import { Show, createSignal, createUniqueId, type Signal } from "solid-js";
 import { createDshClipboard, DshManualCopy } from "./DshManualCopy";
 import type { UiLocale } from "./fleetRegistry";
 import { isLocalRunId } from "./liveRunIdentity";
@@ -23,8 +23,8 @@ export function DshCommandRow(props: { locale: UiLocale; command: string; label:
   </div>;
 }
 
-export function DshSessionLaunch(props: { locale: UiLocale; port: number; runId?: string | null }) {
-  const [showLink, setShowLink] = createSignal(false);
+export function DshSessionLaunch(props: { locale: UiLocale; port: number; runId?: string | null; showLinkPreference?: Signal<boolean> }) {
+  const [showLink, setShowLink] = props.showLinkPreference ?? createSignal(false);
   const choiceName = createUniqueId();
   const runId = () => props.runId && isLocalRunId(props.runId) ? props.runId : null;
   const command = () => `cosmatter open-dsh-workbench --port ${props.port}${runId() ? ` --run-id ${runId()}` : ""}${showLink() ? " --no-open" : ""}`;

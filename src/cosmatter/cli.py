@@ -3703,7 +3703,7 @@ def build_parser() -> argparse.ArgumentParser:
     dsh_open.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_open.add_argument("--surface", choices=("web", "tui"), default="web", help="use the bundled web interface (default) or a separately installed interactive frontend in the tui profile")
     dsh_open.add_argument("--no-open", action="store_true", help="print the local DSH Web URL for manual opening")
-    dsh_open.add_argument("--run-id", help="default run for the read-only workflow status tool in this session")
+    dsh_open.add_argument("--run-id", help="default run for the read-only workflow status and stage contract tools in this session")
     dsh_open.set_defaults(handler=command_open_dsh_workbench)
 
     dsh_status = commands.add_parser("dsh-run-status", help="read an existing local run through DSH observability tools")

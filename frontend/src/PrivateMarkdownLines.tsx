@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 import { createLatestRequestGate } from "./latestRequestGate";
-import { getPrivateMarkdownLines, LocalApiRequestError, PRIVATE_MARKDOWN_WINDOW_SIZE, type MarkdownLineRange, type MarkdownLocation, type PrivateMarkdownLineSource, type PrivateMarkdownWindow } from "./localApi";
+import { getPrivateMarkdownLines, LocalApiRequestError, PRIVATE_MARKDOWN_WINDOW_SIZE, type MarkdownLineRange, type RecordedMarkdownLocation, type PrivateMarkdownLineSource, type PrivateMarkdownWindow } from "./localApi";
+import { matchReaderEvidenceQuote, type ReaderEvidenceLocation } from "./readerEvidenceQuote";
 import { ActionButton } from "./uiPrimitives";
 import { uiLanguage } from "./zh";
 
@@ -11,7 +12,7 @@ export function PrivateMarkdownLines(props: {
   id: string;
   source: PrivateMarkdownLineSource;
   onDraft?: (locator: string, quote: string) => void;
-  location?: MarkdownLocation | null;
+  location?: RecordedMarkdownLocation | ReaderEvidenceLocation | null;
   onClearLocation?: () => void;
 }) {
   const [open, setOpen] = createSignal(false);
@@ -27,7 +28,7 @@ export function PrivateMarkdownLines(props: {
   let panel: HTMLElement | undefined;
   let sourceList: HTMLOListElement | undefined;
   let requestedStart: number | null = 1;
-  let activeLocation: MarkdownLocation | null = null;
+  let activeLocation: typeof props.location = null;
   onCleanup(request.invalidate);
 
   const range = createMemo(() => {
@@ -52,6 +53,13 @@ export function PrivateMarkdownLines(props: {
     const selection = verifiedLocation() ?? range();
     return Boolean(selection && number >= selection.start && number <= selection.end);
   };
+  const markedQuote = createMemo(() => {
+    const range = verifiedLocation();
+    const current = page();
+    const location = props.location;
+    return range && current && location && "evidenceId" in location
+      ? matchReaderEvidenceQuote(current.lines, range, location.quote) : null;
+  });
 
   function clearRange() {
     setFirst(null);
@@ -74,6 +82,11 @@ export function PrivateMarkdownLines(props: {
         setVerifiedLocation(result.recordedRange ?? null);
         setJump(String(result.start));
         if (sourceList) sourceList.scrollTop = 0;
+        if (start === null && location && "evidenceId" in location) {
+          requestAnimationFrame(() => {
+            if (isLatest() && document.activeElement === panel) sourceList?.querySelector("mark")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+          });
+        }
       }
     } catch (failure) {
       if (!isLatest()) return;
@@ -99,6 +112,7 @@ export function PrivateMarkdownLines(props: {
       if (previous) collapse();
       return;
     }
+    setPage(null);
     setOpen(true);
     panel?.focus();
     void untrack(() => load("segmentId" in location ? location.start : null));
@@ -141,6 +155,9 @@ export function PrivateMarkdownLines(props: {
       <Show when={page()}>{(current) => <>
         <Show when={verifiedLocation()}>{(location) => <div class="source-line-tools">
           <p role="status">{tr(`来源定位第 ${displayRange(location().start, location().end)} 行`, `Recorded source ${location().start === location().end ? "line" : "lines"} ${displayRange(location().start, location().end)}`)}</p>
+          <Show when={props.location && "evidenceId" in props.location && !markedQuote()}>
+            <p>{tr("当前窗口无法唯一标出这张证据卡的引文，请核对已登记的行范围。", "The quote cannot be uniquely highlighted in this window. Check the recorded line range.")}</p>
+          </Show>
           <Show when={current().start !== location().start}>
             <ActionButton size="sm" variant="quiet" onClick={() => void load(location().start)}>{tr("返回定位起点", "Return to recorded start")}</ActionButton>
           </Show>
@@ -164,7 +181,9 @@ export function PrivateMarkdownLines(props: {
                 aria-pressed={lineSelected(line.number)}
                 aria-label={tr(`第 ${line.number} 行`, `Line ${line.number}`)} onClick={() => select(line.number)}>{line.number}</ActionButton>
             </Show>
-            <div class="source-line-text">{line.text}<Show when={line.truncated}><small>{tr("（已截断，完整行可下载查看）", " (truncated; download to see the complete line)")}</small></Show></div>
+            <div class="source-line-text"><Show when={markedQuote()?.get(line.number)} fallback={line.text}>{part =>
+              <>{part().before}<mark>{part().quote}</mark>{part().after}</>
+            }</Show><Show when={line.truncated}><small>{tr("（已截断，完整行可下载查看）", " (truncated; download to see the complete line)")}</small></Show></div>
           </li>}</For>
         </ol>
         <Show when={props.onDraft && chosen()}>{(selection) => <div class="source-line-tools">

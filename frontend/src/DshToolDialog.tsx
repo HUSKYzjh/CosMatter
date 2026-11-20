@@ -9,6 +9,7 @@ import { DSH_TOOL_COUNT, dshSessionReadiness, missingRegisteredTools, type DshSe
 import { registryMatchesComposition } from "./dshReadProfile";
 import type { HarnessCatalogueHealth } from "./localApi";
 import { ActionButton } from "./uiPrimitives";
+import "./dshSessionReceipt.css";
 
 const views = ["catalogue", "session"] as const;
 type DialogView = typeof views[number];
@@ -42,6 +43,7 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const initialStage = props.currentStage;
   const [view, setView] = createSignal<DialogView>(props.initialView ?? "catalogue");
+  const showLinkPreference = createSignal(false);
   const location = localWorkbenchLocation();
   const port = location ? Number(location.port || "80") : null;
   const readiness = createMemo(() => dshSessionReadiness(props.profile, props.profileHealth, props.catalogueHealth, port));
@@ -50,6 +52,11 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
   const statusLabel = () => {
     const state = readiness();
     const registry = props.profile?.tool_registry_check;
+    const loopback = registry?.loopback_check;
+    if (state === "loopback-check" && loopback?.port === port && loopback.status === "unavailable") {
+      return x(`上次核验时，工具已注册，DSH 未能从工作台端口 ${port} 读取插件目录。`,
+        `The last check confirmed tool registration, but DSH could not read the plugin catalogue on workbench port ${port}.`);
+    }
     if (state === "registry-check" && registry) {
       if (!registryMatchesComposition(props.profile)) return x("工具注册回执已过期，请重新核验。", "The tool registration check is out of date. Run it again.");
       if (!missingTools().length) return x("核验未覆盖全部插件，请重新核验。", "Run the check again to cover every bundle.");
@@ -101,8 +108,8 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
   const refreshSession = () => {
     const state = readiness();
     selectTab("session");
-    if (state !== "catalogue-unavailable") props.onRefreshProfile();
-    if (state === "catalogue-unavailable" || state === "disconnected") props.onRefreshCatalogue();
+    props.onRefreshProfile();
+    if (state === "ready" || state === "catalogue-unavailable" || state === "disconnected") props.onRefreshCatalogue();
   };
 
   onMount(() => {
@@ -159,7 +166,16 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
         </Show>
         <OtherPortReceiptHelp locale={props.locale} runId={props.runId} readiness={readiness()}
           port={port} receiptPort={props.profile?.tool_registry_check?.loopback_check?.port} />
-      </>}>{(localPort) => <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId} />}</Show>
+      </>}>{(localPort) => <>
+        <Show when={props.profile?.tool_registry_check}>{(receipt) => <div class="dsh-session-receipt">
+          <p>{x(`上次核验通过 · 工作台端口 ${localPort()}`, `Last check passed · Workbench port ${localPort()}`)}
+            <time dateTime={receipt().checked_at}>{new Intl.DateTimeFormat(props.locale === "zh" ? "zh-CN" : "en",
+              { dateStyle: "medium", timeStyle: "short" }).format(new Date(receipt().checked_at))}</time>
+          </p>
+          <ActionButton size="sm" variant="quiet" onClick={refreshSession}>{x("刷新会话状态", "Refresh session status")}</ActionButton>
+        </div>}</Show>
+        <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId} showLinkPreference={showLinkPreference} />
+      </>}</Show>
       <Show when={!props.runId && props.draft}>{(draft) => <DshMissionDraft locale={props.locale} draft={draft()} onEditField={props.onEditDraftField} />}</Show>
     </div>
   </dialog>;

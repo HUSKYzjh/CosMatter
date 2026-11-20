@@ -508,6 +508,7 @@ test("keeps keyboard focus inside both DSH panels and restores their selections"
   const copy = session.getByRole("button", { name: "复制 DSH 启动命令" });
   await expect(copy).toBeVisible();
   await pressTo("Tab", session);
+  await pressTo("Tab", session.getByRole("button", { name: "刷新会话状态" }));
   await pressTo("Tab", session.getByRole("radio", { name: "自动打开网页" }));
   await page.keyboard.press("ArrowRight");
   const showLink = session.getByRole("radio", { name: "在终端显示链接" });
@@ -543,6 +544,91 @@ test("keeps keyboard focus inside both DSH panels and restores their selections"
   await expect(dialog).toHaveCount(0);
   await expect(opener).toBeFocused();
 });
+
+for (const width of [320, 1360]) {
+  test(`refreshes a verified DSH session and preserves its draft and launch preference at ${width}px`, async ({ page, baseURL }) => {
+    await page.setViewportSize({ width, height: width === 320 ? 440 : 850 });
+    const en = width === 1360;
+    const text = (zh: string, english: string) => en ? english : zh;
+    const port = Number(new URL(baseURL!).port);
+    const first = "2026-11-18T03:00:00Z";
+    const last = "2026-11-18T04:00:00Z";
+    let timestamp = first;
+    let connected = true;
+    let catalogueAvailable = true;
+    let graphInstalled = true;
+    let catalogueReads = 0;
+    let profileReads = 0;
+    const writes: string[] = [];
+    await page.route("**/api/**", route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (request.method() !== "GET") writes.push(path);
+      if (path === "/api/plugins") {
+        catalogueReads++;
+        return route.fulfill(catalogueAvailable ? { json: dshCatalogueFixture } : { status: 503, json: {} });
+      }
+      if (path === "/api/dsh-profile") {
+        profileReads++;
+        const profile = verifiedDshProfile(port);
+        profile.tool_registry_check.checked_at = timestamp;
+        profile.tool_registry_check.loopback_check.status = connected ? "verified" : "unavailable";
+        return route.fulfill({ json: graphInstalled ? profile : missingDshBundle("graph"), headers: { "X-CosMatter-DSH-Receipts": "per-port-v1" } });
+      }
+      return route.fulfill({ status: 503, json: {} });
+    });
+    await page.goto("/?api=local", { waitUntil: "domcontentloaded" });
+    if (en) await page.getByRole("button", { name: "Switch to English" }).click();
+    const prompt = page.getByLabel(text("候选航向研究问题", "Candidate-route research question"));
+    const question = "How do temperature and composition affect the measured transition?";
+    await prompt.fill(question);
+    const opener = page.getByRole("button", { name: text("DSH 插件", "DSH plugins"), exact: true });
+    await opener.click();
+    const panel = page.getByRole("tabpanel", { name: text("DSH 会话", "DSH session") });
+    const refresh = panel.getByRole("button", { name: text("刷新会话状态", "Refresh session status") });
+    const launch = panel.getByRole("button", { name: text("复制 DSH 启动命令", "Copy DSH launch command") });
+    const receipt = panel.locator(".dsh-session-receipt");
+    await expect(receipt).toContainText(text(`上次核验通过 · 工作台端口 ${port}`, `Last check passed · Workbench port ${port}`));
+    await expect(receipt.locator("time")).toHaveAttribute("datetime", first);
+    const link = panel.getByRole("radio", { name: text("在终端显示链接", "Show link in terminal") });
+    await link.check();
+    const beforeRefresh = catalogueReads;
+    catalogueAvailable = false;
+    await refresh.press("Enter");
+    const retry = panel.getByRole("button", { name: text("重试目录连接", "Retry catalogue connection") });
+    await expect(retry).toBeVisible();
+    await expect(launch).toHaveCount(0);
+    expect(catalogueReads).toBeGreaterThan(beforeRefresh);
+    catalogueAvailable = true;
+    graphInstalled = false;
+    const beforeRetry = profileReads;
+    await retry.press("Enter");
+    await expect(panel.getByRole("button", { name: text("复制补齐命令", "Copy repair command") })).toBeVisible();
+    await expect(launch).toHaveCount(0);
+    await expect(receipt).toHaveCount(0);
+    expect(profileReads).toBeGreaterThan(beforeRetry);
+    graphInstalled = true;
+    connected = false;
+    await refresh.press("Enter");
+    await expect(panel.getByRole("status")).toContainText(text(`DSH 未能从工作台端口 ${port} 读取插件目录`,
+      `DSH could not read the plugin catalogue on workbench port ${port}`));
+    await expect(launch).toHaveCount(0);
+    await expect(receipt).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: text("复制核验命令", "Copy check command") })).toBeVisible();
+    timestamp = last;
+    connected = true;
+    await refresh.press("Enter");
+    await expect(receipt.locator("time")).toHaveAttribute("datetime", last);
+    await expect(launch).toBeVisible();
+    await expect(link).toBeChecked();
+    await expect(panel.locator(".dsh-session-command code")).toContainText(`--port ${port} --no-open`);
+    expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(opener).toBeFocused();
+    await expect(prompt).toHaveValue(question);
+    expect(writes).toEqual([]);
+  });
+}
 
 test("refreshes stale and incomplete DSH registry receipts from the session using the keyboard", async ({ page, baseURL }) => {
   const origin = new URL(baseURL!).origin;
@@ -1058,7 +1144,7 @@ test("turns a typed question into an explicit selectable and confirmable mission
   const heading = page.locator(".view-workflow main h1");
   await expect(heading).toBeFocused(lazyWorkspaceContentLoad);
   await expect(heading).toBeInViewport({ ratio: 1 });
-  await page.locator('a[href="#bridge-flight"]').first().press("Enter");
+  await page.getByRole("button", { name: /任务航线.*工件门禁/ }).press("Enter");
   await expect(page.locator("#bridge-flight")).toBeInViewport();
   await expect(heading).not.toBeFocused();
   await expect(page.locator(".session-handoff > .cm-action")).toHaveClass(/cm-action--sm/);
@@ -2289,7 +2375,7 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
       const { left, right, top, bottom } = element.getBoundingClientRect();
       return { left, right, top, bottom };
     }));
-  expect(controls).toHaveLength(3);
+  expect(controls).toHaveLength(4);
   for (const [index, box] of controls.entries()) {
     expect(box.left).toBeGreaterThanOrEqual(0);
     expect(box.right).toBeLessThanOrEqual(320);

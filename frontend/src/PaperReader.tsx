@@ -13,7 +13,8 @@ import { paperPdfIntake } from "./paperPdfIntake";
 import { materialFactsForSelectedPaper } from "./readerMaterialFacts";
 import { researchExtensionReadiness } from "./researchExtensionReadiness";
 import { ReadOnlyPreviewContext } from "./ReadOnlyPreviewContext";
-import type { EvidenceMarkdownLocation, EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateMarkdownLineSource, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
+import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateMarkdownLineSource, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
+import type { ReaderEvidenceLocation } from "./readerEvidenceQuote";
 import { ActionButton } from "./uiPrimitives";
 import { uiLanguage } from "./zh";
 
@@ -88,7 +89,7 @@ export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSe
     focusedLinkedEvidence = true;
     requestAnimationFrame(() => { if (element.isConnected) element.focus(); });
   };
-  const [sourceJump, setSourceJump] = createSignal<(EvidenceMarkdownLocation & { sourceKey: string }) | null>(null);
+  const [sourceJump, setSourceJump] = createSignal<(ReaderEvidenceLocation & { sourceKey: string }) | null>(null);
   const sourceDetailsId = createUniqueId();
   let sourceDetails: HTMLDetailsElement | undefined;
   const sourceKey = () => {
@@ -110,9 +111,10 @@ export function PaperReader(props: { bundle: ImportedBundle; session: ResearchSe
   function openEvidenceSource() {
     const key = sourceKey();
     const evidenceId = traceableEvidence();
-    if (!key || !evidenceId || !sourceDetails) return;
+    const evidence = linkedSelected();
+    if (!key || !evidenceId || !evidence || !sourceDetails) return;
     sourceDetails.open = true;
-    setSourceJump({ evidenceId, sourceKey: key });
+    setSourceJump({ evidenceId, sourceKey: key, quote: evidence.quote });
   }
   const gate = createMemo(() => evidenceGate(props.bundle, props.session));
   const comparison = createMemo(() => researchExtensionReadiness(props.bundle));

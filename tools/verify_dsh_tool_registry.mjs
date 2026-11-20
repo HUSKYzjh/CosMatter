@@ -23,7 +23,7 @@ async function browserRead(webOrigin, path) {
   return await response.json()
 }
 
-export async function apply(ctx, { expectedTools, catalogue, webOrigin }) {
+export async function apply(ctx, { expectedTools, catalogue, webOrigin, runId }) {
   try {
     const registeredCosMatterTools = () => ctx.tools.definitions()
       .map(({ name }) => name)
@@ -36,7 +36,6 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin }) {
     assert.deepEqual(registeredCosMatterTools(), [...expectedTools].sort())
     const { value: discovered } = await dispatch(ctx, 'cosmatter_plugin_catalogue', {})
     assert.deepEqual(JSON.parse(JSON.stringify(discovered)), catalogue)
-    const runId = 'cosmatter_release_probe'
     const missionArgs = {
       run_id: runId,
       question: 'How would epitaxial strain affect phase stability in a BiFeO3 thin film?',
@@ -67,6 +66,15 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin }) {
     assert.equal(workflow.run_id, runId)
     assert.equal(workflow.mission_id, mission.mission_id)
     assert.equal(workflow.next_stage, 'plan')
+    const contract = await dispatch(ctx, 'cosmatter_stage_contract', {})
+    assert.equal(contract.value.run_id, runId)
+    assert.equal(contract.value.mission_id, mission.mission_id)
+    assert.equal(contract.value.next_stage, workflow.next_stage)
+    assert.deepEqual(JSON.parse(contract.content[0].text), JSON.parse(JSON.stringify(contract.value)))
+    const contractTool = ctx.tools.definitions().find(({ name }) => name === 'cosmatter_stage_contract')
+    assert.deepEqual(contractTool.presentResult({}, contract)?.content, [{
+      type: 'text', text: `${runId}\nNext stage: plan\nHuman review: plan approval\nCompletion requires: approved flight plan`,
+    }])
     const runRoute = `/api/runs/${runId}`
     const [browserStatus, browserBundle, pdfRegistry] = await Promise.all([
       browserRead(webOrigin, `${runRoute}/status`),
@@ -78,7 +86,7 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin }) {
     assert.equal(browserBundle.mission.mission_id, mission.mission_id)
     assert.equal(pdfRegistry.run_id, runId)
     assert.deepEqual(pdfRegistry.tasks, [])
-    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission result card, and browser handoff verified\n`, () => process.exit(0))
+    process.stdout.write(`CosMatter release probe: ${expectedTools.length} tools, loopback catalogue, mission result card, bound stage contract, and browser handoff verified\n`, () => process.exit(0))
   } catch (error) {
     process.stderr.write(`CosMatter release probe failed: ${error.message}\n`, () => process.exit(1))
   }

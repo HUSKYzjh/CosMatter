@@ -135,6 +135,12 @@ export declare class CosMatterObservabilityClient {
 }
 export declare function validateWorkflowStatus(value: unknown, expectedRunId: string): WorkflowStatus;
 export declare function validateArtifactManifest(value: unknown, expectedRunId: string): ArtifactManifest;
+export declare function stageContractTemplate(stage: unknown): {
+    requirements: readonly string[];
+    humanGate: string;
+    outputs: readonly string[];
+    recoveryRoute: string;
+} | undefined;
 export declare function validateStageContract(value: unknown, expectedRunId: string): StageContract;
 export declare function validateOperationalTelemetry(value: unknown, expectedRunId: string): OperationalTelemetry;
 export declare function validateWorkflowDag(value: unknown, expectedRunId: string): WorkflowDag;
