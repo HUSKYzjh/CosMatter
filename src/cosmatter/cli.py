@@ -165,8 +165,17 @@ def command_check_dsh_profile(args: argparse.Namespace) -> int:
 
 
 def command_repair_dsh_bundles(args: argparse.Namespace) -> int:
+    group_manifest = Path("plugins") / "dsh-plugin-group.json"
+    if (AGENT_ROOT / group_manifest).is_file():
+        checkout = AGENT_ROOT
+    else:
+        venv = Path(sys.prefix)
+        if sys.prefix != sys.base_prefix and venv.name == ".venv" and (venv.parent / group_manifest).is_file():
+            checkout = venv.parent
+        else:
+            checkout = Path.cwd()
     try:
-        _json_print(repair_dsh_bundles(Path.cwd(), executable=args.dsh_executable))
+        _json_print(repair_dsh_bundles(checkout, executable=args.dsh_executable))
     except DshBundleRepairError as error:
         _json_print({"error": str(error)})
         return 2

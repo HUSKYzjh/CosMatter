@@ -23,6 +23,33 @@ from cosmatter.dsh_profile_status import (
 
 
 class DshProfileStatusTests(unittest.TestCase):
+    def test_cli_repair_prefers_the_checkout_for_the_invoked_executable(self) -> None:
+        from cosmatter.cli import main
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, project, term = root / "editable source", root / "wheel project", root / "another checkout"
+            manifest = Path("plugins") / "dsh-plugin-group.json"
+            for checkout in (source, project, term):
+                (checkout / manifest).parent.mkdir(parents=True)
+                (checkout / manifest).write_text("{}", encoding="utf-8")
+            with (
+                patch("cosmatter.cli.AGENT_ROOT", source),
+                patch("cosmatter.cli.sys.prefix", str(project / ".venv")),
+                patch("cosmatter.cli.sys.base_prefix", str(root / "python")),
+                patch("cosmatter.cli.Path.cwd", return_value=term),
+                patch("cosmatter.cli._json_print"),
+                patch("cosmatter.cli.repair_dsh_bundles") as repair,
+            ):
+                self.assertEqual(main(["repair-dsh-bundles"]), 0)
+                repair.assert_called_once_with(source, executable="dsh")
+                (source / manifest).unlink()
+                self.assertEqual(main(["repair-dsh-bundles"]), 0)
+                self.assertEqual(repair.call_args.args, (project,))
+                (project / manifest).unlink()
+                self.assertEqual(main(["repair-dsh-bundles"]), 0)
+                self.assertEqual(repair.call_args.args, (term,))
+
     def test_cli_explicit_tool_checks_require_the_whole_group_and_keep_the_receipt(self) -> None:
         from cosmatter.cli import main
 
