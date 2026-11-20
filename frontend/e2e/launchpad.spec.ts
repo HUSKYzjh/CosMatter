@@ -837,7 +837,10 @@ test("opens DSH plugins from the launchpad before the first run and preserves th
   const session = dialog.getByRole("tabpanel", { name: "DSH 会话" });
   const command = session.locator(".dsh-session-command code");
   await expect(session.getByRole("button", { name: "复制补齐命令" })).toBeVisible();
-  await expect(command).toHaveText("cosmatter repair-dsh-bundles");
+  await expect(command).toHaveText([
+    "cosmatter repair-dsh-bundles",
+    `cosmatter check-dsh-profile --verify-tools --loopback-port ${port}`,
+  ]);
   profile = dshProfileSnapshot;
   await session.getByRole("button", { name: "刷新会话状态" }).click();
   await expect(session.getByRole("button", { name: "复制核验命令" })).toBeVisible();
@@ -2498,12 +2501,13 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
     return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight && dialog.scrollWidth <= dialog.clientWidth;
   })).toBe(true);
   await expect(sessionPanel.getByRole("combobox", { name: "命令运行环境" })).toBeVisible();
+  await expect(mode.getByRole("radio")).toHaveCount(3);
   const controls = await sessionPanel.locator("label:has(input), button, select").evaluateAll(elements =>
     elements.map(element => {
       const { left, right, top, bottom } = element.getBoundingClientRect();
       return { left, right, top, bottom };
     }));
-  expect(controls).toHaveLength(5);
+  expect(controls).toHaveLength(6);
   for (const [index, box] of controls.entries()) {
     expect(box.left).toBeGreaterThanOrEqual(0);
     expect(box.right).toBeLessThanOrEqual(320);

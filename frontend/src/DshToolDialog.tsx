@@ -114,6 +114,11 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
     props.onRefreshCatalogue();
   };
   const workbenchOffline = () => !props.profile && props.profileHealth === "unavailable" && props.catalogueHealth === "unavailable";
+  const dismissDialog = () => {
+    // Keep app state in step with native focus restoration. The close event arrives later.
+    dialog.close();
+    props.onDismiss();
+  };
 
   onMount(() => {
     dialog.showModal();
@@ -122,11 +127,12 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
     initialFocus?.focus();
   });
 
-  return <dialog ref={dialog} class="dsh-tool-dialog" aria-labelledby="dsh-tool-dialog-title" onKeyDown={wrapDialogFocus} onClose={() => props.onDismiss()}>
+  return <dialog ref={dialog} class="dsh-tool-dialog" aria-labelledby="dsh-tool-dialog-title" onKeyDown={wrapDialogFocus}
+    onCancel={event => { event.preventDefault(); dismissDialog(); }}>
     <header>
       <h2 id="dsh-tool-dialog-title" ref={heading} tabIndex={-1}>{x("DSH 工具与会话", "DSH tools and sessions")}</h2>
       <ActionButton size="sm" variant="quiet" aria-label={x("关闭 DSH 面板", "Close DSH panel")}
-        onClick={() => dialog.close()}>{x("关闭", "Close")}</ActionButton>
+        onClick={dismissDialog}>{x("关闭", "Close")}</ActionButton>
     </header>
     <div class="dsh-dialog-tabs" role="tablist" aria-label={x("DSH 视图", "DSH views")} onKeyDown={navigateTabs}>
       <For each={views}>{(tab) => <button type="button" role="tab" id={`dsh-${tab}-tab`} aria-controls={`dsh-${tab}-panel`}

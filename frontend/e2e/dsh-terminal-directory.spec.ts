@@ -5,6 +5,27 @@ const terminals = [
   { mode: "posix-venv", root: "/home/lab/O'Brien group/", executable: "'/home/lab/O'\\''Brien group/.venv/bin/cosmatter'" },
 ];
 
+test("reopens DSH as soon as closing restores focus to the launcher", async ({ page }) => {
+  await page.route("**/api/**", route => route.fulfill({ status: 503, json: {} }));
+  await page.goto("/?api=local");
+  const opener = page.getByRole("button", { name: "DSH 插件", exact: true });
+  const dialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
+  const session = dialog.getByRole("tab", { name: "DSH 会话" });
+  await opener.press("Enter");
+
+  for (const action of ["Escape", "close button"]) {
+    await expect(session).toBeFocused();
+    // Activate the launcher on the first microtask after focus returns, before a queued close event.
+    await opener.evaluate(button => {
+      button.addEventListener("focus", () => queueMicrotask(() => button.click()), { once: true });
+    });
+    if (action === "Escape") await page.keyboard.press("Escape");
+    else await dialog.getByRole("button", { name: "关闭 DSH 面板" }).press("Enter");
+    await expect(session).toBeFocused();
+    await expect(dialog.getByRole("region", { name: "启动本机工作台" })).toBeVisible();
+  }
+});
+
 for (const terminal of terminals) {
   test("copies the chosen repository executable from " + terminal.mode, async ({ page, context, baseURL }) => {
     await page.setViewportSize({ width: 320, height: 650 });
