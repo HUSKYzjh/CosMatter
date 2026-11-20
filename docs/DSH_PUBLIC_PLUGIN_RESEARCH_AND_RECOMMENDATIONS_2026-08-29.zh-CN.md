@@ -15,6 +15,8 @@
 | DSH 通过社区插件 `dsh-orca-agents` 派工给 Orca | 在 DSH 对话中创建工作树，交给 Orca 中的 agent 执行，完成后通知 DSH。 | 作者列出的环境为 Orca 1.4.193 和 DSH 0.1.5-rc.2，CosMatter 的基线是 0.2.2-rc.3。该插件按工作树观察 agent，有一个返回 done 就可能报告完成。文件枚举仅接受以 `/` 开头的路径，收到 Windows 盘符路径时会返回空列表。用于科研任务前需要验证回执归属及实际文件。[插件说明](https://github.com/aa2246740/dsh-orca-agents/blob/51b8b23e0b466ddf15b085d039c157e01d76dce8/README.md#L22-L31) · [完成判断和文件枚举](https://github.com/aa2246740/dsh-orca-agents/blob/51b8b23e0b466ddf15b085d039c157e01d76dce8/src/watch.ts#L9-L44) |
 | 在 DSH 内协调或查看分工 | 官方 Agent Teams 可领取共享任务，更新时核对负责人和修订版本。社区插件 `dsh-task-dag` 可显示子会话、任务依赖和通信关系。 | DSH 方案可作为对照组。官方工具需要在根会话启用 Team 模式。`dsh-task-dag` 1.5.1 的包清单限定 DSH 低于 0.2.0，适合作为依赖图、节点详情和键盘交互的设计参考。[官方任务工具](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/team/tool-agent-team/README.md) · [DAG 交互](https://github.com/LeemanCheung/dsh-task-dag/tree/8fe407f525823091523cd31bc940342feb83b7d1) · [版本范围](https://github.com/LeemanCheung/dsh-task-dag/blob/8fe407f525823091523cd31bc940342feb83b7d1/package.json#L45-L52) |
 
+反向派工插件另做了宿主版本核对。作者 2026-09-13 的提交声明 `dsh-orca-agents@0.2.0`，本机 DSH `0.2.2-rc.3` 的兼容函数接受这份清单。按包名查询公共 npm 注册表返回 404。候选来源是作者的固定 Git 提交，插件在本机的实际派工兼容性仍待验证。[作者清单](https://github.com/aa2246740/dsh-orca-agents/blob/51b8b23e0b466ddf15b085d039c157e01d76dce8/package.json#L26-L43) · [DSH 宿主版本判断](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/boot/app-boot/src/plugin-compatibility.ts#L68-L93)
+
 #### 在 Orca 工作树中打开当前研究任务
 
 1. 在 CosMatter 本机工作台打开一个已有运行，记下当前运行 ID 和地址栏的端口。在 Orca 桌面选择要使用的 Git 工作树，从标签栏的「+」打开普通终端。Windows 选本机 PowerShell，macOS 或 Linux 选本机 shell。若使用 SSH、容器或 WSL，先确认该环境中的环回地址能访问目标工作台。[Orca 桌面安装](https://orca.dev/docs/install) · [Orca 终端与 Windows shell](https://github.com/stablyai/orca/blob/2920a624132f17f14f4577e4ed48ce1c31ae7f5c/docs/site/content/docs/terminal.mdx#L79-L82)
@@ -47,7 +49,7 @@ if ($LASTEXITCODE -eq 0) {
 
 **CosMatter 侧已实测。** 两个临时数据目录和两个独立 DSH profile 分别连接端口 61894、61895，运行 ID 为 `probe_alpha`、`probe_beta`。DSH 0.2.2-rc.3 的 `cosmatter_workflow_status` 在省略运行 ID 时均返回各自的任务，`cosmatter_recent_runs` 各返回一项。两张结果卡都打开了对应端口的研究任务，工作台显示各自的材料。交换运行 ID 后，两次工具调用均被拒绝，两个工作台接口均返回 404。临时端口和数据已清理。这是两个 DSH 实例与两个 CosMatter 工作台之间的隔离验证。
 
-**Orca 工作树实测。** 官方 Windows 桌面包 1.4.265 附带的原生 CLI 启动了独立运行时。用 Orca 在临时 Git 工作树创建 Windows 终端，在里面执行 CosMatter 的 DSH 状态命令，再用 `orca terminal read` 读回结果。工作台端口 51656 只有合成运行 `run_orca_binding`，终端返回同一运行 ID、阶段 `plan`、状态 `waiting_human_review`、恢复路线 `plan_review`，退出码为 0。这条记录来自 Orca 后台工作树终端。可见桌面标签页和受监督 worker 的多次派工仍需分别验收。[官方 Windows 发布](https://github.com/stablyai/orca/releases/tag/v1.4.265) · [终端与编排的适用场景](https://orca.dev/docs/cli/orchestration)
+**Orca 工作树实测。** 官方 Windows 桌面包 1.4.265 附带的原生 CLI 启动了独立运行时。用 Orca 在临时 Git 工作树创建 Windows 终端，在里面执行 CosMatter 的 DSH 状态命令，再用 `orca terminal read` 读回结果。工作台端口 51656 只有合成运行 `run_orca_binding`，终端返回同一运行 ID、阶段 `plan`、状态 `waiting_human_review`、恢复路线 `plan_review`，退出码为 0。同一 Orca 终端也用带运行 ID 的 `--surface web --no-open` 打开了 DSH Web。该会话注册了 20 个 CosMatter 工具，以 `{}` 调用 `cosmatter_workflow_status` 和 `cosmatter_stage_contract` 均返回 `run_orca_binding`，其中阶段契约返回 `plan_approval`。全程使用合成任务，直接调用只读工具。TUI 启动给出了需另装交互前端的提示。可见桌面标签页和受监督 worker 的多次派工仍需分别验收。[官方 Windows 发布](https://github.com/stablyai/orca/releases/tag/v1.4.265) · [终端与编排的适用场景](https://orca.dev/docs/cli/orchestration)
 
 下一项验收可在两个 Orca 工作树同时打开上述两个端口，再验证重复派工与迟到回执。独立工作树适合放脚本和中间产物，同一公开 PDF 用内容哈希标识。两个 worker 核对同一份 PDF 仅产生两次核对记录，独立文献数仍为一篇。
 
