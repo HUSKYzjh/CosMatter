@@ -43,7 +43,7 @@
 
 | 候选 | 对 CosMatter 最值得试的地方 | 适用边界与作者来源 |
 |---|---|---|
-| **dsh-kb-rag 1.6.8** | 从已有 PDF 或本地 Zotero 附件中检索段落和图注，结果带物理页码、章节和 DOI。可对照 Source Map，检查一个 BFO 数值能否跳回正确的段落、样品和页。 | 要求 PDF 有文本层。作者说明首次检索会下载约 1.2 GB 的本地模型。扫描件应单列测试 MinerU 路线。[作者仓库](https://github.com/Breeze136/dsh-kb-rag) · [发布清单](https://registry.npmjs.org/dsh-kb-rag/1.6.8) |
+| **dsh-kb-rag 1.6.8** | 从已有 PDF 或本地 Zotero 附件中检索段落和图注，结果带物理页码、章节和 DOI。可对照 Source Map，检查一个 BFO 数值能否跳回正确的段落、样品和页。 | 要求 PDF 有文本层。DSH 自带的 Python 3.12.14 和 CosMatter 虚拟环境 3.14.7 均缺少 PyMuPDF、faiss-cpu、sentence-transformers；首次检索还需约 1.2 GB 模型。扫描件应单列测试 MinerU 路线。[作者仓库](https://github.com/Breeze136/dsh-kb-rag) · [发布清单](https://registry.npmjs.org/dsh-kb-rag/1.6.8) |
 | **@eduwork/dsh-literature 0.1.7** | 跨 DBLP、arXiv 去重，保留发表版与预印本的区别，取得 BibTeX 和可用全文。适合为同一论文建立版本配对，再选定用于引证的 PDF。 | 当前检索源限于这两个数据库。对材料实验论文，需额外验证期刊覆盖。包要求 Node ≥24.18.0。[作者中文文档](https://github.com/ECNU/EduWork/blob/main/packages/dsh-literature/README.md) · [发布清单](https://registry.npmjs.org/@eduwork%2fdsh-literature/0.1.7) |
 | **dsh-science-workbench 0.3.1** | 从图回看生成它的计算单元、参数、随机种子和输出哈希。Pb/Sr 构型项目可借此设计“构型 → MD 运行 → 性质 → 图”的追踪界面。 | 它提供计算记录和重跑交互。介电、压电结果仍需由实际 MD 任务产生，再比较重复运行的统计误差。[作者仓库](https://github.com/poplarity/dsh-science-workbench) · [发布清单](https://registry.npmjs.org/dsh-science-workbench/0.3.1) |
 | **dsh-ai4scholar 0.6.6** | 多源发现、引文关系和 DOI 原文检索可作为 SciVerse 的独立对照。可观察第二条路线找到了哪些独立论文，以及哪些结果只增加了同文异版。 | 使用 AI4Scholar 服务，部分查询计费，另需该服务的密钥。此次没有调用服务。[作者仓库](https://github.com/literaf/dsh-ai4scholar) · [发布清单](https://registry.npmjs.org/dsh-ai4scholar/0.6.6) |
