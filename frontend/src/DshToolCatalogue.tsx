@@ -11,7 +11,7 @@ import type { DshProfileHealth, DshProfileStatus, HarnessPluginDescriptor, Workf
 import { ActionButton, StatusBadge } from "./uiPrimitives";
 import { createDshClipboard, DshManualCopy } from "./DshManualCopy";
 
-type Access = "read" | "local" | "review" | "external";
+type Access = "read" | "calculate" | "local" | "review" | "external";
 type ToolCopy = {
   label: readonly [string, string];
   access: Access;
@@ -20,6 +20,8 @@ type ToolCopy = {
 };
 
 const TOOL_COPY: Readonly<Partial<Record<string, ToolCopy>>> = {
+  cosmatter_pst_occupancy_count: { label: ["计算 Pb/Sr 超胞占位和构型数", "Count Pb/Sr supercell occupations and configurations"], access: "calculate", note: ["输入 Pb 分数，核对 512 个 A 位的整数配比与带标号排列数。", "Enter a Pb fraction to check the integer composition and count arrangements on 512 labeled A sites."] },
+  cosmatter_md_field_response: { label: ["从 MD 均值计算纵向介电或压电响应", "Calculate longitudinal dielectric or piezoelectric response from MD means"], access: "calculate", note: ["用正负电场下的极化或应变作中心差分，保留轴向、力学边界和单位。", "Use polarization or strain at opposite fields, with the axis, mechanical boundary and units."] },
   cosmatter_mission_create: { label: ["建立本机任务", "Create a local mission"], access: "local" },
   cosmatter_recent_runs: { label: ["查找最近的本机任务", "Find recent local runs"], access: "read" },
   cosmatter_workflow_status: { label: ["读取任务进度", "Read workflow status"], access: "read" },
@@ -43,6 +45,7 @@ const TOOL_COPY: Readonly<Partial<Record<string, ToolCopy>>> = {
 };
 
 const ACCESS_LABELS: Record<Access, readonly [string, string]> = {
+  calculate: ["本机计算", "Local calculation"],
   read: ["本机读取", "Local read"],
   local: ["本机登记", "Local record"],
   review: ["人工审核后登记", "Human review required"],

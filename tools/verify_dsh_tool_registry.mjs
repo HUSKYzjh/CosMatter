@@ -34,6 +34,17 @@ export async function apply(ctx, { expectedTools, catalogue, webOrigin, runId, s
       await sleep(50)
     }
     assert.deepEqual(registeredCosMatterTools(), [...expectedTools].sort())
+    const { value: occupations } = await dispatch(ctx, 'cosmatter_pst_occupancy_count', { pb_fraction: '0.5' })
+    assert.equal(occupations.n_pb, 256)
+    assert.equal(occupations.n_sr, 256)
+    assert.equal(occupations.arrangement_count.length, 153)
+    const { value: response } = await dispatch(ctx, 'cosmatter_md_field_response', {
+      axis: 'z', mechanical_boundary: 'fixed_stress', observable: 'normal_strain',
+      field_magnitude_V_per_m: 1e6, mean_at_minus_field: -5e-5, mean_at_plus_field: 5e-5,
+    })
+    assert.equal(response.component, 'd33')
+    assert.equal(response.unit, 'pm/V')
+    assert.equal(response.value, 50)
     const { value: discovered } = await dispatch(ctx, 'cosmatter_plugin_catalogue', {})
     assert.deepEqual(JSON.parse(JSON.stringify(discovered)), catalogue)
     const missionArgs = {

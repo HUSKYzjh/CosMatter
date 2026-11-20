@@ -1,7 +1,7 @@
 # CosMatter DSH 插件组：兼容性、升级与发布就绪度
 
 > 状态：本地开发/隔离 profile 已验收；**尚未批准公开发布**。
-> 更新：2026-11-19。
+> 更新：2026-11-20。
 
 本文件是 `plugins/dsh-plugin-group.json` 的运行与发布补充。CosMatter 的
 Python 领域层仍是任务、来源、人工门禁和审计的唯一真相源；DSH bundle 只经
@@ -18,14 +18,14 @@ Python 领域层仍是任务、来源、人工门禁和审计的唯一真相源�
 | SciVerse Python SDK | 0.7.1 | `AgentToolsClient` 适配器单测、editable 安装与 loopback 调研回归。 |
 | DSH CLI | 0.2.2-rc.3 | 隔离 headless profile 安装、配置组合与启动检查。 |
 | Cordis | 4.1.0 | 七个 bundle 的构建与真实 Cordis 工具注册。 |
-| `@deepseek-ai/dsh-tools` | 0.2.2-rc.3 | 核验 20 个工具的注册，并用原生工具读取本机目录和任务。 |
+| `@deepseek-ai/dsh-tools` | 0.2.2-rc.3 | 核验 22 个工具的注册，并用原生工具读取本机目录和任务。 |
 
 | bundle | DSH 工具 | 外部能力与不可越过的边界 |
 | --- | --- | --- |
 | `@cosmatter/dsh-mission-plugin` | `cosmatter_mission_create` | 仅建立本地任务与 fleet 分派。 |
 | `@cosmatter/dsh-observability-plugin` | `cosmatter_recent_runs`、`cosmatter_workflow_status`、`cosmatter_artifact_manifest` | 读取本机任务链接、流程状态和固定工件卡片。任务链接只含运行 ID、更新时间、停止状态与本机打开地址。 |
 | `@cosmatter/dsh-policy-plugin` | `cosmatter_plugin_catalogue`、`cosmatter_plugin_authorization_plan` | 只读目录与非执行授权判断。 |
-| `@cosmatter/dsh-research-plugin` | `cosmatter_research_plan_draft`、`cosmatter_research_plan_approve`、`cosmatter_research_query_execute` | DeepSeek 草案与元数据检索均须精确的任务范围同意并由后端先写入授权回执；不处理全文、MinerU 或证据接受。 |
+| `@cosmatter/dsh-research-plugin` | `cosmatter_research_plan_draft`、`cosmatter_research_plan_approve`、`cosmatter_research_query_execute`、`cosmatter_pst_occupancy_count`、`cosmatter_md_field_response` | 组分计数与 MD 均值有限差分在本机执行。 DeepSeek 草案与元数据检索均须精确的任务范围同意并由后端先写入授权回执；不处理全文、MinerU 或证据接受。 |
 | `@cosmatter/dsh-review-plugin` | `cosmatter_candidate_screening_template`、`cosmatter_candidate_screening_record` | 只读候选安全元数据，并为全部当前候选记录完整人工筛选决定；不调用提供商或接受证据。 |
 | `@cosmatter/dsh-document-plugin` | `cosmatter_mineru_source_submit`、`cosmatter_mineru_task_poll` | 只有候选上游全文访问声明或当前哈希内容确认、完整人工筛选和三项精确同意均满足时才调度 MinerU；只返回任务状态，不返回 URL、全文或解析输出。 |
 | `@cosmatter/dsh-graph-plugin` | `cosmatter_graph_query`、`cosmatter_accepted_evidence_search`、`cosmatter_graph_plan`、`cosmatter_graph_review_request` | 只读已接受证据图和有界 evidence-card 检索、待审计划及审核请求。 |
@@ -64,7 +64,7 @@ $env:PYTHONPATH = 'src'
 
 在本机诊断安装环境时，先执行下面的无 key 命令。它会明确报告 DSH、Node、npm 或
 pnpm 缺失或版本不符。随后打包七个 bundle，在临时 `DSH_HOME` 中安装并核对组合配置。
-验收还会检查 headless 帮助入口，并在禁用任务运行器和模型适配器的 profile 中检查 20 个工具的注册。
+验收还会检查 headless 帮助入口，并在禁用任务运行器和模型适配器的 profile 中检查 22 个工具的注册。
 DSH 原生工具执行器通过临时 CosMatter HTTP 服务读取正式契约目录、建立一个合成任务，再确认该任务的下一步为计划阶段。
 验收使用临时 profile 与任务目录，关闭提供方配置。舰桥的「查找 DSH 工具」提供工具名、所属包与授权要求。
 目录的「研究阶段」可与关键词及授权类型一起筛选。当前任务的本机阶段契约、DAG 和遥测核验通过时，可用「只看本阶段」直接筛选。来源定位、证据审核、反例复核、报告审核和人工评测仍在对应的工作台界面处理。
@@ -124,7 +124,7 @@ Set-Location D:\CosMatter\development\CosMatter
 `cosmatter repair-dsh-bundles`。命令用 DSH 离线链接仓库中缺失或无效的已编译插件，再将
 CosMatter 插件补入 `tui` 的启用清单。返回工作台刷新安装状态后，再做终端注册和连通核验。
 末尾端口随工作台地址变化，例如 `cosmatter check-dsh-profile --verify-tools --loopback-port 8765`。
-如果目录可达但只注册了 19/20 个工具，核验命令会退出 `2`，会话面板会列出已确认的缺项和所属插件。用键盘选中缺项可直接查看对应工具说明，切回会话可继续处理。
+如果目录可达但只注册了 21/22 个工具，核验命令会退出 `2`，会话面板会列出已确认的缺项和所属插件。用键盘选中缺项可直接查看对应工具说明，切回会话可继续处理。
 只有配置组合和注册回执均匹配本机文件、DSH 版本相同且都覆盖该包时，补齐命令才会按注册缺项重连该插件。运行 `cosmatter repair-dsh-bundles` 后，用当前端口再次运行完整核验命令，再点「刷新会话状态」。配置变化或回执过期时，先重新核验。
 当前端口核验通过后，舰桥提供「复制 DSH 启动命令」。在 CosMatter 终端运行
 `cosmatter open-dsh-workbench --port <当前端口>`，DSH 会打开本地网页，并为会话载入 `tui` 中已安装的七个 CosMatter 插件。

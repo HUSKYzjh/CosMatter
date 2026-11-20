@@ -28,8 +28,8 @@
       "package": "@cosmatter/dsh-research-plugin",
       "path": "dsh-cosmatter-research-plugin",
       "plugin_id": "cosmatter-research",
-      "tools": ["cosmatter_research_plan_draft", "cosmatter_research_plan_approve", "cosmatter_research_query_execute"],
-      "automation_boundary": "explicit-consent_deepseek_drafts_and_metadata-only_provider_queries; no_fulltext_or_evidence_acceptance"
+      "tools": ["cosmatter_research_plan_draft", "cosmatter_research_plan_approve", "cosmatter_research_query_execute", "cosmatter_pst_occupancy_count", "cosmatter_md_field_response"],
+      "automation_boundary": "offline_supplied_input_materials_arithmetic; explicit-consent_deepseek_drafts_and_metadata-only_provider_queries; no_fulltext_or_evidence_acceptance"
     },
     {
       "package": "@cosmatter/dsh-review-plugin",

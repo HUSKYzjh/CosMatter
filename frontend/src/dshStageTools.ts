@@ -3,14 +3,14 @@ import type { WorkflowStageName } from "./localApi";
 /** Catalogue filters for the run's stage. Membership conveys relevance only. */
 export const DSH_STAGE_TOOLS: Record<WorkflowStageName, readonly string[]> = {
   intake: ["cosmatter_mission_create", "cosmatter_recent_runs", "cosmatter_workflow_status"],
-  plan: ["cosmatter_stage_contract", "cosmatter_research_plan_draft", "cosmatter_research_plan_approve"],
+  plan: ["cosmatter_stage_contract", "cosmatter_research_plan_draft", "cosmatter_research_plan_approve", "cosmatter_pst_occupancy_count"],
   retrieval: ["cosmatter_stage_contract", "cosmatter_plugin_authorization_plan", "cosmatter_research_query_execute", "cosmatter_operational_telemetry"],
   screening: ["cosmatter_stage_contract", "cosmatter_candidate_screening_template", "cosmatter_candidate_screening_record"],
   parse: ["cosmatter_stage_contract", "cosmatter_mineru_source_submit", "cosmatter_mineru_task_poll", "cosmatter_operational_telemetry"],
   extraction: ["cosmatter_stage_contract", "cosmatter_accepted_evidence_search"],
   gap: ["cosmatter_stage_contract", "cosmatter_graph_query", "cosmatter_accepted_evidence_search", "cosmatter_graph_plan", "cosmatter_graph_review_request"],
   report: ["cosmatter_stage_contract", "cosmatter_artifact_manifest"],
-  evaluation: ["cosmatter_stage_contract", "cosmatter_artifact_manifest", "cosmatter_operational_telemetry"],
+  evaluation: ["cosmatter_stage_contract", "cosmatter_artifact_manifest", "cosmatter_operational_telemetry", "cosmatter_md_field_response"],
 };
 
 export const DSH_STAGE_NOTES: Partial<Record<WorkflowStageName, readonly [string, string]>> = {

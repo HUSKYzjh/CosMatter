@@ -5,7 +5,11 @@ type EvidenceSelector = string | {
 } | {
     documentId: string;
     locator: string;
+} | {
+    doi: string;
+    locator?: string;
 };
+export declare function canonicalEvidenceDoi(value: string): string | null;
 export declare class CosMatterLoopbackClient {
     private readonly request;
     readonly config: NormalizedConfig;

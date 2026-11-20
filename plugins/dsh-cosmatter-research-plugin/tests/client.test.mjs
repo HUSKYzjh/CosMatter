@@ -32,7 +32,7 @@ test('client keeps approved plans and metadata candidates bounded', async () => 
   assert.equal((await client.executeQuery('run_1', { authorizations: ['metadata_provider_consent', 'mission_scoped_egress_consent'], query_index: 0, sources: ['sciverse'] }, 'call-0003')).candidate_count, 1)
 })
 
-test('DSH apply registers only the explicit-consent research tools', async t => {
+test('DSH registers research and offline calculation tools and preserves research dispatch events', async t => {
   const tools = []; const events = []; let dispose
   const responses = [draft, approved, query]
   t.mock.method(globalThis, 'fetch', async (_url, init) =>
@@ -40,7 +40,7 @@ test('DSH apply registers only the explicit-consent research tools', async t => 
   apply({ tools: { register: tool => tools.push(tool) }, emit: (event, payload) => events.push([event, payload]), effect: effect => { dispose = effect() } })
   assert.equal(name, 'cosmatter-research')
   assert.deepEqual(inject, ['tools'])
-  assert.deepEqual(tools.map(tool => tool.name), ['cosmatter_research_plan_draft', 'cosmatter_research_plan_approve', 'cosmatter_research_query_execute'])
+  assert.deepEqual(tools.map(tool => tool.name), ['cosmatter_research_plan_draft', 'cosmatter_research_plan_approve', 'cosmatter_research_query_execute', 'cosmatter_pst_occupancy_count', 'cosmatter_md_field_response'])
   await tools[0].execute({ run_id: 'run_1', authorizations: ['mission_scoped_egress_consent', 'deepseek_request_consent'] }, { signal: new AbortController().signal, callId: 'call-0004' })
   await tools[1].execute({ run_id: 'run_1', subquestions: ['question'], queries: ['bounded query'], counter_queries: ['bounded counter query'] }, { signal: new AbortController().signal })
   const result = await tools[2].execute(queryArgs, { signal: new AbortController().signal, callId: 'call-0005' })

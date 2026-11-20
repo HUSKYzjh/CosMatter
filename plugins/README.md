@@ -1,15 +1,13 @@
 # CosMatter DSH 插件组
 
-CosMatter 的 Python 领域层仍是任务工件、证据门禁和审计记录的唯一
-真相源。下面的包只通过 `127.0.0.1` loopback API 访问该领域层；它们不
-直接读取资料目录、密钥或私有全文。
+CosMatter 的 Python 领域层管理任务工件、证据审核与审计记录。插件经 `127.0.0.1` 访问这些记录。研究插件还支持在 DSH 进程内计算 Pb/Sr 占位数和 MD 电场响应。
 
 | 包 | DSH 工具 | 自动化边界 |
 | --- | --- | --- |
 | `dsh-cosmatter-mission-plugin` | `cosmatter_mission_create` | 仅创建有界本地任务；无模型、检索、证据接受或计划批准。 |
-| `dsh-cosmatter-observability-plugin` | `cosmatter_recent_runs`、`cosmatter_workflow_status` | 查找近期本机任务链接，读取下一阶段与各阶段计数。 |
+| `dsh-cosmatter-observability-plugin` | `cosmatter_recent_runs`、`cosmatter_workflow_status`、`cosmatter_stage_contract`、`cosmatter_operational_telemetry`、`cosmatter_workflow_dag`、`cosmatter_artifact_manifest` | 查看近期任务、阶段契约、计数、依赖和工件链接。 |
 | `dsh-cosmatter-policy-plugin` | `cosmatter_plugin_catalogue`、`cosmatter_plugin_authorization_plan` | 只读能力目录和非执行授权边界判断；不记录同意、不调度适配器。 |
-| `dsh-cosmatter-research-plugin` | `cosmatter_research_plan_draft`、`cosmatter_research_plan_approve`、`cosmatter_research_query_execute` | 仅在工具调用提供精确、任务范围同意时，由 loopback 后端生成不可信 DeepSeek 计划草案或执行已批准的元数据检索；不读取全文、不调用 MinerU、不接受证据。 |
+| `dsh-cosmatter-research-plugin` | `cosmatter_pst_occupancy_count`、`cosmatter_md_field_response`、`cosmatter_research_plan_draft`、`cosmatter_research_plan_approve`、`cosmatter_research_query_execute` | 占位和有限差分仅使用传入数值。生成外部计划草案与检索文献元数据需要对应任务的授权。 |
 | `dsh-cosmatter-review-plugin` | `cosmatter_candidate_screening_template`、`cosmatter_candidate_screening_record` | 只读候选元数据并记录完整人工筛选；不调用提供商、不调度全文或 MinerU、不接受证据。 |
 | `dsh-cosmatter-document-plugin` | `cosmatter_mineru_source_submit`、`cosmatter_mineru_task_poll` | 在候选具备全文访问依据、完整人工筛选及三项精确授权后提交或轮询 MinerU。返回任务元数据和精确到候选的本机工作台链接。 |
 | `dsh-cosmatter-graph-plugin` | `cosmatter_graph_query`、`cosmatter_accepted_evidence_search`、`cosmatter_graph_plan`、`cosmatter_graph_review_request` | 已接受证据的只读图投影与有界检索；计划与审核请求始终待人工处理。 |
@@ -18,7 +16,7 @@ CosMatter 的 Python 领域层仍是任务工件、证据门禁和审计记录�
 因此可在一条命令中直接安装全部七个 bundle：
 
 在安装前先确认本机的受支持组合；`pnpm` 缺失时，`dsh plugin add` 会在初始化
-profile 后停止，而不是降级到 npm。当前兼容矩阵固定为 DSH `0.1.0-rc.7`、Node
+profile 后停止，而不是降级到 npm。当前兼容矩阵固定为 DSH `0.2.2-rc.3`、Node
 `24.19.0`、npm `11.17.0`、pnpm `11.22.0`：
 
 ```powershell

@@ -5,6 +5,8 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 import { CosMatterResearchClient, isScreeningRevision, queryWorkbenchLink } from './client.js'
 import type { CosMatterResearchConfig } from './config.js'
+import { pstOccupancyTool } from './pst-occupancy.js'
+import { fieldResponseTool } from './field-response.js'
 
 export const name = 'cosmatter-research'
 export const inject = ['tools']
@@ -75,5 +77,7 @@ export function apply(ctx: Context, config: CosMatterResearchConfig = {}): void 
       return result as unknown as Record<string, JsonValue>
     },
   }))
+  ctx.tools.register(pstOccupancyTool)
+  ctx.tools.register(fieldResponseTool)
   ctx.effect(() => () => undefined)
 }

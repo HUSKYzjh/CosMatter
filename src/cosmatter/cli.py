@@ -86,9 +86,9 @@ from .crossref_relation_expansion import CrossrefRelationExpansionError, build_c
 from .paper_structure import PaperStructureError, paper_structure_from_review, write_paper_structure_for_document
 from .ui_preview import UiPreviewError, serve_ui_preview
 from .dsh_profile_status import (
-    DSH_RUN_READ_TOOLS, EXPECTED_DSH_TOOLS, DshBundleRepairError, DshCompositionCheckError, check_dsh_composition, open_dsh_workbench, read_dsh_evidence_link,
+    DSH_RUN_READ_TOOLS, EXPECTED_DSH_TOOLS, DshBundleRepairError, DshCompositionCheckError, check_dsh_composition, open_dsh_workbench, read_dsh_evidence_link, read_dsh_paper_evidence,
     read_dsh_catalogue, read_dsh_recent_runs, read_dsh_run_artifacts, read_dsh_run_status, read_dsh_run_tool, read_dsh_screening_link,
-    repair_dsh_bundles,
+    calculate_with_dsh, repair_dsh_bundles,
 )
 from .relation_reconciliation import RelationReconciliationError, reconciliation_from_review, write_relation_reconciliation
 from .condition_normalization import ConditionNormalizationError, condition_normalization_from_review, write_condition_normalization
@@ -207,7 +207,35 @@ def command_dsh_run_status(args: argparse.Namespace) -> int:
 
 def command_dsh_evidence(args: argparse.Namespace) -> int:
     try:
-        _json_print(read_dsh_evidence_link(args.link, executable=args.dsh_executable))
+        if args.link is not None:
+            if any(value is not None for value in (args.run_id, args.doi, args.locator, args.port)):
+                raise DshCompositionCheckError("Use a workbench link on its own, or provide --run-id and --doi.")
+            result = read_dsh_evidence_link(args.link, executable=args.dsh_executable)
+        elif args.run_id and args.doi:
+            result = read_dsh_paper_evidence(args.run_id, args.doi, locator=args.locator,
+                                             port=8765 if args.port is None else args.port, executable=args.dsh_executable)
+        else:
+            raise DshCompositionCheckError("Provide a workbench evidence link, or both --run-id and --doi.")
+        _json_print(result)
+    except DshCompositionCheckError as error:
+        _json_print({"error": str(error)})
+        return 2
+    return 0
+
+
+def command_dsh_calculate(args: argparse.Namespace) -> int:
+    if args.calculation == "pst-occupancy":
+        tool = "cosmatter_pst_occupancy_count"
+        inputs = {"pb_fraction": args.pb_fraction}
+    else:
+        tool = "cosmatter_md_field_response"
+        inputs = {
+            "axis": args.axis, "mechanical_boundary": args.mechanical_boundary, "observable": args.observable,
+            "field_magnitude_V_per_m": args.field_magnitude,
+            "mean_at_minus_field": args.mean_at_minus_field, "mean_at_plus_field": args.mean_at_plus_field,
+        }
+    try:
+        _json_print(calculate_with_dsh(tool, inputs, executable=args.dsh_executable))
     except DshCompositionCheckError as error:
         _json_print({"error": str(error)})
         return 2
@@ -3723,10 +3751,29 @@ def build_parser() -> argparse.ArgumentParser:
     dsh_status.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_status.set_defaults(handler=command_dsh_run_status)
 
-    dsh_evidence = commands.add_parser("dsh-evidence", help="read the accepted card in a local workbench link through DSH")
-    dsh_evidence.add_argument("link", help="local CosMatter evidence link")
+    dsh_evidence = commands.add_parser("dsh-evidence", help="read accepted evidence through DSH by workbench link or paper DOI")
+    dsh_evidence.add_argument("link", nargs="?", help="local CosMatter evidence link")
+    dsh_evidence.add_argument("--run-id", help="local run to search for a DOI")
+    dsh_evidence.add_argument("--doi", help="published DOI of the paper, or its doi.org URL")
+    dsh_evidence.add_argument("--locator", help="exact recorded figure, table, or text locator within the paper")
+    dsh_evidence.add_argument("--port", type=int, help="local preview API port for DOI searches (default 8765)")
     dsh_evidence.add_argument("--dsh-executable", default="dsh", help="local DSH launcher, if dsh is not on PATH")
     dsh_evidence.set_defaults(handler=command_dsh_evidence)
+
+    dsh_calc = commands.add_parser("dsh-calculate", help="run an offline material calculation through DSH from any worker terminal")
+    calculations = dsh_calc.add_subparsers(dest="calculation", required=True)
+    occupancy = calculations.add_parser("pst-occupancy", help="count labeled Pb/Sr arrangements in an 8x8x8 supercell")
+    occupancy.add_argument("--pb-fraction", required=True, help="exact decimal or rational composition, for example 1/3")
+    field = calculations.add_parser("field-response", help="compute a longitudinal response from MD means at opposite fields")
+    field.add_argument("--axis", choices=("x", "y", "z"), required=True)
+    field.add_argument("--mechanical-boundary", choices=("fixed_stress", "fixed_strain"), required=True)
+    field.add_argument("--observable", choices=("polarization_C_per_m2", "normal_strain"), required=True)
+    field.add_argument("--field-magnitude", type=float, required=True, help="positive field magnitude in V/m")
+    field.add_argument("--mean-at-minus-field", type=float, required=True, help="mean polarization (C/m²) or fractional strain at -E")
+    field.add_argument("--mean-at-plus-field", type=float, required=True, help="mean polarization (C/m²) or fractional strain at +E")
+    for calculation in (occupancy, field):
+        calculation.add_argument("--dsh-executable", default="dsh", help="local DSH launcher")
+    dsh_calc.set_defaults(handler=command_dsh_calculate)
 
     dsh_screening = commands.add_parser("dsh-screening", help="read the exact version of a screening checklist from a workbench link")
     dsh_screening.add_argument("link", help="local CosMatter screening link")

@@ -28,7 +28,7 @@ const BUNDLE_ROLES: Record<string, readonly [string, string]> = {
   "@cosmatter/dsh-mission-plugin": ["任务建立", "Mission intake"],
   "@cosmatter/dsh-observability-plugin": ["状态观测", "Status observation"],
   "@cosmatter/dsh-policy-plugin": ["授权策略", "Authorization policy"],
-  "@cosmatter/dsh-research-plugin": ["受控检索", "Controlled retrieval"],
+  "@cosmatter/dsh-research-plugin": ["材料计算与受控检索", "Materials calculations and retrieval"],
   "@cosmatter/dsh-review-plugin": ["人工筛选", "Human screening"],
   "@cosmatter/dsh-document-plugin": ["私有全文", "Private full text"],
   "@cosmatter/dsh-graph-plugin": ["文献图谱", "Literature graph"],

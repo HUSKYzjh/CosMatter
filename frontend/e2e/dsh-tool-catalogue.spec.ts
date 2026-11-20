@@ -1,4 +1,7 @@
+import group from "../../plugins/dsh-plugin-group.json" with { type: "json" };
 import { expect, test } from "@playwright/test";
+
+const dshToolCount = group.packages.reduce((count, bundle) => count + bundle.tools.length, 0);
 
 test("recovers a catalogue search in place and keeps the filters that still apply", async ({ page, context, baseURL }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(baseURL!).origin });
@@ -39,10 +42,12 @@ test("recovers a catalogue search in place and keeps the filters that still appl
   await stage.selectOption("report");
   await access.selectOption("external");
   await search.fill("nonexistent");
-  await tools.getByRole("button", { name: "查看全部 20 个工具" }).press("Enter");
+  await tools.getByRole("button", { name: `查看全部 ${dshToolCount} 个工具` }).press("Enter");
   await expect(search).toBeFocused();
   await expect(search).toHaveValue("");
   await expect(stage).toHaveValue("all");
   await expect(access).toHaveValue("all");
-  await expect(tools.locator(".dsh-tool-item")).toHaveCount(20);
+  await expect(tools.locator(".dsh-tool-item")).toHaveCount(dshToolCount);
+  await access.selectOption("calculate");
+  await expect(tools.locator(".dsh-tool-item > summary code")).toHaveText(["cosmatter_pst_occupancy_count", "cosmatter_md_field_response"]);
 });

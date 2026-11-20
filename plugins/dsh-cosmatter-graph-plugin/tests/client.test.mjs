@@ -128,6 +128,47 @@ test('DSH forwards exact document and locator and keeps separate card links at t
   }
 })
 
+test('DSH discovers reviewed locators by DOI and binds figure reads to the same paper', async t => {
+  const doi = '10.1234/test-ß'
+  const args = { run_id: 'test_reading', doi: 'https://doi.org/10.1234/TEST-ß' }
+  const hit = { evidence_id: 'fixture', document_id: 'paper-1', claim: 'Fixture result', material: 'BiFeO3',
+    property_name: 'd33', conditions: { thickness_nm: 400 }, locator: 'figure:5', source: 'fixture',
+    doi, review_status: 'accepted', score: 1 }
+  const original = { run_id: args.run_id, mission_id: 'local', match_mode: 'exact_doi', matched_count: 1, results: [hit],
+    trust_status: 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion', query_sha256: 'b'.repeat(64) }
+  let response = original
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    requests.push(JSON.parse(init.body))
+    return Response.json(response)
+  })
+  const tools = []
+  apply({ tools: { register: tool => tools.push(tool) }, emit() {}, effect() {} })
+  const tool = tools.find(tool => tool.name === 'cosmatter_accepted_evidence_search')
+  const read = input => tool.execute(input, { signal: new AbortController().signal })
+  const paper = await read(args)
+  assert.equal(paper.results[0].locator, 'figure:5')
+  const selected = { ...args, locator: paper.results[0].locator }
+  const result = await read(selected)
+  assert.deepEqual(requests, [{ doi, limit: 8 }, { doi, locator: 'figure:5', limit: 8 }])
+  const meta = tool.output.presentationMeta(selected, result)
+  const description = tool.presentResult(selected, { isError: false, meta }).content[0].text
+  assert.match(description, /Review: accepted/)
+  assert.match(description, /BiFeO3 · d33/)
+  assert.equal(tool.presentResult({ ...selected, doi: '10.1234/other' }, { isError: false, meta }), undefined)
+  for (const override of [{ doi: '10.1234/other' }, { locator: 'figure:50' }, { review_status: 'unreviewed' }]) {
+    response = { ...original, results: [{ ...hit, ...override }] }
+    await assert.rejects(() => read(selected), /response is invalid/)
+  }
+  response = { ...original, matched_count: 0, results: [] }
+  const empty = await read(selected)
+  assert.equal(empty.results.length, 0)
+  assert.match(tool.presentResult(selected, { isError: false, meta: tool.output.presentationMeta(selected, empty) }).content[0].text, /No accepted/)
+  for (const invalid of [{ ...args, doi: 'https://other.invalid/10.1234/abc' }, { ...selected, document_id: 'paper-1' }]) {
+    await assert.rejects(() => read(invalid))
+  }
+})
+
 test('DSH presents accepted cards with bounded previews and verified reader links', async t => {
   const hit = { evidence_id: "证据 + '1", document_id: '文献 & x=1', claim: 'Reviewed claim\n' + 'x'.repeat(200), locator: 'figure:2', source: 'fixture', score: 1 }
   const response = { run_id: 'run_1', mission_id: 'mission_1', trust_status: 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion',

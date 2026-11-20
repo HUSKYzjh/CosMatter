@@ -1,7 +1,7 @@
 {
   "name": "@cosmatter/dsh-research-plugin",
   "version": "0.2.0",
-  "description": "Explicit-consent research planning and metadata retrieval tools for CosMatter in DeepSeek Harness.",
+  "description": "Offline materials calculations, research planning and authorized literature retrieval for CosMatter in DeepSeek Harness.",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",

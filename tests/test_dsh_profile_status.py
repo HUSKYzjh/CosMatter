@@ -23,6 +23,22 @@ from cosmatter.dsh_profile_status import (
 
 
 class DshProfileStatusTests(unittest.TestCase):
+    def test_terminal_calculation_uses_offline_bundle_and_checks_the_returned_input(self) -> None:
+        from cosmatter.cli import main
+
+        with patch("cosmatter.dsh_profile_status._read_through_bundle") as run, patch("cosmatter.cli._json_print") as output:
+            run.return_value = {"requested_pb_fraction": "1/3", "realizable": False}
+            command = ["dsh-calculate", "pst-occupancy", "--pb-fraction", "1/3"]
+            self.assertEqual(main(command), 0)
+            bundle, _, _, port, _, config, _ = run.call_args.args
+            self.assertEqual(bundle, "@cosmatter/dsh-research-plugin")
+            self.assertIsNone(port)
+            self.assertEqual(config["args"], {"pb_fraction": "1/3"})
+            self.assertEqual(output.call_args.args[0]["checked_via"], ["cosmatter_pst_occupancy_count"])
+            run.return_value = {"requested_pb_fraction": "0.5", "realizable": True}
+            self.assertEqual(main(command), 2)
+            self.assertIn("error", output.call_args.args[0])
+
     def test_cli_repair_prefers_the_checkout_for_the_invoked_executable(self) -> None:
         from cosmatter.cli import main
 
@@ -1030,6 +1046,30 @@ class DshProfileStatusTests(unittest.TestCase):
                     with self.assertRaises(DshCompositionCheckError):
                         read_dsh_evidence_link(malformed, dsh_home=home)
                 self.assertEqual(launch.call_count, 3)
+
+    def test_dsh_evidence_cli_supports_a_paper_or_a_link_and_rejects_mixed_selectors(self) -> None:
+        from cosmatter.cli import main
+
+        args = ["--run-id", "test_run", "--doi", "DOI:10.1234/PAPER", "--locator", "figure:5", "--port", "8790"]
+        hit = {"doi": "10.1234/paper", "review_status": "accepted", "locator": "figure:5"}
+        response = {"run_id": "test_run", "match_mode": "exact_doi", "matched_count": 1, "results": [hit],
+                    "trust_status": "accepted_evidence_search_not_new_evidence_or_scientific_conclusion"}
+        with (patch("cosmatter.cli._json_print") as output,
+              patch("cosmatter.dsh_profile_status._read_through_bundle", return_value=response) as read,
+              patch("cosmatter.cli.read_dsh_evidence_link", return_value={}) as link_read):
+            self.assertEqual(main(["dsh-evidence", *args]), 0)
+            self.assertEqual(output.call_args.args[0]["checked_via"], ["cosmatter_accepted_evidence_search"])
+            self.assertEqual(read.call_args.args[3], 8790)
+            self.assertEqual(read.call_args.args[5]["args"], {"run_id": "test_run", "doi": "10.1234/paper", "locator": "figure:5", "limit": 12})
+            for key, wrong in (("doi", "10.1234/other"), ("review_status", "unreviewed"), ("locator", "figure:50")):
+                read.return_value = {**response, "results": [{**hit, key: wrong}]}
+                self.assertEqual(main(["dsh-evidence", *args]), 2)
+            link = "http://127.0.0.1:8790/?api=local#run=test_run&document=paper&evidence=fixture"
+            self.assertEqual(main(["dsh-evidence", link]), 0)
+            link_read.assert_called_once_with(link, executable="dsh")
+            for invalid in ([link, *args], ["--doi", "10.1234/paper"], ["--locator", "figure:5"]):
+                self.assertEqual(main(["dsh-evidence", *invalid]), 2)
+            self.assertEqual(read.call_count, 4)
 
     def test_catalogue_reads_through_policy_without_a_run_and_rejects_non_catalogue_results(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

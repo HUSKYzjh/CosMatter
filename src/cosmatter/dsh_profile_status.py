@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.parse import parse_qs, urlsplit
 
+from .accepted_evidence_search import canonical_evidence_doi
+
 
 DSH_PROFILE_STATUS_SCHEMA = "cosmatter.dsh-profile-status/v2"
 DSH_PROFILE_STATUS_TRUST = "local_installation_snapshot_not_profile_boot_or_plugin_execution"
@@ -78,7 +80,7 @@ _BUNDLE_TOOLS = dict(zip(EXPECTED_DSH_PACKAGES, (
     ("cosmatter_mission_create",),
     ("cosmatter_recent_runs", "cosmatter_workflow_status", "cosmatter_stage_contract", "cosmatter_operational_telemetry", "cosmatter_workflow_dag", "cosmatter_artifact_manifest"),
     ("cosmatter_plugin_catalogue", "cosmatter_plugin_authorization_plan"),
-    ("cosmatter_research_plan_draft", "cosmatter_research_plan_approve", "cosmatter_research_query_execute"),
+    ("cosmatter_research_plan_draft", "cosmatter_research_plan_approve", "cosmatter_research_query_execute", "cosmatter_pst_occupancy_count", "cosmatter_md_field_response"),
     ("cosmatter_candidate_screening_template", "cosmatter_candidate_screening_record"),
     ("cosmatter_mineru_source_submit", "cosmatter_mineru_task_poll"),
     ("cosmatter_graph_query", "cosmatter_accepted_evidence_search", "cosmatter_graph_plan", "cosmatter_graph_review_request"),
@@ -638,6 +640,35 @@ def read_dsh_evidence_link(link: str, *, executable: str = "dsh", dsh_home: Path
     raise DshCompositionCheckError("DSH could not find the accepted card for this link. Check the link and the local CosMatter service.")
 
 
+def read_dsh_paper_evidence(
+    run_id: str, doi: str, *, locator: str | None = None, port: int = 8765,
+    executable: str = "dsh", dsh_home: Path | None = None,
+) -> dict[str, Any]:
+    """Read up to twelve accepted cards for a DOI through the installed DSH graph tool."""
+    canonical = canonical_evidence_doi(doi)
+    if not canonical or not _LOCAL_RUN_ID.fullmatch(run_id):
+        raise DshCompositionCheckError("Provide a valid run ID and DOI.")
+    if locator is not None and (not 0 < len(locator) <= 240 or locator.strip() != locator or re.search(r"[\x00-\x1f\x7f]", locator)):
+        raise DshCompositionCheckError("Provide the exact recorded locator.")
+    args = {"run_id": run_id, "doi": canonical, "limit": 12}
+    if locator is not None:
+        args["locator"] = locator
+    tool = "cosmatter_accepted_evidence_search"
+    result = _read_through_bundle(
+        _GRAPH_BUNDLE, executable, dsh_home, port, _TOOL_READ_PROBE,
+        {"tool": tool, "args": args, "prefix": _EVIDENCE_OUTPUT}, _EVIDENCE_OUTPUT,
+    )
+    if isinstance(result, dict):
+        hits, count = result.get("results"), result.get("matched_count")
+        if (result.get("run_id") == run_id and result.get("match_mode") == "exact_doi"
+                and result.get("trust_status") == "accepted_evidence_search_not_new_evidence_or_scientific_conclusion"
+                and type(count) is int and count >= 0 and isinstance(hits, list) and len(hits) == min(count, 12)
+                and all(isinstance(hit, dict) and hit.get("doi") == canonical and hit.get("review_status") == "accepted"
+                        and (locator is None or hit.get("locator") == locator) for hit in hits)):
+            return {**result, "checked_via": [tool]}
+    raise DshCompositionCheckError("DSH could not read accepted evidence for this DOI. Check the run ID, local service and graph bundle version.")
+
+
 def read_dsh_screening_link(link: str, *, executable: str = "dsh", dsh_home: Path | None = None) -> dict[str, Any]:
     """Read the screening snapshot identified by a local workbench link."""
     fields, port = _parse_local_workbench_link(link, ("run", "screening"), "screening")
@@ -730,11 +761,44 @@ def read_dsh_run_tool(
     raise DshCompositionCheckError("The DSH tool could not read this run. Check the run ID, its saved artifacts, and the local CosMatter port.")
 
 
+def calculate_with_dsh(
+    tool: str, arguments: dict[str, Any], *, executable: str = "dsh", dsh_home: Path | None = None,
+) -> dict[str, Any]:
+    """Call one of the research bundle's offline calculations from a worker terminal."""
+    if tool not in {"cosmatter_pst_occupancy_count", "cosmatter_md_field_response"}:
+        raise DshCompositionCheckError("Choose an offline CosMatter calculation.")
+    try:
+        json.dumps(arguments, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise DshCompositionCheckError("Supply finite numeric inputs for the material calculation.") from exc
+    prefix = "COSMATTER_DSH_CALCULATION "
+    result = _read_through_bundle(
+        "@cosmatter/dsh-research-plugin", executable, dsh_home, None, _TOOL_READ_PROBE,
+        {"tool": tool, "args": arguments, "prefix": prefix}, prefix,
+    )
+    if isinstance(result, dict) and "error" not in result:
+        if tool == "cosmatter_pst_occupancy_count":
+            fraction = arguments.get("pb_fraction")
+            matched = (isinstance(fraction, str) and result.get("requested_pb_fraction") == fraction.strip()
+                       and isinstance(result.get("realizable"), bool))
+        else:
+            matched = (result.get("schema_version") == "cosmatter.md-field-response/v1"
+                       and all(result.get(key) == value for key, value in arguments.items()))
+        if not matched:
+            raise DshCompositionCheckError("The DSH calculation result did not match the requested inputs.")
+        return {**result, "checked_via": [tool]}
+    if isinstance(result, dict) and result.get("error") == "not_registered":
+        raise DshCompositionCheckError("Update the installed CosMatter research bundle to register the calculation.")
+    if tool == "cosmatter_pst_occupancy_count":
+        raise DshCompositionCheckError("Supply an exact Pb fraction between 0 and 1, such as 0.5 or 1/3.")
+    raise DshCompositionCheckError("Check the field magnitude, units and mechanical boundary. Normal strain requires fixed stress.")
+
+
 def _read_through_bundle(
-    bundle: str, executable: str, dsh_home: Path | None, port: int,
+    bundle: str, executable: str, dsh_home: Path | None, port: int | None,
     script: str, config: dict[str, Any], prefix: str,
 ) -> Any:
-    if not 1 <= port <= 65535:
+    if port is not None and not 1 <= port <= 65535:
         raise DshCompositionCheckError("Port must be between 1 and 65535.")
     dsh = resolve_dsh_executable(executable)
     if not dsh:
@@ -743,7 +807,7 @@ def _read_through_bundle(
     if _bundle_status(profile / "node_modules" / bundle, bundle) != "verified":
         raise DshCompositionCheckError(f"The local tui profile has no valid {bundle} bundle.")
     return _run_isolated_dsh_probe(
-        dsh, profile, {bundle: {"baseUrl": f"http://127.0.0.1:{port}"}}, script, config, prefix,
+        dsh, profile, {bundle: {"baseUrl": f"http://127.0.0.1:{port}"} if port is not None else None}, script, config, prefix,
     )
 
 

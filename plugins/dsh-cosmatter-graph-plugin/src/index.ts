@@ -3,7 +3,7 @@ import '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
-import { CosMatterLoopbackClient, acceptedEvidenceWorkbenchLink } from './client.js'
+import { CosMatterLoopbackClient, acceptedEvidenceWorkbenchLink, canonicalEvidenceDoi } from './client.js'
 import type { CosMatterGraphConfig } from './config.js'
 
 export const name = 'cosmatter-graph'
@@ -49,11 +49,12 @@ export function apply(ctx: Context, config: CosMatterGraphConfig = {}): void {
   }))
   ctx.tools.register(defineTool({
     name: 'cosmatter_accepted_evidence_search',
-    description: 'Search accepted evidence for one run by keyword query, exact evidence_id, or exact document_id and locator together. Each matching card has its own evidence ID and, when available, a local reader link.',
+    description: 'Find accepted evidence in one run by keyword query, exact evidence_id, document_id and locator, or paper DOI with an optional exact figure/table locator. DOI results include each reviewed claim, material, property, conditions, locator, and a local reader link when available.',
     parameters: {
       run_id: { type: 'string', required: true }, query: { type: 'string' }, evidence_id: { type: 'string' },
       document_id: { type: 'string', description: 'Exact document identifier, used together with locator.' },
-      locator: { type: 'string', description: 'Exact reviewed locator in that document, for example figure:2.' },
+      doi: { type: 'string', description: 'Published DOI as recorded in card provenance, optionally with an exact locator.' },
+      locator: { type: 'string', description: 'Exact reviewed locator, for example figure:2. Use it with document_id or doi.' },
       limit: { type: 'integer', description: 'Maximum number of returned cards, 1 to 12 (default 8).' },
     },
     output: {
@@ -65,10 +66,14 @@ export function apply(ctx: Context, config: CosMatterGraphConfig = {}): void {
           if (!item || typeof item !== 'object' || Array.isArray(item)) return null
           return {
             evidence_id: item.evidence_id ?? null, document_id: item.document_id ?? null, workbench_url: item.workbench_url ?? null,
+            ...(args.doi === undefined ? {} : {
+              doi: item.doi ?? null, review_status: item.review_status ?? null,
+              material: evidencePreview(item.material, 100), property: evidencePreview(item.property_name, 100),
+            }),
             claim: evidencePreview(item.claim, 180), locator: args.locator === undefined ? evidencePreview(item.locator, 100) : item.locator ?? null,
           }
         })
-        return args.locator === undefined ? entries : { entries, matched_count: value.matched_count ?? null }
+        return args.locator === undefined && args.doi === undefined ? entries : { entries, matched_count: value.matched_count ?? null }
       },
     },
     presentCall: ({ run_id, evidence_id }) => ({
@@ -76,24 +81,28 @@ export function apply(ctx: Context, config: CosMatterGraphConfig = {}): void {
       title: evidence_id === undefined ? 'Search accepted CosMatter evidence' : 'Find an accepted CosMatter evidence card',
       rawInput: run_id,
     }),
-    presentResult: ({ run_id, evidence_id: requestedEvidenceId, document_id: requestedDocument, locator, limit = 8 }, { isError, meta }) => {
+    presentResult: ({ run_id, evidence_id: requestedEvidenceId, document_id: requestedDocument, doi, locator, limit = 8 }, { isError, meta }) => {
       if (isError) return
       const locationMeta = meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : undefined
-      const hits = locator === undefined ? meta : locationMeta?.entries
+      const atPaper = locator !== undefined || doi !== undefined
+      const hits = atPaper ? locationMeta?.entries : meta
       if (!Array.isArray(hits) || hits.length > (requestedEvidenceId === undefined ? 12 : 1)) return
       const matched = locationMeta?.matched_count
-      if (locator !== undefined && (typeof matched !== 'number' || !Number.isSafeInteger(matched) || matched < 0 || hits.length !== Math.min(limit, matched))) return
+      if (atPaper && (typeof matched !== 'number' || !Number.isSafeInteger(matched) || matched < 0 || hits.length !== Math.min(limit, matched))) return
       const entries = []
       for (const item of hits) {
         if (!item || typeof item !== 'object' || Array.isArray(item)) return
         const { evidence_id, document_id, workbench_url } = item
         if (typeof evidence_id !== 'string' || typeof document_id !== 'string'
           || (requestedEvidenceId !== undefined && requestedEvidenceId !== evidence_id)
-          || (locator !== undefined && (requestedDocument !== document_id || item.locator !== locator))) return
+          || (requestedDocument !== undefined && requestedDocument !== document_id)
+          || (locator !== undefined && item.locator !== locator)
+          || (doi !== undefined && (typeof item.doi !== 'string' || canonicalEvidenceDoi(doi) !== item.doi || item.review_status !== 'accepted'))) return
         const expectedLink = acceptedEvidenceWorkbenchLink(client.config.baseUrl.origin, run_id, document_id, evidence_id)
         if (workbench_url !== null && workbench_url !== expectedLink) return
         const title = evidencePreview(evidence_id, 200) || 'Evidence card'
-        const rows = [title, evidencePreview(item.claim, 180), evidencePreview(item.locator, locator === undefined ? 100 : 240),
+        const subject = doi === undefined ? null : [evidencePreview(item.material, 100), evidencePreview(item.property, 100)].filter(Boolean).join(' · ')
+        const rows = [title, doi === undefined ? null : `DOI: ${item.doi} · Review: accepted`, subject, evidencePreview(item.claim, 180), evidencePreview(item.locator, locator === undefined ? 100 : 240),
           workbench_url ?? 'Local reader link unavailable.']
         entries.push(rows.filter(Boolean).join('\n'))
       }
@@ -103,14 +112,14 @@ export function apply(ctx: Context, config: CosMatterGraphConfig = {}): void {
       ] }
     },
     async execute(args, exec) {
-      const { query, evidence_id, document_id, locator } = args
-      const byLocation = document_id !== undefined || locator !== undefined
+      const { query, evidence_id, document_id, doi, locator } = args
       const selectors = []
       if (query !== undefined) selectors.push(query)
       if (evidence_id !== undefined) selectors.push({ evidenceId: evidence_id })
+      if (doi !== undefined) selectors.push({ doi, locator })
       if (document_id !== undefined && locator !== undefined) selectors.push({ documentId: document_id, locator })
-      if (selectors.length !== 1 || (byLocation && (document_id === undefined || locator === undefined))) {
-        throw new Error('provide a query or one exact evidence ID or a document ID and locator together')
+      if (selectors.length !== 1 || (document_id !== undefined && locator === undefined) || (locator !== undefined && document_id === undefined && doi === undefined)) {
+        throw new Error('provide a query or one exact evidence ID, a document ID and locator together, or a DOI with optional locator')
       }
       return await client.searchAcceptedEvidence(args.run_id, selectors[0], args.limit, exec.signal) as Record<string, JsonValue>
     },

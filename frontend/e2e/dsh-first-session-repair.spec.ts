@@ -91,7 +91,7 @@ for (const width of [320, 1280]) {
     await expect(refresh).toBeFocused();
     phase = "missing-tool";
     await page.keyboard.press("Enter");
-    await expect(panel).toContainText("已注册 19/20 个工具");
+    await expect(panel).toContainText(`已注册 ${tools.length - 1}/${tools.length} 个工具`);
     await expect(panel.getByRole("button", { name: "在目录中查看 " + missing })).toBeVisible();
     await expect(repair).toHaveCount(1);
     await expect(check).toHaveCount(1);

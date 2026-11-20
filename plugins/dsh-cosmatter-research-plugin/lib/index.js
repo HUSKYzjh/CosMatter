@@ -1,6 +1,8 @@
 import '@deepseek-ai/cordis';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { CosMatterResearchClient, isScreeningRevision, queryWorkbenchLink } from './client.js';
+import { pstOccupancyTool } from './pst-occupancy.js';
+import { fieldResponseTool } from './field-response.js';
 export const name = 'cosmatter-research';
 export const inject = ['tools'];
 export function apply(ctx, config = {}) {
@@ -64,5 +66,7 @@ export function apply(ctx, config = {}) {
             return result;
         },
     }));
+    ctx.tools.register(pstOccupancyTool);
+    ctx.tools.register(fieldResponseTool);
     ctx.effect(() => () => undefined);
 }

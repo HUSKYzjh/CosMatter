@@ -88,12 +88,14 @@ def realizable_composition(value: str | float | Decimal) -> tuple[int, int, str]
         raise PstConfigurationSearchError("composition must be a finite decimal") from error
     if not requested.is_finite() or requested < 0 or requested > 1:
         raise PstConfigurationSearchError("composition must be between 0 and 1")
-    exact_pb = requested * A_SITE_COUNT
-    if exact_pb != exact_pb.to_integral_value():
+    # k/512 is a binary fraction: every permitted composition has an exact float
+    # representation. Use the nearest k only as a candidate, then compare exactly
+    # with the original Decimal, independently of the caller's Decimal precision.
+    n_pb = round(float(requested) * A_SITE_COUNT)
+    realized = Decimal.from_float(n_pb / A_SITE_COUNT)
+    if requested != realized:
         raise PstConfigurationSearchError("composition is not exactly realizable on 512 A sites; explicit reapproval is required")
-    n_pb = int(exact_pb)
-    realized = format(Decimal(n_pb) / Decimal(A_SITE_COUNT), "f")
-    return n_pb, A_SITE_COUNT - n_pb, realized
+    return n_pb, A_SITE_COUNT - n_pb, format(realized, "f")
 
 
 def random_configuration(n_pb: int, rng: random.Random) -> PstConfiguration:

@@ -1,6 +1,29 @@
 # CosMatter · 星际材料导航站
 
-面向“材料科学文献驱动的科学发现智能体”赛题的证据优先最小闭环。
+CosMatter 是用于材料计算与科学文献阅读的 DeepSeek Harness（DSH）插件组。可以从聊天里核对钙钛矿超胞配比、处理分子动力学（MD）结果，并从已审核的文献记录回到论文和图表。
+
+## 在 DSH 中使用
+
+在已安装本项目的环境中运行 `cosmatter repair-dsh-bundles`，再用 `cosmatter preview-ui --solid --api --port 0` 启动工作台。打开终端显示的本机地址，点击「DSH 插件」，按该页面的实际端口核验后复制启动命令。已有任务的启动命令会带上运行 ID。[安装和核验](docs/DSH_PLUGIN_GROUP_RELEASE_READINESS.zh-CN.md)
+
+| 想做什么 | 给 DSH 的工具与输入 | 怎样解释结果 |
+|---|---|---|
+| 为 (PbₓSr₁₋ₓ)TiO₃ 的 8×8×8 超胞选组分 | `cosmatter_pst_occupancy_count`，传 `{"pb_fraction":"0.5"}` | 512 个 A 位中 Pb、Sr 各 256 个，带标号的占位排列数是 C(512,256)。输入 `"1/3"` 可查相邻可实现组分。 |
+| 从正负电场的 MD 均值算纵向响应 | `cosmatter_md_field_response`，传 `{"axis":"z","mechanical_boundary":"fixed_stress","observable":"normal_strain","field_magnitude_V_per_m":1000000,"mean_at_minus_field":-0.00005,"mean_at_plus_field":0.00005}` | 这组合成输入的逆压电 d₃₃ 为 50 pm/V。求相对介电常数时选 `polarization_C_per_m2` 并输入对应极化均值。 |
+| 从论文定位核对一个数值 | 在已有审核记录的运行调用 `cosmatter_accepted_evidence_search`，提供 `run_id`、论文 `doi` 和卡片保存的 `locator` | 核对返回的主张、样品条件和来源。打开对应证据链接复查原文位置。没有命中时，应先查该运行的收录与审核记录。 |
+
+两项计算均可离线执行。有限差分估计要求正负电场同幅、同温、处于同一极化分支，逆压电测量还要求固定应力并允许应变弛豫。实际材料上的收敛性与不确定度需用不同场强、独立轨迹分别验证。[计算工具参数](plugins/dsh-cosmatter-research-plugin/README.md) · [文献阅读工具](plugins/dsh-cosmatter-graph-plugin/README.md)
+
+### 在 Orca 工作树终端中使用
+
+用安装了 CosMatter 的终端运行下列命令。占位计算会直接返回 JSON。查文献时，将运行 ID 和端口换成当前工作台的值，图号采用证据卡保存的标记。
+
+```powershell
+cosmatter dsh-calculate pst-occupancy --pb-fraction 1/3
+cosmatter dsh-evidence --run-id YOUR_RUN --port 8765 --doi 10.1038/s41467-017-01361-2 --locator figure:5
+```
+
+Orca 可以分配工作树和跟踪尝试。CosMatter 返回计算的输入、单位或证据卡链接，供协调者核对。若工作树没有单独安装 CosMatter，可用原安装目录的 `.venv\Scripts\cosmatter.exe` 执行上述命令。[Orca 分工、命令和验收记录](docs/DSH_PUBLIC_PLUGIN_RESEARCH_AND_RECOMMENDATIONS_2026-08-29.zh-CN.md#orca-如何接入-cosmatter-的研究舰队)
 
 当前 M1.2 已实现：
 

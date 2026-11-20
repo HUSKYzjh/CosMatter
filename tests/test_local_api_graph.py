@@ -66,7 +66,7 @@ class LocalApiGraphTests(unittest.TestCase):
             api = LocalMissionApi(Path(directory) / "runs")
             created = api.create_mission({"run_id": "search_graph", "question": "How does strain affect phase stability?", "material": "BiFeO3", "property": "phase stability", "scope": "thin films"})
             run_dir = api.runs_dir / "search_graph"
-            card = EvidenceCard("Strain shifts phase stability in a reviewed condition.", Stance.SUPPORT, "BiFeO3", "phase stability", {"strain_percent": 1.0}, "private source quote", Provenance("doc_search", "figure:2", "fixture", access_policy=AccessPolicy.AUTHORIZED), evidence_id="evidence_search")
+            card = EvidenceCard("Strain shifts phase stability in a reviewed condition.", Stance.SUPPORT, "BiFeO3", "phase stability", {"strain_percent": 1.0}, "private source quote", Provenance("doc_search", "figure:2", "fixture", doi="10.1234/test", access_policy=AccessPolicy.AUTHORIZED), evidence_id="evidence_search")
             decision = VerificationDecision(str(created["mission_id"]), card.evidence_id, ReviewStatus.ACCEPTED, "human review")
             (run_dir / "evidence_cards.json").write_text(json.dumps([card.to_dict()]), encoding="utf-8")
             (run_dir / "verification_decisions.json").write_text(json.dumps([decision.to_dict()]), encoding="utf-8")
@@ -93,8 +93,11 @@ class LocalApiGraphTests(unittest.TestCase):
             audit = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
             self.assertNotIn("figure:2", json.dumps(audit[-1]))
             self.assertEqual(audit[-1]["payload"]["query_sha256"], at_location["query_sha256"])
+            paper = api.search_accepted_evidence("search_graph", {"doi": "https://doi.org/10.1234/TEST", "locator": "figure:2"})
+            self.assertEqual(paper["matched_count"], 1)
+            self.assertEqual(paper["results"], [{**exact["results"][0], "doi": "10.1234/test", "review_status": "accepted"}])
             (run_dir / "test_only_delegated_review.json").touch()
-            for selector in ({"query": "strain"}, {"evidence_id": card.evidence_id}, {"document_id": "doc_search", "locator": "figure:2"}):
+            for selector in ({"query": "strain"}, {"evidence_id": card.evidence_id}, {"document_id": "doc_search", "locator": "figure:2"}, {"doi": "10.1234/test"}):
                 with self.subTest(selector=selector), self.assertRaisesRegex(LocalApiError, "Delegated test"):
                     api.search_accepted_evidence("search_graph", selector)
 

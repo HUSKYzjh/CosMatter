@@ -69,5 +69,31 @@ class AcceptedEvidenceSearchTests(unittest.TestCase):
             search_accepted_evidence(**{**fixture, "cards": [*reviewed, replace(other_paper, evidence_id=same_place.evidence_id)]}, **exact)
 
 
+    def test_doi_discovery_and_exact_figure_only_include_reviewed_paper_matches(self) -> None:
+        doi = "10.1234/film-ß"
+        def from_paper(identifier, stored_doi, locator):
+            return replace(self.accepted, evidence_id=identifier,
+                           provenance=replace(self.accepted.provenance, doi=stored_doi, locator=locator))
+
+        cards = [from_paper("A", "https://doi.org/10.1234/FILM-ß", "figure:5"),
+                 from_paper("B", doi, "figure:50"), from_paper("C", "10.1234/film-ss", "figure:5"),
+                 from_paper("D", None, "figure:5"), from_paper("E", doi, "figure:5")]
+        decisions = [VerificationDecision(self.mission.mission_id, card.evidence_id, ReviewStatus.ACCEPTED, "fixture") for card in cards[:-1]]
+        fixture = dict(mission=self.mission, cards=cards, decisions=decisions)
+        paper = search_accepted_evidence(**fixture, doi="DOI: 10.1234/FILM-ß", limit=1)
+        self.assertEqual((paper["match_mode"], paper["matched_count"], paper["result_count"]), ("exact_doi", 2, 1))
+        exact = search_accepted_evidence(**fixture, doi=doi, locator="figure:5")
+        self.assertEqual([(hit["evidence_id"], hit["doi"], hit["review_status"]) for hit in exact["results"]], [("A", doi, "accepted")])
+        self.assertNotIn("private quote", str(exact))
+        self.assertEqual(search_accepted_evidence(**fixture, doi=doi, locator="figure:4")["matched_count"], 0)
+        self.assertEqual(search_accepted_evidence(**{**fixture, "decisions": []}, doi=doi)["matched_count"], 0)
+        for invalid in ({"doi": "10./"}, {"doi": "https://example.org/" + doi}, {"doi": doi, "query": "film"},
+                        {"doi": doi, "document_id": "doc_1"}, {"doi": doi, "locator": "a\nb"}):
+            with self.subTest(invalid=invalid), self.assertRaises(AcceptedEvidenceSearchError):
+                search_accepted_evidence(**fixture, **invalid)
+        with self.assertRaisesRegex(AcceptedEvidenceSearchError, "ambiguous"):
+            search_accepted_evidence(**{**fixture, "decisions": decisions + [decisions[0]]}, doi=doi)
+
+
 if __name__ == "__main__":
     unittest.main()

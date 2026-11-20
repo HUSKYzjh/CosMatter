@@ -1829,7 +1829,7 @@ class LocalMissionApi:
             result = search_accepted_evidence(
                 mission=mission, cards=cards, decisions=decisions, query=body.get("query"),
                 evidence_id=body.get("evidence_id"), document_id=body.get("document_id"),
-                locator=body.get("locator"), limit=body.get("limit", 8),
+                doi=body.get("doi"), locator=body.get("locator"), limit=body.get("limit", 8),
             )
             if result["results"]:
                 try:

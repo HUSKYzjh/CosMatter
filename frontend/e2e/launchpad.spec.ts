@@ -4,6 +4,7 @@ import { stageContractFixture } from "../src/stageContractFixture";
 import dshPluginGroup from "../../plugins/dsh-plugin-group.json" with { type: "json" };
 
 const routeDiagnosticsExport = resolve(process.cwd(), "..", "examples", "ui-demo", "route_diagnostics.json");
+const dshToolCount = dshPluginGroup.packages.reduce((count, bundle) => count + bundle.tools.length, 0);
 const workspaceLoad = { timeout: 15_000 };
 const lazyWorkspaceContentLoad = { timeout: 30_000 };
 
@@ -334,7 +335,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   expect(await packageProof.locator("ul").evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/))).toHaveLength(1);
   const tools = deck.locator(".dsh-tool-catalogue");
   await tools.locator(":scope > summary").press("Enter");
-  await expect(tools.getByRole("status")).toHaveText("显示 20/20 个工具");
+  await expect(tools.getByRole("status")).toHaveText(`显示 ${dshToolCount}/${dshToolCount} 个工具`);
   const search = tools.getByRole("searchbox", { name: "搜索工具或插件包" });
   const filter = tools.getByLabel("授权类型");
   await search.fill("cosmatter_recent_runs");
@@ -349,7 +350,7 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   await expect(recentTool.getByRole("button", { name: "复制 DSH 命令" })).toHaveCount(0);
   await search.clear();
   await filter.selectOption("external");
-  await expect(tools.getByRole("status")).toHaveText("显示 4/20 个工具");
+  await expect(tools.getByRole("status")).toHaveText(`显示 4/${dshToolCount} 个工具`);
   const matching = tools.locator(".dsh-tool-item");
   await search.fill("DEEPSEEK 待审核草案");
   await expect(matching).toHaveCount(1);
@@ -375,22 +376,22 @@ test("shows the DSH contract bridge without presenting catalogue discovery as ex
   expect(await deck.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await search.fill("nonexistent");
-  await expect(tools.getByRole("status")).toHaveText("显示 0/20 个工具");
+  await expect(tools.getByRole("status")).toHaveText(`显示 0/${dshToolCount} 个工具`);
   await tools.getByRole("button", { name: "清除筛选" }).click();
   await expect(search).toHaveValue("nonexistent");
-  await expect(tools.getByRole("status")).toHaveText("显示 0/20 个工具");
+  await expect(tools.getByRole("status")).toHaveText(`显示 0/${dshToolCount} 个工具`);
   await tools.getByRole("button", { name: "清空关键词" }).click();
   await expect(search).toBeFocused();
-  await expect(tools.getByRole("status")).toHaveText("显示 20/20 个工具");
+  await expect(tools.getByRole("status")).toHaveText(`显示 ${dshToolCount}/${dshToolCount} 个工具`);
   await expect(tools.getByRole("button", { name: "只看本阶段" })).toHaveCount(0);
   const stage = tools.getByLabel("研究阶段");
   await stage.selectOption("parse");
-  await expect(tools.getByRole("status")).toHaveText("显示 4/20 个工具");
+  await expect(tools.getByRole("status")).toHaveText(`显示 4/${dshToolCount} 个工具`);
   await filter.selectOption("external");
-  await expect(tools.getByRole("status")).toHaveText("显示 2/20 个工具");
+  await expect(tools.getByRole("status")).toHaveText(`显示 2/${dshToolCount} 个工具`);
   await expect(tools.locator(".dsh-tool-item > summary code")).toHaveText(["cosmatter_mineru_source_submit", "cosmatter_mineru_task_poll"]);
   await stage.selectOption("report");
-  await expect(tools.getByRole("status")).toHaveText("显示 0/20 个工具");
+  await expect(tools.getByRole("status")).toHaveText(`显示 0/${dshToolCount} 个工具`);
   await expect(tools.locator(".dsh-stage-note")).toContainText("在工作台审核报告");
   await filter.selectOption("read");
   await expect(tools.locator(".dsh-tool-item > summary code")).toHaveText(["cosmatter_stage_contract", "cosmatter_artifact_manifest"]);
@@ -739,7 +740,7 @@ test("refreshes stale and incomplete DSH registry receipts from the session usin
   const refresh = session.getByRole("button", { name: "刷新会话状态" });
   const launch = session.getByRole("button", { name: "复制 DSH 启动命令" });
   const repair = session.getByRole("button", { name: "复制补齐命令" });
-  const count = session.getByText("已注册 19/20 个工具", { exact: false });
+  const count = session.getByText(`已注册 ${dshToolCount - 1}/${dshToolCount} 个工具`, { exact: false });
   const tool = session.getByText(missingTool, { exact: true });
   const tabTo = async (target: Locator, key = "Tab") => {
     for (let step = 0; step < 12 && !await target.evaluate(element => element === document.activeElement); step++) {
@@ -1064,12 +1065,12 @@ test("rechecks a missing DSH bundle while the catalogue is unavailable", async (
   catalogueAvailable = true;
   await verdict.getByRole("button", { name: "重试目录连接" }).press("Enter");
   await expect(deck).toHaveClass(/state-ready/);
-  await expect(verdict).toContainText("已注册 2/20");
+  await expect(verdict).toContainText(`已注册 2/${dshToolCount}`);
   const portHelp = verdict.locator("details.dsh-port-help");
   await expect(portHelp).toHaveCount(0);
   await expect(packageProof.locator("li").first().locator(".harness-package-state b")).toHaveText("已验证");
   await expect(deck.locator(".harness-activation-track")).toContainText("上次组合 7/7");
-  await expect(composition).toContainText("已注册 2/20");
+  await expect(composition).toContainText(`已注册 2/${dshToolCount}`);
   await expect(loopback).toContainText("当前端口未核验");
   loopbackMatchesPort = true;
   await composition.getByRole("button", { name: "刷新核验结果" }).click();
@@ -2538,7 +2539,7 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await toolDialog.getByRole("button", { name: "清除筛选" }).press("Enter");
   await expect(stagePicker).toHaveValue("all");
   await expect(search).toBeFocused();
-  await expect(toolDialog.locator(".dsh-tool-item")).toHaveCount(20);
+  await expect(toolDialog.locator(".dsh-tool-item")).toHaveCount(dshToolCount);
   expect(await toolDialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.keyboard.press("Escape");
   await expect(toolDialog).toHaveCount(0);

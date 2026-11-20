@@ -3,7 +3,13 @@ import { assertGraphSnapshot, type GraphSnapshot } from './contract.js'
 
 const runId = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
 const evidenceSearchKeys = new Set(['run_id', 'schema_version', 'mission_id', 'trust_status', 'query_sha256', 'query_char_count', 'accepted_evidence_count', 'result_count', 'results', 'match_mode', 'matched_count'])
-type EvidenceSelector = string | { evidenceId: string } | { documentId: string; locator: string }
+type EvidenceSelector = string | { evidenceId: string } | { documentId: string; locator: string } | { doi: string; locator?: string }
+
+export function canonicalEvidenceDoi(value: string): string | null {
+  if (typeof value !== 'string' || [...value].length > 300 || value !== value.trim() || /[\u0000-\u001f\u007f]/.test(value)) return null
+  const doi = value.replace(/^(?:https?:\/\/doi\.org\/|doi:) */i, '').replace(/[A-Z]/g, letter => letter.toLowerCase())
+  return [...doi].length <= 255 && /^10\.\d+(?:\.\d+)*\/\S+$/u.test(doi) ? doi : null
+}
 
 export class CosMatterLoopbackClient {
   readonly config: NormalizedConfig
@@ -48,6 +54,10 @@ export class CosMatterLoopbackClient {
     } else if ('evidenceId' in selector) {
       if (!canLinkIdentifier(selector.evidenceId, 200)) throw new Error('accepted-evidence search selector is invalid')
       selection = { evidence_id: selector.evidenceId }
+    } else if ('doi' in selector) {
+      const doi = canonicalEvidenceDoi(selector.doi)
+      if (!doi || (selector.locator !== undefined && !canLinkIdentifier(selector.locator, 240))) throw new Error('invalid evidence DOI or locator')
+      selection = { doi, locator: selector.locator }
     } else {
       if (!canLinkIdentifier(selector.documentId, 255) || !canLinkIdentifier(selector.locator, 240)) throw new Error('accepted-evidence document ID and locator must both be valid')
       selection = { document_id: selector.documentId, locator: selector.locator }
@@ -71,11 +81,14 @@ export class CosMatterLoopbackClient {
       || typeof result.query_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(result.query_sha256)
       || !Array.isArray(result.results) || result.results.length > limit || !result.results.every(safeEvidenceResult)) throw new Error('accepted-evidence search response is invalid')
     if (selection.evidence_id && (result.match_mode !== 'exact_id' || result.results.length > 1 || result.results.some(item => item.evidence_id !== selection.evidence_id))) throw new Error('accepted-evidence exact response is invalid')
-    if (selection.document_id && (result.run_id !== runIdValue || result.match_mode !== 'exact_locator'
+    if ((selection.document_id || selection.doi) && (result.run_id !== runIdValue || result.match_mode !== (selection.doi ? 'exact_doi' : 'exact_locator')
       || typeof result.matched_count !== 'number' || !Number.isSafeInteger(result.matched_count) || result.matched_count < 0
       || result.results.length !== Math.min(result.matched_count, limit)
       || new Set(result.results.map(item => item.evidence_id)).size !== result.results.length
-      || result.results.some(item => item.document_id !== selection.document_id || item.locator !== selection.locator))) throw new Error('accepted-evidence location response is invalid')
+      || result.results.some(item =>
+        (selection.document_id && item.document_id !== selection.document_id)
+        || (selection.locator !== undefined && item.locator !== selection.locator)
+        || (selection.doi && (item.doi !== selection.doi || item.review_status !== 'accepted'))))) throw new Error('accepted-evidence location response is invalid')
     const results = result.results.map(item => {
       if (item.reader_available === false) return item
       const link = acceptedEvidenceWorkbenchLink(this.config.baseUrl.origin, runIdValue, item.document_id, item.evidence_id)
@@ -116,6 +129,8 @@ function safeEvidenceResult(value: unknown): value is Record<string, unknown> & 
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const item = value as Record<string, unknown>
   if (item.reader_available !== undefined && item.reader_available !== false) return false
-  const allowed = new Set(['evidence_id', 'document_id', 'claim', 'stance', 'material', 'property_name', 'conditions', 'locator', 'source', 'score', 'reader_available'])
+  if (item.doi !== undefined && (typeof item.doi !== 'string' || canonicalEvidenceDoi(item.doi) !== item.doi)) return false
+  if (item.review_status !== undefined && item.review_status !== 'accepted') return false
+  const allowed = new Set(['evidence_id', 'document_id', 'claim', 'stance', 'material', 'property_name', 'conditions', 'locator', 'source', 'score', 'reader_available', 'doi', 'review_status'])
   return !Object.keys(item).some(key => !allowed.has(key) || /quote|url|token|secret|content|path/i.test(key)) && typeof item.evidence_id === 'string' && typeof item.document_id === 'string' && typeof item.claim === 'string' && typeof item.locator === 'string' && typeof item.source === 'string' && typeof item.score === 'number' && item.score > 0
 }

@@ -5,6 +5,7 @@ import random
 import tempfile
 import unittest
 from hashlib import sha256
+from decimal import localcontext
 from pathlib import Path
 
 from cosmatter.pst_configuration_search import (
@@ -70,8 +71,11 @@ class PstConfigurationTests(unittest.TestCase):
     def test_composition_is_exact_and_never_silently_rounded(self) -> None:
         self.assertEqual(realizable_composition("0.5"), (256, 256, "0.5"))
         self.assertEqual(realizable_composition("0.125"), (64, 448, "0.125"))
-        with self.assertRaises(PstConfigurationSearchError):
-            realizable_composition("0.1")
+        for x in ("0.1", "0.5000000000000000000000000000000001", "0.4999999999999999999999999999999999", "1e-10000000"):
+            with self.subTest(x=x), self.assertRaises(PstConfigurationSearchError):
+                realizable_composition(x)
+        with localcontext(prec=3):
+            self.assertEqual(realizable_composition("0.998046875"), (511, 1, "0.998046875"))
 
     def test_fixed_composition_swap_and_random_generation_preserve_counts(self) -> None:
         configuration = random_configuration(173, random.Random(7))
