@@ -30,6 +30,32 @@
 
 校园订阅可单独试一条本地交接路线。用户在已登录学校图书馆的浏览器打开有访问权的文章，Zotero Connector 保存可获取的 PDF 与书目信息，再将选定的附件从 CosMatter「文献入港」导入。校园认证留在浏览器；是否能取得附件取决于学校订阅和站点。此路线尚未用本校账号验证。 [Zotero 官方保存说明](https://www.zotero.org/support/adding_items_to_zotero#via_your_web_browser)
 
+### 11 月 20 日实查的插件目录和发布包
+
+本次直接查询两个公共 JSON 目录，按完整 npm 包名匹配。科研专题目录在 2026-11-20 00:00 UTC 生成，返回全部 15 项。原生格式的 Open Plugin Market 在查询时有 1,294 项。两个目录的收录范围不同，值得交叉检查。
+
+| 发现渠道 | 实际命中 | 如何使用 |
+|---|---|---|
+| DSH Research 科研目录 | `dsh-kb-rag@1.6.8`、`dsh-ai4scholar@0.6.6`、`dsh-science-workbench@0.3.1`。当时未收录下列 EduWork 包。 | 可直接浏览网页。其 JSON 由社区插件 `dsh-research` 消费。[目录网站](https://dsh-research.com/en/plugins/) · [实查数据](https://dsh-research.com/v1/market.json) · [作者说明](https://github.com/dsh-research/dsh-research) |
+| Open Plugin Market | `@eduwork/dsh-literature@0.1.7`。上述三个包在此次快照中均未命中。 | 支持自定义索引的 DSH 版本可在 Discover 中添加此 JSON。DeepSeek 提供索引规范，索引由社区维护。[原生索引](https://dshopen.org/index.json) · [官方使用指南](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/plugin-market.md) |
+
+又从 npm 官方注册表逐个下载下列四个包，以及 `dsh-research@0.4.6` 和 `dsh-lit-search@0.2.2`。六个压缩包均通过注册表摘要校验，包内都含有自身 `dsh.bundle.patch` 指定的文件。将六份发布清单传给本机 DSH `0.2.2-rc.3` 的 `evaluatePluginCompatibility`，五份通过宿主版本检查。`dsh-lit-search@0.2.2` 被拒绝，因为它要求的 `@deepseek-ai/dsh-tools` 版本范围为 `^0.1.1-rc.1`。这项检查没有在用户的 profile 安装或启动第三方插件，也没有验证检索质量。[不兼容包的发布清单](https://registry.npmjs.org/dsh-lit-search/0.2.2)
+
+| 候选 | 对 CosMatter 最值得试的地方 | 适用边界与作者来源 |
+|---|---|---|
+| **dsh-kb-rag 1.6.8** | 从已有 PDF 或本地 Zotero 附件中检索段落和图注，结果带物理页码、章节和 DOI。可对照 Source Map，检查一个 BFO 数值能否跳回正确的段落、样品和页。 | 要求 PDF 有文本层。作者说明首次检索会下载约 1.2 GB 的本地模型。扫描件应单列测试 MinerU 路线。[作者仓库](https://github.com/Breeze136/dsh-kb-rag) · [发布清单](https://registry.npmjs.org/dsh-kb-rag/1.6.8) |
+| **@eduwork/dsh-literature 0.1.7** | 跨 DBLP、arXiv 去重，保留发表版与预印本的区别，取得 BibTeX 和可用全文。适合为同一论文建立版本配对，再选定用于引证的 PDF。 | 当前检索源限于这两个数据库。对材料实验论文，需额外验证期刊覆盖。包要求 Node ≥24.18.0。[作者中文文档](https://github.com/ECNU/EduWork/blob/main/packages/dsh-literature/README.md) · [发布清单](https://registry.npmjs.org/@eduwork%2fdsh-literature/0.1.7) |
+| **dsh-science-workbench 0.3.1** | 从图回看生成它的计算单元、参数、随机种子和输出哈希。Pb/Sr 构型项目可借此设计“构型 → MD 运行 → 性质 → 图”的追踪界面。 | 它提供计算记录和重跑交互。介电、压电结果仍需由实际 MD 任务产生，再比较重复运行的统计误差。[作者仓库](https://github.com/poplarity/dsh-science-workbench) · [发布清单](https://registry.npmjs.org/dsh-science-workbench/0.3.1) |
+| **dsh-ai4scholar 0.6.6** | 多源发现、引文关系和 DOI 原文检索可作为 SciVerse 的独立对照。可观察第二条路线找到了哪些独立论文，以及哪些结果只增加了同文异版。 | 使用 AI4Scholar 服务，部分查询计费，另需该服务的密钥。此次没有调用服务。[作者仓库](https://github.com/literaf/dsh-ai4scholar) · [发布清单](https://registry.npmjs.org/dsh-ai4scholar/0.6.6) |
+
+### 同类科研产品的对照实验
+
+- **实验值取证。** Elicit 的提取表可以从单元格回看引文。ChemDataExtractor 的官方示例则将化合物与分散在另一段的熔点关联，并保留原始单位和归一化单位。对 BFO 可选有人工标注的公开 PDF，把材料、转变类型、数值、单位、样品和出处作为一条记录，分别统计取值正确率与出处正确率。文献未报告的条件单列为缺失。[Elicit 的系统综述界面](https://support.elicit.com/en/articles/14759154-systematic-reviews-in-elicit) · [ChemDataExtractor 抽取示例](https://cambridgemolecularengineering-chemdataextractor-development.readthedocs-hosted.com/en/latest/introduction/finding_records.html)
+- **反例筛选。** ASReview LAB 会利用审阅者的相关性标注重新排序剩余题录。在同一批有金标的论文上，比较现有筛选路线和该排序找到第一篇反例所需的审阅数，以及前 20 篇中相关论文的召回率。[ASReview LAB 筛选界面](https://asreview.readthedocs.io/en/stable/lab/screening.html)
+- **计算结果溯源。** Materials Project 可沿性质记录中的 `origins.task_id` 找到对应计算及所用泛函。Pb/Sr 试点可采用类似的标识关系，让任一性质返回实际 MD 输入、构型和轨迹，并保留重复采样的误差。[Materials Project 查询示例](https://docs.materialsproject.org/downloading-data/using-the-api/querying-data)
+
+优先试点选 **dsh-kb-rag 的段落定位**。用至少两篇独立公开原始研究，预先标记包含数值、单位和实验判据的页或图注，并加入一篇只在引言提到温度的论文。比较同一问题在两条路线中返回的前三段是否覆盖标记位置，逐条记录错页、漏掉样品条件以及把转述当成独立测量的次数。这个试验能直接检验 CosMatter 当前最关心的证据质量。
+
 ## 8 月初审结论摘要
 
 CosMatter 当前的七个 DSH bundle 已覆盖任务建立、状态观测、策略、受同意约束的计划/元数据检索、候选筛选、MinerU 任务元数据和已接受证据图投影。它的优势是：Python 领域层仍是唯一事实来源，所有 DSH 包仅经 `127.0.0.1` 的受限投影访问，且不把私有全文、密钥或未核验内容暴露给模型。
