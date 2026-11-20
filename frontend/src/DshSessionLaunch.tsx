@@ -13,25 +13,30 @@ export function DshCommandRow(props: { locale: UiLocale; command: string; label:
   </div>;
 }
 
-export function DshSessionLaunch(props: { locale: UiLocale; port: number; runId?: string | null; portInReceipt?: boolean; showLinkPreference?: Signal<boolean> }) {
-  const [showLink, setShowLink] = props.showLinkPreference ?? createSignal(false);
+export type DshLaunchMode = "browser" | "link" | "tui";
+
+export function DshSessionLaunch(props: { locale: UiLocale; port: number; runId?: string | null; portInReceipt?: boolean; launchPreference?: Signal<DshLaunchMode> }) {
+  const [mode, setMode] = props.launchPreference ?? createSignal<DshLaunchMode>("browser");
   const choiceName = createUniqueId();
   const runId = () => props.runId && isLocalRunId(props.runId) ? props.runId : null;
-  const command = () => `cosmatter open-dsh-workbench --port ${props.port}${runId() ? ` --run-id ${runId()}` : ""}${showLink() ? " --no-open" : ""}`;
+  const suffix = { browser: "", link: " --no-open", tui: " --surface tui" } as const;
+  const command = () => `cosmatter open-dsh-workbench --port ${props.port}${runId() ? ` --run-id ${runId()}` : ""}${suffix[mode()]}`;
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   return <section class="harness-session-launch" aria-label={x("打开 DSH 会话", "Open a DSH session")}>
     <Show when={!props.portInReceipt || runId()}><p class="dsh-session-target">
       <Show when={!props.portInReceipt}><span>{x(`工作台端口 ${props.port}`, `Workbench port ${props.port}`)}</span></Show>
       <Show when={runId()}>{(id) => <span>{x("当前任务", "Current run")} <code>{id()}</code></span>}</Show>
     </p></Show>
-    <fieldset class="dsh-launch-mode" role="radiogroup" aria-label={x("网页打开方式", "How to open DSH")}>
-      <legend>{x("网页打开方式", "How to open DSH")}</legend>
+    <fieldset class="dsh-launch-mode" role="radiogroup" aria-label={x("会话打开方式", "How to open DSH")}>
+      <legend>{x("会话打开方式", "How to open DSH")}</legend>
       <div>
-        <label><input type="radio" name={choiceName} checked={!showLink()} onChange={() => setShowLink(false)} />{x("自动打开网页", "Open browser automatically")}</label>
-        <label><input type="radio" name={choiceName} checked={showLink()} onChange={() => setShowLink(true)} />{x("在终端显示链接", "Show link in terminal")}</label>
+        <label><input type="radio" name={choiceName} checked={mode() === "browser"} onChange={() => setMode("browser")} />{x("自动打开网页", "Open browser automatically")}</label>
+        <label><input type="radio" name={choiceName} checked={mode() === "link"} onChange={() => setMode("link")} />{x("在终端显示链接", "Show link in terminal")}</label>
+        <label><input type="radio" name={choiceName} checked={mode() === "tui"} onChange={() => setMode("tui")} />{x("在 Orca / 本机终端运行", "Run in Orca / local terminal")}</label>
       </div>
     </fieldset>
-    <p>{showLink() ? x("在 CosMatter 终端运行命令，再打开终端显示的本机链接。", "Run in the CosMatter terminal, then open the local link it prints.")
+    <p>{mode() === "tui" ? x("在运行本工作台的电脑上，打开 Orca 工作树的普通终端或本机终端，粘贴命令。DSH 的 tui 配置需已安装交互前端。", "Paste the command into an Orca worktree terminal or a local terminal on the workbench computer. The DSH tui profile needs an interactive frontend.")
+      : mode() === "link" ? x("在 CosMatter 终端运行命令，再打开终端显示的本机链接。", "Run in the CosMatter terminal, then open the local link it prints.")
       : x("在 CosMatter 终端运行命令，DSH 将在浏览器中打开。", "Run in the CosMatter terminal to open DSH in your browser.")}</p>
     <DshCommandRow locale={props.locale} command={command()} label={x("复制 DSH 启动命令", "Copy DSH launch command")} />
     <Show when={!runId()}><p>{x("创建任务时，告诉 DSH 你的研究问题、材料、目标性质和研究范围，再打开它返回的工作台链接。",

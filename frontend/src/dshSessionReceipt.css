@@ -39,10 +39,36 @@
   font: inherit;
 }
 
-.dsh-terminal-choice select:focus-visible {
+.dsh-terminal-choice select:focus-visible,
+.dsh-repository-location input:focus-visible {
   outline: 2px solid var(--signal-blue);
   outline-offset: 2px;
 }
+
+.dsh-command-environment { display: grid; min-width: 0; gap: .45rem; }
+.dsh-repository-location { min-width: 0; }
+.dsh-repository-location form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: .45rem .65rem;
+  padding: .45rem .65rem .65rem;
+}
+.dsh-repository-location label { display: grid; flex: 1 1 13rem; min-width: 0; gap: .25rem; }
+.dsh-repository-location input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding-inline: .5rem;
+  border: 1px solid var(--line);
+  border-radius: .25rem;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+}
+.dsh-repository-location input[aria-invalid="true"] { border-color: var(--signal-red); }
+.dsh-repository-location .cm-action { min-height: 44px; }
+.dsh-repository-location p { flex-basis: 100%; margin: 0; }
 
 @media (max-width: 640px), (pointer: coarse) {
   .dsh-terminal-choice select { min-height: 44px; }

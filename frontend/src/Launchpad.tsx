@@ -12,6 +12,7 @@ import { RecentLocalRuns } from "./RecentLocalRuns";
 import { RunArtifactRecord, type RunArtifactIdentity } from "./RunArtifactRecord";
 import type { RetrievalSource } from "./localApi";
 import { isLocalRunId } from "./liveRunIdentity";
+import type { dshEntryStatus } from "./dshSessionReadiness";
 
 export type LaunchMode = "question" | "pdf" | "resume";
 export type LaunchExecution = { kind: "local" } | { kind: "authorized-retrieval"; sources: RetrievalSource[] };
@@ -62,7 +63,7 @@ const MODES: Array<{ id: LaunchMode; icon: string; zh: string; en: string; zhDet
   { id: "resume", icon: "↗", zh: "续航任务", en: "Resume", zhDetail: "本机运行 / 运行包", enDetail: "Local run / run package" },
 ];
 
-export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | null, focusField?: (field: LaunchMissionField) => void) => void; confirmedBrief?: LaunchMissionBoundary | null; onReturnToConfirmedBrief?: (field?: LaunchMissionField) => void; legacyWorkbench?: boolean; onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; linkedRunId?: string; existingRunReadPending?: boolean; runArtifactRecord?: RunArtifactIdentity | null; onCloseRunArtifactRecord: () => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; takePreviewDraft?: () => LaunchPreviewDraft | undefined; onPreviewStage: (stage: LaunchPreviewStage, draft?: LaunchPreviewDraft) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
+export function Launchpad(props: { dshStatus?: ReturnType<typeof dshEntryStatus>; onOpenDsh?: (draft: LaunchMissionBoundary | null, focusField?: (field: LaunchMissionField) => void) => void; confirmedBrief?: LaunchMissionBoundary | null; onReturnToConfirmedBrief?: (field?: LaunchMissionField) => void; legacyWorkbench?: boolean; onQuestion: (mission: LaunchMission, execution: LaunchExecution) => void; onPdf: (file: File, candidateTarget?: LaunchPdfCandidateTarget) => void; onResume: (file: File) => void; onOpenExistingRun?: (runId: string) => void; linkedRunId?: string; existingRunReadPending?: boolean; runArtifactRecord?: RunArtifactIdentity | null; onCloseRunArtifactRecord: () => void; onCandidates?: (question: string) => Promise<LaunchCandidate[]>; takePreviewDraft?: () => LaunchPreviewDraft | undefined; onPreviewStage: (stage: LaunchPreviewStage, draft?: LaunchPreviewDraft) => void; candidatePdfTarget?: LaunchPdfCandidateTarget | null; activeRunId?: string | null; onReturnToActiveRun?: () => void; automaticExecutionSources?: { id: RetrievalSource; label: string }[]; launchNotice?: string | null; onDismissLaunchNotice?: () => void; pdfSubmissionPending?: boolean; retryPdfSubmission?: { fileName: string } | null; onRetryPdfSubmission?: () => void; resumeSubmissionPending?: boolean; language: "zh" | "en"; theme: Theme; onLanguage: (language: "zh" | "en") => void; onTheme: (theme: Theme) => void; }) {
   const [foregroundIndex, setForegroundIndex] = createSignal(nextFleetIndex());
   const [mode, setMode] = createSignal<LaunchMode>(props.candidatePdfTarget ? "pdf" : props.linkedRunId ? "resume" : "question");
   const activeStage = () => stageForLaunchMode(mode());
@@ -248,6 +249,7 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
   }
   const retainedBrief = () => mode() === "question" && !selected() && !prompt().trim() && !continuationBusy() && !props.activeRunId
     ? props.confirmedBrief : null;
+  const dshEntryLabel = () => retainedBrief() ? copy("DSH 插件 · 已确认简报", "DSH plugins · Confirmed brief") : copy("DSH 插件", "DSH plugins");
   function openDsh() {
     if (mode() !== "question") {
       props.onOpenDsh?.(null);
@@ -298,7 +300,11 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
     <div class="launch-sky" aria-hidden="true"><i /><i /><i /><i /></div>
     <div class="launch-fleet-extract" ref={(node) => { fleetNode = node; }} aria-hidden="true"><img class="launch-fleet-main" src={launchFleetMasks[foregroundIndex()]} alt="" /><img class="launch-fleet-echo" src={launchFleetMasks[foregroundIndex()]} alt="" /></div>
     <section class="launch-controls" classList={{ "has-dsh": Boolean(props.onOpenDsh) }} aria-label={copy("工作台工具与显示设置", "Workbench tools and display settings")}>
-      <Show when={props.onOpenDsh}><ActionButton class="launch-dsh-entry" size="sm" aria-haspopup="dialog" onClick={openDsh}>{retainedBrief() ? copy("DSH 插件 · 已确认简报", "DSH plugins · Confirmed brief") : copy("DSH 插件", "DSH plugins")}</ActionButton></Show>
+      <Show when={props.onOpenDsh}><ActionButton class="launch-dsh-entry" size="sm" aria-haspopup="dialog"
+        aria-label={dshEntryLabel()} aria-describedby={props.dshStatus ? "launch-dsh-status" : undefined} onClick={openDsh}>
+        {dshEntryLabel()}
+        <Show when={props.dshStatus}>{status => <span id="launch-dsh-status" class="launch-dsh-status" data-tone={status().tone}>{status().text}</span>}</Show>
+      </ActionButton></Show>
       <div class="launch-preferences">
         <div class="launch-control-group" role="group" aria-label={copy("界面语言", "Language")}>
           <button classList={{ active: props.language === "zh" }} type="button" aria-pressed={props.language === "zh"} onClick={() => props.onLanguage("zh")} aria-label="切换为中文" title="中文">中</button>

@@ -4,6 +4,7 @@ import { FleetDecoration } from "./FleetDecoration";
 import { DshRunHandoff } from "./DshRunHandoff";
 import { DshReadProfile } from "./dshReadProfile";
 import { DshToolDialog } from "./DshToolDialog";
+import { dshEntryStatus } from "./dshSessionReadiness";
 import { localWorkbenchLocation } from "./dshLocalCommands";
 import type { RunArtifactIdentity } from "./RunArtifactRecord";
 import type { RunStatus } from "./localApi";
@@ -348,6 +349,12 @@ export function App() {
   });
   const localBriefForDsh = () => confirmedLocalBrief() && Boolean(localWorkbenchLocation());
   const canOpenDshToolDialog = createMemo(() => localApiEnabled() && (view() === "launch" ? Boolean(localWorkbenchLocation()) : previewCanActOnRun() || localBriefForDsh()));
+  const homeDshStatus = createMemo(() => {
+    const location = localWorkbenchLocation();
+    return view() === "launch" && localApiEnabled() && location
+      ? dshEntryStatus(dshProfile(), dshProfileHealth(), harnessCatalogueHealth(), Number(location.port || "80"), language())
+      : undefined;
+  });
   const dshEvidenceTarget = createMemo(() => {
     if (view() !== "reader" || !previewCanActOnRun()) return null;
     const session = researchSession();
@@ -450,6 +457,7 @@ export function App() {
     return runtimeStage()?.stage ?? null;
   });
   const runtimeStageRecovery = createMemo(() => stageRecoveryNavigation(runtimeStage()));
+  const recoveryNeedsPaper = () => runtimeStageRecovery()?.target === "reader" && !researchSession().selectedNode;
   const runtimeDagRail = createMemo(() => workflowDagRail(workflowDag()));
   const runtimeAttention = createMemo(() => runtimeProjectionAttention(stageContract(), operationalTelemetry()));
   const dispatchRecovery = createMemo(() => dispatchRecoveryItems(operationalTelemetry()));
@@ -499,21 +507,21 @@ export function App() {
       || Boolean(readiness.frozenCorpus || readiness.humanAnnotation || readiness.bibliographicSource);
   };
 
-  function navigate(next: View) {
+  function navigate(next: View): boolean {
     if (next === "reader" && rejectNextGraphReaderNavigation) {
       rejectNextGraphReaderNavigation = false;
-      return;
+      return false;
     }
-    if (launchPreview()) { setRouteRecovery(null); setView(next); return; }
+    if (launchPreview()) { setRouteRecovery(null); setView(next); return true; }
     if (taskArtifactLocked() && ["graph", "reader", "horizon"].includes(next)) {
       setStatus(text("任务边界已改变；旧工件保留供回看，但需重新导入匹配工件或执行受控检索。", "The task boundary changed. Old artifacts remain for review, but matching artifacts must be re-imported or retrieved in the controlled flow."));
       setRouteRecovery({ view: "discover", zh: "返回任务定义，重新建立匹配工件", en: "Return to task definition and rebuild matching artifacts" });
-      return;
+      return false;
     }
     if (next === "reader" && !researchSession().selectedNode) {
       setStatus(gateCopy().paper);
       setRouteRecovery({ view: "graph", zh: "返回文献星图选择论文", en: "Return to literature map and select a paper" });
-      return;
+      return false;
     }
     if (next === "horizon" && !gate().ready && !hasNavigableEvaluationAudit()) {
       setStatus(gateCopy()[gate().reason ?? "evidence"]);
@@ -522,17 +530,18 @@ export function App() {
         zh: gate().reason === "paper" ? "返回文献星图选择论文" : "返回证据核对补齐来源与 EvidenceCard",
         en: gate().reason === "paper" ? "Return to literature map and select a paper" : "Return to evidence verification and complete source/EvidenceCard review",
       });
-      return;
+      return false;
     }
     const stage = journey().find((item) => item.view === next);
     if (next !== "discover" && stage?.state === "blocked" && !(next === "horizon" && hasNavigableEvaluationAudit())) {
       setStatus(language() === "zh" ? stage.reasonZh ?? "上一步尚未完成。" : stage.reasonEn ?? "The preceding stage is not ready.");
       const recovery = ({ workflow: { view: "discover", zh: "返回任务定义补齐边界", en: "Return to task definition and complete boundaries" }, graph: { view: "workflow", zh: "返回舰桥建立任务工件", en: "Return to bridge and create mission artifacts" }, reader: { view: "graph", zh: "返回文献星图选择论文", en: "Return to literature map and select a paper" }, horizon: { view: "reader", zh: "返回证据核对补齐审计链路", en: "Return to evidence verification and complete the audit chain" } } as Partial<Record<View, RouteRecovery>>)[next];
       setRouteRecovery(recovery ?? null);
-      return;
+      return false;
     }
     setRouteRecovery(null);
     setView(next);
+    return true;
   }
   function takePreviewDraft() {
     const draft = previewQuestionDraft;
@@ -865,8 +874,13 @@ export function App() {
     const recovery = runtimeStageRecovery();
     if (!recovery) return;
     if (recovery.target === "task-control") { openManualTaskControl(); return; }
-    navigate(recovery.target);
-    setStatus(text("已打开当前阶段对应的本地审核界面；此导航不会提交任务、上传文件或调用外部服务。", "Opened the local review surface for the current stage. This navigation does not submit work, upload files, or call external services."));
+    if (recoveryNeedsPaper()) {
+      if (navigate("graph")) setStatus(gateCopy().paper);
+      return;
+    }
+    if (navigate(recovery.target)) {
+      setStatus(text("已打开当前阶段对应的本地审核界面；此导航不会提交任务、上传文件或调用外部服务。", "Opened the local review surface for the current stage. This navigation does not submit work, upload files, or call external services."));
+    }
   }
 
   function applyImportedBundle(imported: ImportedBundle, preserveResearchSession = false) {
@@ -2195,7 +2209,7 @@ export function App() {
 
   return <DshReadProfile.Provider value={{ profile: dshProfile, health: dshProfileHealth, refresh: refreshDshProfile }}>
     <div class={`workbench theme-${theme()} view-${view()}`}>
-    <Show when={view() === "launch"}><Launchpad takePreviewDraft={takePreviewDraft} onOpenDsh={canOpenDshToolDialog() ? openDraftDsh : undefined} confirmedBrief={confirmedLocalBrief()} onReturnToConfirmedBrief={returnToConfirmedBrief} legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
+    <Show when={view() === "launch"}><Launchpad dshStatus={homeDshStatus()} takePreviewDraft={takePreviewDraft} onOpenDsh={canOpenDshToolDialog() ? openDraftDsh : undefined} confirmedBrief={confirmedLocalBrief()} onReturnToConfirmedBrief={returnToConfirmedBrief} legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>
@@ -2299,7 +2313,7 @@ export function App() {
               : text("正在读取本地阶段契约；不会触发检索、解析或重试。", "Reading the local stage contract; no retrieval, parsing, or retry is triggered.")}</p>}>
             {(stage) => <><p><strong>{runtimeStageLabel(stage().stage)}</strong> · {runtimeStageStatusLabel(stage().status)}</p><dl><div><dt>{text("人工门", "Human gate")}</dt><dd>{stage().human_gate}</dd></div><div><dt>{text("恢复路线", "Recovery route")}</dt><dd>{stage().recovery_route}</dd></div><div><dt>{text("预期输出", "Expected outputs")}</dt><dd>{stage().expected_outputs.join(" · ")}</dd></div></dl></>}
           </Show>
-          <Show when={runtimeStageRecovery()}>{(recovery) => <section class="runtime-stage-recovery" aria-label={text("阶段恢复导航", "Stage recovery navigation")}><small>{text("阶段恢复导航 / 不执行", "STAGE RECOVERY NAVIGATION / NO EXECUTION")}</small><p>{text("此入口只打开当前阶段对应的本地审核界面；仍须在该界面逐项确认人工门和授权。", "This opens only the local review surface for the current stage; its human gates and authorisations still require item-by-item confirmation there.")}</p><ActionButton size="sm" onClick={openRuntimeStageRecovery}>{stageRecoveryLabel(recovery().target)}</ActionButton></section>}</Show>
+          <Show when={runtimeStageRecovery()}>{(recovery) => <section class="runtime-stage-recovery" aria-label={text("阶段恢复导航", "Stage recovery navigation")}><small>{text("阶段恢复导航 / 不执行", "STAGE RECOVERY NAVIGATION / NO EXECUTION")}</small><p>{text("此入口只打开当前阶段对应的本地审核界面；仍须在该界面逐项确认人工门和授权。", "This opens only the local review surface for the current stage; its human gates and authorisations still require item-by-item confirmation there.")}</p><ActionButton size="sm" onClick={openRuntimeStageRecovery}>{recoveryNeedsPaper() ? text("选择论文以核对来源", "Select a paper for source-map review") : stageRecoveryLabel(recovery().target)}</ActionButton></section>}</Show>
           <section class="runtime-dag" aria-label={text("固定串行舰队交接", "Fixed serial fleet handoff")}>
             <header><small>{text("固定串行 DAG / 只读", "FIXED SERIAL DAG / READ ONLY")}</small><span>{runtimeDagRail().eligibleStage ? text(`当前仅 ${runtimeStageLabel(runtimeDagRail().eligibleStage!)} 具备就绪资格`, `Only ${runtimeStageLabel(runtimeDagRail().eligibleStage!)} is currently eligible`) : text("当前没有可自动执行的阶段", "No stage is automatically executable")}</span></header>
             <Show when={runtimeDagRail().state === "declared"} fallback={<p>{text("DAG 投影不可用或未通过固定结构校验；界面不会以不明运行计划替代它。", "The DAG projection is unavailable or did not pass fixed-shape validation; the UI will not substitute an unknown runtime plan.")}</p>}>

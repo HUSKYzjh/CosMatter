@@ -2,14 +2,14 @@ import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 import { DshToolCatalogueContent, type DshToolCatalogueProps } from "./DshToolCatalogue";
 import { DshMissionDraft } from "./DshMissionDraft";
 import type { LaunchMissionBoundary, LaunchMissionField } from "./launchMissionValidation";
-import { DshCommandRow, DshSessionLaunch } from "./DshSessionLaunch";
+import { DshCommandRow, DshSessionLaunch, type DshLaunchMode } from "./DshSessionLaunch";
 import { OtherPortReceiptHelp, WorkbenchUpdateCommand } from "./WorkbenchUpdateCommand";
 import { BUNDLE_REPAIR_COMMAND, dshProfileCheckCommand, localWorkbenchLocation } from "./dshLocalCommands";
 import { DSH_TOOL_COUNT, dshSessionReadiness, missingRegisteredTools, type DshSessionReadiness } from "./dshSessionReadiness";
 import { registryMatchesComposition } from "./dshReadProfile";
 import type { HarnessCatalogueHealth } from "./localApi";
 import { ActionButton } from "./uiPrimitives";
-import { chooseDshTerminal, dshTerminal, type DshTerminal } from "./dshTerminalCommand";
+import { DshTerminalChoice } from "./DshTerminalChoice";
 import "./dshSessionReceipt.css";
 
 const views = ["catalogue", "session"] as const;
@@ -44,10 +44,11 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   const initialStage = props.currentStage;
   const [view, setView] = createSignal<DialogView>(props.initialView ?? "catalogue");
-  const showLinkPreference = createSignal(false);
+  const launchPreference = createSignal<DshLaunchMode>("browser");
   const location = localWorkbenchLocation();
   const port = location ? Number(location.port || "80") : null;
   const readiness = createMemo(() => dshSessionReadiness(props.profile, props.profileHealth, props.catalogueHealth, port));
+  const readyPort = () => readiness() === "ready" ? port : null;
   const missingTools = createMemo(() => readiness() === "registry-check" ? missingRegisteredTools(props.profile) : []);
   let lookupTool: ((name: string) => void) | undefined;
   const statusLabel = () => {
@@ -65,11 +66,12 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
     }
     return x(...SESSION_STATUS[state]);
   };
-  const recoveryCommand = createMemo(() => {
+  const needsRepair = () => readiness() === "repair-files" || readiness() === "repair-composition" || missingTools().length > 0;
+  const checkCommand = createMemo(() => {
     if (!port) return null;
     switch (readiness()) {
       case "repair-files":
-      case "repair-composition": return BUNDLE_REPAIR_COMMAND;
+      case "repair-composition":
       case "composition-unchecked":
       case "composition-check":
       case "registry-check":
@@ -138,27 +140,37 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
         onLookupReady={openTool => { lookupTool = openTool; }} scrollResults />
     </div>
     <div class="dsh-dialog-session" role="tabpanel" id="dsh-session-panel" aria-labelledby="dsh-session-tab" tabIndex={0} hidden={view() !== "session"}>
-      <Show when={readiness() === "ready" && port} fallback={<>
-        <p role="status">{statusLabel()}</p>
-        <Show when={missingTools().length > 0}>
-          <details class="harness-disclosure dsh-registry-gaps" open={missingTools().length <= 3}>
-            <summary><span>{x("注册缺项", "Missing registrations")}</span><strong>{missingTools().length}</strong></summary>
-            <ul><For each={missingTools()}>{tool => <li>
-              <button type="button" aria-label={x(`在目录中查看 ${tool.name}`, `View ${tool.name} in catalogue`)}
-                onClick={() => { selectTab("catalogue"); lookupTool?.(tool.name); }}>{tool.name}</button>
-              <code>{tool.bundle}</code>
-            </li>}</For></ul>
-          </details>
-          <p>{x("在 CosMatter 仓库根目录运行补齐命令，重新链接缺少工具的插件包。", "Run the repair command from the CosMatter repository root to relink the bundles missing tools.")}</p>
+      <Show when={readyPort()} fallback={<p role="status">{statusLabel()}</p>}>{(localPort) =>
+        <Show when={props.profile?.tool_registry_check}>{(receipt) => <div class="dsh-session-receipt">
+          <p>{x(`上次核验通过 · 工作台端口 ${localPort()}`, `Last check passed · Workbench port ${localPort()}`)}
+            <time dateTime={receipt().checked_at}>{new Intl.DateTimeFormat(props.locale === "zh" ? "zh-CN" : "en",
+              { dateStyle: "medium", timeStyle: "short" }).format(new Date(receipt().checked_at))}</time>
+          </p>
+          <ActionButton size="sm" variant="quiet" onClick={refreshSession}>{x("刷新会话状态", "Refresh session status")}</ActionButton>
+        </div>}</Show>
+      }</Show>
+      <Show when={missingTools().length > 0}>
+        <details class="harness-disclosure dsh-registry-gaps" open={missingTools().length <= 3}>
+          <summary><span>{x("注册缺项", "Missing registrations")}</span><strong>{missingTools().length}</strong></summary>
+          <ul><For each={missingTools()}>{tool => <li>
+            <button type="button" aria-label={x(`在目录中查看 ${tool.name}`, `View ${tool.name} in catalogue`)}
+              onClick={() => { selectTab("catalogue"); lookupTool?.(tool.name); }}>{tool.name}</button>
+            <code>{tool.bundle}</code>
+          </li>}</For></ul>
+        </details>
+      </Show>
+      <DshTerminalChoice locale={props.locale} />
+      <Show when={readyPort()} fallback={<>
+        <Show when={port && needsRepair()}>
+          <p>{x("先在 CosMatter 仓库根目录运行补齐命令。", "First run the repair command from the CosMatter repository root.")}</p>
           <DshCommandRow locale={props.locale} command={BUNDLE_REPAIR_COMMAND} label={x("复制补齐命令", "Copy repair command")} />
         </Show>
         <Show when={readiness() === "workbench-update" || workbenchOffline()}><WorkbenchUpdateCommand locale={props.locale} runId={props.runId} offline={workbenchOffline()} /></Show>
-        <Show when={recoveryCommand()}>{(command) => <>
-          <p>{command() === BUNDLE_REPAIR_COMMAND
-            ? x("在 CosMatter 仓库根目录运行补齐命令，然后刷新会话状态。", "Run the repair command from the CosMatter repository root, then refresh the session status.")
+        <Show when={checkCommand()}>{(command) => <>
+          <p>{needsRepair()
+            ? x("补齐成功后，在同一终端运行核验命令。核验结束后刷新会话状态。", "After the repair succeeds, run the check in the same terminal. Refresh the session status when the check finishes.")
             : x("在 CosMatter 终端运行核验命令，然后刷新会话状态。", "Run the check in the CosMatter terminal, then refresh the session status.")}</p>
-          <DshCommandRow locale={props.locale} command={command()} label={command() === BUNDLE_REPAIR_COMMAND
-            ? x("复制补齐命令", "Copy repair command") : x("复制核验命令", "Copy check command")} />
+          <DshCommandRow locale={props.locale} command={command()} label={x("复制核验命令", "Copy check command")} />
         </>}</Show>
         <Show when={readiness() !== "ready"}>
           <ActionButton size="sm" busy={readiness() === "checking"} busyLabel={x("正在读取…", "Reading…")} onClick={refreshSession}>
@@ -167,25 +179,10 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
         </Show>
         <OtherPortReceiptHelp locale={props.locale} runId={props.runId} readiness={readiness()}
           port={port} receiptPort={props.profile?.tool_registry_check?.loopback_check?.port} />
-      </>}>{(localPort) => <>
-        <Show when={props.profile?.tool_registry_check}>{(receipt) => <div class="dsh-session-receipt">
-          <p>{x(`上次核验通过 · 工作台端口 ${localPort()}`, `Last check passed · Workbench port ${localPort()}`)}
-            <time dateTime={receipt().checked_at}>{new Intl.DateTimeFormat(props.locale === "zh" ? "zh-CN" : "en",
-              { dateStyle: "medium", timeStyle: "short" }).format(new Date(receipt().checked_at))}</time>
-          </p>
-          <ActionButton size="sm" variant="quiet" onClick={refreshSession}>{x("刷新会话状态", "Refresh session status")}</ActionButton>
-        </div>}</Show>
+      </>}>{(localPort) =>
         <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId}
-          portInReceipt={Boolean(props.profile?.tool_registry_check)} showLinkPreference={showLinkPreference} />
-      </>}</Show>
-      <label class="dsh-terminal-choice">
-        <span>{x("命令运行环境", "Command environment")}</span>
-        <select value={dshTerminal()} onChange={event => chooseDshTerminal(event.currentTarget.value as DshTerminal)}>
-          <option value="path">{x("已激活环境或全局安装", "Activated environment or global install")}</option>
-          <option value="windows-venv">{x("Windows · 仓库根目录 .venv", "Windows · repository root .venv")}</option>
-          <option value="posix-venv">{x("macOS / Linux · 仓库根目录 .venv", "macOS / Linux · repository root .venv")}</option>
-        </select>
-      </label>
+          portInReceipt={Boolean(props.profile?.tool_registry_check)} launchPreference={launchPreference} />
+      }</Show>
       <Show when={!props.runId && props.draft}>{(draft) => <DshMissionDraft locale={props.locale} draft={draft()} onEditField={props.onEditDraftField} />}</Show>
     </div>
   </dialog>;

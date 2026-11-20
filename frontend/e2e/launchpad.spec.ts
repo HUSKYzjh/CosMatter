@@ -509,15 +509,15 @@ test("keeps keyboard focus inside both DSH panels and restores their selections"
   await expect(copy).toBeVisible();
   await pressTo("Tab", session);
   await pressTo("Tab", session.getByRole("button", { name: "刷新会话状态" }));
+  const environment = session.getByRole("combobox", { name: "命令运行环境" });
+  await pressTo("Tab", environment);
   await pressTo("Tab", session.getByRole("radio", { name: "自动打开网页" }));
   await page.keyboard.press("ArrowRight");
   const showLink = session.getByRole("radio", { name: "在终端显示链接" });
   await expect(showLink).toBeChecked();
   await pressTo("Tab", copy);
-  const environment = session.getByRole("combobox", { name: "命令运行环境" });
-  await pressTo("Tab", environment);
   await pressTo("Tab", close);
-  await pressTo("Shift+Tab", environment);
+  await pressTo("Shift+Tab", copy);
   await page.keyboard.press("Tab");
   await pressTo("Tab", sessionTab);
 
@@ -1643,7 +1643,7 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await expect(handoff.locator("summary")).toBeFocused();
   const session = page.getByRole("region", { name: "打开 DSH 会话" });
   const launchCommand = `cosmatter open-dsh-workbench --port ${new URL(page.url()).port} --run-id ${runId}`;
-  const openMode = session.getByRole("radiogroup", { name: "网页打开方式" });
+  const openMode = session.getByRole("radiogroup", { name: "会话打开方式" });
   await expect(openMode.getByRole("radio", { name: "自动打开网页" })).toBeChecked();
   await session.getByRole("button", { name: "复制 DSH 启动命令" }).press("Enter");
   await expect(session.getByRole("status")).toHaveText("已复制。");
@@ -1654,6 +1654,10 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await session.getByRole("button", { name: "复制 DSH 启动命令" }).press("Enter");
   await expect(session.getByRole("status")).toHaveText("已复制。");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(launchCommand + " --no-open");
+  await openMode.getByRole("radio", { name: "在终端显示链接" }).press("ArrowRight");
+  await expect(openMode.getByRole("radio", { name: "在 Orca / 本机终端运行" })).toBeChecked();
+  await session.getByRole("button", { name: "复制 DSH 启动命令" }).press("Enter");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(launchCommand + " --surface tui");
   expect(await session.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(page.locator(".dsh-tool-catalogue")).toHaveCount(0);
   const opener = page.getByRole("button", { name: "DSH 工具与会话" });
@@ -2481,7 +2485,7 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   await expect(sessionTab).toHaveAttribute("aria-selected", "true");
   await expect(search).not.toBeVisible();
   const sessionPanel = toolDialog.getByRole("tabpanel", { name: "DSH 会话" });
-  const mode = sessionPanel.getByRole("radiogroup", { name: "网页打开方式" });
+  const mode = sessionPanel.getByRole("radiogroup", { name: "会话打开方式" });
   await expect(mode.getByRole("radio", { name: "自动打开网页" })).toBeChecked();
   await page.setViewportSize({ width: 320, height: 400 });
   await mode.getByRole("radio", { name: "在终端显示链接" }).check();

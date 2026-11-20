@@ -1,9 +1,10 @@
 import { expect, it } from "vitest";
 import { packages } from "../../plugins/dsh-plugin-group.json";
 import type { DshProfileStatus } from "./localApi";
-import { dshSessionReadiness, missingRegisteredTools } from "./dshSessionReadiness";
+import { dshEntryStatus, dshSessionReadiness, missingRegisteredTools } from "./dshSessionReadiness";
 
 const port = 8789;
+
 const receipt = {
   checked_at: "2026-11-19T02:00:00Z", dsh_version: "0.2.2-rc.3",
   matches_local_files: true, bundles: packages.map(bundle => bundle.package),
@@ -20,6 +21,13 @@ const profile: DshProfileStatus = {
   composition_status: "not_checked_by_http_api", composition_check: composition, tool_registry_check: registry,
   trust_status: "local_installation_snapshot_not_profile_boot_or_plugin_execution",
 };
+
+it("shows port-specific verification and actionable gaps at the home entry", () => {
+  expect(dshEntryStatus(profile, "ready", "ready", port, "zh").text).toBe("此端口已核验");
+  expect(dshEntryStatus(profile, "ready", "ready", port + 1, "en").text).toBe("Check needed");
+  const missingTool = { ...registry, registered_tools: registry.registered_tools.slice(1) };
+  expect(dshEntryStatus({ ...profile, tool_registry_check: missingTool }, "ready", "ready", port, "zh").text).toBe("工具缺项");
+});
 
 it("prioritises loading and installation problems when the capability catalogue is also unavailable", () => {
   const partial: DshProfileStatus = { ...profile, installation_state: "partial", installed_bundle_count: 6 };

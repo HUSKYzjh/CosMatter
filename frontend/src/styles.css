@@ -2249,10 +2249,19 @@ button.quiet-action:not(.cm-action):disabled,
 .launch-brief-editor .launch-brief-source { color: var(--muted); font-family: inherit; font-size: max(.8rem, 13px); line-height: 1.4; }
 .launch-brief-editor label textarea { width: 100%; min-height: 4.4rem; padding: .35rem .45rem; resize: vertical; border: 1px solid var(--line); color: var(--ink); background: var(--surface); font-family: inherit; font-size: max(.82rem, 14px); font-weight: 400; line-height: 1.45; letter-spacing: normal; }
 .launch-controls.has-dsh { align-items: center; }
-.launch-controls .launch-dsh-entry { min-height: 2.25rem; white-space: nowrap; }
-@media (max-width: 560px), (pointer: coarse) {
-  .launch-controls .launch-dsh-entry { min-height: 2.75rem; }
+.launch-controls .launch-dsh-entry { min-height: 44px; max-width: 100%; }
+.launch-dsh-entry > span { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; }
+.launch-dsh-status {
+  padding-inline-start: .5rem;
+  border-inline-start: 1px solid var(--line);
+  color: var(--muted);
+  font-size: max(.78rem, 13px);
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
 }
+.launch-dsh-status[data-tone="ready"] { color: color-mix(in srgb, var(--signal-teal) 72%, var(--ink)); }
+.launch-dsh-status[data-tone="attention"] { color: color-mix(in srgb, var(--signal-amber) 65%, var(--ink)); }
 @media (max-width: 560px) {
   .launchpad > .launch-controls.has-dsh { position: relative; inset: auto; flex-wrap: wrap; justify-content: space-between; }
   .launch-controls.has-dsh + .launch-hero { padding-top: 1.25rem; }
