@@ -8,13 +8,15 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from functools import cache
 from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.parse import parse_qs, urlsplit
@@ -41,6 +43,9 @@ _REGISTRY_RECEIPT = ".cosmatter-tool-registry-check.json"
 _REGISTRY_SCHEMA = "cosmatter.dsh-tool-registry-check/v1"
 _PORT_HISTORY_FILE = ".cosmatter-tool-registry-ports.json"
 _PORT_HISTORY_SCHEMA = "cosmatter.dsh-tool-registry-ports/v1"
+_COMPOSITION_PROOFS = ".cosmatter-composition-content.json"
+_REGISTRY_PROOFS = ".cosmatter-tool-registry-content.json"
+_CONTENT_PROOF_SCHEMA = "cosmatter.dsh-compiled-entry-proofs/v1"
 _MAX_LOOPBACK_RECEIPTS = 16
 _MAX_CONFIG_BYTES = 1_000_000
 _DIAGNOSTIC_CLEANUP_FAILED = "Diagnostic cleanup did not finish."
@@ -232,10 +237,12 @@ def dsh_profile_status(
         "composition_status": "not_checked_by_http_api",
         "trust_status": DSH_PROFILE_STATUS_TRUST,
     }
-    if profile_name == "tui" and not unavailable and (check := _read_composition_check(profile)) is not None:
-        snapshot["composition_check"] = check
-    if profile_name == "tui" and not unavailable and (registry := _read_registry_check(profile, loopback_port)) is not None:
-        snapshot["tool_registry_check"] = registry
+    if profile_name == "tui" and not unavailable:
+        matches_stamp = _configuration_verifier(profile)
+        if (check := _read_composition_check(profile, matches_stamp)) is not None:
+            snapshot["composition_check"] = check
+        if (registry := _read_registry_check(profile, loopback_port, matches_stamp)) is not None:
+            snapshot["tool_registry_check"] = registry
     return snapshot
 
 
@@ -507,23 +514,24 @@ def check_dsh_composition(
         raise DshCompositionCheckError("The local tui profile manifest is missing.")
     environment = {**os.environ, "DSH_HOME": str(home)}
     try:
-        before = _configuration_state(profile)
+        before = _configuration_state(profile, hash_entries=True)
         with tempfile.TemporaryDirectory(prefix="cosmatter-dsh-composition-") as temporary:
             version = _run_dsh_diagnostic(dsh, ["--version"], temporary, environment).strip()
             if not _DSH_VERSION.fullmatch(version):
                 raise DshCompositionCheckError("DSH returned an unsupported version string.")
             arguments = ["--profile", "tui", "--dump-config"]
             config = _run_dsh_diagnostic(dsh, arguments, temporary, environment)
-            after = _configuration_state(profile)
-            if before != after and before.inputs == after.inputs:
+            after = _configuration_state(profile, hash_entries=True)
+            if before != after and before.inputs == after.inputs and before.entries == after.entries:
                 # DSH can generate or refresh cordis.yml on the first dump
                 # after installing bundles. Require a stable second dump.
                 before = after
                 config = _run_dsh_diagnostic(dsh, arguments, temporary, environment)
-                after = _configuration_state(profile)
+                after = _configuration_state(profile, hash_entries=True)
         if before != after:
             raise DshCompositionCheckError("The local profile changed during the check. Run it again.")
         stamp = _stamp_configuration(after)
+        content_stamp = _stamp_configuration(after, stable_entries=True)
         composed = _composed_packages(config)
         check = {
             "schema_version": _COMPOSITION_SCHEMA,
@@ -531,16 +539,26 @@ def check_dsh_composition(
             "dsh_version": version,
             "bundles": composed,
         }
-        _write_profile_json(profile, _COMPOSITION_RECEIPT, {**check, "configuration_stamp": stamp})
+        receipt = {**check, "configuration_stamp": stamp}
+        with _registry_write_lock(profile):
+            if _configuration_state(profile, hash_entries=True) != after:
+                raise DshCompositionCheckError("The local profile changed during the check. Run it again.")
+            previous = _read_profile_receipt(profile, _COMPOSITION_RECEIPT)
+            proofs = _read_content_proofs(profile, _COMPOSITION_PROOFS) or {}
+            proofs[_receipt_key(receipt)] = content_stamp
+            _save_content_proofs(profile, _COMPOSITION_PROOFS, proofs, [previous, receipt])
+            _write_profile_json(profile, _COMPOSITION_RECEIPT, receipt)
         if verify_tools or loopback_port is not None:
-            registry = _check_tool_registry(dsh, profile, composed, version, stamp, loopback_port)
+            registry = _check_tool_registry(dsh, profile, composed, version, stamp, loopback_port, content_stamp)
             check["tool_registry_check"] = registry
     except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
         raise DshCompositionCheckError("DSH composition check timed out or could not complete locally.") from exc
     return {**check, "matches_local_files": True}
 
 
-def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: str, stamp: str, loopback_port: int | None) -> dict[str, Any]:
+def _check_tool_registry(
+    dsh: str, profile: Path, composed: list[str], version: str, stamp: str, loopback_port: int | None, content_stamp: str,
+) -> dict[str, Any]:
     bundles = [name for name in composed if _bundle_status(profile / "node_modules" / name, name) == "verified"]
     if not bundles:
         raise DshCompositionCheckError("No composed CosMatter bundle has a valid local entry to check.")
@@ -571,7 +589,7 @@ def _check_tool_registry(dsh: str, profile: Path, composed: list[str], version: 
     }
     if loopback_check is not None:
         check["loopback_check"] = loopback_check
-    _save_registry_check(profile, {**check, "configuration_stamp": stamp, "runtime_stamp": runtime_stamp})
+    _save_registry_check(profile, {**check, "configuration_stamp": stamp, "runtime_stamp": runtime_stamp}, content_stamp=content_stamp)
     return {**check, "matches_local_files": True}
 
 
@@ -894,26 +912,64 @@ def _configuration_stamp(profile: Path) -> str:
 class _DshConfigurationState(NamedTuple):
     generated_config_digest: str | None
     inputs: list[tuple[int, int, int] | None]
+    entries: dict[int, tuple[str, int, int, str]]
 
 
-def _stamp_configuration(state: _DshConfigurationState) -> str:
-    return hashlib.sha256(json.dumps(state).encode("ascii")).hexdigest()
+def _stamp_configuration(state: _DshConfigurationState, *, stable_entries: bool = False) -> str:
+    # Preserve the exact legacy serialization for existing receipts and in-flight checks.
+    data = (state.generated_config_digest, state.inputs)
+    if stable_entries:
+        inputs = [state.entries.get(index, item) for index, item in enumerate(state.inputs)]
+        data = ("compiled-entry-content-v1", state.generated_config_digest, inputs)
+    return hashlib.sha256(json.dumps(data).encode("ascii")).hexdigest()
 
 
-def _configuration_state(profile: Path) -> _DshConfigurationState:
+def _configuration_state(profile: Path, *, hash_entries: bool = False) -> _DshConfigurationState:
     files = [profile / name for name in ("package.json", _PATCH, "pnpm-lock.yaml", "pnpm-workspace.yaml")]
     files.append(profile.parent.parent / _PATCH)
+    entry_roots = {}
     for package in EXPECTED_DSH_PACKAGES:
         directory = profile / "node_modules" / package
         files.extend(directory / name for name in ("package.json", _ENTRY, _PATCH))
+        entry_roots[directory / _ENTRY] = directory
     metadata = []
-    for file in files:
+    entries = {}
+    for index, file in enumerate(files):
         try:
-            stat = file.stat()
-            metadata.append((stat.st_size, stat.st_mtime_ns, stat.st_ino))
+            info = file.stat()
         except FileNotFoundError:
             metadata.append(None)
-    return _DshConfigurationState(_profile_config_digest(profile), metadata)
+            continue
+        metadata.append((info.st_size, info.st_mtime_ns, info.st_ino))
+        if hash_entries and file in entry_roots:
+            root = entry_roots[file].resolve(strict=True)
+            target = file.resolve(strict=True)
+            if not target.is_relative_to(root) or not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_CONFIG_BYTES:
+                raise OSError("Invalid compiled DSH bundle entry")
+            with target.open("rb") as stream:
+                content = stream.read(_MAX_CONFIG_BYTES + 1)
+            if len(content) > _MAX_CONFIG_BYTES:
+                raise OSError("Compiled DSH bundle file exceeds the size limit")
+            mount = root.stat()
+            entries[index] = (os.path.normcase(str(target)), mount.st_dev, mount.st_ino, hashlib.sha256(content).hexdigest())
+    return _DshConfigurationState(_profile_config_digest(profile), metadata, entries)
+
+
+def _configuration_verifier(profile: Path) -> Callable[[str], bool]:
+    # Compare all receipts, including mixed port histories, against the same observed inputs.
+    @cache
+    def stamps() -> tuple[str, ...]:
+        try:
+            state = _configuration_state(profile, hash_entries=True)
+            return _stamp_configuration(state), _stamp_configuration(state, stable_entries=True)
+        except (OSError, RuntimeError, ValueError):
+            # Old receipts only required stat access to compiled entries.
+            try:
+                return (_configuration_stamp(profile),)
+            except (OSError, RuntimeError, ValueError):
+                return ()
+
+    return lambda expected: expected in stamps()
 
 
 def _profile_config_digest(profile: Path) -> str | None:
@@ -971,7 +1027,47 @@ def _read_profile_receipt(profile: Path, filename: str, *, max_bytes: int = 4096
         return None
 
 
-def _read_composition_check(profile: Path) -> dict[str, Any] | None:
+def _receipt_key(receipt: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode("ascii")).hexdigest()
+
+
+def _read_content_proofs(profile: Path, filename: str) -> dict[str, str] | None:
+    # Keep proofs for both the committed and incoming generations across an interrupted replacement.
+    limit = 2 if filename == _COMPOSITION_PROOFS else 2 * (1 + _MAX_LOOPBACK_RECEIPTS)
+    payload = _read_profile_receipt(profile, filename, max_bytes=256 + 160 * limit)
+    if payload is None:
+        try:
+            (profile / filename).lstat()
+        except FileNotFoundError:
+            return {}
+        except OSError:
+            pass
+        return None
+    proofs = payload.get("receipts")
+    if (set(payload) != {"schema_version", "receipts"} or payload["schema_version"] != _CONTENT_PROOF_SCHEMA
+            or not isinstance(proofs, dict) or len(proofs) > limit
+            or not all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+                       for pair in proofs.items() for value in pair)):
+        return None
+    return proofs
+
+
+def _save_content_proofs(
+    profile: Path, filename: str, proofs: dict[str, str], receipts: list[dict[str, Any] | None],
+) -> None:
+    keys = {_receipt_key(receipt) for receipt in receipts if receipt is not None}
+    _write_profile_json(profile, filename, {
+        "schema_version": _CONTENT_PROOF_SCHEMA, "receipts": {key: proofs[key] for key in sorted(keys) if key in proofs},
+    })
+
+
+def _proven_configuration_stamp(receipt: dict[str, Any], proofs: dict[str, str] | None) -> str:
+    if proofs is None:
+        return ""  # An unreadable sidecar cannot certify a receipt.
+    return proofs.get(_receipt_key(receipt), receipt["configuration_stamp"])
+
+
+def _read_composition_check(profile: Path, matches_stamp: Callable[[str], bool]) -> dict[str, Any] | None:
     try:
         payload = _read_profile_receipt(profile, _COMPOSITION_RECEIPT)
         if payload is None or set(payload) != {"schema_version", "checked_at", "dsh_version", "bundles", "configuration_stamp"}:
@@ -989,7 +1085,7 @@ def _read_composition_check(profile: Path) -> dict[str, Any] | None:
         datetime.fromisoformat(checked_at)
         return {
             "schema_version": _COMPOSITION_SCHEMA, "checked_at": checked_at, "dsh_version": version, "bundles": bundles,
-            "matches_local_files": stamp == _configuration_stamp(profile),
+            "matches_local_files": matches_stamp(_proven_configuration_stamp(payload, _read_content_proofs(profile, _COMPOSITION_PROOFS))),
         }
     except (OSError, RuntimeError, ValueError):
         return None
@@ -1010,35 +1106,52 @@ def _registry_write_lock(profile: Path) -> Iterator[None]:
         yield
 
 
-def _save_registry_check(profile: Path, check: dict[str, Any]) -> None:
+def _save_registry_check(profile: Path, check: dict[str, Any], *, content_stamp: str | None = None) -> None:
     with _registry_write_lock(profile):
-        if (check["configuration_stamp"] != _configuration_stamp(profile)
+        matches_stamp = _configuration_verifier(profile)
+        if ((content_stamp is not None and not matches_stamp(content_stamp))
+                or not matches_stamp(check["configuration_stamp"])
                 or check["runtime_stamp"] != _bundle_runtime_stamp(profile, check["bundles"])):
             raise DshCompositionCheckError("The local profile or bundle files changed during the registration check. Run it again.")
         port = check.get("loopback_check", {}).get("port")
         history = [check] if port is not None else []
         seen = {port}
-        for previous in _load_registry_receipts(profile):
+        proofs = _read_content_proofs(profile, _REGISTRY_PROOFS)
+        previous_receipts = _load_registry_receipts(profile, matches_stamp, proofs) if proofs is not None else []
+        proofs = proofs or {}
+        if content_stamp is not None:
+            proofs[_receipt_key(check)] = content_stamp
+        for previous in previous_receipts:
             old_port = previous.get("loopback_check", {}).get("port")
             if old_port is None or old_port in seen:
                 continue
-            if not _same_registry_generation(previous, check):
+            if not _same_registry_generation(previous, check, matches_stamp, proofs):
                 continue
             seen.add(old_port)
             history.append(previous)
-        _write_profile_json(profile, _PORT_HISTORY_FILE, {
-            "schema_version": _PORT_HISTORY_SCHEMA, "receipts": history[:_MAX_LOOPBACK_RECEIPTS],
-        })
+        history = history[:_MAX_LOOPBACK_RECEIPTS]
+        _save_content_proofs(profile, _REGISTRY_PROOFS, proofs, [*previous_receipts, *history, check])
+        _write_profile_json(profile, _PORT_HISTORY_FILE, {"schema_version": _PORT_HISTORY_SCHEMA, "receipts": history})
         # Older workbenches read this exact, single-check schema. Commit it last.
         _write_profile_json(profile, _REGISTRY_RECEIPT, check)
 
 
-def _same_registry_generation(first: dict[str, Any], second: dict[str, Any]) -> bool:
-    fields = ("configuration_stamp", "runtime_stamp", "dsh_version", "bundles", "registered_tools")
-    return all(first[key] == second[key] for key in fields)
+def _same_registry_generation(
+    first: dict[str, Any], second: dict[str, Any], matches_stamp: Callable[[str], bool], proofs: dict[str, str] | None,
+) -> bool:
+    fields = ("runtime_stamp", "dsh_version", "bundles", "registered_tools")
+    if any(first[key] != second[key] for key in fields):
+        return False
+    # Mixed generations of the stamp algorithm may coexist. Each port retains its own original proof.
+    first_stamp, second_stamp = _proven_configuration_stamp(first, proofs), _proven_configuration_stamp(second, proofs)
+    if not first_stamp or not second_stamp:
+        return False
+    return first_stamp == second_stamp or (matches_stamp(first_stamp) and matches_stamp(second_stamp))
 
 
-def _load_registry_receipts(profile: Path, *, include_history: bool = True) -> list[dict[str, Any]]:
+def _load_registry_receipts(
+    profile: Path, matches_stamp: Callable[[str], bool], proofs: dict[str, str] | None, *, include_history: bool = True,
+) -> list[dict[str, Any]]:
     latest = _read_profile_receipt(profile, _REGISTRY_RECEIPT)
     if latest is None or not _valid_registry_receipt(latest):
         return []
@@ -1052,7 +1165,7 @@ def _load_registry_receipts(profile: Path, *, include_history: bool = True) -> l
         return [latest]
     return [latest] + [
         item for item in history
-        if _valid_registry_receipt(item) and "loopback_check" in item and _same_registry_generation(item, latest)
+        if _valid_registry_receipt(item) and "loopback_check" in item and _same_registry_generation(item, latest, matches_stamp, proofs)
     ]
 
 
@@ -1081,26 +1194,31 @@ def _valid_registry_receipt(payload: object) -> bool:
     return True
 
 
-def _read_registry_check(profile: Path, loopback_port: int | None) -> dict[str, Any] | None:
-    receipts = _load_registry_receipts(profile, include_history=loopback_port is not None)
+def _read_registry_check(profile: Path, loopback_port: int | None, matches_stamp: Callable[[str], bool]) -> dict[str, Any] | None:
+    proofs = _read_content_proofs(profile, _REGISTRY_PROOFS)
+    receipts = _load_registry_receipts(profile, matches_stamp, proofs, include_history=loopback_port is not None)
     if not receipts:
         return None
     payload = receipts[0]
+    hide_loopback = False
     if loopback_port is not None:
         for item in receipts:
             if item.get("loopback_check", {}).get("port") == loopback_port:
                 payload = item
                 break
         else:
-            payload = {key: value for key, value in payload.items() if key != "loopback_check"}
+            hide_loopback = True
     try:
         matches = (
-            payload["configuration_stamp"] == _configuration_stamp(profile)
+            matches_stamp(_proven_configuration_stamp(payload, proofs))
             and payload["runtime_stamp"] == _bundle_runtime_stamp(profile, payload["bundles"])
         )
     except (OSError, RuntimeError, ValueError):
         matches = False
-    return {key: value for key, value in payload.items() if key not in {"configuration_stamp", "runtime_stamp"}} | {"matches_local_files": matches}
+    private = {"configuration_stamp", "runtime_stamp"}
+    if hide_loopback:
+        private.add("loopback_check")
+    return {key: value for key, value in payload.items() if key not in private} | {"matches_local_files": matches}
 
 
 def _valid_loopback_check(value: object, tools: list[str]) -> bool:

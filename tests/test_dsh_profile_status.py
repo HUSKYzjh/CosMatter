@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -452,6 +453,129 @@ class DshProfileStatusTests(unittest.TestCase):
             self.assertFalse(updated["tool_registry_check"]["matches_local_files"])
             self.assertNotIn("runtime_stamp", json.dumps(updated))
 
+    def test_rebuilt_entry_keeps_new_receipts_only_for_the_same_contents_and_mount(self) -> None:
+        from cosmatter.dsh_profile_status import _write_profile_json
+
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = "@cosmatter/dsh-policy-plugin"
+            self._write_bundle(profile, bundle)
+            (profile / "package.json").write_text(json.dumps({"dependencies": {bundle: "link:fixture"}}))
+            root = profile / "node_modules" / bundle
+            entry = root / "lib" / "index.js"
+            original = entry.read_bytes()
+            config = f"- id: cosmatter-policy\n  name: '{bundle}'\n"
+            probe = {"registered_tools": ["cosmatter_plugin_catalogue"], "loopback_status": "verified"}
+            with patch("cosmatter.dsh_profile_status.resolve_dsh_executable", return_value="test-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=["0.2.2-rc.3", config],
+            ), patch("cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=probe):
+                check_dsh_composition(dsh_home=home, loopback_port=8765)
+
+            def freshness():
+                status = dsh_profile_status(dsh_home=home, loopback_port=8765)
+                return tuple(status[key]["matches_local_files"] for key in ("composition_check", "tool_registry_check"))
+
+            # Reproduce the old per-port-v1 backend's private schema and digest without the new reader.
+            composition = json.loads((profile / ".cosmatter-composition-check.json").read_bytes())
+            registry = json.loads((profile / ".cosmatter-tool-registry-check.json").read_bytes())
+            self.assertEqual(set(composition), {"schema_version", "checked_at", "dsh_version", "bundles", "configuration_stamp"})
+            self.assertEqual(set(registry), {*composition, "registered_tools", "runtime_stamp", "loopback_check"})
+            self.assertEqual(registry["loopback_check"], {"port": 8765, "status": "verified"})
+            files = [profile / name for name in ("package.json", "cordis.patch.yml", "pnpm-lock.yaml", "pnpm-workspace.yaml")]
+            files.append(home / "cordis.patch.yml")
+            files.extend(profile / "node_modules" / name / file for name in EXPECTED_DSH_PACKAGES
+                         for file in ("package.json", "lib/index.js", "cordis.patch.yml"))
+            metadata = []
+            for file in files:
+                info = file.stat() if file.exists() else None
+                metadata.append((info.st_size, info.st_mtime_ns, info.st_ino) if info else None)
+            old_stamp = hashlib.sha256(json.dumps([None, metadata]).encode("ascii")).hexdigest()
+            self.assertEqual((composition["configuration_stamp"], registry["configuration_stamp"]), (old_stamp, old_stamp))
+            old_runtime = hashlib.sha256(f"{bundle}/lib/index.js\n".encode() + hashlib.sha256(original).digest()).hexdigest()
+            self.assertEqual(registry["runtime_stamp"], old_runtime)
+            receipts = {file: (file.read_bytes(), file.stat().st_mtime_ns) for file in profile.glob(".cosmatter-*.json")}
+            with patch("cosmatter.dsh_profile_status._MAX_CONFIG_BYTES", len(original) - 1):
+                self.assertEqual(freshness(), (False, False))
+            info = entry.stat()
+            os.utime(entry, ns=(info.st_atime_ns, info.st_mtime_ns + 2_000_000_000))
+            self.assertEqual(freshness(), (True, True))
+            replacement = entry.with_suffix(".new")
+            replacement.write_bytes(original)
+            replacement.replace(entry)
+            self.assertEqual(freshness(), (True, True))
+            self.assertEqual(receipts, {file: (file.read_bytes(), file.stat().st_mtime_ns) for file in receipts})
+
+            for primary_name in (".cosmatter-composition-check.json", ".cosmatter-tool-registry-check.json"):
+                primary = profile / primary_name
+                committed = primary.read_bytes()
+
+                def interrupt(directory, filename, payload):
+                    if filename == primary_name:
+                        raise OSError("simulated interruption before commit")
+                    _write_profile_json(directory, filename, payload)
+
+                with patch("cosmatter.dsh_profile_status.resolve_dsh_executable", return_value="test-dsh"), patch(
+                    "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=["0.2.2-rc.3", config],
+                ), patch("cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value=probe), patch(
+                    "cosmatter.dsh_profile_status._write_profile_json", side_effect=interrupt,
+                ):
+                    with self.assertRaises(DshCompositionCheckError):
+                        check_dsh_composition(dsh_home=home, loopback_port=8765)
+                self.assertEqual(primary.read_bytes(), committed)
+                self.assertEqual(freshness(), (True, True))
+
+            info = entry.stat()
+            entry.write_bytes(b"x" * len(original))
+            os.utime(entry, ns=(info.st_atime_ns, info.st_mtime_ns))
+            self.assertEqual(freshness(), (False, False))
+            entry.write_bytes(original)
+            self.assertEqual(freshness(), (True, True))
+
+            # Preserve every file identity while replacing the linked package's directory.
+            old_root = home / "old-bundle"
+            root.rename(old_root)
+            (root / "lib").mkdir(parents=True)
+            for filename in ("package.json", "lib/index.js", "cordis.patch.yml"):
+                os.link(old_root / filename, root / filename)
+            self.assertEqual(freshness(), (False, False))
+
+    def test_touch_during_composition_or_registry_probe_invalidates_the_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            profile = home / "profiles" / "tui"
+            bundle = EXPECTED_DSH_PACKAGES[0]
+            self._write_bundle(profile, bundle)
+            (profile / "package.json").write_text(json.dumps({"dependencies": {bundle: "link:fixture"}}))
+            entry = profile / "node_modules" / bundle / "lib" / "index.js"
+
+            def touch_entry(*_args):
+                info = entry.stat()
+                os.utime(entry, ns=(info.st_atime_ns, info.st_mtime_ns + 2_000_000_000))
+                return ["cosmatter_mission_create"]
+
+            config = f"- id: cosmatter-mission\n  name: '{bundle}'\n"
+
+            def dump_while_rebuilding(_executable, arguments, _cwd, _environment):
+                if arguments == ["--version"]:
+                    return "0.2.2-rc.3"
+                touch_entry()
+                return config
+
+            with patch("cosmatter.dsh_profile_status.resolve_dsh_executable", return_value="test-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=dump_while_rebuilding,
+            ):
+                with self.assertRaisesRegex(DshCompositionCheckError, "profile changed during the check"):
+                    check_dsh_composition(dsh_home=home)
+            self.assertNotIn("composition_check", dsh_profile_status(dsh_home=home))
+
+            with patch("cosmatter.dsh_profile_status.resolve_dsh_executable", return_value="test-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=["0.2.2-rc.3", config],
+            ), patch("cosmatter.dsh_profile_status._run_isolated_dsh_probe", side_effect=touch_entry):
+                with self.assertRaisesRegex(DshCompositionCheckError, "changed during the registration check"):
+                    check_dsh_composition(dsh_home=home, verify_tools=True)
+            self.assertNotIn("tool_registry_check", dsh_profile_status(dsh_home=home))
+
     def test_loopback_check_binds_the_policy_probe_and_receipt_to_the_requested_port(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -600,6 +724,31 @@ class DshProfileStatusTests(unittest.TestCase):
             self.assertIsNone(snapshot(8766))
             primary.unlink()
             self.assertIsNone(snapshot(8765))
+
+            # An upgraded writer preserves an old port's proof only while its original stamp still matches.
+            primary.write_text(json.dumps(legacy), encoding="utf-8")
+            old_composition = {key: legacy[key] for key in ("checked_at", "dsh_version", "bundles", "configuration_stamp")}
+            old_composition["schema_version"] = "cosmatter.dsh-composition-check/v1"
+            composition_file = profile / ".cosmatter-composition-check.json"
+            composition_file.write_text(json.dumps(old_composition))
+            self.assertTrue(dsh_profile_status(dsh_home=home)["composition_check"]["matches_local_files"])
+            self.assertEqual(json.loads(composition_file.read_bytes()), old_composition)
+            config = f"- id: cosmatter-policy\n  name: '{bundle}'\n"
+            with patch("cosmatter.dsh_profile_status.resolve_dsh_executable", return_value="test-dsh"), patch(
+                "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=["0.2.2", config],
+            ), patch("cosmatter.dsh_profile_status._run_isolated_dsh_probe", return_value={
+                "registered_tools": ["cosmatter_plugin_catalogue"], "loopback_status": "verified",
+            }):
+                check_dsh_composition(dsh_home=home, loopback_port=8766)
+            self.assertEqual(snapshot(8765)["loopback_check"], legacy["loopback_check"])
+            self.assertEqual(json.loads(primary.read_bytes())["configuration_stamp"], legacy["configuration_stamp"])
+            entry = profile / "node_modules" / bundle / "lib" / "index.js"
+            info = entry.stat()
+            os.utime(entry, ns=(info.st_atime_ns, info.st_mtime_ns + 2_000_000_000))
+            self.assertNotIn("loopback_check", snapshot(8765))
+            self.assertTrue(snapshot(8766)["matches_local_files"])
+            composition_file.write_text(json.dumps(old_composition))
+            self.assertFalse(dsh_profile_status(dsh_home=home)["composition_check"]["matches_local_files"])
 
     def test_registered_tool_changes_expire_other_ports_in_existing_and_new_history(self) -> None:
         from cosmatter.dsh_profile_status import _bundle_runtime_stamp, _configuration_stamp, _save_registry_check
