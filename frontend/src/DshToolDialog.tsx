@@ -168,7 +168,7 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
       <DshTerminalChoice locale={props.locale} />
       <Show when={readyPort()} fallback={<>
         <Show when={port && needsRepair()}>
-          <p>{x("先在 CosMatter 仓库根目录运行补齐命令。", "First run the repair command from the CosMatter repository root.")}</p>
+          <p>{x("先在所选终端运行补齐命令。", "Run the repair command in the selected terminal first.")}</p>
           <DshCommandRow locale={props.locale} command={BUNDLE_REPAIR_COMMAND} label={x("复制补齐命令", "Copy repair command")} />
         </Show>
         <Show when={readiness() === "workbench-update" || workbenchOffline()}><WorkbenchUpdateCommand locale={props.locale} runId={props.runId} offline={workbenchOffline()} /></Show>
@@ -186,7 +186,7 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
         <OtherPortReceiptHelp locale={props.locale} runId={props.runId} readiness={readiness()}
           port={port} receiptPort={props.profile?.tool_registry_check?.loopback_check?.port} />
       </>}>{(localPort) =>
-        <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId}
+        <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId} currentStage={props.currentStage}
           portInReceipt={Boolean(props.profile?.tool_registry_check)} launchPreference={launchPreference} />
       }</Show>
       <Show when={!props.runId && props.draft}>{(draft) => <DshMissionDraft locale={props.locale} draft={draft()} onEditField={props.onEditDraftField} />}</Show>

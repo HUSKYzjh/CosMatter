@@ -270,7 +270,7 @@ export function HarnessCapabilityDeck(props: {
         }</Show>
       </div>
       <Show when={activation().state === "ready" && loopbackPort}>{(port) =>
-        <DshSessionLaunch locale={props.locale} port={port()} runId={props.runId} />
+        <DshSessionLaunch locale={props.locale} port={port()} runId={props.runId} currentStage={props.currentStage} />
       }</Show>
       <OtherPortReceiptHelp locale={props.locale} runId={props.runId} readiness={sessionReadiness()}
         port={loopbackPort} receiptPort={registry()?.loopback_check?.port} />
@@ -380,10 +380,10 @@ export function HarnessCapabilityDeck(props: {
           && (profile().installed_bundle_count < profile().expected_bundle_count || bundleListIncomplete() || registrationNeedsRepair())}>
           <section class="harness-bundle-repair" aria-label={x("补齐本机 DSH 插件", "Repair local DSH bundles")}>
             <p>{registrationNeedsRepair()
-              ? x("在仓库根目录运行补齐命令，重新链接缺少注册工具的插件。随后复制终端核验命令，检查当前端口并刷新结果。",
-                "Run the repair command from the repository root to relink the affected bundles. Then run the terminal check for this port and refresh the results.")
-              : x("在 CosMatter 仓库根目录的终端运行。命令会补齐缺失或异常的本地链接，并将 CosMatter 插件加入 tui 启用清单。",
-                "Run from the CosMatter repository root. The command repairs missing or invalid local links and enables the CosMatter bundles in TUI.")}</p>
+              ? x("在所选终端运行补齐命令，重新链接缺少注册工具的插件。随后复制终端核验命令，检查当前端口并刷新结果。",
+                "Run the repair command in the selected terminal to relink the affected bundles. Then run the terminal check for this port and refresh the results.")
+              : x("在所选终端运行。命令会补齐缺失或异常的本地链接，并将 CosMatter 插件加入 tui 启用清单。",
+                "Run in the selected terminal. The command repairs missing or invalid local links and enables the CosMatter bundles in TUI.")}</p>
             <div class="harness-copy-row">
               <DshCommandText command={repairCommand()} />
               <ActionButton size="sm" onClick={(event) => void clipboard.copy("repair", repairCommand, event.currentTarget)}>{x("复制补齐命令", "Copy repair command")}</ActionButton>

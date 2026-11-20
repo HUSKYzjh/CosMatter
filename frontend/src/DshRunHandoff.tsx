@@ -16,11 +16,11 @@ function DshReadRecovery(props: { issue: DshReadIssue; locale: UiLocale; focusAf
   const hint = () => {
     const issue = props.issue;
     if (issue.kind === "repair" && issue.missingTools) return x(
-      `隔离核验未注册 ${issue.missingTools.join("、")}。在 CosMatter 仓库根目录运行补齐命令，接着核验当前端口，再刷新插件状态。`,
-      `The isolated check did not register ${issue.missingTools.join(", ")}. Run the repair from the CosMatter repository root, then check this port and refresh the bundle status.`);
+      `隔离核验未注册 ${issue.missingTools.join("、")}。在所选终端运行补齐命令，接着核验当前端口，再刷新插件状态。`,
+      `The isolated check did not register ${issue.missingTools.join(", ")}. Run the repair in the selected terminal, then check this port and refresh the bundle status.`);
     if (issue.kind === "repair") return x(
-      `插件 ${issue.bundle} 缺少有效文件。在 CosMatter 仓库根目录运行补齐命令，然后刷新插件状态。`,
-      `Bundle ${issue.bundle} is missing valid files. Run the repair from the CosMatter repository root and refresh the bundle status.`);
+      `插件 ${issue.bundle} 缺少有效文件。在所选终端运行补齐命令，然后刷新插件状态。`,
+      `Bundle ${issue.bundle} is missing valid files. Run the repair in the selected terminal and refresh the bundle status.`);
     if (issue.missingTools) return x(
       `注册回执缺少 ${issue.missingTools.join("、")}。请核验当前插件组合和此端口，再刷新插件状态。`,
       `The registry check is missing ${issue.missingTools.join(", ")}. Check the current bundle composition and this port, then refresh the bundle status.`);

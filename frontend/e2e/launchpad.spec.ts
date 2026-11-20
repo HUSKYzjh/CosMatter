@@ -1661,6 +1661,17 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
   await expect(openMode.getByRole("radio", { name: "在 Orca / 本机终端运行" })).toBeChecked();
   await session.getByRole("button", { name: "复制 DSH 启动命令" }).press("Enter");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(launchCommand + " --surface tui");
+  const query = session.locator(".dsh-run-query");
+  await query.locator("summary").press("Enter");
+  await query.getByRole("button", { name: "复制只读查询" }).press("Enter");
+  const draftQuery = await query.locator("p").first().innerText();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(draftQuery);
+  expect(draftQuery).toContain(`run_id 是否为 ${runId}`);
+  expect(draftQuery).toContain(`workbench_url 的端口是否为 ${new URL(page.url()).port}`);
+  expect(draftQuery).toContain("用该 run_id 调用 cosmatter_artifact_manifest");
+  expect(draftQuery).toContain("以 {} 调用 cosmatter_workflow_status");
+  expect(draftQuery).toContain("以 {} 调用 cosmatter_stage_contract");
+  await query.locator("summary").press("Enter");
   expect(await session.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(page.locator(".dsh-tool-catalogue")).toHaveCount(0);
   const opener = page.getByRole("button", { name: "DSH 工具与会话" });
@@ -2502,12 +2513,12 @@ test("opens the linked DSH candidate at its verified review step", async ({ page
   })).toBe(true);
   await expect(sessionPanel.getByRole("combobox", { name: "命令运行环境" })).toBeVisible();
   await expect(mode.getByRole("radio")).toHaveCount(3);
-  const controls = await sessionPanel.locator("label:has(input), button, select").evaluateAll(elements =>
+  const controls = await sessionPanel.locator("label:has(input):visible, button:visible, select:visible, summary:visible").evaluateAll(elements =>
     elements.map(element => {
       const { left, right, top, bottom } = element.getBoundingClientRect();
       return { left, right, top, bottom };
     }));
-  expect(controls).toHaveLength(6);
+  expect(controls).toHaveLength(7);
   for (const [index, box] of controls.entries()) {
     expect(box.left).toBeGreaterThanOrEqual(0);
     expect(box.right).toBeLessThanOrEqual(320);

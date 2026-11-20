@@ -68,7 +68,7 @@ const COMMAND_COPY: Record<CommandKind, Record<"hint" | "button" | "copied", rea
     button: ["复制新版工作台命令", "Copy workbench command"], copied: ["工作台命令已复制。", "Workbench command copied."],
   },
   repair: {
-    hint: ["在 CosMatter 仓库根目录运行补齐命令，再刷新本卡。", "Run the repair from the CosMatter repository root, then refresh this card."],
+    hint: ["在所选终端运行补齐命令，再刷新本卡。", "Run the repair in the selected terminal, then refresh this card."],
     button: ["复制补齐命令", "Copy repair command"], copied: ["补齐命令已复制。", "Repair command copied."],
   },
   verify: {
@@ -362,7 +362,7 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
                   </Show>
                   <Show when={command()}>{(line) => <div class="dsh-tool-terminal">
                     <p>{repairRegistration()
-                      ? x("在 CosMatter 仓库根目录运行补齐命令，接着核验当前端口，再刷新插件状态。", "Run the repair from the CosMatter repository root, then check this port and refresh the bundle status.")
+                      ? x("在所选终端运行补齐命令，接着核验当前端口，再刷新插件状态。", "Run the repair in the selected terminal, then check this port and refresh the bundle status.")
                       : commandKind() === "verify" && checkOutdated()
                       ? x("在终端重新核验当前插件文件和注册状态，再刷新本卡。", "Run the check against the current bundle files and tool registry, then refresh this card.")
                       : x(...commandCopy().hint)}</p>
