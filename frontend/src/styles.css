@@ -2246,6 +2246,7 @@ button.quiet-action:not(.cm-action):disabled,
 .launch-preferences { display: flex; gap: .35rem; align-items: center; margin-inline-start: auto; }
 .launch-original-brief { margin-block: .4rem .65rem; }
 .launch-brief-editor label { min-width: 0; }
+.launch-brief-editor .launch-brief-source { color: var(--muted); font-family: inherit; font-size: max(.8rem, 13px); line-height: 1.4; }
 .launch-brief-editor label textarea { width: 100%; min-height: 4.4rem; padding: .35rem .45rem; resize: vertical; border: 1px solid var(--line); color: var(--ink); background: var(--surface); font-family: inherit; font-size: max(.82rem, 14px); font-weight: 400; line-height: 1.45; letter-spacing: normal; }
 .launch-controls.has-dsh { align-items: center; }
 .launch-controls .launch-dsh-entry { min-height: 2.25rem; white-space: nowrap; }
