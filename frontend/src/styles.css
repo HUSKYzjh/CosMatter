@@ -842,12 +842,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .dsh-session-command .harness-copy-row { display: flex; flex-wrap: wrap; align-items: center; gap: .38rem .65rem; }
 .dsh-session-command .harness-copy-row > code { flex: 1 1 16rem; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: .24rem; background: var(--surface); }
 .dsh-copy-icon { display: inline-block; width: 1em; margin-inline-end: .32rem; text-align: center; }
-.dsh-copy-control { display: inline-grid; max-width: 100%; }
-.dsh-copy-control > * { grid-area: 1 / 1; }
+.dsh-copy-control { position: relative; display: inline-grid; max-width: 100%; }
+.dsh-copy-control > .cm-action { min-height: 44px; }
 .dsh-copy-control.copied .cm-action > span { visibility: hidden; }
-.dsh-copy-control > [role="status"] { z-index: 1; place-self: center; color: var(--ink); font-size: max(.78rem, 13px); font-weight: 650; pointer-events: none; }
+.dsh-copy-feedback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); font-size: max(.78rem, 13px); font-weight: 650; pointer-events: none; }
 @media (max-width: 520px), (pointer: coarse) {
-  .dsh-launch-mode label, .dsh-session-command .cm-action { min-height: 44px; }
+  .dsh-launch-mode label { min-height: 44px; }
 }
 .harness-capability-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
 .harness-capability-metrics > div { display: grid; gap: .08rem; min-width: 0; padding: .5rem .6rem; border-inline-start: 1px solid color-mix(in srgb, var(--line) 68%, transparent); }
@@ -923,7 +923,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .launch-confirmed-brief strong { font-size: max(.8rem, 14px); }
 .launch-confirmed-brief > .cm-action { min-height: 44px; font-size: max(.75rem, 13px); }
 .launch-confirmed-brief > .cm-action:focus-visible { outline: 2px solid var(--signal-blue); outline-offset: 2px; }
-.dsh-mission-draft > .cm-action { justify-self: start; }
 .dsh-draft-preview pre { margin: .5rem; color: var(--ink); font: max(.8rem, 13px)/1.45 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dsh-dialog-session .harness-session-launch { grid-column: 1 / -1; padding: 0; border: 0; }
 .dsh-dialog-session .harness-copy-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .65rem; min-width: 0; }

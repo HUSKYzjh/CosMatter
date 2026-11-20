@@ -1,5 +1,6 @@
-import { createEffect, createSignal, createUniqueId, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createSignal, createUniqueId, onCleanup, onMount, type JSX } from "solid-js";
 import type { UiLocale } from "./fleetRegistry";
+import { ActionButton } from "./uiPrimitives";
 
 type CopyAttempt<T> = {
   target: T;
@@ -41,6 +42,32 @@ export function createDshClipboard<T>(successDuration?: number) {
     return state?.copied !== undefined ? state : null;
   };
   return { copy, feedback };
+}
+
+export function DshCopyAction(props: {
+  locale: UiLocale; value: string | null; label: string; manualLabel: string; successLabel?: string;
+  beforeButton?: JSX.Element; children?: JSX.Element;
+}) {
+  const { copy, feedback } = createDshClipboard<"text">(2500);
+  const copied = () => feedback()?.copied === true;
+  return <>
+    <div class="harness-copy-row">
+      {props.beforeButton}
+      <div class="dsh-copy-control" classList={{ copied: copied() }}>
+        <ActionButton size="sm" aria-label={props.label} disabled={!props.value}
+          onClick={event => void copy("text", () => props.value, event.currentTarget)}>
+          <span class="dsh-copy-icon" aria-hidden="true">⧉</span>{props.label}
+        </ActionButton>
+        <span class="dsh-copy-feedback" aria-live="polite" aria-atomic="true" role={copied() ? "status" : undefined}>
+          {copied() ? props.successLabel ?? (props.locale === "zh" ? "已复制。" : "Copied.") : ""}
+        </span>
+      </div>
+    </div>
+    {props.children}
+    <Show when={feedback()?.copied === false && feedback()}>{state =>
+      <DshManualCopy locale={props.locale} label={props.manualLabel} value={state().value} source={state().source} />}
+    </Show>
+  </>;
 }
 
 export function DshManualCopy(props: { locale: UiLocale; label: string; value: string; source: HTMLButtonElement }) {
