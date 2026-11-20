@@ -172,7 +172,8 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
     if (access !== "all" && !matchingTools().every(matchesAccess)) labels.push(x(ACCESS_LABELS[access][0], ACCESS_FILTER_EN[access] ?? ACCESS_LABELS[access][1]));
     return labels.join(x("、", ", "));
   };
-  const singleMatch = () => Boolean(query().trim()) && visibleTools().length === 1;
+  const searchHasResults = () => Boolean(query().trim()) && visibleTools().length > 0;
+  const singleMatch = () => searchHasResults() && visibleTools().length === 1;
   function focusTool(item: HTMLDetailsElement | null) {
     if (!item) return;
     item.open = true;
@@ -188,12 +189,24 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
     });
     queueMicrotask(() => focusTool(results.querySelector<HTMLDetailsElement>(`[data-tool-name="${CSS.escape(name)}"]`)));
   }));
-  const openMatch = (event: KeyboardEvent) => {
-    if (event.key !== "Enter" || event.isComposing || event.keyCode === 229 || !singleMatch()) return;
+  const plainKey = (event: KeyboardEvent) => !event.isComposing && event.keyCode !== 229
+    && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+  const browseFromSearch = (event: KeyboardEvent) => {
+    if (!plainKey(event) || !searchHasResults()) return;
+    if (event.key !== "ArrowDown" && !(event.key === "Enter" && singleMatch())) return;
     const item = results.querySelector<HTMLDetailsElement>(".dsh-tool-item");
     if (!item) return;
     event.preventDefault();
-    focusTool(item);
+    if (event.key === "Enter") focusTool(item);
+    else item.querySelector("summary")?.focus();
+  };
+  const browseFromSummary = (event: KeyboardEvent & { currentTarget: HTMLElement }) => {
+    if (!plainKey(event) || !searchHasResults() || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+    const row = event.currentTarget.closest("li");
+    const next = event.key === "ArrowDown" ? row?.nextElementSibling : row?.previousElementSibling;
+    event.preventDefault();
+    if (next) next.querySelector("summary")?.focus();
+    else if (event.key === "ArrowUp") searchInput.focus();
   };
   const stageNote = () => {
     const stage = stageFilter();
@@ -244,8 +257,8 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
         <div class="dsh-tool-search">
           <label for={searchId}>{x("搜索工具或插件包", "Search tools or bundles")}</label>
           <div class="dsh-tool-search-field">
-            <input ref={searchInput} id={searchId} type="search" value={query()} maxLength={160} onKeyDown={openMatch}
-              aria-describedby={singleMatch() ? `${searchId}-hint` : undefined} onInput={(event) => setQuery(event.currentTarget.value)} />
+            <input ref={searchInput} id={searchId} type="search" value={query()} maxLength={160} onKeyDown={browseFromSearch}
+              aria-describedby={searchHasResults() ? `${searchId}-hint` : undefined} onInput={(event) => setQuery(event.currentTarget.value)} />
             <Show when={query()}><ActionButton size="icon" variant="quiet" aria-label={x("清空关键词", "Clear search text")}
               onClick={() => { setQuery(""); searchInput.focus(); }}><span aria-hidden="true">×</span></ActionButton></Show>
           </div>
@@ -278,7 +291,9 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
     </div>
     <div ref={results} class="dsh-tool-results" role={props.scrollResults ? "region" : undefined}
       aria-label={props.scrollResults ? x("工具结果", "Tool results") : undefined} tabIndex={props.scrollResults ? 0 : undefined}>
-      <Show when={singleMatch()}><p id={`${searchId}-hint`}>{x("在搜索框按 Enter 展开此工具。", "Press Enter in the search field to open this tool.")}</p></Show>
+      <Show when={searchHasResults()}><p id={`${searchId}-hint`}>{singleMatch()
+        ? x("在搜索框按 Enter 展开此工具。", "Press Enter in the search field to open this tool.")
+        : x("按向下键进入结果，用上下键选择工具，按 Enter 展开。", "Press Down Arrow to reach the results, Up or Down Arrow to choose a tool, and Enter to open it.")}</p></Show>
       <Show when={stageNote()}>{(note) => <p class="dsh-stage-note">{x(...note())}</p>}</Show>
       <Show when={visibleTools().length > 0} fallback={<div class="dsh-tool-empty">
         <p>{noKeywordMatches() ? x("全部工具中均未找到这个关键词。", "No tools match this search, even without filters.")
@@ -323,7 +338,7 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
             };
             return <li>
               <details class="harness-disclosure dsh-tool-item" data-tool-name={tool.name}>
-                <summary ref={summary}>
+                <summary ref={summary} onKeyDown={browseFromSummary}>
                   <span>
                     <strong>{label()}</strong><code>{tool.name.split("_").map((segment, index, segments) =>
                       index === segments.length - 1 ? segment : <>{segment}_<wbr /></>)}</code>
