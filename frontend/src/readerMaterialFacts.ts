@@ -8,6 +8,5 @@ import type { ResearchSession } from "./researchSession";
  */
 export function materialFactsForSelectedPaper(bundle: ImportedBundle, session: ResearchSession) {
   const selectedDocumentId = documentIdForReviewablePaper(session.selectedNode);
-  const ledger = bundle.materialFacts;
-  return selectedDocumentId && ledger?.documentId === selectedDocumentId ? ledger : null;
+  return bundle.materialFactLedgers.find((ledger) => ledger.documentId === selectedDocumentId) ?? null;
 }

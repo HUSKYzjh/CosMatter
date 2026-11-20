@@ -60,6 +60,7 @@ export interface SimulationEvidenceProjection {
 export interface TimelineEntry { stationType: string; action: string; state: string; occurredAt: string; }
 export interface ConditionMatrixRow { conditionCluster: string; supportingEvidenceIds: string[]; contradictingEvidenceIds: string[]; differingFields: string[]; unknowns: string[]; }
 export interface MaterialFact { factId: string; segmentId: string; category: string; name: string; value: string | number | null; unit: string | null; normalizedValue: string | number | null; normalizedUnit: string | null; qualifiers: Record<string, string | number | boolean | null>; locator: string; }
+export interface MaterialFactLedger { documentId: string; trustStatus: string; facts: MaterialFact[]; }
 
 export interface GapCounterevidenceBoundary {
   status: string;
@@ -234,7 +235,8 @@ export interface ImportedBundle {
   importDiagnostics: { declaredAcceptedEvidenceCount: number; withheldAcceptedEvidenceCount: number };
   conditionMatrix: ConditionMatrixRow[];
   researchGapCandidates: ResearchGapCandidate[];
-  materialFacts: { documentId: string; trustStatus: string; facts: MaterialFact[] } | null;
+  materialFacts: MaterialFactLedger | null;
+  materialFactLedgers: MaterialFactLedger[];
   sourceMapSummary: { documentCount: number; segmentCount: number; documentIds: string[] };
   materialFactSummary: { documentCount: number; factCount: number };
   evidenceMaturityRegistry: EvidenceMaturityRegistry | null;
@@ -812,6 +814,35 @@ export function workflowTrackSummary(value: unknown): WorkflowTrackSummary {
   return formalEvidenceTrack && delegatedTrialTrack ? { formalEvidenceTrack, delegatedTrialTrack } : fallback;
 }
 
+function readMaterialFactLedger(value: unknown): MaterialFactLedger | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const ledger = value as JsonObject;
+  if (typeof ledger.document_id !== "string" || !ledger.document_id.trim() || ledger.document_id.length > 300
+      || ledger.trust_status !== "human_reviewed_structured_material_facts_not_scientific_conclusion" || !Array.isArray(ledger.facts)) return null;
+  return {
+    documentId: ledger.document_id, trustStatus: ledger.trust_status,
+    facts: ledger.facts.flatMap((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const fact = entry as JsonObject;
+      const value = fact.value; const normalizedValue = fact.normalized_value;
+      if (typeof fact.fact_id !== "string" || typeof fact.segment_id !== "string" || typeof fact.category !== "string" || typeof fact.name !== "string" || typeof fact.locator !== "string" || (value !== null && !["string", "number"].includes(typeof value)) || (normalizedValue !== null && !["string", "number"].includes(typeof normalizedValue))) return [];
+      return [{ factId: fact.fact_id.slice(0, 160), segmentId: fact.segment_id.slice(0, 160), category: fact.category.slice(0, 80), name: fact.name.slice(0, 200), value: value as string | number | null, unit: typeof fact.unit === "string" ? fact.unit.slice(0, 80) : null, normalizedValue: normalizedValue as string | number | null, normalizedUnit: typeof fact.normalized_unit === "string" ? fact.normalized_unit.slice(0, 80) : null, qualifiers: record(fact.qualifiers), locator: fact.locator.slice(0, 300) }];
+    }).slice(0, 48),
+  };
+}
+
+function readMaterialFactLedgers(root: JsonObject): MaterialFactLedger[] {
+  if (root.delegated_test_boundary === true) return [];
+  const ledgers = Object.hasOwn(root, "material_fact_ledgers") ? root.material_fact_ledgers : [root.material_facts];
+  if (!Array.isArray(ledgers)) return [];
+  const byDocument = new Map<string, MaterialFactLedger | null>();
+  for (const item of ledgers) {
+    const ledger = readMaterialFactLedger(item);
+    if (ledger) byDocument.set(ledger.documentId, byDocument.has(ledger.documentId) ? null : ledger);
+  }
+  return [...byDocument.values()].filter((ledger) => ledger !== null);
+}
+
 export function readBundle(value: unknown, source: ImportedBundle["source"] = "local-file"): ImportedBundle {
   const root = object(value, "UI JSON");
   const delegatedTestBoundary = root.delegated_test_boundary === true;
@@ -894,18 +925,7 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     if (evidenceIds.length < 2 || new Set(evidenceIds).size !== evidenceIds.length || !conflictOrMissingEvidence.length || !suggestedValidation.length) return [];
     return [{ gapId: candidate.gap_id.slice(0, 160), problemDescription: candidate.problem_description.slice(0, 1200), evidenceIds: evidenceIds.slice(0, 24), conflictOrMissingEvidence: conflictOrMissingEvidence.slice(0, 24), noveltyStatus: candidate.novelty_status.slice(0, 180), actionability: candidate.actionability.slice(0, 800), falsifiableHypothesis: candidate.falsifiable_hypothesis.slice(0, 1000), suggestedValidation: suggestedValidation.slice(0, 12), evidenceCompleteness: completeness, reviewStatus: "candidate_requires_human_review" as const, counterevidenceBoundary }];
   }).slice(0, 24) : [];
-  const rawMaterialFacts = root.material_facts && typeof root.material_facts === "object" && !Array.isArray(root.material_facts) ? root.material_facts as JsonObject : null;
-  const materialFacts = rawMaterialFacts && typeof rawMaterialFacts.document_id === "string" && typeof rawMaterialFacts.trust_status === "string" && Array.isArray(rawMaterialFacts.facts) ? {
-    documentId: rawMaterialFacts.document_id.slice(0, 300), trustStatus: rawMaterialFacts.trust_status.slice(0, 200),
-    facts: rawMaterialFacts.facts.flatMap((entry) => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-      const fact = entry as JsonObject;
-      const value = fact.value; const normalizedValue = fact.normalized_value;
-      if (typeof fact.fact_id !== "string" || typeof fact.segment_id !== "string" || typeof fact.category !== "string" || typeof fact.name !== "string" || typeof fact.locator !== "string" || (value !== null && !["string", "number"].includes(typeof value)) || (normalizedValue !== null && !["string", "number"].includes(typeof normalizedValue))) return [];
-      const qualifiers = record(fact.qualifiers);
-      return [{ factId: fact.fact_id.slice(0, 160), segmentId: fact.segment_id.slice(0, 160), category: fact.category.slice(0, 80), name: fact.name.slice(0, 200), value: value as string | number | null, unit: typeof fact.unit === "string" ? fact.unit.slice(0, 80) : null, normalizedValue: normalizedValue as string | number | null, normalizedUnit: typeof fact.normalized_unit === "string" ? fact.normalized_unit.slice(0, 80) : null, qualifiers, locator: fact.locator.slice(0, 300) }];
-    }).slice(0, 48),
-  } : null;
+  const materialFactLedgers = readMaterialFactLedgers(root);
   return {
     schemaVersion: typeof root.schema_version === "string" ? root.schema_version : "unknown",
     generatedAt: generatedAt(root.generated_at),
@@ -916,9 +936,9 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     status: rawStatus ? { missionState: typeof rawStatus.mission_state === "string" ? rawStatus.mission_state : "unknown", retryCount: typeof rawStatus.retry_count === "number" ? rawStatus.retry_count : 0, retryBudget: typeof rawStatus.retry_budget === "number" ? rawStatus.retry_budget : 0, returnReason: typeof rawStatus.return_reason === "string" ? rawStatus.return_reason : null } : null,
     stations: Array.isArray(root.stations) ? root.stations.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).station_type === "string" ? [{ stationType: (entry as JsonObject).station_type as string, status: typeof (entry as JsonObject).status === "string" ? (entry as JsonObject).status as string : "unknown" }] : []) : [],
     facilities: Array.isArray(root.facilities) ? root.facilities.flatMap((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as JsonObject).facility_type === "string" ? [{ facilityType: (entry as JsonObject).facility_type as string, status: typeof (entry as JsonObject).status === "string" ? (entry as JsonObject).status as string : "unknown" }] : []) : [],
-    evidenceCards, importDiagnostics, conditionMatrix, researchGapCandidates, materialFacts,
+    evidenceCards, importDiagnostics, conditionMatrix, researchGapCandidates, materialFacts: materialFactLedgers[0] ?? null, materialFactLedgers,
     sourceMapSummary: (() => { const summary = reviewedSummary(root.reviewed_source_map_summary, "segment_count", true); return { documentCount: summary.documentCount, segmentCount: summary.recordCount, documentIds: summary.documentIds };  })(),
-    materialFactSummary: (() => { const summary = reviewedSummary(root.reviewed_material_fact_summary, "fact_count"); return { documentCount: summary.documentCount, factCount: summary.recordCount }; })(),
+    materialFactSummary: (() => { const summary = reviewedSummary(delegatedTestBoundary ? null : root.reviewed_material_fact_summary, "fact_count"); return { documentCount: summary.documentCount, factCount: summary.recordCount }; })(),
     evidenceMaturityRegistry: acceptedMaturityRegistry,
     evidenceMaturityRegistryStatus,
     simulationCampaign: simulationCampaignStatus === "approved" ? parsedSimulationCampaign : null,

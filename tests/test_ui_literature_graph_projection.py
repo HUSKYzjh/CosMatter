@@ -54,6 +54,28 @@ class UiLiteratureGraphProjectionTests(unittest.TestCase):
         self.assertEqual([item["document_id"] for item in candidates[:2]], ["paper_59", "paper_58"])
         self.assertNotIn("_source_order", json.dumps(candidates))
 
+    def test_fact_ledgers_preserve_existing_paper_metadata_and_review_boundaries(self) -> None:
+        mission = MissionBrief("question", "BiFeO3", "phase", "films", mission_id="mission_graph")
+        candidates = [{"document_id": "candidate", "title": "Reported dielectric response", "source": "Sciverse",
+                       "publication_year": 2025, "is_content_accessible": True}]
+        evidence = [{"evidence_id": "e1", "claim": "Reviewed claim", "provenance": {"document_id": "accepted", "source": "fixture", "access_policy": "oa"}}]
+        relations = {"source": {"document_id": "references"}, "edges": [{"target_openalex_id": "https://openalex.org/W2", "edge_type": "citation_reference"}]}
+        structure = {"document_id": "structured", "entities": [], "relations": [], "trust_status": "human_reviewed_paper_structure_not_scientific_evidence"}
+        args = (mission, evidence, candidates, relations, None, structure)
+        baseline = _literature_graph_projection(*args)
+        fact_trust = "human_reviewed_structured_material_facts_not_scientific_conclusion"
+        ledgers = tuple({"document_id": doc, "trust_status": fact_trust} for doc in ("candidate", "accepted", "structured", "references", "fact-only"))
+        updated = _literature_graph_projection(*args, material_fact_ledgers=ledgers)
+        self.assertEqual(baseline["edges"], updated["edges"])
+        nodes = {node["node_id"]: node for node in updated["nodes"]}
+        for original in baseline["nodes"]:
+            with self.subTest(node_id=original["node_id"]):
+                if original["kind"] == "relation_root_paper":
+                    self.assertEqual(nodes[original["node_id"]], {**original, "kind": "structured_paper", "trust_status": fact_trust})
+                else:
+                    self.assertEqual(nodes[original["node_id"]], original)
+        self.assertEqual(nodes["paper:fact-only"]["kind"], "structured_paper")
+
     def test_graph_distinguishes_candidates_evidence_and_bibliographic_edges(self) -> None:
         mission = MissionBrief("question", "BiFeO3", "phase stability", "films", mission_id="mission_graph")
         evidence = [{

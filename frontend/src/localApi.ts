@@ -589,6 +589,7 @@ export async function linkFetchedMarkdown(runId: string, documentId: string, fil
 }
 export interface PrivateSourceMapSegment { locator: string; kind: "paragraph" | "table" | "formula" | "figure_caption"; quote: string; }
 export interface RecordedSourceMapSegment { segment_id: string; locator: string; kind: PrivateSourceMapSegment["kind"]; markdown_range?: MarkdownLineRange; }
+export class SourceReceiptMismatchError extends Error {}
 export interface SourceMapRecordResult { run_id: string; document_id: string; segment_count: number; segments: RecordedSourceMapSegment[]; trust_status: string; }
 export type MaterialFactCategory = "composition" | "structure" | "property" | "processing" | "experimental_condition" | "simulation_method";
 export interface HumanMaterialFactInput { fact_id: string; segment_id: string; category: MaterialFactCategory; name: string; value: string | number | null; unit: string | null; normalized_value: string | number | null; normalized_unit: string | null; qualifiers: Record<string, string | number | null>; }

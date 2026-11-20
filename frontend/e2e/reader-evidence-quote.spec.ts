@@ -76,6 +76,9 @@ test("follows each evidence card to its exact verified quote within shared sourc
   await openCard("card_a");
   await expect(marks).toHaveText(["Sample A used 300 K"]);
   await expect(marks.first()).toBeInViewport();
+  await source.getByRole("button", { name: "返回证据卡" }).press("Enter");
+  await expect(page.getByRole("button", { name: "核对原文", exact: true })).toBeFocused();
+  await expect(source.locator(".source-line-text")).toHaveCount(0);
   await openCard("card_b");
   await expect(marks).toHaveText(["sample B", "used 500 K"]);
   await expect(source.locator(".source-line-text")).toHaveText(lines);

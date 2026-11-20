@@ -13,6 +13,7 @@ export function PrivateMarkdownLines(props: {
   source: PrivateMarkdownLineSource;
   onDraft?: (locator: string, quote: string) => void;
   location?: RecordedMarkdownLocation | ReaderEvidenceLocation | null;
+  onReturnLocation?: () => void;
   onClearLocation?: () => void;
 }) {
   const [open, setOpen] = createSignal(false);
@@ -149,6 +150,9 @@ export function PrivateMarkdownLines(props: {
 
   return <section ref={panel} id={props.id} tabIndex={-1} class="private-markdown-lines" aria-label={tr("原文行号", "Source lines")}>
     <ActionButton size="sm" aria-expanded={open()} onClick={toggle}>{open() ? tr("收起原文", "Collapse source") : tr("查看带行号的原文", "View source with line numbers")}</ActionButton>
+    <Show when={open() && props.onReturnLocation}><ActionButton size="sm" variant="quiet" onClick={() => props.onReturnLocation?.()}>
+      {props.location && "evidenceId" in props.location ? tr("返回证据卡", "Return to evidence card") : tr("返回材料事实", "Return to material fact")}
+    </ActionButton></Show>
     <Show when={open()}>
       <Show when={loading()}><p role="status">{tr("正在读取原文行…", "Reading source lines…")}</p></Show>
       <Show when={error()}>{(message) => <div class="source-line-tools"><p role="status">{message()}</p><ActionButton size="sm" onClick={() => void load(requestedStart)}>{tr("重新读取", "Retry")}</ActionButton></div>}</Show>

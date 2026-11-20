@@ -36,6 +36,7 @@ export function emptyBundleForMission(mission: Mission): ImportedBundle {
     conditionMatrix: [],
     researchGapCandidates: [],
     materialFacts: null,
+    materialFactLedgers: [],
     sourceMapSummary: { documentCount: 0, segmentCount: 0, documentIds: [] },
     materialFactSummary: { documentCount: 0, factCount: 0 },
     evidenceMaturityRegistry: null,

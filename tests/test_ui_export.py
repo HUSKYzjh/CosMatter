@@ -23,6 +23,7 @@ from cosmatter.candidate_duplicate_reconciliation import (
     write_candidate_duplicate_reconciliation,
 )
 from cosmatter.dispatch import MissionDispatcher
+from cosmatter.material_extraction import material_facts_from_review, write_material_facts_for_document
 from cosmatter.models import MissionBrief, MissionState
 from cosmatter.simulation_campaign import (
     SIMULATION_CAMPAIGN_BOUNDARY,
@@ -30,7 +31,7 @@ from cosmatter.simulation_campaign import (
     SIMULATION_CAMPAIGN_TRUST_STATUS,
     build_approved_simulation_campaign,
 )
-from cosmatter.source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, source_map_from_review, write_source_map_for_document
+from cosmatter.source_map import AUTOMATED_TRIAL_SOURCE_MAP_TRUST_STATUS, source_map_document_path, source_map_from_review, write_source_map_for_document
 from cosmatter.ui_export import UiExportError, export_run_to_ui
 
 
@@ -268,6 +269,54 @@ class UiExportTests(unittest.TestCase):
         serialised = json.dumps(bundle, ensure_ascii=False)
         self.assertNotIn("Private automated-trial excerpt", serialised)
         self.assertNotIn("page:4", serialised)
+
+    def test_all_document_fact_ledgers_are_projected_with_current_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            run_id = "multiple_fact_ledgers"
+            self._write_run(runs_dir, run_id)
+            run_dir = runs_dir / run_id
+            mission_id = "mission_ui_export_001"
+            for doc, temperature in (("doc_b", 450), ("doc_a", 300)):
+                source_map = source_map_from_review(
+                    mission_id=mission_id, document_id=doc,
+                    source_task={"provider": "mineru", "task_id": "test_task", "state": "done", "document_id": doc},
+                    selection={"document_id": doc, "segments": [{"segment_id": "s1", "locator": "Fig. 6", "kind": "figure_caption", "quote": f"Private sample {doc} measured at {temperature} K."}]},
+                )
+                write_source_map_for_document(run_dir, source_map)
+                review = {"document_id": doc, "facts": [{"fact_id": "f1", "segment_id": "s1", "category": "experimental_condition",
+                    "name": "temperature", "value": temperature, "unit": "K", "normalized_value": temperature,
+                    "normalized_unit": "K", "qualifiers": {"sample": doc}}]}
+                write_material_facts_for_document(run_dir, material_facts_from_review(mission_id=mission_id, source_map=source_map, selection=review))
+            bundle = json.loads(export_run_to_ui(runs_dir, run_id).read_bytes())
+            ledgers = bundle["material_fact_ledgers"]
+            self.assertEqual([(ledger["document_id"], ledger["facts"][0]["value"], ledger["facts"][0]["qualifiers"]["sample"]) for ledger in ledgers],
+                             [("doc_a", 300, "doc_a"), ("doc_b", 450, "doc_b")])
+            self.assertEqual(bundle["material_facts"], ledgers[0])
+            self.assertEqual(json.loads((run_dir / "material_facts.json").read_bytes())["document_id"], "doc_b")
+            self.assertEqual(bundle["reviewed_material_fact_summary"], {"document_count": 2, "fact_count": 2})
+            self.assertNotIn("source_quote_sha256", json.dumps(ledgers))
+            self.assertNotIn("Private sample", json.dumps(ledgers))
+            self.assertEqual(bundle["evidence_cards"], [])
+            graph = bundle["literature_graph"]
+            self.assertEqual([node["node_id"] for node in graph["nodes"] if node["kind"] == "structured_paper"], ["paper:doc_a", "paper:doc_b"])
+            self.assertFalse(any(edge["edge_type"] == "source_provenance" for edge in graph["edges"]))
+
+            # The second document shares its fact and segment IDs with the first.
+            # Its own reviewed source still has to exist.
+            source_map_document_path(run_dir, "doc_b").unlink()
+            (run_dir / "source_map.json").unlink()
+            with self.assertRaisesRegex(UiExportError, "same document"):
+                export_run_to_ui(runs_dir, run_id)
+            (run_dir / "test_only_delegated_review.json").write_text(json.dumps({
+                "schema_version": "1.0", "trust_status": "user_authorized_delegated_test_review_not_scientific_evidence",
+                "scientific_use_prohibited": True,
+            }))
+            delegated = json.loads(export_run_to_ui(runs_dir, run_id).read_bytes())
+            self.assertEqual(delegated["material_fact_ledgers"], [])
+            self.assertIsNone(delegated["material_facts"])
+            self.assertEqual(delegated["reviewed_material_fact_summary"], {"document_count": 0, "fact_count": 0})
+            self.assertFalse(any(node["kind"] == "structured_paper" for node in delegated["literature_graph"]["nodes"]))
 
     def test_delegated_trial_marker_overrides_legacy_human_labels_in_ui(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -1,4 +1,4 @@
-import { For, Index, Show, batch, createEffect, createSignal, createUniqueId } from "solid-js";
+import { For, Index, Show, batch, createEffect, createSignal, createUniqueId, onCleanup } from "solid-js";
 
 import { PrivateMaterialFactReview } from "./PrivateMaterialFactReview";
 import { PrivateEvidenceReview } from "./PrivateEvidenceReview";
@@ -6,7 +6,7 @@ import { PrivateMarkdownLines } from "./PrivateMarkdownLines";
 import { sourceMapTaskKey } from "./readerSourceIntake";
 import { shouldAutoLoadRecordedSourceMap } from "./sourceMapLoadRecovery";
 import type { EvidenceReviewResult, HumanEvidenceReviewInput, HumanMaterialFactInput, PdfTaskStatus, PrivateMarkdownLineSource, PrivateSourceMapSegment, SavedSourceParseTask, SourceMapRecordResult } from "./localApi";
-import { isMarkdownLineRange, type RecordedMarkdownLocation, type RecordedSourceMapSegment } from "./localApi";
+import { isMarkdownLineRange, SourceReceiptMismatchError, type RecordedMarkdownLocation, type RecordedSourceMapSegment } from "./localApi";
 import type { ReaderEvidenceLocation } from "./readerEvidenceQuote";
 import { uiLanguage } from "./zh";
 import { safeOperationFeedback } from "./importFeedback";
@@ -17,6 +17,11 @@ type DraftSegment = PrivateSourceMapSegment;
 const tr = (zhText: string, enText: string) => uiLanguage() === "zh" ? zhText : enText;
 const emptySegment = (): DraftSegment => ({ locator: "", kind: "paragraph", quote: "" });
 const hasEmptyFields = (segment: DraftSegment) => !segment.locator.trim() && !segment.quote.trim();
+function receiptFeedback(error: unknown, fallback: string) {
+  return error instanceof SourceReceiptMismatchError
+    ? tr("来源定位回执与当前任务或论文不匹配，请重试。", "The source map receipt does not match the current run or paper. Try again.")
+    : safeOperationFeedback(error, fallback);
+}
 
 export function PrivateSourceMapReview(props: {
   pdfTask: PdfTaskStatus | null;
@@ -28,8 +33,10 @@ export function PrivateSourceMapReview(props: {
   onRecordFacts?: (facts: HumanMaterialFactInput[]) => Promise<void>;
   materialFactsRecorded?: boolean;
   onRecordEvidence?: (input: HumanEvidenceReviewInput) => Promise<EvidenceReviewResult>;
-  evidenceLocation?: ReaderEvidenceLocation | null;
-  onClearEvidenceLocation?: () => void;
+  onRecordedMap?: (result: SourceMapRecordResult | null) => void;
+  requestedLocation?: RecordedMarkdownLocation | ReaderEvidenceLocation | null;
+  onReturnLocation?: () => void;
+  onClearLocation?: () => void;
 }) {
   const [segments, setSegments] = createSignal<DraftSegment[]>([emptySegment()]);
   const [recorded, setRecorded] = createSignal<SourceMapRecordResult | null>(null);
@@ -40,7 +47,9 @@ export function PrivateSourceMapReview(props: {
   const [message, setMessage] = createSignal<string | null>(null);
   const [location, setLocation] = createSignal<RecordedMarkdownLocation | null>(null);
   const markdownPanelId = createUniqueId();
-  createEffect(() => { if (props.evidenceLocation) setLocation(null); });
+  createEffect(() => props.onRecordedMap?.(recorded()));
+  onCleanup(() => props.onRecordedMap?.(null));
+  createEffect(() => { if (props.requestedLocation) setLocation(null); });
   const reviewKey = () => props.fetchedSource ? props.markdownUrl : sourceMapTaskKey(props.pdfTask);
   let activeTaskKey = reviewKey();
   const ready = () => Boolean(props.markdownUrl && (props.fetchedSource?.markdown_ready || (props.pdfTask?.markdown_ready && props.pdfTask.audit_state === "done")));
@@ -72,11 +81,24 @@ export function PrivateSourceMapReview(props: {
   }
 
   function recordedLocation(result: SourceMapRecordResult, segment: RecordedSourceMapSegment): RecordedMarkdownLocation | null {
-    const source = props.markdownLineSource;
-    const auditDocumentId = props.fetchedSource?.document_id ?? props.pdfTask?.audit_document_id;
-    if (!source || result.run_id !== source.runId || result.document_id !== auditDocumentId || !isMarkdownLineRange(segment.markdown_range)) return null;
+    if (!props.markdownLineSource || !matchesSource(result) || !isMarkdownLineRange(segment.markdown_range)) return null;
     if (typeof segment.segment_id !== "string" || !segment.segment_id.trim() || segment.segment_id.length > 160) return null;
     return { segmentId: segment.segment_id, ...segment.markdown_range };
+  }
+
+  function matchesSource(result: SourceMapRecordResult) {
+    const fetched = props.fetchedSource;
+    const task = props.pdfTask;
+    const auditId = fetched?.document_id ?? task?.audit_document_id ?? task?.candidate_document_id ?? task?.document_id;
+    if (!auditId || result?.document_id !== auditId) return false;
+    const source = props.markdownLineSource;
+    return !source || (result.run_id === source.runId && source.fetched === Boolean(fetched)
+      && source.documentId === (fetched?.document_id ?? task?.document_id));
+  }
+
+  function acceptReceipt(result: SourceMapRecordResult) {
+    if (!matchesSource(result)) throw new SourceReceiptMismatchError();
+    setRecorded(result);
   }
 
   createEffect(() => {
@@ -102,9 +124,9 @@ export function PrivateSourceMapReview(props: {
     setLoadingRecorded(true);
     try {
       const result = await load();
-      if (taskKey === reviewKey()) setRecorded(result);
+      if (taskKey === reviewKey()) acceptReceipt(result);
     } catch (error) {
-      if (taskKey === reviewKey()) setMessage(safeOperationFeedback(error, tr("无法读取已登记的 Source Map；当前输入未被修改。", "Unable to load the recorded Source Map; current input was not changed.")));
+      if (taskKey === reviewKey()) setMessage(receiptFeedback(error, tr("无法读取已登记的 Source Map；当前输入未被修改。", "Unable to load the recorded Source Map; current input was not changed.")));
     } finally {
       if (taskKey === reviewKey()) setLoadingRecorded(false);
     }
@@ -125,10 +147,10 @@ export function PrivateSourceMapReview(props: {
     try {
       const result = await props.onRecord(segments().map((segment) => ({ locator: segment.locator.trim(), kind: segment.kind, quote: segment.quote.trim() })));
       if (taskKey !== reviewKey()) return;
-      setRecorded(result);
+      acceptReceipt(result);
       setMessage(tr("已登记 Source Map。它是人工核对后的来源定位，不是 EvidenceCard；现在可登记与其绑定的材料事实。", "Source Map recorded. It is human-reviewed provenance, not an EvidenceCard; you may now register material facts bound to it."));
     } catch (error) {
-      if (taskKey === reviewKey()) setMessage(safeOperationFeedback(error, tr("无法登记来源定位；请检查段落范围、短片段和人工确认。", "Unable to record source locations. Check the locator range, short excerpts, and human confirmation.")));
+      if (taskKey === reviewKey()) setMessage(receiptFeedback(error, tr("无法登记来源定位；请检查段落范围、短片段和人工确认。", "Unable to record source locations. Check the locator range, short excerpts, and human confirmation.")));
     } finally {
       if (taskKey === reviewKey()) setBusy(false);
     }
@@ -139,7 +161,8 @@ export function PrivateSourceMapReview(props: {
     <Show when={ready()} fallback={<p class="empty-copy">{tr("等待私有解析完成后，才能登记 Source Map。", "Wait for private parsing to finish before recording a Source Map.")}</p>}>
       <Show when={props.markdownLineSource && props.markdownUrl} keyed>
         <PrivateMarkdownLines id={markdownPanelId} source={props.markdownLineSource!} onDraft={canDraftFromLines() ? draftFromLines : undefined}
-          location={props.evidenceLocation ?? location()} onClearLocation={() => batch(() => { setLocation(null); props.onClearEvidenceLocation?.(); })} />
+          location={props.requestedLocation ?? location()} onReturnLocation={props.requestedLocation ? props.onReturnLocation : undefined}
+          onClearLocation={() => batch(() => { setLocation(null); props.onClearLocation?.(); })} />
       </Show>
       <section class="source-map-docking-vector" aria-label={tr("Source Map 来源泊位", "Source Map docking stations")}>
         <header><small>{tr("来源泊位 / 人工溯源", "SOURCE BERTHS / HUMAN PROVENANCE")}</small><span>{sourceMapRecorded() ? tr("已登记片段只读展示；后续每一步仍保留独立人工门禁。", "Recorded segments remain read-only; each follow-up retains an independent human gate.") : tr("此处仅登记必要短引文和定位符；每项状态均来自当前表单。", "Only essential short quotes and locators are registered here; every state reflects the active form.")}</span></header>
@@ -158,7 +181,7 @@ export function PrivateSourceMapReview(props: {
               <Show when={recordedLocation(result(), segment)}>{(target) =>
                 <ActionButton size="sm" aria-label={tr(`查看原文 ${segment.locator}`, `View source at ${segment.locator}`)}
                   aria-controls={markdownPanelId} aria-pressed={location()?.segmentId === target().segmentId}
-                  onClick={() => batch(() => { props.onClearEvidenceLocation?.(); setLocation({ ...target() }); })}>{tr("查看原文", "View source")}</ActionButton>
+                  onClick={() => batch(() => { props.onClearLocation?.(); setLocation({ ...target() }); })}>{tr("查看原文", "View source")}</ActionButton>
               }</Show>
             </dd>
           </div>}</For>

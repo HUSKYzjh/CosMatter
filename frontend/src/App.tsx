@@ -27,7 +27,7 @@ import { auditableAcceptedEvidence, documentIdForReviewablePaper, evidenceForPap
 import { focusEvidenceSession } from "./evidenceSessionFocus";
 import { emptyResearchSession, evidenceGate, reconcileResearchSession, selectEvidence, selectPaper, type ResearchSession } from "./researchSession";
 import { emptyBundleForMission, newLocalMissionId } from "./missionBundleFactory";
-import { approveLivePlan, createLiveMission, createAutomaticMission, createPdfRun, cancelRun, draftAuthorizedPlan, diagnoseConditions, executeAuthorizedApprovedQuery, expandAuthorizedPdfCitations, generateGapCandidates, confirmPdfDoi, fetchLiveUiBundle, getCandidateScreening, getLocalApiStatus, getPdfSourceMapContext, getPdfStatus, getPdfTasks, getRunStatus, importRunPackage, localApiEnabled, privateMarkdownUrl, recordCandidateScreening, recordPdfEvidenceCard, recordPdfMaterialFacts, recordPdfSourceMap, requestQuestionCandidates, type CandidateScreening, type CandidateScreeningCandidate, type AutomaticExecutionStatus, type HarnessAuthorization, type CandidateScreeningDecision, type EvidenceReviewResult, type HumanEvidenceReviewInput, type HumanMaterialFactInput, type PdfTaskRegistry, type PdfTaskStatus, type PrivateSourceMapSegment, type RetrievalSource, type SourceMapRecordResult } from "./localApi";
+import { SourceReceiptMismatchError, approveLivePlan, createLiveMission, createAutomaticMission, createPdfRun, cancelRun, draftAuthorizedPlan, diagnoseConditions, executeAuthorizedApprovedQuery, expandAuthorizedPdfCitations, generateGapCandidates, confirmPdfDoi, fetchLiveUiBundle, getCandidateScreening, getLocalApiStatus, getPdfSourceMapContext, getPdfStatus, getPdfTasks, getRunStatus, importRunPackage, localApiEnabled, privateMarkdownUrl, recordCandidateScreening, recordPdfEvidenceCard, recordPdfMaterialFacts, recordPdfSourceMap, requestQuestionCandidates, type CandidateScreening, type CandidateScreeningCandidate, type AutomaticExecutionStatus, type HarnessAuthorization, type CandidateScreeningDecision, type EvidenceReviewResult, type HumanEvidenceReviewInput, type HumanMaterialFactInput, type PdfTaskRegistry, type PdfTaskStatus, type PrivateSourceMapSegment, type RetrievalSource, type SourceMapRecordResult } from "./localApi";
 import { demoBundle, readBundle, type EvidenceCard, type ImportedBundle, type LiteratureGraphNode } from "./model";
 import { setUiLanguage, uiLanguage } from "./zh";
 import { shouldPollPdfTask } from "./pdfTaskPolling";
@@ -1101,19 +1101,27 @@ export function App() {
   function selectedReviewTarget() {
     const runId = liveRunId();
     const saved = selectedFetchedSource();
-    const documentId = saved?.document_id ?? pdfTask()?.document_id;
+    const task = pdfTask();
+    const documentId = saved?.document_id ?? task?.document_id;
     if (!runId || !documentId) throw new Error(text("请先选择已关联本机 Markdown 的论文。", "Select a paper with linked local Markdown."));
-    return { runId, documentId, fetched: Boolean(saved) };
+    const auditDocumentId = saved?.document_id ?? task?.audit_document_id ?? task?.candidate_document_id ?? documentId;
+    const verifyReceipt = (result: { run_id: string; document_id: string }) => {
+      if (result.run_id !== runId || result.document_id !== auditDocumentId) {
+        throw new SourceReceiptMismatchError(text("回执的运行或文档与本次请求不一致。", "The receipt refers to a different run or document."));
+      }
+    };
+    return { runId, documentId, fetched: Boolean(saved), verifyReceipt };
   }
   async function loadPrivateSourceMap(): Promise<SourceMapRecordResult> {
-    const { runId, documentId, fetched } = selectedReviewTarget();
+    const { runId, documentId, fetched, verifyReceipt } = selectedReviewTarget();
     const epoch = taskEpoch;
     const result = await getPdfSourceMapContext(runId, documentId, fetched);
     requireCurrentRun(runId, epoch);
+    verifyReceipt(result);
     return result;
   }
   async function recordPrivateSourceMap(segments: PrivateSourceMapSegment[]): Promise<SourceMapRecordResult> {
-    const { runId, documentId, fetched } = selectedReviewTarget();
+    const { runId, documentId, fetched, verifyReceipt } = selectedReviewTarget();
     if (!sourceMapRecordingGate.tryStart()) {
       setStatus(text("正在登记来源定位；请等待当前提交结束。", "Source locations are already being recorded; wait for the current submission to finish."));
       throw new Error("source map recording already in progress");
@@ -1123,6 +1131,7 @@ export function App() {
     try {
       const result = await recordPdfSourceMap(runId, documentId, segments, fetched);
       requireCurrentRun(runId, epoch);
+      verifyReceipt(result);
       await hydrateLiveRunBundle(runId, currentRunGuard(runId, epoch), true);
       // Refresh the PDF that actually received the Source Map.  A user may
       // have selected another task while the local write was in flight.
@@ -1137,7 +1146,7 @@ export function App() {
     }
   }
   async function recordPrivateMaterialFacts(facts: HumanMaterialFactInput[]) {
-    const { runId, documentId, fetched } = selectedReviewTarget();
+    const { runId, documentId, fetched, verifyReceipt } = selectedReviewTarget();
     if (!materialFactRecordingGate.tryStart()) {
       setStatus(text("正在登记材料事实；请等待当前提交结束。", "Material facts are already being recorded; wait for the current submission to finish."));
       throw new Error("material fact recording already in progress");
@@ -1147,6 +1156,7 @@ export function App() {
     try {
       const result = await recordPdfMaterialFacts(runId, documentId, facts, fetched);
       requireCurrentRun(runId, epoch);
+      verifyReceipt(result);
       await hydrateLiveRunBundle(runId, currentRunGuard(runId, epoch), true);
       requireCurrentRun(runId, epoch);
       setStatus(text(`已登记 ${result.fact_count} 条人工复核的材料事实。它们不是 EvidenceCard，也不构成科学结论。`, `${result.fact_count} human-reviewed material facts were recorded. They are not EvidenceCards or scientific conclusions.`));
@@ -1156,7 +1166,7 @@ export function App() {
     }
   }
   async function recordPrivateEvidenceCard(input: HumanEvidenceReviewInput): Promise<EvidenceReviewResult> {
-    const { runId, documentId, fetched } = selectedReviewTarget();
+    const { runId, documentId, fetched, verifyReceipt } = selectedReviewTarget();
     if (!evidenceCardRecordingGate.tryStart()) {
       setStatus(text("正在接受 EvidenceCard；请等待当前提交结束。", "An EvidenceCard is already being accepted; wait for the current submission to finish."));
       throw new Error("EvidenceCard acceptance already in progress");
@@ -1166,6 +1176,7 @@ export function App() {
     try {
       const result = await recordPdfEvidenceCard(runId, documentId, input, fetched);
       requireCurrentRun(runId, epoch);
+      verifyReceipt(result);
       const imported = await hydrateLiveRunBundle(runId, currentRunGuard(runId, epoch), true);
       requireCurrentRun(runId, epoch);
       const evidence = imported.evidenceCards.find((item) => item.evidenceId === result.evidence_id);

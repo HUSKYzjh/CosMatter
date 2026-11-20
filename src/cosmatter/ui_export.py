@@ -34,7 +34,7 @@ from .dispatch import MissionDispatcher
 from .gap_analysis import GapAnalysisError, load_gap_candidates
 from .human_evaluation import RETRIEVAL_IDENTITY_POLICY
 from .provenance_audit import ProvenanceAuditError, audit_accepted_evidence_provenance
-from .material_extraction import MaterialExtractionError, iter_material_facts, load_material_facts, validate_material_fact_source_links
+from .material_extraction import MaterialExtractionError, iter_material_facts, validate_material_fact_source_links
 from .reading_guide import ReadingGuideError, load_reading_guide
 from .candidate_screening import (
     CandidateScreeningError,
@@ -291,9 +291,7 @@ def _condition_matrix_if_present(path: Path) -> list[dict[str, Any]]:
 
 
 
-def _material_facts_projection(artifact: dict[str, Any] | None) -> dict[str, Any] | None:
-    if artifact is None:
-        return None
+def _material_facts_projection(artifact: dict[str, Any]) -> dict[str, Any]:
     facts = [{key: fact[key] for key in ("fact_id", "segment_id", "category", "name", "value", "unit", "normalized_value", "normalized_unit", "qualifiers", "locator")} for fact in artifact["facts"]]
     return {"document_id": artifact["document_id"], "trust_status": artifact["trust_status"], "facts": facts}
 
@@ -308,7 +306,7 @@ def _reviewed_source_map_summary(source_maps: tuple[dict[str, Any], ...]) -> dic
 
 
 def _reviewed_material_fact_summary(artifacts: tuple[dict[str, Any], ...]) -> dict[str, int]:
-    """Export aggregate counts only; detailed facts use the bounded first-artifact projection."""
+    """Count documents and facts independently of the detailed browser projection."""
     return {
         "document_count": len(artifacts),
         "fact_count": sum(len(item.get("facts", [])) for item in artifacts),
@@ -614,6 +612,7 @@ def _literature_graph_projection(
     paper_structures: tuple[dict[str, Any], ...] = (),
     citation_expansion: dict[str, Any] | None = None,
     condition_matrix: list[dict[str, Any]] | None = None,
+    material_fact_ledgers: tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
     """Build a bounded navigation graph with explicit non-evidence labels."""
     nodes: list[dict[str, Any]] = []
@@ -726,6 +725,18 @@ def _literature_graph_projection(
                 "reviewed_structure",
                 structure["trust_status"],
             )
+    # Add fact-only documents after the original graph so they never displace a
+    # candidate title, accepted source, reviewed structure, or bounded graph slot.
+    relation_roots = {node["node_id"]: node for node in nodes if node["kind"] == "relation_root_paper"}
+    for ledger in material_fact_ledgers:
+        document_id = ledger["document_id"]
+        paper_id = f"paper:{document_id}"
+        if paper_id in relation_roots:
+            # Bibliographic links keep their provenance. The independently reviewed
+            # document is now eligible to open in the reader.
+            relation_roots[paper_id].update(kind="structured_paper", trust_status=structures_by_document.get(document_id, ledger)["trust_status"])
+        else:
+            add_node(paper_id, "structured_paper", document_id, ledger["trust_status"])
     return {"trust_status": "navigation_metadata_and_reviewed_artifacts_not_a_scientific_conclusion", "nodes": nodes, "edges": edges}
 
 def _counterevidence_readiness_summary(run_dir: Path, mission_id: str) -> dict[str, Any]:
@@ -1298,7 +1309,7 @@ def build_ui_bundle(
     retrieval_candidates: list[dict[str, Any]] | None = None,
     research_gap_candidates: list[dict[str, Any]] | None = None,
     material_facts: dict[str, Any] | None = None,
-    material_fact_artifacts: tuple[dict[str, Any], ...] = (),
+    material_fact_artifacts: tuple[dict[str, Any], ...] | None = None,
     audit_summary: dict[str, Any] | None = None,
     evidence_maturity_registry: dict[str, Any] | None = None,
     evidence_maturity_registry_delivery_status: str = "not_supplied",
@@ -1376,6 +1387,13 @@ def build_ui_bundle(
         {"facility_type": facility.value, "status": "queued"}
         for facility in assignment.required_facilities
     ]
+    if delegated_test_boundary:
+        material_fact_artifacts = ()
+    elif material_fact_artifacts is None:
+        material_fact_artifacts = (material_facts,) if material_facts is not None else ()
+    # Count-only inputs still support the aggregate; only reviewed ledgers carry displayable facts.
+    fact_ledgers = [_material_facts_projection(artifact) for artifact in material_fact_artifacts
+                    if artifact.get("trust_status") == "human_reviewed_structured_material_facts_not_scientific_conclusion"]
     return {
         "schema_version": UI_SCHEMA_VERSION,
         "generated_at": utc_now(),
@@ -1416,7 +1434,8 @@ def build_ui_bundle(
         "paper_source_map": _paper_source_map_projection(paper_source_map),
         "reviewed_source_map_summary": _reviewed_source_map_summary(source_maps),
         "paper_structure": _paper_structure_projection(paper_structure),
-        "material_facts": _material_facts_projection(material_facts),
+        "material_facts": fact_ledgers[0] if fact_ledgers else None,
+        "material_fact_ledgers": fact_ledgers,
         "reviewed_material_fact_summary": _reviewed_material_fact_summary(material_fact_artifacts),
         "evidence_maturity_registry": evidence_maturity_registry,
         "evidence_maturity_registry_delivery_status": evidence_maturity_registry_delivery_status,
@@ -1441,6 +1460,7 @@ def build_ui_bundle(
             paper_structures,
             citation_expansion,
             condition_matrix,
+            material_fact_ledgers=tuple(fact_ledgers),
         ),
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
         "audit_summary": audit_summary or {
@@ -1573,7 +1593,6 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
             artifacts=material_fact_artifacts,
             source_maps=source_maps,
         )
-        material_facts = material_fact_artifacts[0] if material_fact_artifacts else None
         relation_reconciliation = None if delegated_test_boundary else load_relation_reconciliation(run_dir / "relation_reconciliation.json", mission.mission_id)
         condition_normalization = None if delegated_test_boundary else load_condition_normalization(run_dir / "condition_normalization.json", mission.mission_id)
         audit_summary = _audit_summary_from_run(run_dir, mission.mission_id)
@@ -1617,7 +1636,6 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         condition_normalization=condition_normalization,
         retrieval_candidates=retrieval_candidates,
         research_gap_candidates=research_gap_candidates,
-        material_facts=material_facts,
         material_fact_artifacts=material_fact_artifacts,
         audit_summary=audit_summary,
         evidence_maturity_registry=maturity_registry,
