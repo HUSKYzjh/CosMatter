@@ -23,17 +23,17 @@ export function DshCommandRow(props: { locale: UiLocale; command: string; label:
   </div>;
 }
 
-export function DshSessionLaunch(props: { locale: UiLocale; port: number; runId?: string | null; showLinkPreference?: Signal<boolean> }) {
+export function DshSessionLaunch(props: { locale: UiLocale; port: number; runId?: string | null; portInReceipt?: boolean; showLinkPreference?: Signal<boolean> }) {
   const [showLink, setShowLink] = props.showLinkPreference ?? createSignal(false);
   const choiceName = createUniqueId();
   const runId = () => props.runId && isLocalRunId(props.runId) ? props.runId : null;
   const command = () => `cosmatter open-dsh-workbench --port ${props.port}${runId() ? ` --run-id ${runId()}` : ""}${showLink() ? " --no-open" : ""}`;
   const x = (zh: string, en: string) => props.locale === "zh" ? zh : en;
   return <section class="harness-session-launch" aria-label={x("打开 DSH 会话", "Open a DSH session")}>
-    <p class="dsh-session-target">
-      <span>{x(`工作台端口 ${props.port}`, `Workbench port ${props.port}`)}</span>
+    <Show when={!props.portInReceipt || runId()}><p class="dsh-session-target">
+      <Show when={!props.portInReceipt}><span>{x(`工作台端口 ${props.port}`, `Workbench port ${props.port}`)}</span></Show>
       <Show when={runId()}>{(id) => <span>{x("当前任务", "Current run")} <code>{id()}</code></span>}</Show>
-    </p>
+    </p></Show>
     <fieldset class="dsh-launch-mode" role="radiogroup" aria-label={x("网页打开方式", "How to open DSH")}>
       <legend>{x("网页打开方式", "How to open DSH")}</legend>
       <div>

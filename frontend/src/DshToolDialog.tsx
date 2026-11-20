@@ -174,7 +174,8 @@ export function DshToolDialog(props: DshToolCatalogueProps & {
           </p>
           <ActionButton size="sm" variant="quiet" onClick={refreshSession}>{x("刷新会话状态", "Refresh session status")}</ActionButton>
         </div>}</Show>
-        <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId} showLinkPreference={showLinkPreference} />
+        <DshSessionLaunch locale={props.locale} port={localPort()} runId={props.runId}
+          portInReceipt={Boolean(props.profile?.tool_registry_check)} showLinkPreference={showLinkPreference} />
       </>}</Show>
       <Show when={!props.runId && props.draft}>{(draft) => <DshMissionDraft locale={props.locale} draft={draft()} onEditField={props.onEditDraftField} />}</Show>
     </div>

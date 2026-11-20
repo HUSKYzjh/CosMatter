@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
+import { For, Show, batch, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import { uiLanguage } from "./zh";
 import { LAUNCH_STAGES, launchModeStatus, stageForLaunchMode, type LaunchPreviewStage } from "./launchStages";
 import { isCurrentCandidateResponse } from "./launchCandidateRequest";
@@ -126,6 +126,22 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
     onCleanup(() => window.cancelAnimationFrame(frame));
   });
 
+  let briefEditor: HTMLElement | undefined;
+  function publishCandidates(result: LaunchCandidate[], origin: NonNullable<CandidateOrigin>) {
+    // Candidate cards appear above the editor. Keep a visible field at its reading position.
+    const field = briefEditor?.querySelector<HTMLElement>("[data-mission-field]:focus");
+    const before = field?.getBoundingClientRect();
+    batch(() => {
+      setCandidates(result);
+      setCandidateOrigin(origin);
+      setCandidatePending(false);
+    });
+    if (field && before && before.bottom > 0 && before.top < window.innerHeight && document.activeElement === field) {
+      const shift = field.getBoundingClientRect().top - before.top;
+      if (shift) window.scrollBy({ top: shift, behavior: "instant" });
+    }
+  }
+
   createEffect(() => {
     const question = prompt().trim();
     candidateAttempt();
@@ -152,16 +168,12 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
       void request
         .then((result) => {
           if (isCurrentCandidateResponse(requestId, latestCandidateRequest, question, prompt())) {
-            setCandidates(result);
-            setCandidateOrigin(useModel ? "deepseek" : modelCandidateRequest ? "local" : "local_no_api");
-            setCandidatePending(false);
+            publishCandidates(result, useModel ? "deepseek" : modelCandidateRequest ? "local" : "local_no_api");
           }
         })
         .catch(() => {
           if (isCurrentCandidateResponse(requestId, latestCandidateRequest, question, prompt())) {
-            setCandidates(fallbackCandidates(question));
-            setCandidateOrigin("local_after_failure");
-            setCandidatePending(false);
+            publishCandidates(fallbackCandidates(question), "local_after_failure");
           }
         });
     }, 800);
@@ -175,7 +187,6 @@ export function Launchpad(props: { onOpenDsh?: (draft: LaunchMissionBoundary | n
     setPrompt(value);
   }
   let promptInput: HTMLTextAreaElement | undefined;
-  let briefEditor: HTMLElement | undefined;
   const retainedBrief = () => mode() === "question" && !selected() && !prompt().trim() && !continuationBusy() && !props.activeRunId
     ? props.confirmedBrief : null;
   function openDsh() {

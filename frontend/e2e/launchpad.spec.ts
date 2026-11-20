@@ -1319,6 +1319,54 @@ test("offers local routes for all four BFO temperatures and authorizes each ques
   expect(writes).toEqual(["POST /api/question-candidates", "POST /api/question-candidates"]);
 });
 
+for (const fieldVisibility of ["fully visible", "partly visible", "scrolled away"] as const) {
+  test(`preserves the user's scroll position when a returned brief field is ${fieldVisibility} and candidates arrive`, async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 620 });
+    let releaseCandidates!: () => void;
+    const candidatesReleased = new Promise<void>(resolve => { releaseCandidates = resolve; });
+    await page.route("**/api/**", async route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/api/status") return route.fulfill({ json: {
+        api_mode: "loopback_only", operation_contracts: operationContracts,
+        providers: { deepseek: true, sciverse: false, mineru: false, openalex: false, crossref: false, crossref_polite_contact: false },
+      } });
+      if (path === "/api/question-candidates") await candidatesReleased;
+      return route.fulfill({ status: 503, json: {} });
+    });
+    await page.goto("/?api=local");
+    await page.getByLabel("候选航向研究问题").fill("BiFeO₃ 薄膜的温度和应变如何影响相稳定性？");
+    const requestStarted = page.waitForRequest("**/api/question-candidates");
+    await page.getByLabel(/我同意将上述研究问题发送/).check();
+    await requestStarted;
+    await page.getByRole("button", { name: "按原问题填写简报" }).press("Enter");
+    const editor = page.locator(".launch-brief-editor");
+    const scope = editor.getByLabel("比较范围", { exact: true });
+    await scope.fill("🧪".repeat(501));
+    await editor.getByRole("button", { name: "在 DSH 中继续" }).press("Enter");
+    await page.getByRole("button", { name: "返回修改比较范围" }).press("Enter");
+    await expect(scope).toBeFocused();
+    await expect(scope).toBeInViewport({ ratio: 1 });
+    if (fieldVisibility === "partly visible") {
+      await scope.evaluate(field => window.scrollBy({ top: field.getBoundingClientRect().top - (window.innerHeight - 24), behavior: "instant" }));
+      await expect(scope).toBeInViewport();
+      await expect(scope).not.toBeInViewport({ ratio: 1 });
+    } else if (fieldVisibility === "scrolled away") {
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+      await expect(scope).not.toBeInViewport();
+    }
+    const top = await scope.evaluate(field => field.getBoundingClientRect().top);
+    releaseCandidates();
+    await expect(page.getByRole("status", { name: "候选生成来源" })).toContainText("模型请求失败");
+    await expect(scope).toBeFocused();
+    if (fieldVisibility === "scrolled away") {
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    } else {
+      await expect(scope).toBeInViewport({ ratio: fieldVisibility === "fully visible" ? 1 : 0 });
+      expect(Math.abs(await scope.evaluate(field => field.getBoundingClientRect().top) - top)).toBeLessThanOrEqual(1);
+    }
+  });
+}
+
 test("labels a rejected model result and retries without silently presenting it as DeepSeek output", async ({ page }) => {
   let candidateRequests = 0;
   await page.route("**/api/status", async (route) => route.fulfill({
@@ -1610,6 +1658,13 @@ test("opens an existing DSH run by ID and reads PDF status from the local snapsh
 test("finds recent local missions without a run ID and reuses the selected run", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  let releaseGraph = () => {};
+  const graphModuleReady = new Promise<void>(resolve => { releaseGraph = resolve; });
+  await page.route("**/src/GraphNetwork.tsx*", async route => {
+    const response = await route.fetch();
+    await graphModuleReady;
+    await route.fulfill({ response });
+  });
   const runId = "saved_run_05";
   let installed = false;
   let catalogueAvailable = false;
@@ -1719,7 +1774,15 @@ test("finds recent local missions without a run ID and reuses the selected run",
   await expect(page.getByText(/打开时阶段为“候选筛选”/)).toBeVisible();
   const graphUrl = page.url();
   const opener = page.getByRole("button", { name: "DSH 工具与会话" });
-  await opener.press("Enter");
+  try {
+    await expect(page.locator("main.route-loading")).toBeVisible();
+    await opener.focus();
+  } finally {
+    releaseGraph();
+  }
+  await expect(page.locator(".frontier-literature-workbench h1")).toBeVisible(lazyWorkspaceContentLoad);
+  await expect(opener).toBeFocused();
+  await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
   const sessionTab = dialog.getByRole("tab", { name: "DSH 会话" });
   await sessionTab.click();

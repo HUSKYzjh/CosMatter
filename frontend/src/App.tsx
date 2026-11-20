@@ -463,6 +463,7 @@ export function App() {
     if (!routeFocusInitialized) { routeFocusInitialized = true; return; }
     const workbench = document.querySelector<HTMLElement>(".workbench");
     if (!workbench) return;
+    const focusAtNavigation = document.activeElement;
     let completed = false;
     const focusDestinationHeading = () => {
       if (completed) return;
@@ -470,8 +471,9 @@ export function App() {
       if (!heading) return;
       completed = true;
       observer.disconnect();
-      // A linked detail may already have focused its own control on mount.
-      if (heading.closest("main")?.contains(document.activeElement)) return;
+      // Preserve a linked detail or a control selected while the route was loading.
+      const active = document.activeElement;
+      if (heading.closest("main")?.contains(active) || (active && active !== document.body && active !== focusAtNavigation)) return;
       heading.tabIndex = -1;
       heading.classList.add("route-focus-heading");
       heading.focus();
