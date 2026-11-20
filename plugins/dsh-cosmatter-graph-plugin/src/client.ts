@@ -2,7 +2,8 @@ import { normalizeConfig, type CosMatterGraphConfig, type NormalizedConfig } fro
 import { assertGraphSnapshot, type GraphSnapshot } from './contract.js'
 
 const runId = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
-const evidenceSearchKeys = new Set(['run_id', 'schema_version', 'mission_id', 'trust_status', 'query_sha256', 'query_char_count', 'accepted_evidence_count', 'result_count', 'results', 'match_mode'])
+const evidenceSearchKeys = new Set(['run_id', 'schema_version', 'mission_id', 'trust_status', 'query_sha256', 'query_char_count', 'accepted_evidence_count', 'result_count', 'results', 'match_mode', 'matched_count'])
+type EvidenceSelector = string | { evidenceId: string } | { documentId: string; locator: string }
 
 export class CosMatterLoopbackClient {
   readonly config: NormalizedConfig
@@ -37,16 +38,25 @@ export class CosMatterLoopbackClient {
     }
   }
 
-  async searchAcceptedEvidence(runIdValue: string, selector: string | { evidenceId: string }, limit = 8, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  async searchAcceptedEvidence(runIdValue: string, selector: EvidenceSelector, limit = 8, signal?: AbortSignal): Promise<Record<string, unknown>> {
     if (!runId.test(runIdValue) || runIdValue.length > 255 || !Number.isInteger(limit) || limit < 1 || limit > 12) throw new Error('accepted-evidence search request is invalid')
-    const query = typeof selector === 'string' ? selector.trim() : null
-    const evidenceId = typeof selector === 'string' ? null : selector?.evidenceId
-    if (query !== null ? !query || query.length > 300 : typeof evidenceId !== 'string' || !canLinkIdentifier(evidenceId, 200)) throw new Error('accepted-evidence search selector is invalid')
+    let selection
+    if (typeof selector === 'string') {
+      const query = selector.trim()
+      if (!query || query.length > 300) throw new Error('accepted-evidence search selector is invalid')
+      selection = { query }
+    } else if ('evidenceId' in selector) {
+      if (!canLinkIdentifier(selector.evidenceId, 200)) throw new Error('accepted-evidence search selector is invalid')
+      selection = { evidence_id: selector.evidenceId }
+    } else {
+      if (!canLinkIdentifier(selector.documentId, 255) || !canLinkIdentifier(selector.locator, 240)) throw new Error('accepted-evidence document ID and locator must both be valid')
+      selection = { document_id: selector.documentId, locator: selector.locator }
+    }
     const url = new URL(`/api/runs/${encodeURIComponent(runIdValue)}/accepted-evidence/search`, this.config.baseUrl)
     const timeout = AbortSignal.timeout(this.config.timeoutMs)
     const response = await this.request(url, {
       method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ ...(query === null ? { evidence_id: evidenceId } : { query }), limit }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      body: JSON.stringify({ ...selection, limit }), signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     })
     if (!response.ok) throw new Error('accepted-evidence search was rejected')
     if (Number(response.headers.get('content-length') ?? 0) > this.config.maxGraphBytes) throw new Error('accepted-evidence search response exceeds configured size')
@@ -60,8 +70,14 @@ export class CosMatterLoopbackClient {
       || result.trust_status !== 'accepted_evidence_search_not_new_evidence_or_scientific_conclusion'
       || typeof result.query_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(result.query_sha256)
       || !Array.isArray(result.results) || result.results.length > limit || !result.results.every(safeEvidenceResult)) throw new Error('accepted-evidence search response is invalid')
-    if (evidenceId && (result.match_mode !== 'exact_id' || result.results.length > 1 || result.results.some(item => item.evidence_id !== evidenceId))) throw new Error('accepted-evidence exact response is invalid')
+    if (selection.evidence_id && (result.match_mode !== 'exact_id' || result.results.length > 1 || result.results.some(item => item.evidence_id !== selection.evidence_id))) throw new Error('accepted-evidence exact response is invalid')
+    if (selection.document_id && (result.run_id !== runIdValue || result.match_mode !== 'exact_locator'
+      || typeof result.matched_count !== 'number' || !Number.isSafeInteger(result.matched_count) || result.matched_count < 0
+      || result.results.length !== Math.min(result.matched_count, limit)
+      || new Set(result.results.map(item => item.evidence_id)).size !== result.results.length
+      || result.results.some(item => item.document_id !== selection.document_id || item.locator !== selection.locator))) throw new Error('accepted-evidence location response is invalid')
     const results = result.results.map(item => {
+      if (item.reader_available === false) return item
       const link = acceptedEvidenceWorkbenchLink(this.config.baseUrl.origin, runIdValue, item.document_id, item.evidence_id)
       return link ? { ...item, workbench_url: link } : item
     })
@@ -99,6 +115,7 @@ function canLinkIdentifier(value: string, maxLength: number): boolean {
 function safeEvidenceResult(value: unknown): value is Record<string, unknown> & { evidence_id: string; document_id: string } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const item = value as Record<string, unknown>
-  const allowed = new Set(['evidence_id', 'document_id', 'claim', 'stance', 'material', 'property_name', 'conditions', 'locator', 'source', 'score'])
+  if (item.reader_available !== undefined && item.reader_available !== false) return false
+  const allowed = new Set(['evidence_id', 'document_id', 'claim', 'stance', 'material', 'property_name', 'conditions', 'locator', 'source', 'score', 'reader_available'])
   return !Object.keys(item).some(key => !allowed.has(key) || /quote|url|token|secret|content|path/i.test(key)) && typeof item.evidence_id === 'string' && typeof item.document_id === 'string' && typeof item.claim === 'string' && typeof item.locator === 'string' && typeof item.source === 'string' && typeof item.score === 'number' && item.score > 0
 }

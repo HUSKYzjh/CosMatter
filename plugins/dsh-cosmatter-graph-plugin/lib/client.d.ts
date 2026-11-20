@@ -1,5 +1,11 @@
 import { type CosMatterGraphConfig, type NormalizedConfig } from './config.js';
 import { type GraphSnapshot } from './contract.js';
+type EvidenceSelector = string | {
+    evidenceId: string;
+} | {
+    documentId: string;
+    locator: string;
+};
 export declare class CosMatterLoopbackClient {
     private readonly request;
     readonly config: NormalizedConfig;
@@ -10,10 +16,9 @@ export declare class CosMatterLoopbackClient {
         limit?: number;
         signal?: AbortSignal;
     }): Promise<GraphSnapshot>;
-    searchAcceptedEvidence(runIdValue: string, selector: string | {
-        evidenceId: string;
-    }, limit?: number, signal?: AbortSignal): Promise<Record<string, unknown>>;
+    searchAcceptedEvidence(runIdValue: string, selector: EvidenceSelector, limit?: number, signal?: AbortSignal): Promise<Record<string, unknown>>;
     requestReview(runIdValue: string, nodeIds: string[], rationale: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
     draftPlan(runIdValue: string, nodeIds: string[], intent: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
 }
 export declare function acceptedEvidenceWorkbenchLink(origin: string, run: string, document: string, evidence: string): string | null;
+export {};

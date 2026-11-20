@@ -9,6 +9,7 @@ from unittest.mock import patch
 from cosmatter.deepseek import DraftCompletion
 from cosmatter.local_api import LocalApiError, LocalMissionApi
 from cosmatter.models import AccessPolicy, EvidenceCard, Provenance, ReviewStatus, Stance
+from cosmatter.source_map import source_map_from_review, write_source_map
 from cosmatter.verification import VerificationDecision
 
 
@@ -69,14 +70,33 @@ class LocalApiGraphTests(unittest.TestCase):
             decision = VerificationDecision(str(created["mission_id"]), card.evidence_id, ReviewStatus.ACCEPTED, "human review")
             (run_dir / "evidence_cards.json").write_text(json.dumps([card.to_dict()]), encoding="utf-8")
             (run_dir / "verification_decisions.json").write_text(json.dumps([decision.to_dict()]), encoding="utf-8")
+            missing_map = api.search_accepted_evidence("search_graph", {"query": "strain"})
+            self.assertIs(missing_map["results"][0]["reader_available"], False)
+            selection = {"document_id": "doc_search", "segments": [
+                {"segment_id": "caption", "locator": "figure:2", "kind": "figure_caption", "quote": card.quote},
+            ]}
+            write_source_map(run_dir, source_map_from_review(
+                mission_id=str(created["mission_id"]), document_id="doc_search", selection=selection,
+                source_task={"document_id": "doc_search", "provider": "mineru", "state": "done", "task_id": "test-task"},
+            ))
             result = api.search_accepted_evidence("search_graph", {"query": "strain phase stability", "limit": 4})
             self.assertEqual(result["run_id"], "search_graph")
             self.assertEqual(result["result_count"], 1)
             self.assertEqual(result["results"][0]["evidence_id"], card.evidence_id)
+            self.assertNotIn("reader_available", result["results"][0])
             self.assertNotIn("private source quote", json.dumps(result))
             exact = api.search_accepted_evidence("search_graph", {"evidence_id": card.evidence_id, "limit": 1})
             self.assertEqual((exact["run_id"], exact["match_mode"], exact["result_count"]), ("search_graph", "exact_id", 1))
             self.assertEqual(exact["results"][0]["document_id"], "doc_search")
+            at_location = api.search_accepted_evidence("search_graph", {"document_id": "doc_search", "locator": "figure:2", "limit": 1})
+            self.assertEqual(at_location["results"], exact["results"])
+            audit = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertNotIn("figure:2", json.dumps(audit[-1]))
+            self.assertEqual(audit[-1]["payload"]["query_sha256"], at_location["query_sha256"])
+            (run_dir / "test_only_delegated_review.json").touch()
+            for selector in ({"query": "strain"}, {"evidence_id": card.evidence_id}, {"document_id": "doc_search", "locator": "figure:2"}):
+                with self.subTest(selector=selector), self.assertRaisesRegex(LocalApiError, "Delegated test"):
+                    api.search_accepted_evidence("search_graph", selector)
 
 
 if __name__ == "__main__":

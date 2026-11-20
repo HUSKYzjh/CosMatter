@@ -37,55 +37,82 @@ export function apply(ctx, config = {}) {
     }));
     ctx.tools.register(defineTool({
         name: 'cosmatter_accepted_evidence_search',
-        description: 'Search human-accepted evidence-card metadata for this run. Provide a keyword query or one exact evidence_id. A result with a workbench_url opens the card in the local reader.',
-        parameters: { run_id: { type: 'string', required: true }, query: { type: 'string' }, evidence_id: { type: 'string' }, limit: { type: 'integer' } },
+        description: 'Search accepted evidence for one run by keyword query, exact evidence_id, or exact document_id and locator together. Each matching card has its own evidence ID and, when available, a local reader link.',
+        parameters: {
+            run_id: { type: 'string', required: true }, query: { type: 'string' }, evidence_id: { type: 'string' },
+            document_id: { type: 'string', description: 'Exact document identifier, used together with locator.' },
+            locator: { type: 'string', description: 'Exact reviewed locator in that document, for example figure:2.' },
+            limit: { type: 'integer', description: 'Maximum number of returned cards, 1 to 12 (default 8).' },
+        },
         output: {
             schema: { type: 'object', additionalProperties: true },
             render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
-            presentationMeta: (_args, value) => Array.isArray(value.results) ? value.results.map((item) => {
-                if (!item || typeof item !== 'object' || Array.isArray(item))
+            presentationMeta: (args, value) => {
+                if (!Array.isArray(value.results))
                     return null;
-                return {
-                    evidence_id: item.evidence_id ?? null, document_id: item.document_id ?? null, workbench_url: item.workbench_url ?? null,
-                    claim: evidencePreview(item.claim, 180), locator: evidencePreview(item.locator, 100),
-                };
-            }) : null,
+                const entries = value.results.map(item => {
+                    if (!item || typeof item !== 'object' || Array.isArray(item))
+                        return null;
+                    return {
+                        evidence_id: item.evidence_id ?? null, document_id: item.document_id ?? null, workbench_url: item.workbench_url ?? null,
+                        claim: evidencePreview(item.claim, 180), locator: args.locator === undefined ? evidencePreview(item.locator, 100) : item.locator ?? null,
+                    };
+                });
+                return args.locator === undefined ? entries : { entries, matched_count: value.matched_count ?? null };
+            },
         },
         presentCall: ({ run_id, evidence_id }) => ({
             card: 'generic', kind: evidence_id === undefined ? 'search' : 'read',
             title: evidence_id === undefined ? 'Search accepted CosMatter evidence' : 'Find an accepted CosMatter evidence card',
             rawInput: run_id,
         }),
-        presentResult: ({ run_id, evidence_id: requestedEvidenceId }, { isError, meta }) => {
-            if (isError || !Array.isArray(meta) || meta.length > (requestedEvidenceId === undefined ? 12 : 1))
+        presentResult: ({ run_id, evidence_id: requestedEvidenceId, document_id: requestedDocument, locator, limit = 8 }, { isError, meta }) => {
+            if (isError)
+                return;
+            const locationMeta = meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : undefined;
+            const hits = locator === undefined ? meta : locationMeta?.entries;
+            if (!Array.isArray(hits) || hits.length > (requestedEvidenceId === undefined ? 12 : 1))
+                return;
+            const matched = locationMeta?.matched_count;
+            if (locator !== undefined && (typeof matched !== 'number' || !Number.isSafeInteger(matched) || matched < 0 || hits.length !== Math.min(limit, matched)))
                 return;
             const entries = [];
-            for (const item of meta) {
+            for (const item of hits) {
                 if (!item || typeof item !== 'object' || Array.isArray(item))
                     return;
                 const { evidence_id, document_id, workbench_url } = item;
                 if (typeof evidence_id !== 'string' || typeof document_id !== 'string'
-                    || (requestedEvidenceId !== undefined && requestedEvidenceId !== evidence_id))
+                    || (requestedEvidenceId !== undefined && requestedEvidenceId !== evidence_id)
+                    || (locator !== undefined && (requestedDocument !== document_id || item.locator !== locator)))
                     return;
                 const expectedLink = acceptedEvidenceWorkbenchLink(client.config.baseUrl.origin, run_id, document_id, evidence_id);
                 if (workbench_url !== null && workbench_url !== expectedLink)
                     return;
                 const title = evidencePreview(evidence_id, 200) || 'Evidence card';
-                const rows = [title, evidencePreview(item.claim, 180), evidencePreview(item.locator, 100),
+                const rows = [title, evidencePreview(item.claim, 180), evidencePreview(item.locator, locator === undefined ? 100 : 240),
                     workbench_url ?? 'Local reader link unavailable.'];
                 entries.push(rows.filter(Boolean).join('\n'));
             }
+            if (typeof matched === 'number' && matched > hits.length)
+                entries.push(`Showing ${hits.length} of ${matched} matching cards.`);
             return { card: 'generic', title: 'Accepted CosMatter evidence', content: [
                     { type: 'text', text: entries.join('\n\n') || 'No accepted evidence cards matched.' },
                 ] };
         },
         async execute(args, exec) {
-            const query = typeof args.query === 'string' ? args.query : null;
-            const evidenceId = typeof args.evidence_id === 'string' ? args.evidence_id : null;
-            if ((query === null) === (evidenceId === null))
-                throw new Error('provide a query or one exact evidence ID');
-            const selector = evidenceId === null ? query : { evidenceId };
-            return await client.searchAcceptedEvidence(String(args.run_id), selector, typeof args.limit === 'number' ? args.limit : 8, exec.signal);
+            const { query, evidence_id, document_id, locator } = args;
+            const byLocation = document_id !== undefined || locator !== undefined;
+            const selectors = [];
+            if (query !== undefined)
+                selectors.push(query);
+            if (evidence_id !== undefined)
+                selectors.push({ evidenceId: evidence_id });
+            if (document_id !== undefined && locator !== undefined)
+                selectors.push({ documentId: document_id, locator });
+            if (selectors.length !== 1 || (byLocation && (document_id === undefined || locator === undefined))) {
+                throw new Error('provide a query or one exact evidence ID or a document ID and locator together');
+            }
+            return await client.searchAcceptedEvidence(args.run_id, selectors[0], args.limit, exec.signal);
         },
     }));
     ctx.tools.register(defineTool({

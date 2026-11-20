@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from cosmatter.accepted_evidence_search import AcceptedEvidenceSearchError, search_accepted_evidence
 from cosmatter.models import AccessPolicy, EvidenceCard, MissionBrief, Provenance, ReviewStatus, Stance
@@ -41,6 +42,31 @@ class AcceptedEvidenceSearchTests(unittest.TestCase):
             search_accepted_evidence(mission=self.mission, cards=cards, decisions=(decision, decision), evidence_id=self.accepted.evidence_id)
         with self.assertRaisesRegex(AcceptedEvidenceSearchError, "provide a query or"):
             search_accepted_evidence(mission=self.mission, cards=cards, decisions=(decision,), query="strain", evidence_id=self.accepted.evidence_id)
+
+    def test_exact_location_returns_all_distinct_accepted_cards_at_one_document_locator(self) -> None:
+        same_place = replace(self.accepted, evidence_id="card_b")
+        next_figure = replace(self.accepted, evidence_id="card_c", provenance=replace(self.accepted.provenance, locator="figure:20"))
+        other_paper = replace(self.accepted, evidence_id="card_d", provenance=replace(self.accepted.provenance, document_id="doc_2"))
+        unreviewed = replace(self.accepted, evidence_id="card_e")
+        reviewed = [self.accepted, same_place, next_figure, other_paper]
+        decisions = [VerificationDecision(self.mission.mission_id, card.evidence_id, ReviewStatus.ACCEPTED, "reviewed") for card in reviewed]
+        fixture = dict(mission=self.mission, cards=[*reviewed, unreviewed], decisions=decisions)
+        exact = dict(document_id="doc_1", locator="figure:2")
+        result = search_accepted_evidence(**fixture, **exact)
+        self.assertEqual((result["match_mode"], result["matched_count"]), ("exact_locator", 2))
+        self.assertEqual([hit["evidence_id"] for hit in result["results"]], sorted([self.accepted.evidence_id, same_place.evidence_id]))
+        self.assertNotIn("private quote", str(result))
+        bounded = search_accepted_evidence(**fixture, **exact, limit=1)
+        self.assertEqual((len(bounded["results"]), bounded["matched_count"]), (1, 2))
+        self.assertEqual(search_accepted_evidence(**fixture, document_id="doc_1", locator="Figure:2")["results"], [])
+        for invalid in ({"document_id": "doc_1"}, {"locator": "figure:2"}, {**exact, "evidence_id": "card_b"},
+                        {**exact, "query": "strain"}, {**exact, "locator": "x" * 241}, {**exact, "locator": "x\ny"}):
+            with self.subTest(invalid=invalid), self.assertRaises(AcceptedEvidenceSearchError):
+                search_accepted_evidence(**fixture, **invalid)
+        with self.assertRaisesRegex(AcceptedEvidenceSearchError, "ambiguous"):
+            search_accepted_evidence(**{**fixture, "decisions": [*decisions, decisions[0]]}, **exact)
+        with self.assertRaisesRegex(AcceptedEvidenceSearchError, "ambiguous"):
+            search_accepted_evidence(**{**fixture, "cards": [*reviewed, replace(other_paper, evidence_id=same_place.evidence_id)]}, **exact)
 
 
 if __name__ == "__main__":

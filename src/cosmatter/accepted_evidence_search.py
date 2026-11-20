@@ -8,7 +8,9 @@ pointer to a previously reviewed evidence card, not a newly verified fact.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+from collections import Counter
 from typing import Any, Iterable
 
 from .models import EvidenceCard, MissionBrief, ReviewStatus
@@ -29,17 +31,24 @@ def search_accepted_evidence(
     decisions: Iterable[VerificationDecision],
     query: str | None = None,
     evidence_id: str | None = None,
+    document_id: str | None = None,
+    locator: str | None = None,
     limit: int = 8,
 ) -> dict[str, Any]:
-    if (query is None) == (evidence_id is None):
-        raise AcceptedEvidenceSearchError("provide a query or one exact evidence ID")
+    by_location = document_id is not None or locator is not None
+    if sum((query is not None, evidence_id is not None, by_location)) != 1:
+        raise AcceptedEvidenceSearchError("provide a query or one exact evidence ID or a document ID and locator together")
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 12:
         raise AcceptedEvidenceSearchError("accepted-evidence limit must be between 1 and 12")
-    if evidence_id is not None:
-        if not isinstance(evidence_id, str) or not 1 <= len(evidence_id) <= 200 or evidence_id != evidence_id.strip() or re.search(r"[\x00-\x1f\x7f]", evidence_id):
+    query_terms: set[str] = set()
+    if by_location:
+        if not _valid_selector(document_id, 255) or not _valid_selector(locator, 240):
+            raise AcceptedEvidenceSearchError("exact document ID and locator must both be valid")
+        query_value = json.dumps([document_id, locator], ensure_ascii=False, separators=(",", ":"))
+    elif evidence_id is not None:
+        if not _valid_selector(evidence_id, 200):
             raise AcceptedEvidenceSearchError("exact evidence ID is invalid")
         query_value = evidence_id
-        query_terms: set[str] = set()
     else:
         if not isinstance(query, str) or not query.strip() or len(query.strip()) > 300:
             raise AcceptedEvidenceSearchError("accepted-evidence query must be a bounded nonempty string")
@@ -58,13 +67,21 @@ def search_accepted_evidence(
     candidates = [card for card in cards if card.evidence_id in accepted]
     if not candidates:
         raise AcceptedEvidenceSearchError("accepted-evidence search requires at least one accepted card")
+    if by_location:
+        card_counts = Counter(card.evidence_id for card in candidates)
+        decision_counts = Counter(decision.evidence_id for decision in mission_decisions)
     scored: list[tuple[int, EvidenceCard]] = []
     for card in candidates:
         if evidence_id is not None and card.evidence_id != evidence_id:
             continue
+        if by_location:
+            if (card.provenance.document_id, card.provenance.locator) != (document_id, locator):
+                continue
+            if card_counts[card.evidence_id] != 1 or decision_counts[card.evidence_id] != 1:
+                raise AcceptedEvidenceSearchError("accepted evidence at this location has an ambiguous evidence ID or verification decision")
         if card.provenance.document_id.strip() == "":
             raise AcceptedEvidenceSearchError("accepted evidence provenance is invalid")
-        score = 1 if evidence_id is not None else len(query_terms & _terms(_searchable_text(card)))
+        score = len(query_terms & _terms(_searchable_text(card))) if query is not None else 1
         if score:
             scored.append((score, card))
     scored.sort(key=lambda item: (-item[0], item[1].evidence_id))
@@ -80,7 +97,12 @@ def search_accepted_evidence(
         "result_count": min(len(scored), limit),
         "results": [_safe_result(card, score) for score, card in scored[:limit]],
         **({"match_mode": "exact_id"} if evidence_id is not None else {}),
+        **({"match_mode": "exact_locator", "matched_count": len(scored)} if by_location else {}),
     }
+
+
+def _valid_selector(value: object, maximum: int) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= maximum and value == value.strip() and not re.search(r"[\x00-\x1f\x7f]", value)
 
 
 def _safe_result(card: EvidenceCard, score: int) -> dict[str, Any]:

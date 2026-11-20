@@ -44,7 +44,7 @@ from .provider_receipts import ProviderReceiptError, append_provider_receipt, lo
 from .run_control import RunControlError, build_run_status, cancel_run, load_run_control, require_active_run
 from .sciverse import SciverseAdapter, SciverseConfigurationError, SciverseRequestError
 from .operation_parameter_contracts import operation_parameter_contracts
-from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, export_run_to_ui
+from .ui_export import UiExportError, _evidence_cards_from_payloads, _load_array_if_present, _load_object, _mission_from_payload, _verification_decisions_from_payloads, approved_evidence_projection, export_run_to_ui
 from .mineru import MinerUAdapter, MinerUConfigurationError, MinerURequestError, MinerUTask
 from .private_storage import PrivateStorageError, read_markdown, safe_document_id, write_markdown, write_pdf
 from .openalex import OpenAlexAdapter, OpenAlexConfigurationError, OpenAlexRequestError, normalize_doi
@@ -79,6 +79,7 @@ from .external_dispatch import (
     mark_external_dispatch_unknown,
 )
 from .accepted_evidence_search import AcceptedEvidenceSearchError, search_accepted_evidence
+from .delegated_trial import has_delegated_test_review_boundary
 from .runtime_invariants import RuntimeInvariantError, audit_runtime_invariants
 from .artifact_contract import ArtifactContractError, ArtifactDownload, approved_artifact_download, artifact_manifest
 from .stage_contract import StageContractError, stage_contract
@@ -1827,14 +1828,32 @@ class LocalMissionApi:
             raise LocalApiError(str(error), 404) from error
 
     def search_accepted_evidence(self, run_id: str, payload: object) -> dict[str, object]:
-        """Search only reviewed evidence-card metadata; never read source text."""
+        """Match reviewed card metadata and verify which hits can open in the reader."""
         run_dir, mission = self._active_mission(run_id, require_active=False)
+        if has_delegated_test_review_boundary(run_dir):
+            raise LocalApiError("Delegated test runs cannot supply human-accepted evidence.")
         body = _object_payload(payload)
-        query, evidence_id, limit = body.get("query"), body.get("evidence_id"), body.get("limit", 8)
         try:
             cards = _evidence_cards_from_payloads(_load_array_if_present(run_dir / "evidence_cards.json", "evidence artifacts"))
             decisions = _verification_decisions_from_payloads(_load_array_if_present(run_dir / "verification_decisions.json", "verification decisions"))
-            result = search_accepted_evidence(mission=mission, cards=cards, decisions=decisions, query=query, evidence_id=evidence_id, limit=limit)
+            result = search_accepted_evidence(
+                mission=mission, cards=cards, decisions=decisions, query=body.get("query"),
+                evidence_id=body.get("evidence_id"), document_id=body.get("document_id"),
+                locator=body.get("locator"), limit=body.get("limit", 8),
+            )
+            if result["results"]:
+                try:
+                    maps = tuple(item for item in iter_source_maps(run_dir, mission.mission_id)
+                                 if item["trust_status"] == HUMAN_SOURCE_MAP_TRUST_STATUS)
+                    audit_accepted_evidence_provenance(mission=mission, cards=cards, decisions=decisions, source_maps=maps)
+                    visible, _ = approved_evidence_projection(mission.mission_id, cards, decisions)
+                    reader_ids = {card["evidence_id"] for card in visible}
+                except (ProvenanceAuditError, SourceMapError, UiExportError):
+                    # The workbench withholds the bundle, but metadata-only searches can still return hits.
+                    reader_ids = set()
+                for hit in result["results"]:
+                    if hit["evidence_id"] not in reader_ids:
+                        hit["reader_available"] = False
         except (AcceptedEvidenceSearchError, UiExportError, ValueError) as error:
             raise LocalApiError(str(error)) from error
         FlightRecorder(self.runs_dir, run_id).record(

@@ -632,7 +632,8 @@ def read_dsh_evidence_link(link: str, *, executable: str = "dsh", dsh_home: Path
         if (result.get("run_id") == run_id and result.get("match_mode") == "exact_id"
                 and result.get("trust_status") == "accepted_evidence_search_not_new_evidence_or_scientific_conclusion"
                 and isinstance(hits, list) and len(hits) == 1 and isinstance(hits[0], dict)
-                and hits[0].get("evidence_id") == evidence_id and hits[0].get("document_id") == document_id):
+                and hits[0].get("evidence_id") == evidence_id and hits[0].get("document_id") == document_id
+                and hits[0].get("reader_available") is not False):
             return {**result, "checked_via": [tool]}
     raise DshCompositionCheckError("DSH could not find the accepted card for this link. Check the link and the local CosMatter service.")
 

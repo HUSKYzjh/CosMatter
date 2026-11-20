@@ -992,13 +992,17 @@ class DshProfileStatusTests(unittest.TestCase):
                 "cosmatter.dsh_profile_status._run_dsh_diagnostic", side_effect=diagnostic,
             ) as launch:
                 self.assertEqual(read_dsh_evidence_link(link, dsh_home=home)["checked_via"], ["cosmatter_accepted_evidence_search"])
+                hit["reader_available"] = False
+                with self.assertRaisesRegex(DshCompositionCheckError, "could not find the accepted card"):
+                    read_dsh_evidence_link(link, dsh_home=home)
+                del hit["reader_available"]
                 hit["document_id"] = "another document"
                 with self.assertRaisesRegex(DshCompositionCheckError, "could not find the accepted card"):
                     read_dsh_evidence_link(link, dsh_home=home)
                 for malformed in (link.replace("127.0.0.1", "example.org"), link + "&evidence=other", link.replace("ev%27id", "ev%0Aid")):
                     with self.assertRaises(DshCompositionCheckError):
                         read_dsh_evidence_link(malformed, dsh_home=home)
-                self.assertEqual(launch.call_count, 2)
+                self.assertEqual(launch.call_count, 3)
 
     def test_catalogue_reads_through_policy_without_a_run_and_rejects_non_catalogue_results(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
