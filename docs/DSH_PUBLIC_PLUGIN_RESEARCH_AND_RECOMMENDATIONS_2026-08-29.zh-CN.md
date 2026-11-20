@@ -3,7 +3,33 @@
 日期：2026-08-29
 范围：公开可访问的 DeepSeek Harness（DSH）官方文档、官方源码说明、社区插件仓库和插件目录；**未安装、未执行、未信任任何第三方插件**。本文是工程决策材料，不是对任何社区项目的安全背书。
 
-## 结论摘要
+## 2026-11-20 补充调研：科研产品与 DSH 原生插件
+
+本次从“BFO 实验条件能否回到原文”和“舰队各自交付什么”两个实际需求选项目。当前本机 DSH 版本为 `0.2.2-rc.3`。下表的第三方能力和版本来自作者文档及包清单。本轮未安装第三方插件，也未向这些服务发送文献或研究问题。
+
+| 项目 | 作者提供的能力 | CosMatter 可直接对照的用例 |
+|---|---|---|
+| GeoResearch for DSH | 将文献、PDF 读取回执、主张、复现计划和审阅保存为可追溯记录。其支持矩阵指定 Windows x64 和带项目兼容补丁的 DSH `0.1.0-rc.5`。 | 最接近 CosMatter 的整体工作流。选一条 BFO 结构转变主张，从写作结果往回核对原文版本、实验条件与审阅决定。当前适合做架构对照。 [项目与兼容要求](https://github.com/georesearch-dsh/georesearch-dsh/tree/ff8a6556d382fe43639c67e5936f859fe3e7e63c) |
+| Elicit | 从检索、筛选到提取表，支持查看每条筛选依据；点击提取表单元格可查看相应论文引文。 | 用“温度、单位、样品形态、测量判据”四列复核。每个数值都应能单独打开支撑它的原文位置。 [官方系统综述指南](https://support.elicit.com/en/articles/14759154-systematic-reviews-in-elicit) |
+| PaperQA | 开源科学文档问答，检索证据后生成带出处的回答。 | 在相同 PDF 集合上比较出处能否支持回答中的数值与限定条件。 [作者仓库](https://github.com/Future-House/paper-qa) |
+| ChemDataExtractor + Snowball | 作者从 108,181 篇论文自动抽取了 56,037 条材料与居里温度或奈尔温度记录，评估的精确率为 72%，召回率为 61%。 | 给 BFO 磁转变任务提供抽取基线。比较时逐条核对化学式、温标及测量判据，并把铁电或结构转变另列。上述统计覆盖整个数据集。 [剑桥论文及数据说明](https://www.repository.cam.ac.uk/items/8a346e06-20d5-463e-8f0f-98e590f2dc70) |
+| AiiDA + aiida-lammps | 记录计算输入、输出及其来源；LAMMPS 插件支持分子动力学工作流，并能保存势场和轨迹。 | 对固定组分的 Pb/Sr 排列，把构型、势场、随机种子、采样协议与每次 MD 结果关联起来。性质由模拟给出，比较算法或复跑时可以取回同一组输入。它属于 AiiDA 生态。 [AiiDA 数据溯源](https://aiida.readthedocs.io/projects/aiida-core/en/stable/intro/index.html) · [LAMMPS 插件](https://aiida-lammps.readthedocs.io/en/latest/) |
+
+| DSH 插件 | 接口及适用场景 | 已核对的版本边界 |
+|---|---|---|
+| Vncntvx/dsh-zotero | 从自己的 Zotero 库检索、读文献，在 DSH Web 文献面板查看引用并审批写入。适合设计“库中已有论文 → 已选摘录 → Source Map”的入口。 | `v1.2.0` 明确要求 DSH `>=0.2.2-rc.3 <0.3.0`、Node `>=24.15.0`，是本项目最值得先用公开 PDF 试验的版本。 [固定版本包清单](https://github.com/Vncntvx/dsh-zotero/blob/v1.2.0/package.json) |
+| Cjrrrrrrrr/dsh-plugins 的 dsh-scholar | 综合多源书目检索、引用查询和 Unpaywall 开放 PDF 地址解析。适合在 SciVerse 已有元数据而全文不可用时查找开放版本。 | 子目录内有独立 Cordis 补丁和 DSH 工具依赖声明；实际取得 PDF、核对 DOI 和版本后，再计为全文成功。 [插件目录与清单](https://github.com/Cjrrrrrrrr/dsh-plugins/tree/9be158a6b51c24753efc894c88b2af1506946fc4/packages/dsh-scholar) |
+| NanmiCoder/dsh-agent-teams | 组织多 Agent 团队、分配带依赖的任务，并在 Web 界面查看成员和任务进度。适合对照 CosMatter 舰队的分工、等待原因与交付物。 | `v0.1.31` 有独立兼容表，本机 rc.3 仍需单独验证。 [作者仓库](https://github.com/NanmiCoder/dsh-agent-teams/tree/v0.1.31) · [兼容矩阵](https://github.com/NanmiCoder/dsh-agent-teams/blob/v0.1.31/compatibility.json) |
+
+检索时有两个同名 Zotero 项目。上表推荐评估的版本由 **Vncntvx** 发布；**kuangdang123** 的另一个包能读取批注、增改条目和移至回收站，声明版本为 `0.1.3`。需要独立 MCP 服务时，另有 **Zotero MCP**，含 PDF 注释提取和按工具组配置的接口。 [kuangdang123 的清单](https://github.com/kuangdang123/dsh-zotero/blob/84d2239c1c150ed477490f6e53d3b5afeb7aa25c/package.json) · [Zotero MCP](https://github.com/54yyyu/zotero-mcp)
+
+本机 rc.3 的加载器先检查包清单里的 `engines.dsh`，未声明时逐一检查 DSH 工具依赖的版本范围。两种检查都包含预发布版本。按这段规则，kuangdang123 的 `v0.1.3` 和 Cjrrrrrrrr 的 `dsh-scholar 1.0.0` 均符合版本声明；本机加载和实际调用仍待验证。 [rc.3 主机判断逻辑](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/boot/app-boot/src/plugin-compatibility.ts#L51-L79)
+
+继续发现项目可从 DSH 官方市场索引规范入手，或使用按 GitHub 主题聚合的社区 Web 市场，再去作者仓库核对来源、版本与工具声明。 [DSH 官方市场文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/plugin-market.md) · [社区 Web 市场](https://github.com/bradeGithub/DSH-Plugins-Marketplace)
+
+校园订阅可单独试一条本地交接路线。用户在已登录学校图书馆的浏览器打开有访问权的文章，Zotero Connector 保存可获取的 PDF 与书目信息，再将选定的附件从 CosMatter「文献入港」导入。校园认证留在浏览器；是否能取得附件取决于学校订阅和站点。此路线尚未用本校账号验证。 [Zotero 官方保存说明](https://www.zotero.org/support/adding_items_to_zotero#via_your_web_browser)
+
+## 8 月初审结论摘要
 
 CosMatter 当前的七个 DSH bundle 已覆盖任务建立、状态观测、策略、受同意约束的计划/元数据检索、候选筛选、MinerU 任务元数据和已接受证据图投影。它的优势是：Python 领域层仍是唯一事实来源，所有 DSH 包仅经 `127.0.0.1` 的受限投影访问，且不把私有全文、密钥或未核验内容暴露给模型。
 
