@@ -1,4 +1,5 @@
 import { DshCommandText } from "./DshCommandText";
+import { FieldResponseCalculator, OccupancyCalculator } from "./MaterialCalculationPanel";
 import { formatDshCommand } from "./dshTerminalCommand";
 import { canRepairBundleRegistration } from "./dshReadProfile";
 import { For, Show, batch, createEffect, createMemo, createSignal, createUniqueId, on, onMount } from "solid-js";
@@ -355,9 +356,11 @@ export function DshToolCatalogueContent(props: DshToolCatalogueProps & {
                   </StatusBadge>
                 </summary>
                 <div class="dsh-tool-detail">
+                  <Show when={tool.name === "cosmatter_pst_occupancy_count"}><OccupancyCalculator locale={props.locale} /></Show>
+                  <Show when={tool.name === "cosmatter_md_field_response"}><FieldResponseCalculator locale={props.locale} /></Show>
                   <code>{tool.bundle}</code>
                   <Show when={!needsRepair()}><p>{bundleState(tool.bundle)}</p></Show>
-                  <Show when={tool.copy?.note}>{(note) => <p>{x(...note())}</p>}</Show>
+                  <Show when={tool.copy?.access !== "calculate" && tool.copy?.note}>{(note) => <p>{x(...note())}</p>}</Show>
                   <Show when={authorizations().length}>
                     <div class="dsh-tool-consents"><strong>{x("所需授权字段", "Required authorization fields")}</strong>
                       <For each={authorizations()}>{(authorization) => <code>{authorization}</code>}</For>

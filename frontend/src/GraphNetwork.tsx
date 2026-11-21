@@ -5,6 +5,7 @@ import { CandidateScreeningPanel } from "./CandidateScreeningPanel";
 import { CandidateFulltextQueue } from "./CandidateFulltextQueue";
 import { SourceMarkdownLinkButton } from "./SourceMarkdownLinkButton";
 import { EvidenceGraphExplorer } from "./EvidenceGraphExplorer";
+import { ExtractionTablePanel } from "./ExtractionTablePanel";
 import { fleetVisualState } from "./fleetVisualState";
 import type { GraphCanvasControls, LiteratureGraphCanvasProps } from "./LiteratureGraphCanvas";
 import { TOPIC_KEYS, isPaperNode, topicFor, type TopicKey } from "./literatureTopology";
@@ -73,6 +74,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
   const [query, setQuery] = createSignal("");
   const [selectedTopic, setSelectedTopic] = createSignal<TopicKey | "all">("all");
   const [advanced, setAdvanced] = createSignal(false);
+  const [display, setDisplay] = createSignal<"map" | "table">("map");
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
   const [selectedEdge, setSelectedEdge] = createSignal<LiteratureGraphEdge | null>(null);
   const [focusSelection, setFocusSelection] = createSignal(false);
@@ -262,6 +264,14 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     <FleetDecoration kind="graph" state={fleetVisualState(props.bundle, "graph")} />
     <header class="stage-header graph-header"><div><p class="stage-kicker">COSMATTER / {hasCitationMap() && !hasReviewablePapers() ? t("书目引文导航", "BIBLIOGRAPHY NAVIGATION") : t("文献星图", "LITERATURE MAP")}</p><h1>{hasCitationMap() && !hasReviewablePapers() ? t("浏览引文关系，再选择待核对原文", "Browse citation relations, then choose original text to verify") : t("选择文献，再核对来源", "Select literature, then verify provenance")}</h1><p>{hasCitationMap() && !hasReviewablePapers() ? t("此图来自 DOI 的双向引文扩展，只表示公开书目信息；它不能替代原文、材料事实或 EvidenceCard。", "This map comes from bidirectional DOI citation expansion and shows public bibliographic metadata only; it cannot replace source text, materials facts, or EvidenceCards.") : t("图谱只展示候选、已接受证据和条件关系；题名相似或书目连接不是材料事实。", "The map shows candidates, accepted evidence, and condition relations; title similarity and bibliography are not material facts.")}</p></div></header>
     <Show when={props.readOnlyPreview}><ReadOnlyPreviewContext locale={props.locale} onExit={props.onExitPreview} /></Show>
+    <Show when={props.runId && !props.readOnlyPreview}>
+      <div class="literature-display-switch" role="group" aria-label={t("文献展示方式", "Literature view")}>
+        <ActionButton size="sm" aria-pressed={display() === "map"} onClick={() => setDisplay("map")}>{t("文献关系图", "Literature map")}</ActionButton>
+        <ActionButton size="sm" aria-pressed={display() === "table"} onClick={() => setDisplay("table")}>{t("跨文献证据对照", "Compare paper evidence")}</ActionButton>
+      </div>
+    </Show>
+    <Show when={props.runId && !props.readOnlyPreview && display() === "table" ? props.runId : null} keyed>{id => <ExtractionTablePanel runId={id} locale={props.locale} />}</Show>
+    <Show when={!props.runId || props.readOnlyPreview || display() === "map"}>
     <Show when={props.linkedDocumentId && !graphNodeForSessionDocument(graph().nodes, props.linkedDocumentId)}>
       <div class="graph-screening-cue" role="status"><p>{t("当前文献星图找不到链接指定的论文。", "The paper in this link is unavailable in the current literature map.")}</p></div>
     </Show>
@@ -300,7 +310,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     </Show>
     <Show when={hasReviewablePapers() && props.onLoadScreening && props.onSubmitScreening && screeningPanelOpen()}>
       <div class="graph-screening-drawer">
-        <CandidateScreeningPanel locale={props.locale} screening={props.screening} load={props.onLoadScreening!} submit={props.onSubmitScreening!}
+        <CandidateScreeningPanel locale={props.locale} missionId={props.bundle.mission.missionId} screening={props.screening} load={props.onLoadScreening!} submit={props.onSubmitScreening!}
           focusDocumentId={screeningFocusId()} linkedRevision={props.linkedScreeningRevision} liveRunId={props.runId} onClose={() => setScreeningPanelOpen(false)} />
       </div>
     </Show>
@@ -333,5 +343,6 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
 </section></Show><Show when={Boolean(paperDocumentId(node())) && linkedEvidence().length > 0}><section class="imported-evidence-list"><small>{t("与当前论文显式关联的已接受证据", "ACCEPTED EVIDENCE LINKED TO THIS PAPER")}</small><p>{t("只显示图谱中存在 source_provenance 路径的证据卡；未出现卡片表示该论文仍无已审核来源关联。", "Only EvidenceCards with a source_provenance path in this map are shown. An empty list means this paper has no reviewed source link yet.")}</p><For each={linkedEvidence()}>{(evidence) => <button type="button" onClick={() => props.onSelectEvidence(evidence)}><strong>{evidence.evidenceId}</strong><span>{evidence.provenance.documentId} · {evidence.provenance.locator}</span></button>}</For></section></Show></>}</Show></aside></Show></section>
     </Show>
     <footer class="stage-note">{t("论文选择、EvidenceCard 选择和来源定位是独立的审计事实；缺失关联必须显式显示。", "Paper selection, EvidenceCard selection, and source location are separate audit facts; missing linkage is shown explicitly.")}</footer>
+    </Show>
   </main>;
 }

@@ -1480,8 +1480,8 @@ def build_ui_bundle(
     }
 
 
-def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = None) -> Path:
-    """Export one local run as a browser-safe JSON file and record only a summary."""
+def project_run_for_ui(runs_dir: Path, run_id: str) -> dict[str, Any]:
+    """Build the same workbench snapshot used by the exporter, without writing artifacts."""
     safe_run_id = _safe_run_id(run_id)
     run_dir = runs_dir / safe_run_id
     delegated_test_boundary = has_delegated_test_review_boundary(run_dir)
@@ -1613,7 +1613,7 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
             }
     except (ReadingGuideError, CandidateScreeningError, ContentAccessError, SourceMapError, PaperStructureError, MaterialExtractionError, ProvenanceAuditError, RelationReconciliationError, ConditionNormalizationError) as error:
         raise UiExportError(str(error)) from error
-    bundle = build_ui_bundle(
+    return build_ui_bundle(
         mission,
         assignment,
         state,
@@ -1647,13 +1647,19 @@ def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = Non
         delegated_test_boundary=delegated_test_boundary,
         workflow_track_summary=workflow_track_summary,
     )
-    destination = output_path or run_dir / "ui.json"
+
+
+def export_run_to_ui(runs_dir: Path, run_id: str, output_path: Path | None = None) -> Path:
+    """Export one local run as a browser-safe JSON file and record only a summary."""
+    safe_run_id = _safe_run_id(run_id)
+    bundle = project_run_for_ui(runs_dir, safe_run_id)
+    destination = output_path or runs_dir / safe_run_id / "ui.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     FlightRecorder(runs_dir, safe_run_id).record(
         event_type="ui_bundle_exported",
         actor="ui_export",
-        state=state,
+        state=MissionState(bundle["status"]["mission_state"]),
         payload={"schema_version": UI_SCHEMA_VERSION, "evidence_card_count": len(bundle["evidence_cards"])},
     )
     return destination

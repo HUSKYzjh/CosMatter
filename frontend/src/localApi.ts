@@ -194,6 +194,11 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = (init?.m
   });
 }
 function jsonPost<T>(path: string, payload: unknown): Promise<T> { return request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
+export function getExtractionTable(runId: string): Promise<unknown> {
+  if (!isLocalRunId(runId)) throw new Error("Invalid extraction table run");
+  return request(`./api/runs/${encodeURIComponent(runId)}/extraction-table`, { credentials: "omit", redirect: "error" });
+}
+
 export async function getRecentLocalRuns(): Promise<RecentLocalRun[]> {
   const payload = await request<unknown>("./api/recent-runs", { credentials: "omit", redirect: "error" });
   if (!exactObjectKeys(payload, ["schema_version", "runs"])) throw new LocalApiRequestError("transport");
@@ -405,7 +410,7 @@ export function isReminderBoard(value: unknown): value is ReminderBoard {
     if (!exactObjectKeys(raw, ["scope", "identifier", "kind", "status", "priority", "stage", "action_label"])) return false;
     const item = raw as Record<string, unknown>;
     const rule = REMINDER_RULES[item.kind as string];
-    if (!(["run", "project_memory"] as string[]).includes(item.scope as string) || typeof item.identifier !== "string" || !item.identifier || item.identifier.length > 80 || !rule || !(["open", "overdue"] as string[]).includes(item.status as string) || !(["attention", "review"] as string[]).includes(item.priority as string) || item.stage !== null && !REMINDER_STAGES.has(item.stage as string) || item.scope !== rule.scope || item.action_label !== rule.action || (item.stage !== null) !== rule.requiresStage) return false;
+    if (!(["run", "project_memory"] as string[]).includes(item.scope as string) || typeof item.identifier !== "string" || !item.identifier || item.identifier.length > (item.scope === "run" ? 255 : 80) || !rule || !(["open", "overdue"] as string[]).includes(item.status as string) || !(["attention", "review"] as string[]).includes(item.priority as string) || item.stage !== null && !REMINDER_STAGES.has(item.stage as string) || item.scope !== rule.scope || item.action_label !== rule.action || (item.stage !== null) !== rule.requiresStage) return false;
     const key = `${item.scope}:${item.identifier}:${item.kind}:${item.stage ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -462,8 +467,55 @@ export function getStageContract(runId: string, timeoutMs?: number): Promise<Sta
   return request<StageContract>(`./api/runs/${encodeURIComponent(runId)}/stage-contract`, undefined, timeoutMs);
 }
 export function getWorkflowDag(runId: string): Promise<WorkflowDag> { return request<WorkflowDag>(`./api/runs/${encodeURIComponent(runId)}/workflow-dag`); }
+interface RuntimeOverview {
+  schema_version: "cosmatter.runtime-overview/v1";
+  run_id: string;
+  stage_contract: StageContract;
+  workflow_dag: WorkflowDag;
+  operational_telemetry: OperationalTelemetry;
+}
+export async function getRuntimeOverview(runId: string): Promise<Pick<RuntimeOverview, "stage_contract" | "workflow_dag" | "operational_telemetry">> {
+  const payload = await request<RuntimeOverview | StageContract>(`./api/runs/${encodeURIComponent(runId)}/stage-contract`, {
+    headers: { Accept: "application/vnd.cosmatter.runtime-overview+json" },
+  });
+  if (payload?.run_id !== runId) throw new Error("Runtime overview belongs to a different run");
+  if (payload.schema_version === "cosmatter.runtime-overview/v1") return payload;
+  // Older local servers return their original stage representation on this route.
+  if (payload.schema_version !== "cosmatter.stage-contract/v1") throw new Error("Invalid runtime overview");
+  const [dag, telemetry] = await Promise.all([getWorkflowDag(runId), getOperationalTelemetry(runId)]);
+  return { stage_contract: payload, workflow_dag: dag, operational_telemetry: telemetry };
+}
 export function getOperationalTelemetry(runId: string): Promise<OperationalTelemetry> { return request<OperationalTelemetry>(`./api/runs/${encodeURIComponent(runId)}/operational-telemetry`); }
 export function getReminderBoard(): Promise<ReminderBoard> { return request<ReminderBoard>("./api/reminder-board"); }
+
+export type ReminderPriority = "all" | "attention" | "review";
+export interface ReminderPage {
+  page: number;
+  page_size: number;
+  total_count: number;
+  board: ReminderBoard;
+}
+export async function getReminderPage(page: number, priority: ReminderPriority, identifier: string): Promise<ReminderPage> {
+  const params = new URLSearchParams({ page: String(page), priority, identifier });
+  const raw = await request<unknown>("./api/reminder-board?" + params);
+  // Legacy servers return the complete v1 board for this URL, ignoring the query.
+  if (isReminderBoard(raw)) {
+    const filtered = raw.reminders.filter(item => (priority === "all" || item.priority === priority)
+      && item.identifier.toLowerCase().includes(identifier.trim().toLowerCase()));
+    const last = Math.max(1, Math.ceil(filtered.length / 10));
+    const current = Math.min(page, last);
+    const reminders = filtered.slice((current - 1) * 10, current * 10);
+    return { page: current, page_size: 10, total_count: filtered.length, board: { ...raw, reminder_count: reminders.length, reminders } };
+  }
+  if (typeof raw !== "object" || !raw) throw new Error("Invalid reminder page");
+  const data = raw as Partial<ReminderPage> & { schema_version?: string };
+  const { page: current, page_size: size, total_count: total, board } = data;
+  if (data.schema_version !== "cosmatter.reminder-page/v1" || typeof current !== "number" || !Number.isSafeInteger(current)
+    || size !== 10 || typeof total !== "number" || !Number.isSafeInteger(total) || total < 0
+    || current !== Math.min(page, Math.max(1, Math.ceil(total / size))) || !isReminderBoard(board)
+    || board.reminder_count !== Math.min(size, Math.max(0, total - (current - 1) * size))) throw new Error("Invalid reminder page");
+  return { page: current, page_size: size, total_count: total, board };
+}
 export function getCandidateScreening(runId: string): Promise<CandidateScreening> { return request<CandidateScreening>(`./api/runs/${encodeURIComponent(runId)}/candidate-screening`); }
 export function recordCandidateScreening(runId: string, decisions: CandidateScreeningDecision[], revision?: string): Promise<CandidateScreeningResult> {
   return jsonPost<CandidateScreeningResult>(`./api/runs/${encodeURIComponent(runId)}/candidate-screening`, { decisions, checklist_revision: revision });

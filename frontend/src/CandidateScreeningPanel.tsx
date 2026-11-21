@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount }
 
 import type { CandidateScreening, CandidateScreeningDecision } from "./localApi";
 import { DshScreeningHandoff } from "./DshRunHandoff";
+import { checkpointKey, encodeCheckpoint, hasChecklistRevision, readCheckpoint, type ScreeningCheckpoint } from "./candidateScreeningCheckpoint";
 import { hasScreeningDecision, isScreeningComplete, sameScreeningDecision, screeningDraftChanges, screeningDraftForCandidates, screeningSubmission, type ScreeningDraft } from "./candidateScreeningDraft";
 import { safeOperationFeedback } from "./importFeedback";
 import { ActionButton } from "./uiPrimitives";
@@ -32,10 +33,10 @@ function savedScreeningDecision(value: unknown): value is CandidateScreeningDeci
 }
 
 const draftKey = (screening: CandidateScreening) => "cosmatter.screening-draft:v1:" + screening.run_id;
-const hasRevision = (screening: CandidateScreening) => typeof screening.checklist_revision === "string" && /^[a-f0-9]{64}$/.test(screening.checklist_revision);
 
 export function CandidateScreeningPanel(props: {
   locale: Locale;
+  missionId: string;
   screening: CandidateScreening | null;
   load: () => Promise<void>;
   submit: (decisions: CandidateScreeningDecision[], revision?: string) => Promise<void>;
@@ -50,6 +51,9 @@ export function CandidateScreeningPanel(props: {
   const [error, setError] = createSignal<string | null>(null);
   const [draftNotice, setDraftNotice] = createSignal<"invalidated" | "storage_unavailable" | null>(null);
   const [linkAcknowledged, setLinkAcknowledged] = createSignal(false);
+  const [savedProgress, setSavedProgress] = createSignal<ScreeningCheckpoint | null>(null);
+  const [progressMessage, setProgressMessage] = createSignal<"saved" | "restored" | "cleared" | "expired" | "unavailable" | "offline" | "refresh" | null>(null);
+  let currentTitle: HTMLElement | undefined;
   let heading!: HTMLHeadingElement;
   let draftRevision: string | undefined;
   const t = (zh: string, en: string) => copy(props.locale, zh, en);
@@ -64,7 +68,7 @@ export function CandidateScreeningPanel(props: {
   const linkedRevisionChanged = () => props.linkedRevision !== props.screening?.checklist_revision;
   const handoffRevision = createMemo(() => {
     const screening = props.screening;
-    return screening && screening.run_id === props.liveRunId && candidates().length > 0 && hasRevision(screening)
+    return screening && screening.run_id === props.liveRunId && candidates().length > 0 && hasChecklistRevision(screening)
       ? screening.checklist_revision : null;
   });
   const activeCandidate = createMemo(() => {
@@ -89,8 +93,8 @@ export function CandidateScreeningPanel(props: {
   createEffect(() => {
     const screening = props.screening;
     if (!screening) return;
-    const revision = hasRevision(screening) ? screening.checklist_revision : undefined;
-    const draftIdentity = revision ? draftKey(screening) + ":" + revision : undefined;
+    const revision = hasChecklistRevision(screening) ? screening.checklist_revision : undefined;
+    const draftIdentity = revision ? JSON.stringify([screening.run_id, props.missionId, revision, screening.candidates.map(item => item.document_id)]) : undefined;
     if (draftIdentity && draftIdentity === draftRevision) return;
     draftRevision = draftIdentity;
     const restored = screeningDraftForCandidates(screening);
@@ -98,9 +102,10 @@ export function CandidateScreeningPanel(props: {
       try {
         const raw = window.sessionStorage.getItem(draftKey(screening));
         if (raw && raw.length <= 500_000) {
-          const saved = JSON.parse(raw) as { revision?: string; changes?: unknown };
+          const saved = JSON.parse(raw) as { version?: number; revision?: string; changes?: unknown };
           const changes = Array.isArray(saved?.changes) && saved.changes.every(savedScreeningDecision) ? saved.changes : [];
-          if (saved?.revision !== revision) {
+          // Older tab drafts used the server revision only. Current drafts also bind the mission and candidate IDs.
+          if (saved?.revision !== revision || (saved.version !== undefined && !readCheckpoint(raw, screening, props.missionId, savedScreeningDecision))) {
             window.sessionStorage.removeItem(draftKey(screening));
             if (changes.some((item) => !sameScreeningDecision(item, restored[item.document_id]))) setDraftNotice("invalidated");
           } else if (changes.length <= screening.candidate_count) {
@@ -130,22 +135,99 @@ export function CandidateScreeningPanel(props: {
     }
   });
 
-  const updateDraft = (decision: CandidateScreeningDecision) => {
-    const next = { ...draft(), [decision.document_id]: decision };
+  const updateDraft = (next: ScreeningDraft) => {
     setDraft(next);
     const screening = props.screening;
-    if (!screening || !hasRevision(screening)) return;
+    if (!screening || !hasChecklistRevision(screening)) return;
     const changed = screeningDraftChanges(screening, next);
     try {
-      if (changed.length) window.sessionStorage.setItem(draftKey(screening), JSON.stringify({ revision: screening.checklist_revision, changes: changed }));
+      const current = activeCandidate()?.document_id;
+      if (changed.length && current) window.sessionStorage.setItem(draftKey(screening), encodeCheckpoint(screening, props.missionId, current, changed));
       else window.sessionStorage.removeItem(draftKey(screening));
       setDraftNotice(null);
     } catch {
       setDraftNotice("storage_unavailable");
     }
   };
+  const editDecision = (decision: CandidateScreeningDecision) => updateDraft({ ...draft(), [decision.document_id]: decision });
+  function syncCheckpoint(expireStale = false) {
+    const screening = props.screening;
+    setSavedProgress(null);
+    setProgressMessage(null);
+    if (!screening || screening.run_id !== props.liveRunId || !props.missionId) return;
+    try {
+      const key = checkpointKey(screening.run_id);
+      const raw = window.localStorage.getItem(key);
+      if (raw === null) return;
+      const saved = readCheckpoint(raw, screening, props.missionId, savedScreeningDecision);
+      if (saved) setSavedProgress(saved);
+      else {
+        // A tab observing another tab's storage event can have an older checklist in memory.
+        // Only an authoritative checklist refresh may expire a saved revision.
+        if (expireStale && window.localStorage.getItem(key) === raw) window.localStorage.removeItem(key);
+        setProgressMessage("expired");
+      }
+    } catch { setProgressMessage("unavailable"); }
+  }
+  createEffect(() => syncCheckpoint(true));
+  onMount(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea === window.localStorage && (event.key === null || event.key === checkpointKey(props.liveRunId ?? ""))) syncCheckpoint();
+    };
+    window.addEventListener("storage", onStorage);
+    onCleanup(() => window.removeEventListener("storage", onStorage));
+  });
+  function saveCheckpoint() {
+    const screening = props.screening, current = activeCandidate()?.document_id;
+    if (!screening || !current || screening.run_id !== props.liveRunId) return;
+    try {
+      const key = checkpointKey(screening.run_id), existing = window.localStorage.getItem(key);
+      if (existing !== null && !readCheckpoint(existing, screening, props.missionId, savedScreeningDecision)) {
+        setProgressMessage("refresh");
+        return;
+      }
+      const raw = encodeCheckpoint(screening, props.missionId, current, changes());
+      window.localStorage.setItem(key, raw);
+      syncCheckpoint();
+      setProgressMessage("saved");
+    } catch { setProgressMessage("unavailable"); }
+  }
+  function clearCheckpoint() {
+    const screening = props.screening;
+    if (!screening || screening.run_id !== props.liveRunId) return;
+    try {
+      const key = checkpointKey(screening.run_id), existing = window.localStorage.getItem(key);
+      if (existing !== null && !readCheckpoint(existing, screening, props.missionId, savedScreeningDecision)) {
+        syncCheckpoint();
+        setProgressMessage("refresh");
+        return;
+      }
+      window.localStorage.removeItem(key);
+      setSavedProgress(null);
+      setProgressMessage("cleared");
+    } catch { setProgressMessage("unavailable"); }
+  }
+  async function restoreCheckpoint() {
+    const activeRun = props.liveRunId, mission = props.missionId;
+    if (!savedProgress() || busy()) return;
+    setBusy(true);
+    try {
+      await props.load();
+      if (props.liveRunId !== activeRun || props.missionId !== mission) return;
+      syncCheckpoint(true);
+      const saved = savedProgress(), screening = props.screening;
+      if (!saved || !screening) { setProgressMessage("expired"); return; }
+      const next = screeningDraftForCandidates(screening);
+      for (const change of saved.changes) next[change.document_id] = change;
+      updateDraft(next);
+      setActiveDocumentId(saved.current);
+      setProgressMessage("restored");
+      currentTitle?.focus();
+    } catch { setProgressMessage("offline"); }
+    finally { setBusy(false); }
+  }
   const updateDecision = (documentId: string, decision: string) => {
-    if (draft()[documentId]?.decision !== decision) updateDraft({ document_id: documentId, decision, reason_codes: [] });
+    if (draft()[documentId]?.decision !== decision) editDecision({ document_id: documentId, decision, reason_codes: [] });
   };
   const moveCandidate = (offset: number) => {
     const list = candidates();
@@ -173,7 +255,13 @@ export function CandidateScreeningPanel(props: {
     setBusy(true);
     setError(null);
     try {
-      await props.submit(screeningSubmission(props.screening.candidates, draft()), props.screening.checklist_revision);
+      const screening = props.screening, mission = props.missionId;
+      await props.submit(screeningSubmission(screening.candidates, draft()), screening.checklist_revision);
+      try {
+        const key = checkpointKey(screening.run_id), raw = window.localStorage.getItem(key);
+        if (raw && readCheckpoint(raw, screening, mission, savedScreeningDecision)) window.localStorage.removeItem(key);
+        if (props.screening?.run_id === screening.run_id && props.missionId === mission) syncCheckpoint();
+      } catch { setProgressMessage("unavailable"); }
       setLinkAcknowledged(true);
     } catch (cause) {
       setError(safeOperationFeedback(cause, t("无法登记人工筛选。请刷新清单，核对记录后再提交。", "Unable to record screening. Refresh the checklist and verify the record before submitting.")));
@@ -202,6 +290,22 @@ export function CandidateScreeningPanel(props: {
     <Show when={handoffRevision()}>{(revision) => <DshScreeningHandoff runId={props.liveRunId!} revision={revision()} locale={props.locale} />}</Show>
     <Show when={props.screening && props.screening.candidates.length === 0}><p class="screening-empty">{t("当前检索没有返回可筛选的候选。", "This search returned no candidates to screen.")}</p></Show>
     <Show when={props.screening && props.screening.candidates.length > 0}><div class="screening-list">
+      <Show when={handoffRevision() && props.missionId}><div class="screening-checkpoint-actions">
+        <ActionButton size="sm" disabled={busy()} onClick={saveCheckpoint}>{t("保存进度到本机", "Save progress on this device")}</ActionButton>
+        <Show when={savedProgress()}>
+          <ActionButton size="sm" disabled={busy()} onClick={() => void restoreCheckpoint()}>{t("恢复上次进度", "Restore saved progress")}</ActionButton>
+          <ActionButton size="sm" variant="quiet" disabled={busy()} onClick={clearCheckpoint}>{t("清除已存进度", "Clear saved progress")}</ActionButton>
+        </Show>
+        <span role="status">{({
+          saved: t("已保存当前文献和筛选草稿。", "Current paper and draft saved."),
+          restored: t("已回到保存的文献和草稿。", "Returned to the saved paper and draft."),
+          cleared: t("已清除本机保存的进度。", "Saved progress cleared."),
+          expired: t("当前清单已变化，已存进度失效。", "The saved progress no longer matches this checklist."),
+          unavailable: t("本机存储不可用，仍可在本页筛选。", "Device storage is unavailable. You can continue in this tab."),
+          offline: t("无法核对最新清单。请刷新清单后再恢复。", "Could not verify the current checklist. Refresh it and try again."),
+          refresh: t("另一个清单版本已保存进度，请先刷新清单。", "Another checklist revision has saved progress. Refresh the checklist first."),
+        })[progressMessage()!]}</span>
+      </div></Show>
       <section class="screening-progress" aria-live="polite">
         <div>
           <strong>{t(`已填 ${reviewedCount()} / ${candidates().length}`, `Filled ${reviewedCount()} / ${candidates().length}`)}</strong>
@@ -230,7 +334,7 @@ export function CandidateScreeningPanel(props: {
         let reasonPicker: HTMLSelectElement | undefined;
         return <article class="screening-queue-card" classList={{ focused: candidate().document_id === props.focusDocumentId }}>
           <header>
-            <div><small>{t("当前候选", "CURRENT CANDIDATE")} · {activeIndex() + 1} / {candidates().length}</small><strong>{candidate().title}</strong><span>{candidate().source}{candidate().publication_year ? ` · ${candidate().publication_year}` : ""}</span></div>
+            <div><small>{t("当前候选", "CURRENT CANDIDATE")} · {activeIndex() + 1} / {candidates().length}</small><strong ref={element => { currentTitle = element; }} tabIndex={-1}>{candidate().title}</strong><span>{candidate().source}{candidate().publication_year ? ` · ${candidate().publication_year}` : ""}</span></div>
             <nav aria-label={t("候选队列导航", "Candidate queue navigation")}>
               <ActionButton size="sm" onClick={() => moveCandidate(-1)} disabled={activeIndex() <= 0}>{t("上一篇", "Previous")}</ActionButton>
               <ActionButton size="sm" onClick={() => moveCandidate(1)} disabled={activeIndex() >= candidates().length - 1}>{t("下一篇", "Next")}</ActionButton>
@@ -245,7 +349,7 @@ export function CandidateScreeningPanel(props: {
                   const code = event.currentTarget.value;
                   event.currentTarget.value = "";
                   const current = decision();
-                  if (code && !current.reason_codes.includes(code)) updateDraft({ ...current, reason_codes: [...current.reason_codes, code] });
+                  if (code && !current.reason_codes.includes(code)) editDecision({ ...current, reason_codes: [...current.reason_codes, code] });
                 }}>
                   <option value="">{selectedReasons().length === reasons().length
                     ? t("已选全部理由", "All reasons selected") : t("添加理由（可多选）", "Add a reason (one or more)")}</option>
@@ -255,7 +359,7 @@ export function CandidateScreeningPanel(props: {
                   <For each={selectedReasons()}>{([code, zh, en]) => <li><button type="button" disabled={busy()}
                     aria-label={t(`移除理由：${zh}`, `Remove reason: ${en}`)} onClick={() => {
                       const current = decision();
-                      updateDraft({ ...current, reason_codes: current.reason_codes.filter(reason => reason !== code) });
+                      editDecision({ ...current, reason_codes: current.reason_codes.filter(reason => reason !== code) });
                       reasonPicker?.focus();
                     }}>{t(zh, en)} <span aria-hidden="true">×</span></button></li>}</For>
                 </ul></Show>

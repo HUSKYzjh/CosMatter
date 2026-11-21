@@ -1,4 +1,4 @@
-import { isLocalRunId, localRunLink, parseLocalRunLink } from "./liveRunIdentity";
+import { isLocalRunId, isLoopbackWorkbenchLocation, localRunLink, parseLocalRunLink } from "./liveRunIdentity";
 import { localApiEnabled } from "./localApi";
 
 const runReadTools = new Set([
@@ -22,7 +22,7 @@ export function dshProfileCheckCommand(port: number | null) {
 
 export function localWorkbenchLocation() {
   const location = window.location;
-  return location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) ? location : null;
+  return isLoopbackWorkbenchLocation(location) ? location : null;
 }
 
 export function localEvidenceLink(runId: string, evidence: DshEvidenceTarget): string | null {

@@ -13,6 +13,18 @@ def _summary(*, terminal: bool = False, runtime_safety: str = "verified", incomp
 
 
 class ReminderBoardTests(unittest.TestCase):
+    def test_pages_all_matching_runs_and_recovers_a_removed_last_page(self) -> None:
+        runs = [{**_summary(), "run_id": f"trial_{i:03d}"} for i in range(115)]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            last = project_reminder_board(runs, root, page=12, priority="review")
+            self.assertEqual((last["total_count"], last["page"], last["board"]["reminder_count"]), (115, 12, 5))
+            self.assertEqual(last["board"]["reminders"][-1]["identifier"], "trial_114")
+            filtered = project_reminder_board(runs, root, page=12, identifier="TRIAL_10")
+            self.assertEqual((filtered["total_count"], filtered["page"]), (10, 1))
+            self.assertEqual(project_reminder_board(runs, root, page=1, priority="attention")["total_count"], 0)
+            self.assertEqual(project_reminder_board(runs, root)["reminder_count"], 100)
+
     def test_projects_local_human_and_overdue_operational_reminders(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

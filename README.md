@@ -4,6 +4,14 @@ CosMatter 是用于材料计算与科学文献阅读的 DeepSeek Harness（DSH�
 
 ## 在 DSH 中使用
 
+使用图形工作台时，运行 `cosmatter preview-ui --solid --api --port 0` 并打开终端给出的地址。三个常用入口如下。
+
+| 研究任务 | 工作台入口 | 可取得的结果 |
+|---|---|---|
+| 从多篇论文核对同一性质 | 打开本机运行 → 文献星图 → 跨文献证据对照 | 按性质、样品条件和审核状态筛选。表中保留已核对的数值、原单位、定位及待补的论文；有可复查的来源时可直接打开对应证据卡。可将全部匹配行导出为 CSV。 |
+| 核算组分或 MD 电场响应 | DSH 插件 → 工具目录 → 授权类型选「本机计算」，展开工具 | 输入 Pb 分数可查看整数占位与带标号排列数。输入对称正负电场下的极化或应变均值可得纵向介电或逆压电响应。计算在浏览器完成，与 DSH 使用同一份公式。 |
+| 接续其他运行的审核 | 首页 → 续航任务 → 跨任务待办；运行内也可在任务概览中查看 | 按优先级和运行 ID 查找，点运行链接可在新标签打开该任务，保留当前页面的输入。 |
+
 在已安装本项目的环境中运行 `cosmatter repair-dsh-bundles`，再用 `cosmatter preview-ui --solid --api --port 0` 启动工作台。打开终端显示的本机地址，点击「DSH 插件」，按该页面的实际端口核验后复制启动命令。已有任务的启动命令会带上运行 ID。[安装和核验](docs/DSH_PLUGIN_GROUP_RELEASE_READINESS.zh-CN.md)
 
 | 想做什么 | 给 DSH 的工具与输入 | 怎样解释结果 |
@@ -24,6 +32,8 @@ cosmatter dsh-evidence --run-id YOUR_RUN --port 8765 --doi 10.1038/s41467-017-01
 ```
 
 Orca 可以分配工作树和跟踪尝试。CosMatter 返回计算的输入、单位或证据卡链接，供协调者核对。若工作树没有单独安装 CosMatter，可用原安装目录的 `.venv\Scripts\cosmatter.exe` 执行上述命令。[Orca 分工、命令和验收记录](docs/DSH_PUBLIC_PLUGIN_RESEARCH_AND_RECOMMENDATIONS_2026-08-29.zh-CN.md#orca-如何接入-cosmatter-的研究舰队)
+
+已有跨文献对照表时，可从「文献星图 → 跨文献证据对照 → 导出 Orca 核验任务」下载当前筛选的任务单。每篇论文对应一项任务，同篇命中的证据卡归入同一项。任务说明提供本机读取地址，要求返回原单位、定位或具体缺口。确认要交给哪一个 Orca Run 后，再在协调终端创建任务。[导入任务单](docs/DSH_PUBLIC_PLUGIN_RESEARCH_AND_RECOMMENDATIONS_2026-08-29.zh-CN.md#从跨文献对照表导入-orca-任务)
 
 当前 M1.2 已实现：
 

@@ -79,13 +79,14 @@ from .external_dispatch import (
     mark_external_dispatch_unknown,
 )
 from .accepted_evidence_search import AcceptedEvidenceSearchError, search_accepted_evidence
+from .extraction_table import extraction_table, extraction_table_csv
 from .delegated_trial import has_delegated_test_review_boundary
 from .mission_store import MissionRunConflict, write_new_mission
 from .runtime_invariants import RuntimeInvariantError, audit_runtime_invariants
 from .artifact_contract import ArtifactContractError, ArtifactDownload, approved_artifact_download, artifact_manifest
 from .stage_contract import StageContractError, stage_contract
 from .operational_telemetry import OperationalTelemetryError, operational_telemetry
-from .workflow_dag import WorkflowDagError, workflow_dag_projection
+from .workflow_dag import WorkflowDagError, workflow_dag_from_contract, workflow_dag_projection
 from .reminder_board import ReminderBoardError, project_reminder_board
 from .dsh_profile_status import dsh_profile_status
 
@@ -1763,6 +1764,21 @@ class LocalMissionApi:
             raise LocalApiError(str(error)) from error
         return {"run_id": _api_safe_run_id(run_id), **telemetry}
 
+    def runtime_overview(self, run_id: str) -> dict[str, object]:
+        """Read the stage once so the workbench and its dependency graph agree."""
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        try:
+            contract = stage_contract(run_dir, mission)
+            dag = workflow_dag_from_contract(run_id, mission, contract)
+            telemetry = operational_telemetry(run_dir, mission)
+        except (StageContractError, WorkflowDagError, OperationalTelemetryError) as error:
+            raise LocalApiError(str(error)) from error
+        return {
+            "schema_version": "cosmatter.runtime-overview/v1", "run_id": run_id,
+            "stage_contract": {"run_id": run_id, **contract}, "workflow_dag": dag,
+            "operational_telemetry": {"run_id": run_id, **telemetry},
+        }
+
     def workflow_dag(self, run_id: str) -> dict[str, object]:
         """Return a declared DAG readiness view; it never schedules a stage."""
         run_dir, mission = self._active_mission(run_id, require_active=False)
@@ -1771,19 +1787,22 @@ class LocalMissionApi:
         except WorkflowDagError as error:
             raise LocalApiError(str(error)) from error
 
-    def reminder_board(self) -> dict[str, object]:
+    def reminder_board(self, *, page: int | None = None, priority: str = "all", identifier: str = "") -> dict[str, object]:
         """Read bounded local cross-session reminders; never schedule work."""
         summaries: list[dict[str, object]] = []
+        needle = identifier.strip().casefold()
         if self.runs_dir.exists():
             for candidate in sorted(self.runs_dir.iterdir(), key=lambda item: item.name):
-                if not candidate.is_dir() or candidate.is_symlink():
+                if needle not in candidate.name.casefold() or not candidate.is_dir() or candidate.is_symlink():
                     continue
                 try:
                     run_id = _api_safe_run_id(candidate.name)
                     run_dir, mission = self._active_mission(run_id, require_active=False)
+                    state = self.run_status(run_id)
+                    if state["terminal"]:
+                        continue
                     contract = stage_contract(run_dir, mission)
                     telemetry = operational_telemetry(run_dir, mission)
-                    state = self.run_status(run_id)
                 except (LocalApiError, StageContractError, OperationalTelemetryError):
                     continue
                 summaries.append({
@@ -1795,7 +1814,8 @@ class LocalMissionApi:
                     "stages": [{"stage": item["stage"], "status": item["status"]} for item in contract["stages"]],
                 })
         try:
-            return project_reminder_board(summaries, self.runs_dir.parent / "project_decision_memory")
+            return project_reminder_board(summaries, self.runs_dir.parent / "project_decision_memory",
+                                          page=page, priority=priority, identifier=identifier)
         except ReminderBoardError as error:
             raise LocalApiError(str(error)) from error
 
@@ -1816,6 +1836,17 @@ class LocalMissionApi:
             )
         except ArtifactContractError as error:
             raise LocalApiError(str(error), 404) from error
+
+    def extraction_table(self, run_id: str) -> dict[str, object]:
+        run_dir, mission = self._active_mission(run_id, require_active=False)
+        try:
+            return extraction_table(run_dir, mission)
+        except (ValueError, OSError, TypeError, KeyError) as error:
+            raise LocalApiError("The run's extraction records could not be validated.", 409) from error
+
+    def extraction_table_download(self, run_id: str) -> ArtifactDownload:
+        table = self.extraction_table(run_id)
+        return ArtifactDownload(extraction_table_csv(table), "text/csv; charset=utf-8", "extraction-table.csv")
 
     def search_accepted_evidence(self, run_id: str, payload: object) -> dict[str, object]:
         """Match reviewed card metadata and verify which hits can open in the reader."""

@@ -48,13 +48,18 @@ def load_workflow_dag_definition() -> dict[str, Any]:
 
 def workflow_dag_projection(run_id: str, run_dir: Path, mission: MissionBrief) -> dict[str, Any]:
     """Project one locally-audited eligible stage, without scheduling it."""
-    if not isinstance(run_id, str) or not run_id:
-        raise WorkflowDagError("run_id is invalid")
-    definition = load_workflow_dag_definition()
     try:
         contract = stage_contract(run_dir, mission)
     except StageContractError as error:
         raise WorkflowDagError(str(error)) from error
+    return workflow_dag_from_contract(run_id, mission, contract)
+
+
+def workflow_dag_from_contract(run_id: str, mission: MissionBrief, contract: dict[str, Any]) -> dict[str, Any]:
+    """Derive DAG readiness from the stage contract already read for this refresh."""
+    if not isinstance(run_id, str) or not run_id or contract.get("mission_id") != mission.mission_id:
+        raise WorkflowDagError("workflow DAG identity is invalid")
+    definition = load_workflow_dag_definition()
     stage_by_name = {item["stage"]: item for item in contract["stages"]}
     next_stage = contract["next_stage"]
     eligible = (

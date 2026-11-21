@@ -32,6 +32,31 @@
 
 反向派工插件另做了宿主版本核对。作者 2026-09-13 的提交声明 `dsh-orca-agents@0.2.0`，本机 DSH `0.2.2-rc.3` 的兼容函数接受这份清单。按包名查询公共 npm 注册表返回 404。候选来源是作者的固定 Git 提交，插件在本机的实际派工兼容性仍待验证。[作者清单](https://github.com/aa2246740/dsh-orca-agents/blob/51b8b23e0b466ddf15b085d039c157e01d76dce8/package.json#L26-L43) · [DSH 宿主版本判断](https://github.com/deepseek-ai/deepseek-harness/blob/38a6a5c965aa99ab525161efb7cc5cf1fe62fced/packages/boot/app-boot/src/plugin-compatibility.ts#L68-L93)
 
+#### 从跨文献对照表导入 Orca 任务
+
+在本机运行打开「文献星图 → 跨文献证据对照」，用性质或审核状态选定范围，点击「导出 Orca 核验任务」。导出涵盖所有匹配页，每篇一项。同篇的多条证据保留各自的 ID 和可用阅读链接。下载文件使用 UTF-8，任务说明只含核验步骤、标识和本机地址。工作终端需能访问导出时的工作台端口。读取接口返回该运行的整张对照表，因此应分派给已有该运行读取权限的本机终端。每份任务的核验范围由其中的论文和证据 ID 指定。
+
+下面在 **PowerShell 7.3 或更高版本**中使用 Orca 原生 CLI。先在目标协调终端取得已有的 Orca Run ID 和协调终端句柄，再选择任务单中的一项。`$PSNativeCommandArgumentPassing` 设为 `Standard` 可让包含换行和 JSON 引号的说明作为单独的原生命令参数传递。
+
+```powershell
+$PSNativeCommandArgumentPassing = 'Standard'
+$manifest = Get-Content -LiteralPath (Read-Host '任务单文件路径') -Raw -Encoding utf8 | ConvertFrom-Json
+if ($manifest.schema_version -ne 'cosmatter.orca-tasks/v1') { throw '无法识别的任务单版本' }
+$manifest.tasks | Select-Object task_title
+$title = Read-Host '要创建的完整 task_title'
+$selected = @($manifest.tasks | Where-Object task_title -CEQ $title)
+if ($selected.Count -ne 1) { throw '需要选择一份可唯一定位的任务' }
+$coordinator = Read-Host 'Orca 协调终端句柄'
+$orcaRun = Read-Host '目标 Orca Run ID'
+$task = $selected[0]
+orca orchestration task-create --from $coordinator --run $orcaRun --task-title $task.task_title --spec $task.spec --json
+orca orchestration task-list --run $orcaRun --full --json
+```
+
+从列表核对创建回执的 task ID、标题和任务说明。若创建时中断，先在同一 Run 的列表中查这份说明，再决定是否补建。派工后用当前 task 与 dispatch ID 登记此次核验的结果。缺少可定位来源时，交付内容是具体缺口。科研审核仍由 CosMatter 原有的证据流程登记。[Orca 调度协议](https://orca.dev/docs/cli/orchestration)
+
+2026-11-21 在独立的 Orca 1.4.265 和 PowerShell 7.6.9 上验证了上述导入。浏览器从三篇合成文献中导出三项，选取 Alpha 创建任务后，Orca 读回的标题和 887 个字符的说明与下载文件逐字符相同。独立工作终端核对到证据卡 `a1`、图 5、300 K、零场条件，同时记录了原文版本缺失。发送完成回执后，读回的 task 与 dispatch 均为 `completed`。另外两篇仍待提取。该测试使用本机程序核对合成数据。
+
 #### 在 Orca 工作树中打开当前研究任务
 
 1. 在 CosMatter 本机工作台打开一个已有运行，记下当前运行 ID 和地址栏的端口。在 Orca 桌面选择要使用的 Git 工作树，从标签栏的「+」打开普通终端。Windows 选本机 PowerShell，macOS 或 Linux 选本机 shell。若使用 SSH、容器或 WSL，先确认该环境中的环回地址能访问目标工作台。[Orca 桌面安装](https://orca.dev/docs/install) · [Orca 终端与 Windows shell](https://github.com/stablyai/orca/blob/2920a624132f17f14f4577e4ed48ce1c31ae7f5c/docs/site/content/docs/terminal.mdx#L79-L82)

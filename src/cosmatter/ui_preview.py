@@ -77,7 +77,7 @@ def build_ui_preview_server(
                 self._api_json(lambda: api.facility_contract_catalogue() if api is not None else _api_disabled())
                 return
             if path == "/api/reminder-board":
-                self._api_json(lambda: api.reminder_board() if api is not None else _api_disabled())
+                self._api_json(lambda: api.reminder_board(**_reminder_query(parsed.query)) if api is not None else _api_disabled())
                 return
             if path in {"/api/recent-runs", "/api/recent-run-links"}:
                 host = self.headers.get("Host", "").lower()
@@ -108,7 +108,11 @@ def build_ui_preview_server(
                 return
             run_id = _api_run_id(path, "/api/runs/", "/stage-contract")
             if run_id is not None:
-                self._api_json(lambda: api.stage_contract(run_id) if api is not None else _api_disabled())
+                overview_type = "application/vnd.cosmatter.runtime-overview+json"
+                if api is not None and self.headers.get("Accept") == overview_type:
+                    self._api_json(lambda: api.runtime_overview(run_id), media_type=overview_type)
+                else:
+                    self._api_json(lambda: api.stage_contract(run_id) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/operational-telemetry")
             if run_id is not None:
@@ -133,6 +137,14 @@ def build_ui_preview_server(
             run_id = _api_run_id(path, "/api/runs/", "/graph")
             if run_id is not None:
                 self._api_json(lambda: api.graph_projection(run_id, **_graph_query(parsed.query)) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/extraction-table")
+            if run_id is not None:
+                self._api_json(lambda: api.extraction_table(run_id) if api is not None else _api_disabled())
+                return
+            run_id = _api_run_id(path, "/api/runs/", "/extraction-table.csv")
+            if run_id is not None:
+                self._api_artifact(lambda: api.extraction_table_download(run_id) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/candidate-screening")
             if run_id is not None:
@@ -428,11 +440,11 @@ def build_ui_preview_server(
             if body is None or file_name is None or content is None:
                 raise LocalApiError("PDF upload must include payload and file")
             return body, file_name, content
-        def _api_json(self, operation: Callable[[], object], status: int = 200, *, per_port_receipts: bool = False) -> None:
+        def _api_json(self, operation: Callable[[], object], status: int = 200, *, per_port_receipts: bool = False, media_type: str = "application/json") -> None:
             try:
                 body = json.dumps(operation(), ensure_ascii=False).encode("utf-8")
                 self.send_response(status)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Type", media_type + "; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 if per_port_receipts:
                     self.send_header("X-CosMatter-DSH-Receipts", "per-port-v1")
@@ -565,6 +577,23 @@ def _api_run_id(path: str, prefix: str, suffix: str) -> str | None:
     if not candidate or "/" in candidate:
         return None
     return candidate
+
+
+def _reminder_query(query: str) -> dict[str, object]:
+    if not query:
+        return {}
+    try:
+        fields = parse_qs(query, max_num_fields=3, strict_parsing=True, keep_blank_values=True)
+    except ValueError as error:
+        raise LocalApiError("invalid reminder page parameters") from error
+    if (set(fields) - {"page", "priority", "identifier"} or any(len(item) != 1 for item in fields.values())
+            or not re.fullmatch(r"[1-9][0-9]{0,5}", fields.get("page", ["1"])[0])):
+        raise LocalApiError("invalid reminder page parameters")
+    priority = fields.get("priority", ["all"])[0]
+    identifier = fields.get("identifier", [""])[0]
+    if priority not in {"all", "attention", "review"} or len(identifier) > 255:
+        raise LocalApiError("invalid reminder filter")
+    return {"page": int(fields.get("page", ["1"])[0]), "priority": priority, "identifier": identifier}
 
 
 def _graph_query(query: str) -> dict[str, object]:

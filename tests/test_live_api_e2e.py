@@ -36,7 +36,8 @@ class ProviderFixture(BaseHTTPRequestHandler):
 
 def post(url: str, payload: object) -> dict:
     request = Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
-    with urlopen(request, timeout=3) as response:
+    # Approved requests include local dispatch and durable receipt writes before responding.
+    with urlopen(request, timeout=15) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

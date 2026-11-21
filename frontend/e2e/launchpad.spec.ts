@@ -496,6 +496,7 @@ test("keeps keyboard focus inside both DSH panels and restores their selections"
   await page.goto("/?api=local");
   const opener = page.getByRole("button", { name: "DSH 插件", exact: true });
   await expect(opener).toBeVisible();
+  await pressTo("Tab", page.getByRole("button", { name: "跳至任务入口" }));
   await pressTo("Tab", opener);
   await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", { name: "DSH 工具与会话" });
@@ -728,6 +729,8 @@ test("refreshes stale and incomplete DSH registry receipts from the session usin
   await page.goto("/?api=local");
   const opener = page.getByRole("button", { name: "DSH 插件", exact: true });
   await expect(opener).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "跳至任务入口" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(opener).toBeFocused();
   await page.keyboard.press("Enter");
@@ -1243,6 +1246,7 @@ test("keeps fallback routes tied to the entered material property instead of gen
 });
 
 test("loads an explicitly server-selected UI bundle as a read-only literature map", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 880 });
   const apiRequests: string[] = [];
   page.on("request", (request) => { if (request.url().includes("/api/")) apiRequests.push(request.url()); });
   await page.route("**/ui.json", async (route) => route.fulfill({
@@ -1264,10 +1268,21 @@ test("loads an explicitly server-selected UI bundle as a read-only literature ma
   await expect(page.locator(".workbench")).toHaveClass(/view-graph/, lazyWorkspaceContentLoad);
   await expect(page.getByText("只读预览：可查看阶段与空态")).toBeVisible();
   await expect(page.locator(".fleet-reading-cards")).toContainText("Phase transitions in BiFeO3", lazyWorkspaceContentLoad);
+  await expect(page.locator(".rail-context")).toHaveJSProperty("open", false);
   await expect(page.locator(".fleet-reading-cards")).toContainText("任务对象与维度双命中", lazyWorkspaceContentLoad);
   await page.locator(".fleet-reading-cards button").first().click();
   const inspector = page.locator(".evidence-inspector");
   await expect(inspector).toBeVisible();
+  const canvas = page.locator(".graph-workspace .lens-canvas-region");
+  const canvasBox = await canvas.boundingBox();
+  const inspectorBox = await inspector.boundingBox();
+  if (!canvasBox || !inspectorBox) throw new Error("The selected paper must keep the graph and its inspector visible");
+  expect(canvasBox.width).toBeGreaterThanOrEqual(250);
+  expect(inspectorBox.y).toBeGreaterThanOrEqual(canvasBox.y + canvasBox.height);
+  const toolbar = await canvas.locator(".lens-canvas-tools").boundingBox();
+  const legend = await canvas.locator(".paper-workflow-legend").boundingBox();
+  if (!toolbar || !legend) throw new Error("Both zoom controls and map legend must be visible");
+  expect(legend.x + legend.width).toBeLessThanOrEqual(toolbar.x);
   expect(await inspector.locator(":scope > small").evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(12);
   expect(await inspector.locator("p").first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(13);
   expect(await inspector.locator("dd").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 13))).toBe(true);

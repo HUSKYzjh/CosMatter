@@ -14,6 +14,22 @@
 
 .paper-workflow-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .38rem .7rem; margin: .55rem 0 0; color: var(--muted); font: .59rem/1.35 ui-monospace, monospace; }
 .paper-workflow-legend small { flex-basis: 100%; color: var(--muted); letter-spacing: .07em; }
+/* A floating toolbar reserves its width for the adjacent wrapping legend. */
+.lens-canvas-region .lens-canvas-tools {
+  position: relative;
+  inset: auto;
+  float: right;
+  margin: .55rem .55rem .4rem .5rem;
+}
+.lens-canvas-region .paper-workflow-legend {
+  position: relative;
+  z-index: 1;
+  padding-inline-start: .5rem;
+  pointer-events: none;
+}
+@media (max-width: 880px) {
+  .lens-canvas-tools button { min-width: 44px; min-height: 44px; }
+}
 .paper-workflow-legend .state-source_recorded { color: var(--signal-amber); }
 .paper-workflow-legend span { display: inline-flex; align-items: center; gap: .25rem; }
 .paper-workflow-legend span::before { content: ""; inline-size: .5rem; block-size: .5rem; border: 1.5px solid currentColor; border-radius: 999px; }

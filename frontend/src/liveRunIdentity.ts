@@ -5,6 +5,10 @@ export function isLocalRunId(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(value);
 }
 
+export function isLoopbackWorkbenchLocation(location: Pick<URL, "protocol" | "hostname">): boolean {
+  return location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname);
+}
+
 export interface LocalRunLinkTarget { runId: string; documentId: string | null; evidenceId: string | null; screeningRevision?: string; artifactList?: true; }
 
 function validLinkIdentifier(value: string, maxLength: number): boolean {

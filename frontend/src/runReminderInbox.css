@@ -1,0 +1,11 @@
+.run-reminder-inbox { min-width: 0; padding: .65rem .8rem; border: 1px solid var(--line); color: var(--ink); }
+.run-reminder-inbox summary { cursor: pointer; font-weight: 650; padding-block: .3rem; }
+.run-reminder-inbox form { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-block: .65rem; }
+.run-reminder-inbox label { display: grid; gap: .25rem; min-width: 0; flex: 1 1 9rem; }
+.run-reminder-inbox :is(input, select, button) { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: .25rem; padding: .36rem .5rem; min-width: 0; max-width: 100%; }
+.run-reminder-inbox button:not(:disabled) { cursor: pointer; }
+.run-reminder-inbox button:disabled { opacity: .55; }
+.reminder-results ul { display: grid; gap: .5rem; list-style: none; padding: 0; }
+.reminder-results li { display: grid; gap: .18rem; min-width: 0; overflow-wrap: anywhere; padding-block-end: .45rem; border-bottom: 1px solid var(--line); }
+.reminder-results a { color: inherit; text-underline-offset: .15em; }
+.reminder-pagination { display: flex; gap: .5rem; margin-block: .5rem; }

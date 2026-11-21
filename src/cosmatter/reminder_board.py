@@ -36,27 +36,35 @@ class ReminderBoardError(ValueError):
     """Raised when a reminder projection would be malformed or unsafe."""
 
 
-def project_reminder_board(run_summaries: object, memory_dir: Path, *, today: date | None = None) -> dict[str, Any]:
+def project_reminder_board(
+    run_summaries: object, memory_dir: Path, *, today: date | None = None,
+    page: int | None = None, priority: str = "all", identifier: str = "",
+) -> dict[str, Any]:
     """Build a bounded, deterministic status board from safe local summaries."""
     if not isinstance(run_summaries, list):
         raise ReminderBoardError("run summaries are invalid")
+    if (page is not None and (type(page) is not int or not 1 <= page <= 1_000_000)
+            or priority not in ("all", "attention", "review")
+            or not isinstance(identifier, str) or len(identifier) > 255):
+        raise ReminderBoardError("reminder page or filter is invalid")
+    needle = identifier.strip().casefold()
     reminders: list[dict[str, Any]] = []
     for summary in run_summaries:
         _validate_run_summary(summary)
         if summary["terminal"]:
             continue
-        identifier = summary["run_id"]
+        run_id = summary["run_id"]
         if summary["runtime_safety"] == "attention_required":
-            reminders.append(_reminder("run", identifier, "runtime_attention", "open", "attention", None, "inspect_runtime_invariants"))
+            reminders.append(_reminder("run", run_id, "runtime_attention", "open", "attention", None, "inspect_runtime_invariants"))
         first_unfinished = next((stage for stage in summary["stages"] if stage["status"] != "completed"), None)
         if first_unfinished is not None and first_unfinished["status"] == "blocked":
-            reminders.append(_reminder("run", identifier, "workflow_blocked", "open", "attention", first_unfinished["stage"], "review_stage_boundary"))
+            reminders.append(_reminder("run", run_id, "workflow_blocked", "open", "attention", first_unfinished["stage"], "review_stage_boundary"))
         elif first_unfinished is not None and first_unfinished["status"] == "waiting_human_review":
-            reminders.append(_reminder("run", identifier, "human_review_required", "open", "review", first_unfinished["stage"], "complete_human_review"))
+            reminders.append(_reminder("run", run_id, "human_review_required", "open", "review", first_unfinished["stage"], "complete_human_review"))
         if summary["incomplete_dispatch_count"]:
-            reminders.append(_reminder("run", identifier, "external_dispatch_incomplete", "open", "attention", None, "verify_dispatch_before_recovery"))
+            reminders.append(_reminder("run", run_id, "external_dispatch_incomplete", "open", "attention", None, "verify_dispatch_before_recovery"))
         if summary["unknown_dispatch_count"]:
-            reminders.append(_reminder("run", identifier, "external_outcome_unknown", "open", "attention", None, "verify_provider_outcome_before_recovery"))
+            reminders.append(_reminder("run", run_id, "external_outcome_unknown", "open", "attention", None, "verify_provider_outcome_before_recovery"))
     try:
         index = load_decision_memory_index(memory_dir)
     except DecisionMemoryError as error:
@@ -67,6 +75,17 @@ def project_reminder_board(run_summaries: object, memory_dir: Path, *, today: da
             reminders.append(_reminder("project_memory", entry["id"], "expired_todo", "overdue", "review", None, "review_operational_todo"))
     priority_order = {"attention": 0, "review": 1}
     reminders.sort(key=lambda item: (priority_order[item["priority"]], item["scope"], item["identifier"], item["kind"], item["stage"] or ""))
+    if page is not None:
+        reminders = [item for item in reminders if (priority == "all" or item["priority"] == priority)
+                     and needle in item["identifier"].casefold()]
+    total_count = len(reminders)
+    page_size = 10
+    if page is None:
+        reminders = reminders[:100]
+    else:
+        # A refresh can remove the last item on the page the user was viewing.
+        page = min(page, max(1, (total_count + page_size - 1) // page_size))
+        reminders = reminders[(page - 1) * page_size:page * page_size]
     result = {
         "schema_version": REMINDER_BOARD_SCHEMA_VERSION,
         "trust_status": REMINDER_BOARD_TRUST_STATUS,
@@ -75,6 +94,9 @@ def project_reminder_board(run_summaries: object, memory_dir: Path, *, today: da
         "reminders": reminders,
     }
     validate_reminder_board(result)
+    if page is not None:
+        return {"schema_version": "cosmatter.reminder-page/v1", "page": page, "page_size": page_size,
+                "total_count": total_count, "board": result}
     return result
 
 
@@ -85,7 +107,7 @@ def validate_reminder_board(payload: object) -> None:
         raise ReminderBoardError("reminder board identity is invalid")
     seen: set[tuple[str, str, str, str | None]] = set()
     for item in payload["reminders"]:
-        if not isinstance(item, dict) or set(item) != _REMINDER_FIELDS or item.get("scope") not in {"run", "project_memory"} or not isinstance(item.get("identifier"), str) or not item["identifier"] or len(item["identifier"]) > 80 or item.get("kind") not in _KINDS or item.get("status") not in _STATUSES or item.get("priority") not in _PRIORITIES or item.get("stage") is not None and item["stage"] not in {"intake", "plan", "retrieval", "screening", "parse", "extraction", "gap", "report", "evaluation"} or not isinstance(item.get("action_label"), str):
+        if not isinstance(item, dict) or set(item) != _REMINDER_FIELDS or item.get("scope") not in {"run", "project_memory"} or not isinstance(item.get("identifier"), str) or not item["identifier"] or len(item["identifier"]) > (255 if item["scope"] == "run" else 80) or item.get("kind") not in _KINDS or item.get("status") not in _STATUSES or item.get("priority") not in _PRIORITIES or item.get("stage") is not None and item["stage"] not in {"intake", "plan", "retrieval", "screening", "parse", "extraction", "gap", "report", "evaluation"} or not isinstance(item.get("action_label"), str):
             raise ReminderBoardError("reminder board item is invalid")
         expected_scope, expected_action, requires_stage = _REMINDER_RULES[item["kind"]]
         if item["scope"] != expected_scope or item["action_label"] != expected_action or (item["stage"] is not None) != requires_stage:
@@ -102,7 +124,7 @@ def _reminder(scope: str, identifier: str, kind: str, status: str, priority: str
 
 def _validate_run_summary(value: object) -> None:
     fields = {"run_id", "terminal", "runtime_safety", "incomplete_dispatch_count", "unknown_dispatch_count", "stages"}
-    if not isinstance(value, dict) or set(value) != fields or not isinstance(value.get("run_id"), str) or not value["run_id"] or len(value["run_id"]) > 80 or not isinstance(value.get("terminal"), bool) or value.get("runtime_safety") not in {"verified", "attention_required"} or any(not isinstance(value.get(name), int) or value[name] < 0 or value[name] > 1_000_000 for name in ("incomplete_dispatch_count", "unknown_dispatch_count")) or not isinstance(value.get("stages"), list) or len(value["stages"]) != 9:
+    if not isinstance(value, dict) or set(value) != fields or not isinstance(value.get("run_id"), str) or not value["run_id"] or len(value["run_id"]) > 255 or not isinstance(value.get("terminal"), bool) or value.get("runtime_safety") not in {"verified", "attention_required"} or any(not isinstance(value.get(name), int) or value[name] < 0 or value[name] > 1_000_000 for name in ("incomplete_dispatch_count", "unknown_dispatch_count")) or not isinstance(value.get("stages"), list) or len(value["stages"]) != 9:
         raise ReminderBoardError("run summary is invalid")
     expected_stages = ("intake", "plan", "retrieval", "screening", "parse", "extraction", "gap", "report", "evaluation")
     for expected, stage in zip(expected_stages, value["stages"]):

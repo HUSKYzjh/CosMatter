@@ -9,7 +9,7 @@ import { localWorkbenchLocation } from "./dshLocalCommands";
 import type { RunArtifactIdentity } from "./RunArtifactRecord";
 import type { RunStatus } from "./localApi";
 import { Launchpad, type LaunchExecution, type LaunchMission, type LaunchPdfCandidateTarget, type LaunchPreviewDraft } from "./Launchpad";
-import { type LaunchPreviewStage } from "./launchStages";
+import { LAUNCH_STAGES, type LaunchPreviewStage } from "./launchStages";
 import { launchMissionMissingFields, type LaunchMissionBoundary, type LaunchMissionField } from "./launchMissionValidation";
 import { continuationStageLabel, localRunLanding, reconcileRestoredStage } from "./continuationStage";
 import { fleetVisualState } from "./fleetVisualState";
@@ -39,7 +39,8 @@ import { candidatePdfAction } from "./paperPdfIntake";
 import { queuedResumeCanCommit } from "./resumeRequestGate";
 import { candidateFulltextGate } from "./candidateFulltextGate";
 import { completedPrivateSourceMapMatchesPaper, screeningAllowsSourceReview } from "./currentPaperReviewRoute";
-import { getDshProfileStatus, getFacilityContractCatalogue, getHarnessPluginCatalogue, getOperationalTelemetry, getReminderBoard, getStageContract, getWorkflowDag, isFacilityContractCatalogue, isHarnessPluginCatalogue, isLocalApiStatus, isReminderBoard, type DshProfileHealth, type DshProfileStatus, type FacilityCatalogueHealth, type FacilityContractManifest, type HarnessCatalogueHealth, type HarnessPluginDescriptor, type OperationalTelemetry, type ReminderBoard, type StageContract, type WorkflowDag } from "./localApi";
+import { getDshProfileStatus, getFacilityContractCatalogue, getHarnessPluginCatalogue, getStageContract, getRuntimeOverview, isFacilityContractCatalogue, isHarnessPluginCatalogue, isLocalApiStatus, type DshProfileHealth, type DshProfileStatus, type FacilityCatalogueHealth, type FacilityContractManifest, type HarnessCatalogueHealth, type HarnessPluginDescriptor, type OperationalTelemetry, type StageContract, type WorkflowDag } from "./localApi";
+import { RunReminderInbox } from "./RunReminderInbox";
 import { currentStage, runtimeProjectionAttention, runtimeProjectionReadable, type RuntimeProjectionHealth } from "./runtimeProjection";
 import { runtimeProjectionSnapshotFreshness } from "./runtimeProjectionFreshness";
 import { workflowDagRail } from "./workflowDagProjection";
@@ -195,16 +196,6 @@ function dispatchOperationLabel(operation: string): string {
     mineru_poll: text("MinerU 状态轮询", "MinerU status polling"),
   } as Record<string, string>)[operation] ?? operation;
 }
-function reminderActionLabel(action: string): string {
-  return ({
-    inspect_runtime_invariants: text("核对本机运行不变量", "Inspect local runtime invariants"),
-    review_stage_boundary: text("核对阶段边界", "Review the stage boundary"),
-    complete_human_review: text("完成所需人工复核", "Complete the required human review"),
-    verify_dispatch_before_recovery: text("先核对中断调用，再决定恢复", "Inspect the interrupted dispatch before recovery"),
-    verify_provider_outcome_before_recovery: text("先核验服务商结果，再决定恢复", "Verify provider outcome before recovery"),
-    review_operational_todo: text("复核本机运维待办", "Review the local operational todo"),
-  } as Record<string, string>)[action] ?? action;
-}
 function stageRecoveryLabel(target: "task-control" | "graph" | "reader" | "horizon"): string {
   return ({
     "task-control": text("打开受控任务审核", "Open controlled task review"),
@@ -294,7 +285,6 @@ export function App() {
   const [harnessCatalogueHealth, setHarnessCatalogueHealth] = createSignal<HarnessCatalogueHealth>("disabled");
   const [dshProfile, setDshProfile] = createSignal<DshProfileStatus | null>(null);
   const [dshProfileHealth, setDshProfileHealth] = createSignal<DshProfileHealth>("disabled");
-  const [reminderBoard, setReminderBoard] = createSignal<ReminderBoard | null>(null);
   const [candidateScreening, setCandidateScreening] = createSignal<CandidateScreening | null>(null);
   const [candidatePdfTarget, setCandidatePdfTarget] = createSignal<LaunchPdfCandidateTarget | null>(null);
   const [pdfSubmissionPending, setPdfSubmissionPending] = createSignal(false);
@@ -464,6 +454,12 @@ export function App() {
   const telemetryRequestCount = createMemo(() => operationalTelemetry()?.provider_operations.reduce((total, item) => total + item.request_count, 0) ?? 0);
   const validationRejectionCount = createMemo(() => operationalTelemetry()?.validation_rejections.reduce((total, item) => total + item.rejection_count, 0) ?? 0);
 
+  createEffect(() => {
+    const stage = LAUNCH_STAGES.find(item => item.id === view());
+    document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
+    document.title = `${stage ? stage[language()] : text("研究工作台", "Research workbench")} · CosMatter`;
+  });
+
   // Route changes replace the primary workspace. Lazy routes briefly render a
   // loading fallback, so wait for the destination workspace rather than
   // focusing a heading that will immediately be removed.
@@ -560,7 +556,6 @@ export function App() {
     pdfTaskRefreshGate.invalidate();
     pdfTasksRefreshGate.invalidate();
     facilityCatalogueRequestEpoch += 1;
-    reminderBoardRequestEpoch += 1;
     setLaunchPreview(true);
     setResearchSession(emptyResearchSession());
     setView(stage);
@@ -685,7 +680,6 @@ export function App() {
   // Keep its result out of the new mission and ask the local service to stop it.
   let taskEpoch = 0;
   let automaticOperationId: number | null = null;
-  let reminderBoardRequestEpoch = 0;
   const automaticRefreshGate = createLatestRequestGate();
   const runtimeProjectionRefreshGate = createLatestRequestGate();
   const pdfTaskRefreshGate = createLatestRequestGate();
@@ -757,7 +751,7 @@ export function App() {
     const current = () => isLatestRefresh() && stillCurrent() && liveRunId() === runId;
     if (["disabled", "unavailable"].includes(untrack(runtimeProjectionHealth))) setRuntimeProjectionHealth("loading");
     try {
-      const [contract, dag, telemetry] = await Promise.all([getStageContract(runId), getWorkflowDag(runId), getOperationalTelemetry(runId)]);
+      const { stage_contract: contract, workflow_dag: dag, operational_telemetry: telemetry } = await getRuntimeOverview(runId);
       if (!current()) return null;
       if (!runtimeProjectionsMatchRun(runId, contract, dag, telemetry) || !trustedRuntimeProjections(runId, contract, dag, telemetry)) throw new Error("runtime projection contract mismatch");
       setStageContract(contract);
@@ -1442,17 +1436,6 @@ export function App() {
   function showMutationRecovery(kind: OperationRecoveryKind, error: unknown, fallback: string, unknownOutcome: string) {
     setStatusWithRecovery(safeMutationFeedback(error, fallback, unknownOutcome), operationRecovery(kind));
   }
-  createEffect(() => {
-    if (launchPreview() || !localApiEnabled()) { reminderBoardRequestEpoch += 1; setReminderBoard(null); return; }
-    let disposed = false;
-    const refresh = () => {
-      const requestEpoch = ++reminderBoardRequestEpoch;
-      void getReminderBoard().then((board) => { if (!disposed && requestEpoch === reminderBoardRequestEpoch) setReminderBoard(isReminderBoard(board) ? board : null); }).catch(() => { if (!disposed && requestEpoch === reminderBoardRequestEpoch) setReminderBoard(null); });
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 30_000);
-    onCleanup(() => { disposed = true; reminderBoardRequestEpoch += 1; window.clearInterval(timer); });
-  });
   async function refreshFacilityContracts() {
     const requestEpoch = ++facilityCatalogueRequestEpoch;
     if (!localApiEnabled()) {
@@ -2131,6 +2114,9 @@ export function App() {
     applyImportedBundle(imported);
     setUiImportReceipt(bundleImportReceipt("server-selected ui.json", result.byteLength, imported));
     setLaunchPreview(true);
+    // The import temporarily expands the activity rail. Give the document
+    // back the first screen once the read-only bundle is ready.
+    if (window.matchMedia("(max-width: 1040px)").matches) setRailContextOpen(false);
     setView(hasNavigableLiteratureGraph(imported) ? "graph" : "workflow");
     setStatus(text("已从本机预览服务载入脱敏 UI 工件；当前为只读模式，不会连接运行任务或执行外部操作。", "Loaded the redacted UI artifact from the local preview server in read-only mode; it is not connected to an executable run and performs no external operation."));
   }
@@ -2224,12 +2210,16 @@ export function App() {
 
   return <DshReadProfile.Provider value={{ profile: dshProfile, health: dshProfileHealth, refresh: refreshDshProfile }}>
     <div class={`workbench theme-${theme()} view-${view()}`}>
+    <button type="button" class="workspace-skip" onClick={() => {
+      const heading = document.querySelector<HTMLElement>(view() === "launch" ? ".launch-workspace h2" : "main h1");
+      if (heading) { heading.tabIndex = -1; heading.focus(); heading.scrollIntoView({ block: "start" }); }
+    }}>{view() === "launch" ? text("跳至任务入口", "Skip to task entry") : text("跳至阶段内容", "Skip to stage content")}</button>
     <Show when={view() === "launch"}><Launchpad dshStatus={homeDshStatus()} takePreviewDraft={takePreviewDraft} onOpenDsh={canOpenDshToolDialog() ? openDraftDsh : undefined} confirmedBrief={confirmedLocalBrief()} onReturnToConfirmedBrief={returnToConfirmedBrief} legacyWorkbench={dshProfileHealth() === "legacy"} onQuestion={beginLaunchMission} onPdf={beginPdfMission} onResume={resumeLaunch} onOpenExistingRun={localApiEnabled() ? (runId) => void openExistingRun(runId) : undefined} linkedRunId={linkedLaunchRunId()} existingRunReadPending={existingRunReadPending()} runArtifactRecord={runArtifactRecord()} onCloseRunArtifactRecord={closeRunArtifactRecord} onCandidates={localApiUsable() && apiProviders().deepseek ? requestQuestionCandidates : undefined} onPreviewStage={openLaunchPreview} candidatePdfTarget={candidatePdfTarget()} activeRunId={liveRunId()} onReturnToActiveRun={returnToActiveRunWorkspace} automaticExecutionSources={localApiUsable() ? SOURCES.filter((source) => retrievalSources().includes(source.id)) : []} launchNotice={launchNotice()} onDismissLaunchNotice={() => setLaunchNotice(null)} pdfSubmissionPending={pdfSubmissionPending()} retryPdfSubmission={rootPdfRetry() ? { fileName: rootPdfRetry()!.file.name } : null} onRetryPdfSubmission={retryRootPdfSubmission} resumeSubmissionPending={resumeSubmissionPending()} language={language()} theme={theme()} onLanguage={(next) => { setLanguage(next); setUiLanguage(next); }} onTheme={setTheme} /></Show>
     <Show when={view() !== "launch"}>
     <aside class="research-rail" aria-label={text("研究任务导航", "Research task navigation")}>
       <a class="wordmark" href="/" onClick={(event) => { event.preventDefault(); returnToLaunch(); }} aria-label="CosMatter">Cos<span>Matter</span></a>
       <p class="rail-kicker">{text("材料科学证据航线", "MATERIALS EVIDENCE ROUTE")}</p>
-      <Show when={launchPreview()}><p class="rail-preview-note">{text("只读预览：可查看阶段与空态，但不能修改任务或执行外部操作。", "Read-only preview: stages and empty states are viewable, but task changes and external actions are unavailable.")}</p></Show>
+      <Show when={launchPreview()}><p class="rail-preview-note">{text("只读预览：可查看阶段与空态", "Read-only preview of stages and empty states")}</p></Show>
       <ol class="journey-track" aria-label={text("研究阶段", "Research stages")}>
         <For each={journey()}>{(stage, index) => <li class={`journey-${stage.state}`}><button type="button" aria-current={stage.view === view() ? "step" : undefined} title={journeyStateLabel(stage)} onClick={() => navigate(stage.view)}><span>{String(index() + 1).padStart(2, "0")}</span><div><strong>{language() === "zh" ? stage.zh : stage.en}</strong><small>{journeyStateLabel(stage)}</small></div></button></li>}</For>
       </ol>
@@ -2306,7 +2296,7 @@ export function App() {
       </section>
       <Show when={activeOperation()}>{(operation) => <section class="rail-operation" role="status" aria-live="polite" aria-label={text("正在进行的本地操作", "Active local operation")}><small>{text("受控本地操作", "CONTROLLED LOCAL OPERATION")}</small><strong>{operation().label}</strong><p>{operation().detail}</p></section>}</Show>
       <section class="rail-status" aria-live="polite" aria-label={text("航线提示", "Route relay")}><small>{text("当前航线提示", "ROUTE RELAY")}</small><p>{status()}</p><Show when={routeRecovery()}>{(recovery) => <div class="rail-recovery"><small>{text("恢复 / 仅核验", "RECOVERY / REVIEW ONLY")}</small><Show when={recovery().contextZh}><p id="route-recovery-context">{language() === "zh" ? recovery().contextZh : recovery().contextEn}</p></Show><ActionButton size="sm" class="rail-recovery-action" aria-describedby={recovery().contextZh ? "route-recovery-context" : undefined} onClick={() => navigate(recovery().view)}>{language() === "zh" ? recovery().zh : recovery().en}</ActionButton></div>}</Show></section>
-      <Show when={localApiEnabled() && reminderBoard()}>{(board) => <section class="rail-runtime" aria-live="polite" aria-label={text("跨会话本地提醒", "Cross-session local reminders")}><small>{text("只读本地提醒", "READ-ONLY LOCAL REMINDERS")}</small><p>{board().reminder_count ? text(`待处理提醒：${board().reminder_count}。关闭页面不会自动处理。`, `${board().reminder_count} reminder(s) need attention. Closing this page does not process them.`) : text("没有已观察到的待处理提醒。", "No pending reminder is observed.")}</p><Show when={board().reminders.length}><ul><For each={board().reminders.slice(0, 4)}>{(reminder) => <li>{reminder.status === "overdue" ? text("已到期", "Overdue") : text("待处理", "Open")} · {reminder.stage ? runtimeStageLabel(reminder.stage) : reminderActionLabel(reminder.action_label)}</li>}</For></ul></Show><p>{text("提醒仅在本地读取时更新；它不是后台调度器，也不会发起检索、解析或重试。", "Reminders update only when read locally; this is not a background scheduler and never starts retrieval, parsing, or retry.")}</p></section>}</Show>
+      <Show when={localApiEnabled() && !launchPreview()}><RunReminderInbox locale={language()} /></Show>
       <Show when={liveRunId() && localApiEnabled()}>
         <section class="rail-runtime" aria-live="polite" aria-label={text("本地运行状态", "Local runtime status")}>
           <small>{text("只读运行态势", "READ-ONLY RUNTIME")}</small>

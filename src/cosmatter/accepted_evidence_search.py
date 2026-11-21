@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections import Counter
 from typing import Any, Iterable
@@ -138,14 +139,14 @@ def _safe_result(card: EvidenceCard, score: int, requested_doi: str | None) -> d
         "stance": card.stance.value,
         "material": card.material,
         "property_name": card.property_name,
-        "conditions": _safe_conditions(card.conditions),
+        "conditions": safe_evidence_conditions(card.conditions),
         "locator": card.provenance.locator,
         "source": card.provenance.source,
         "score": score,
     }
 
 
-def _safe_conditions(value: object) -> dict[str, str | int | float | bool | None]:
+def safe_evidence_conditions(value: object) -> dict[str, str | int | float | bool | None]:
     if not isinstance(value, dict) or len(value) > 20:
         raise AcceptedEvidenceSearchError("accepted evidence conditions are invalid")
     result: dict[str, str | int | float | bool | None] = {}
@@ -156,7 +157,7 @@ def _safe_conditions(value: object) -> dict[str, str | int | float | bool | None
             if not item.strip() or len(item) > 200:
                 raise AcceptedEvidenceSearchError("accepted evidence condition is invalid")
             result[key] = item.strip()
-        elif item is None or isinstance(item, bool) or isinstance(item, int) and not isinstance(item, bool) or isinstance(item, float):
+        elif item is None or isinstance(item, (bool, int)) or isinstance(item, float) and math.isfinite(item):
             result[key] = item
         else:
             raise AcceptedEvidenceSearchError("accepted evidence condition is invalid")
@@ -164,7 +165,7 @@ def _safe_conditions(value: object) -> dict[str, str | int | float | bool | None
 
 
 def _searchable_text(card: EvidenceCard) -> str:
-    conditions = _safe_conditions(card.conditions)
+    conditions = safe_evidence_conditions(card.conditions)
     return " ".join([card.claim, card.material, card.property_name, card.stance.value, *conditions.keys(), *(str(value) for value in conditions.values())])
 
 

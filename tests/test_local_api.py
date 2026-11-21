@@ -208,6 +208,22 @@ class LocalMissionApiTests(unittest.TestCase):
         self.assertNotIn("BiFeO3", rendered)
         self.assertNotIn("private synthetic scope", rendered)
 
+    def test_runtime_overview_derives_the_contract_once_and_matches_all_single_reads(self):
+        from cosmatter.stage_contract import workflow_readiness, audit_runtime_invariants
+
+        run_id = "overview_001"
+        self.api.create_mission({
+            "question": "How does a thin film's temperature affect its structure?",
+            "material": "BiFeO3", "property": "phase stability", "scope": "thin films", "run_id": run_id,
+        })
+        with (patch("cosmatter.stage_contract.workflow_readiness", wraps=workflow_readiness) as read,
+              patch("cosmatter.stage_contract.audit_runtime_invariants", wraps=audit_runtime_invariants) as audit):
+            result = self.api.runtime_overview(run_id)
+            self.assertEqual((read.call_count, audit.call_count), (1, 1))
+        self.assertEqual(result["stage_contract"], self.api.stage_contract(run_id))
+        self.assertEqual(result["workflow_dag"], self.api.workflow_dag(run_id))
+        self.assertEqual(result["operational_telemetry"], self.api.operational_telemetry(run_id))
+
     def test_operational_telemetry_is_empty_and_non_billing_before_any_dispatch(self):
         self.api.create_mission({
             "question": "Private telemetry question", "material": "BiFeO3", "property": "phase stability",
