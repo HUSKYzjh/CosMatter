@@ -41,7 +41,7 @@ for (const width of [320, 1366]) {
     const links = inspector.getByRole("region", { name: "直接关系" });
     await expect(links).toBeVisible({ timeout: 30_000 });
     if (width === 320) {
-      const tools = page.getByRole("button", { name: "运行与 DSH 工具", exact: true });
+      const tools = page.getByRole("button", { name: "运行工具", exact: true });
       const copyId = page.getByRole("button", { name: "复制运行 ID", exact: true });
       await expect(tools).toHaveAttribute("aria-expanded", "false");
       await tools.press("Enter");

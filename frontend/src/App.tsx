@@ -2231,20 +2231,22 @@ export function App() {
       </Show>
       <Show when={!launchPreview() && localApiEnabled() && liveRunId()}>{(runId) => <div class="rail-run-identity">
         <div class="rail-run-id"><span>{text("运行 ID", "Run ID")}</span><code>{runId()}</code></div>
-        <button class="graph-run-tools-toggle" type="button" aria-controls="rail-run-tools" aria-expanded={graphRunToolsOpen()} onClick={() => setGraphRunToolsOpen(!graphRunToolsOpen())}>
-          {text("运行与 DSH 工具", "Run and DSH tools")}
-        </button>
-        <div id="rail-run-tools" class="rail-run-tools" classList={{ expanded: graphRunToolsOpen() }}>
         <Show when={existingRunLanding()?.runId === runId() ? existingRunLanding()?.landing : null}>{(landing) =>
           <p class="rail-run-entry-note" aria-live="polite">{continuationLandingCopy(landing())}</p>
         }</Show>
         <Show when={existingRunLanding()?.runId === runId() && existingRunLanding()?.screeningUnavailable}>
           <p class="rail-run-entry-note" role="status">{text("暂时无法打开链接指定的筛选清单，可先核对本机阶段与候选工件。", "The linked screening checklist is unavailable. Check the local stage and candidate artifacts.")}</p>
         </Show>
-        <div class="rail-run-actions">
+        <div class="rail-run-shortcuts">
           <Show when={canOpenDshToolDialog()}>
             <ActionButton class="rail-dsh-tools" size="sm" aria-haspopup="dialog" onClick={() => setDshPanel({ draft: null })}>{text("DSH 工具与会话", "DSH tools and sessions")}</ActionButton>
           </Show>
+          <button class="graph-run-tools-toggle" type="button" aria-controls="rail-run-tools" aria-expanded={graphRunToolsOpen()} onClick={() => setGraphRunToolsOpen(!graphRunToolsOpen())}>
+            {text("运行工具", "Run tools")}
+          </button>
+        </div>
+        <div id="rail-run-tools" class="rail-run-tools" classList={{ expanded: graphRunToolsOpen() }}>
+        <div class="rail-run-actions">
           <ActionButton size="sm" variant="quiet" onClick={() => void copyCurrentRun(runId(), "id")}>{text("复制运行 ID", "Copy run ID")}</ActionButton>
           <ActionButton size="sm" variant="quiet" onClick={() => void copyCurrentRun(runId(), "link")}>{text("复制任务链接", "Copy run link")}</ActionButton>
         </div>

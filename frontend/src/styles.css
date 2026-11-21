@@ -600,13 +600,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .rail-run-id { display: grid; gap: .15rem; flex: 1 1 7rem; min-width: 0; }
 .rail-run-id span { color: var(--muted); font-size: max(.7rem, 12px); }
 .rail-run-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1 0 100%; gap: .25rem .35rem; min-width: 0; }
-.rail-run-actions > .rail-dsh-tools { grid-column: 1 / -1; }
+.rail-run-shortcuts { display: flex; flex: 1 0 100%; gap: .35rem; }
+.rail-run-shortcuts > .rail-dsh-tools { flex: 1; }
 .rail-run-identity code { color: var(--ink); font: max(.72rem, 12px)/1.4 ui-monospace, "Cascadia Mono", monospace; overflow-wrap: anywhere; user-select: all; }
 .rail-run-identity > p { flex: 1 0 100%; margin: 0; }
 .rail-run-tools { display: contents; }
 .rail-run-tools > p { flex: 1 0 100%; margin: 0; }
 .graph-run-tools-toggle { display: none; }
 @media (max-width: 600px) {
+  .view-graph .rail-run-id { flex: 1 1 5rem; order: -2; }
+  .view-graph .rail-run-shortcuts { flex: 0 1 auto; flex-wrap: wrap; order: -1; }
+  .view-graph .rail-run-shortcuts > .rail-dsh-tools { flex: auto; }
   .view-graph .graph-run-tools-toggle {
     display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
     padding: .3rem .6rem; color: var(--ink); border: 1px solid var(--line); background: transparent;
