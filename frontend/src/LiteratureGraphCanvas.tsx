@@ -487,6 +487,17 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
     updateLayout();
     narrow.addEventListener("change", updateLayout);
     onCleanup(() => narrow.removeEventListener("change", updateLayout));
+    if (host) {
+      // A scroll or a panel above the canvas can move it without resizing it.
+      // Refresh Cytoscape's page offset before its renderer hit-tests the press.
+      const container = host;
+      const refreshHitCoordinates = () => cy?.resize();
+      const starts = typeof PointerEvent !== "undefined" ? ["pointerdown"] : ["mousedown", "touchstart"];
+      for (const event of starts) container.addEventListener(event, refreshHitCoordinates, { capture: true, passive: true });
+      onCleanup(() => {
+        for (const event of starts) container.removeEventListener(event, refreshHitCoordinates, true);
+      });
+    }
     if (host && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => {
         if (resizeFrame !== undefined) window.cancelAnimationFrame(resizeFrame);

@@ -98,9 +98,17 @@ for (const width of [320, 1366]) {
     });
     for (const inspect of [false, true]) {
       if (inspect) {
+        await map.scrollIntoViewIfNeeded();
         const target = (await metrics()).hidden!;
         expect(target).toBeTruthy();
-        await map.click({ position: target.position });
+        // A toolbar or banner can shift the canvas without changing its dimensions.
+        // Prime hit testing at its old position, then click the same marker at its new one.
+        const before = (await map.boundingBox())!;
+        await page.mouse.move(before.x + target.position.x, before.y + target.position.y);
+        await map.evaluate(el => { (el as HTMLElement).style.transform = "translateY(-56px)"; });
+        const after = (await map.boundingBox())!;
+        expect(after.y).toBeCloseTo(before.y - 56, 0);
+        await page.mouse.click(after.x + target.position.x, after.y + target.position.y);
         await expect(page.locator(".evidence-inspector h2")).toHaveText(target.title);
         await expect.poll(() => map.evaluate(el =>
           (el as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy.nodes(".is-emphasized")[0]?.style("label") || ""
