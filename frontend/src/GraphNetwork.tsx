@@ -276,11 +276,21 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
   let inspectorElement: HTMLElement | undefined;
   let screeningDrawer: HTMLDivElement | undefined;
   let focusedLinkedInspector = false;
+  const focusInspector = (linkedLanding = false) => {
+    const origin = document.activeElement;
+    queueMicrotask(() => {
+      const active = document.activeElement;
+      const onLandingHeading = linkedLanding && active?.matches("h1.route-focus-heading");
+      if (inspectorElement?.isConnected && (active === origin || onLandingHeading || (!origin?.isConnected && active === document.body))) {
+        inspectorElement.focus();
+      }
+    });
+  };
   const focusLinkedInspector = (element: HTMLElement) => {
     inspectorElement = element;
     if (focusedLinkedInspector || !props.linkedDocumentId || props.linkedDocumentId !== props.selectedDocumentId) return;
     focusedLinkedInspector = true;
-    requestAnimationFrame(() => { if (element.isConnected) element.focus(); });
+    focusInspector(true);
   };
   const topicLabel = (topic: TopicKey) => ({ ferroelectric: t("铁电性", "Ferroelectricity"), piezoelectric: t("压电性", "Piezoelectricity"), thin_film: t("薄膜与界面", "Thin films & interfaces"), domain_microstructure: t("畴与微观结构", "Domains & microstructure"), simulation_method: t("模拟与方法", "Simulation & methods"), other: t("其他题名元数据", "Other title metadata") } satisfies Record<TopicKey, string>)[topic];
   const inspectNode = (id: string) => {
@@ -291,9 +301,6 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     if (node && documentIdForReviewablePaper(node)) props.onSelectPaper(node);
   };
   const selectNode = (id: string) => { setNodeTrail([]); inspectNode(id); };
-  const focusInspector = () => requestAnimationFrame(() => {
-    if (inspectorElement?.isConnected) inspectorElement.focus();
-  });
   const revealNodeContext = (node: LiteratureGraphNode) => {
     setShowSearchContext(true);
     const group = nodeGroup(node);

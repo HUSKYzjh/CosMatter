@@ -34,6 +34,14 @@ for (const width of [320, 1366]) {
       expect(await painting!.evaluate(element => element.isConnected)).toBe(true);
       await expect(zoom).toHaveText(magnification);
     }
+    // Re-enter the canvas before the next paint. A pending inspector focus must yield to it.
+    await cards.filter({ hasText: "Thin film B" }).evaluate(async card => {
+      (card as HTMLElement).focus();
+      (card as HTMLElement).click();
+      document.querySelector<HTMLElement>(".cytoscape-literature-canvas")!.focus();
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    await expect(map).toBeFocused();
     await map.press("0");
     await expect(zoom).not.toHaveText(magnification);
     await expect(map).toBeFocused();
