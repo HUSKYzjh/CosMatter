@@ -43,6 +43,14 @@ export function localRunLink(origin: string, runId: string, documentId: string |
   return url.href;
 }
 
+export function extractionTablePath(runId: string, documentId?: string): string {
+  if (!isLocalRunId(runId)) throw new Error("Invalid extraction table run");
+  const path = `/api/runs/${encodeURIComponent(runId)}/extraction-table`;
+  if (documentId === undefined) return path;
+  if (!validLinkIdentifier(documentId, 255)) throw new Error("Invalid extraction document ID");
+  return path + "?" + new URLSearchParams({ document_id: documentId });
+}
+
 export function localRunScreeningLink(origin: string, runId: string, screeningRevision: string): string {
   const url = new URL("/?api=local", origin);
   url.hash = new URLSearchParams({ run: runId, screening: screeningRevision }).toString();

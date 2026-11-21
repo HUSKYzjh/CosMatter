@@ -314,6 +314,7 @@ export function App() {
   const [planApproved, setPlanApproved] = createSignal(false);
   const [manualControlOpen, setManualControlOpen] = createSignal(false);
   const [railContextOpen, setRailContextOpen] = createSignal(true);
+  const [graphRunToolsOpen, setGraphRunToolsOpen] = createSignal(false);
   const [approvedQueryCount, setApprovedQueryCount] = createSignal(0);
   const [approvedCounterQueryCount, setApprovedCounterQueryCount] = createSignal(0);
   const [researchSession, setResearchSession] = createSignal<ResearchSession>(emptyResearchSession());
@@ -2230,6 +2231,10 @@ export function App() {
       </Show>
       <Show when={!launchPreview() && localApiEnabled() && liveRunId()}>{(runId) => <div class="rail-run-identity">
         <div class="rail-run-id"><span>{text("运行 ID", "Run ID")}</span><code>{runId()}</code></div>
+        <button class="graph-run-tools-toggle" type="button" aria-controls="rail-run-tools" aria-expanded={graphRunToolsOpen()} onClick={() => setGraphRunToolsOpen(!graphRunToolsOpen())}>
+          {text("运行与 DSH 工具", "Run and DSH tools")}
+        </button>
+        <div id="rail-run-tools" class="rail-run-tools" classList={{ expanded: graphRunToolsOpen() }}>
         <Show when={existingRunLanding()?.runId === runId() ? existingRunLanding()?.landing : null}>{(landing) =>
           <p class="rail-run-entry-note" aria-live="polite">{continuationLandingCopy(landing())}</p>
         }</Show>
@@ -2248,6 +2253,7 @@ export function App() {
           <Show when={!feedback().copied && feedback().format === "link"}> <a href={localRunLink(window.location.origin, runId())} target="_blank" rel="noopener">{text("打开本机任务链接", "Open the local run link")}</a></Show>
         </p>}</Show>
         <Show when={runId()} keyed>{(activeRunId) => <DshRunHandoff runId={activeRunId} locale={language()} />}</Show>
+        </div>
       </div>}</Show>
       <details class="rail-context" open={railContextOpen()} onToggle={(event) => setRailContextOpen(event.currentTarget.open)}>
         <summary><span>{text("任务概览与本地状态", "Mission context and local status")}</span><small title={text("展开查看航线、审核锚点与本地状态", "Expand route, review anchor, and local status")}>{railContextSummary()}</small></summary>

@@ -1,0 +1,127 @@
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import type { ExtractionRow } from "../src/extractionTable";
+import { stageContractFixture } from "../src/stageContractFixture";
+
+const run = "map_orca_test";
+const papers = { alpha: "Alpha film", "alpha-long": "Longer ID", gap: "Included paper", absent: "Candidate only" };
+const tablePath = `/api/runs/${run}/extraction-table`;
+
+function emptyRow(document_id: keyof typeof papers): ExtractionRow {
+  return { document_id, title: papers[document_id], doi: null, status: "awaiting_extraction",
+    evidence_id: null, claim: null, material: null, property_name: null, stance: null,
+    conditions: {}, locator: null, document_version: null, source: null, reader_available: false, reported_facts: [] };
+}
+
+function reviewedRow(id: "alpha" | "alpha-long", evidence: string, figure: string): ExtractionRow {
+  return { ...emptyRow(id), status: "reviewed", evidence_id: evidence,
+    claim: "Synthetic measurement", locator: figure, reader_available: true };
+}
+
+async function openMap(page: Page, paper: keyof typeof papers) {
+  const bundle = JSON.parse(await readFile(resolve("..", "examples/ui-demo/route_diagnostics.json"), "utf8"));
+  bundle.literature_graph = {
+    trust_status: "navigation_metadata",
+    nodes: Object.entries(papers).map(([id, label]) => ({
+      node_id: "paper:" + id, kind: "candidate_paper", label, trust_status: "candidate_metadata",
+    })),
+    edges: [{ source_id: "paper:absent", target_id: "paper:gap", edge_type: "citation_reference",
+      relation_source: "fixture", trust_status: "public_metadata" }],
+  };
+  const allRows = [reviewedRow("alpha-long", "other-card", "Figure 2"), reviewedRow("alpha", "a1", "Figure 4"),
+    reviewedRow("alpha", "a2", "Figure 5"), emptyRow("gap")];
+  const reads: string[] = [];
+  const writes: string[] = [];
+  const prefix = "/api/runs/" + run;
+  await page.route("**/api/**", route => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (route.request().method() !== "GET") {
+      writes.push(route.request().method() + " " + path);
+      return route.fulfill({ status: 405 });
+    }
+    if (path === tablePath) {
+      reads.push(path + url.search);
+      const documentId = url.searchParams.get("document_id");
+      const rows = documentId === null ? allRows : allRows.filter(row => row.document_id === documentId);
+      const gaps = rows.filter(row => row.status !== "reviewed");
+      return route.fulfill({ json: { schema_version: "cosmatter.extraction-table/v1", run_id: run, screening_status: "current",
+        ...(documentId === null ? {} : { document_id: documentId }),
+        summary: { document_count: new Set(rows.map(row => row.document_id)).size, reviewed_count: rows.length - gaps.length,
+          gap_count: new Set(gaps.map(row => row.document_id)).size }, rows } });
+    }
+    if (path === prefix + "/ui") return route.fulfill({ json: bundle });
+    if (path === prefix + "/status") return route.fulfill({ json: { run_id: run, mission_id: bundle.mission.mission_id, state: "INTAKE" } });
+    if (path === prefix + "/stage-contract") return route.fulfill({ json: stageContractFixture(run, bundle.mission.mission_id, "extraction") });
+    return route.fulfill({ status: 404 });
+  });
+  await page.goto(`/?api=local#run=${run}&document=${paper}`);
+  const inspector = page.getByRole("complementary", { name: "图谱检查器" });
+  const verify = inspector.getByRole("button", { name: "核验这篇论文", exact: true });
+  await expect(verify).toBeVisible({ timeout: 30_000 });
+  expect(reads).toEqual([]);
+  const table = page.getByRole("region", { name: "跨文献证据对照表" });
+  return { reads, writes, inspector, verify, table };
+}
+
+async function downloadPaperTask(page: Page, table: Locator) {
+  const download = page.waitForEvent("download");
+  await table.getByRole("button", { name: "导出本篇 Orca 核验任务", exact: true }).click();
+  const file = await download;
+  const manifest = JSON.parse(await readFile((await file.path())!, "utf8"));
+  expect(manifest.schema_version).toBe("cosmatter.orca-tasks/v1");
+  expect(manifest.run_id).toBe(run);
+  expect(manifest.tasks).toHaveLength(1);
+  const task = manifest.tasks[0];
+  return { title: task.task_title, spec: task.spec, target: JSON.parse(task.spec.split("\n").at(-1)) };
+}
+
+test("exports exactly the selected paper and merges its two cards into one Orca task", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  const { reads, writes, inspector, verify, table } = await openMap(page, "alpha");
+  await verify.press("Enter");
+  await expect(table.locator("tbody tr")).toHaveCount(2);
+  await expect(table.getByRole("table")).not.toContainText(papers["alpha-long"]);
+  const result = await downloadPaperTask(page, table);
+  expect(result.title).toBe("Verify paper [alpha]");
+  expect(result.target.document_id).toBe("alpha");
+  expect(result.target.extraction_table_url).toBe(new URL(tablePath + "?document_id=alpha", page.url()).href);
+  expect(result.target.statuses).toEqual(["reviewed"]);
+  expect(result.target.evidence).toEqual(["a1", "a2"].map(id => ({
+    evidence_id: id, reader_url: expect.stringContaining(`#run=${run}&document=alpha&evidence=${id}`),
+  })));
+  expect(result.spec).not.toContain("other-card");
+  await table.getByRole("button", { name: "返回星图", exact: true }).press("Enter");
+  await expect(inspector.getByRole("heading", { name: papers.alpha })).toBeVisible();
+  expect(reads).toEqual([tablePath + "?document_id=alpha"]);
+  expect(writes).toEqual([]);
+});
+
+test("distinguishes a candidate with no table row from an included paper with an evidence gap", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 880 });
+  const { inspector, verify, table, reads, writes } = await openMap(page, "absent");
+  await verify.click();
+  await expect(table).toContainText("这篇论文暂无可导出的核验记录");
+  await expect(table.getByRole("button", { name: "导出本篇 Orca 核验任务" })).toBeDisabled();
+  await expect(table.locator("tbody tr")).toHaveCount(0);
+  expect(reads).toEqual([tablePath + "?document_id=absent"]);
+  await table.getByRole("button", { name: "查看全部论文" }).click();
+  await expect(table.locator("tbody tr")).toHaveCount(4);
+  expect(reads).toEqual([tablePath + "?document_id=absent", tablePath]);
+  await expect(table.getByRole("button", { name: "导出 Orca 核验任务", exact: true })).toBeEnabled();
+  await page.getByRole("group", { name: "文献展示方式" }).getByRole("button", { name: "文献关系图" }).click();
+  await expect(inspector.getByRole("heading", { name: papers.absent })).toBeVisible();
+  await inspector.getByRole("region", { name: "直接关系" }).getByRole("button", { name: /Included paper/ }).click();
+  await verify.click();
+  await expect(table.getByRole("table")).toContainText("待提取");
+  const result = await downloadPaperTask(page, table);
+  expect(result.target.document_id).toBe("gap");
+  expect(result.target.extraction_table_url).toBe(new URL(tablePath + "?document_id=gap", page.url()).href);
+  expect(result.target.statuses).toEqual(["awaiting_extraction"]);
+  expect(result.target.evidence).toEqual([]);
+  expect(result.spec).toContain("Keep this gap open");
+  expect(await table.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  expect(reads).toEqual([tablePath + "?document_id=absent", tablePath, tablePath + "?document_id=gap"]);
+  expect(writes).toEqual([]);
+});

@@ -1,0 +1,64 @@
+.graph-paper-search {
+  display: grid;
+  gap: .55rem;
+  min-width: 0;
+  padding: .9rem 1rem;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--surface);
+}
+.graph-search-labels, .graph-search-input, .graph-search-pages {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem .85rem;
+}
+.graph-search-labels label { font-weight: 750; }
+.graph-search-labels span, .graph-search-count, .graph-search-results span { color: var(--muted); font-size: .86rem; }
+.graph-paper-search button, .graph-search-return { color: inherit; font: inherit; cursor: pointer; }
+.graph-paper-search button:focus-visible, .graph-search-return:focus-visible { outline: 2px solid var(--signal-teal); outline-offset: 2px; }
+.graph-search-labels .graph-checklist-link, .graph-search-return {
+  border: 0;
+  padding: .35rem 0;
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+.graph-search-input input {
+  flex: 1 1 15rem;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  padding: .55rem .7rem;
+}
+.graph-search-input button, .graph-search-pages button { border: 1px solid var(--line); padding: .5rem .75rem; background: transparent; }
+.graph-search-pages button:disabled { opacity: .5; cursor: default; }
+.graph-search-results {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  gap: .4rem;
+  list-style: none;
+}
+.graph-search-results li { min-width: 0; }
+.graph-search-results button {
+  display: grid;
+  gap: .22rem;
+  width: 100%;
+  height: 100%;
+  padding: .6rem .7rem;
+  text-align: start;
+  align-content: start;
+  border: 1px solid var(--line);
+  background: transparent;
+  overflow-wrap: anywhere;
+}
+.graph-search-results button:is(:hover, [aria-current="true"]) { border-color: var(--signal-teal); }
+.graph-search-results em { color: var(--ink); font-size: .8rem; font-style: normal; }
+@media (max-width: 480px) {
+  .graph-paper-search { padding: .75rem; }
+  .graph-search-labels { align-items: baseline; }
+}

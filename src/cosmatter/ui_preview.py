@@ -140,11 +140,11 @@ def build_ui_preview_server(
                 return
             run_id = _api_run_id(path, "/api/runs/", "/extraction-table")
             if run_id is not None:
-                self._api_json(lambda: api.extraction_table(run_id) if api is not None else _api_disabled())
+                self._api_json(lambda: api.extraction_table(run_id, _extraction_document_query(parsed.query)) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/extraction-table.csv")
             if run_id is not None:
-                self._api_artifact(lambda: api.extraction_table_download(run_id) if api is not None else _api_disabled())
+                self._api_artifact(lambda: api.extraction_table_download(run_id, _extraction_document_query(parsed.query)) if api is not None else _api_disabled())
                 return
             run_id = _api_run_id(path, "/api/runs/", "/candidate-screening")
             if run_id is not None:
@@ -529,6 +529,18 @@ def _api_disabled() -> object:
 
 def _legacy_external_dispatch_disabled() -> object:
     raise LocalApiError("legacy external dispatch is disabled; use the explicit authorization endpoint", 410)
+
+
+def _extraction_document_query(query: str) -> str | None:
+    if not query:
+        return None
+    if re.search(r"%(?![0-9a-fA-F]{2})", query):
+        raise LocalApiError("invalid URL encoding in extraction query")
+    try:
+        fields = parse_qs(query, keep_blank_values=True, strict_parsing=True, max_num_fields=1, errors="strict")
+    except ValueError as error:
+        raise LocalApiError("expected one extraction document identifier") from error
+    return _query_document_id(fields)
 
 
 def _source_document_query(query: str) -> str:

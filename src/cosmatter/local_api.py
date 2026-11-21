@@ -1837,15 +1837,18 @@ class LocalMissionApi:
         except ArtifactContractError as error:
             raise LocalApiError(str(error), 404) from error
 
-    def extraction_table(self, run_id: str) -> dict[str, object]:
+    def extraction_table(self, run_id: str, document_id: str | None = None) -> dict[str, object]:
+        if document_id is not None and (not isinstance(document_id, str) or not document_id.strip()
+                                       or len(document_id) > 255 or re.search(r"[\x00-\x1f\x7f]", document_id)):
+            raise LocalApiError("invalid extraction document identifier")
         run_dir, mission = self._active_mission(run_id, require_active=False)
         try:
-            return extraction_table(run_dir, mission)
+            return extraction_table(run_dir, mission, requested_document_id=document_id)
         except (ValueError, OSError, TypeError, KeyError) as error:
             raise LocalApiError("The run's extraction records could not be validated.", 409) from error
 
-    def extraction_table_download(self, run_id: str) -> ArtifactDownload:
-        table = self.extraction_table(run_id)
+    def extraction_table_download(self, run_id: str, document_id: str | None = None) -> ArtifactDownload:
+        table = self.extraction_table(run_id, document_id)
         return ArtifactDownload(extraction_table_csv(table), "text/csv; charset=utf-8", "extraction-table.csv")
 
     def search_accepted_evidence(self, run_id: str, payload: object) -> dict[str, object]:

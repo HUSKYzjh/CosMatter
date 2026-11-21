@@ -1,8 +1,9 @@
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
 
 import { TOPIC_LABELS, isPaperNode, topicFor } from "./literatureTopology";
 import type { LiteratureGraphEdge, LiteratureGraphNode } from "./model";
+import { zh } from "./zh";
 
 type BaseCluster = "Mission" | "Papers" | "Evidence" | "Conditions" | "References" | "Structure";
 type Cluster = string;
@@ -34,10 +35,12 @@ const COLORS: Record<BaseCluster, string> = {
   Structure: "#ba4e70",
 };
 
+const evidenceKinds = new Set(["accepted_evidence", "evidence_card", "research_gap_candidate"]);
+
 function clusterOf(node: LiteratureGraphNode): Cluster {
   if (node.kind === "mission") return "COMMAND CORE";
   if (isPaperNode(node)) return `FLEET WING / ${TOPIC_LABELS[topicFor(node)]}`;
-  if (["accepted_evidence", "research_gap_candidate"].includes(node.kind)) return "EVIDENCE ARRAY";
+  if (evidenceKinds.has(node.kind)) return "EVIDENCE ARRAY";
   if (node.kind === "condition_cluster") return "CONDITION SENSOR";
   if (["openalex_work", "crossref_work", "citation_work"].includes(node.kind)) return "REFERENCE BEACONS";
   return "RELAY STRUCTURE";
@@ -46,7 +49,7 @@ function clusterOf(node: LiteratureGraphNode): Cluster {
 function baseClusterOf(node: LiteratureGraphNode): BaseCluster {
   if (node.kind === "mission") return "Mission";
   if (isPaperNode(node)) return "Papers";
-  if (["accepted_evidence", "research_gap_candidate"].includes(node.kind)) return "Evidence";
+  if (evidenceKinds.has(node.kind)) return "Evidence";
   if (node.kind === "condition_cluster") return "Conditions";
   if (["openalex_work", "crossref_work", "citation_work"].includes(node.kind)) return "References";
   return "Structure";
@@ -64,7 +67,7 @@ function clusterColor(cluster: Cluster, colors: Record<BaseCluster, string>): st
 function shipRole(node: LiteratureGraphNode): "command" | "ship" | "evidence" | "sensor" | "beacon" | "relay" {
   if (node.kind === "mission") return "command";
   if (isPaperNode(node)) return "ship";
-  if (["accepted_evidence", "research_gap_candidate"].includes(node.kind)) return "evidence";
+  if (evidenceKinds.has(node.kind)) return "evidence";
   if (node.kind === "condition_cluster") return "sensor";
   if (["openalex_work", "crossref_work", "citation_work"].includes(node.kind)) return "beacon";
   return "relay";
@@ -97,7 +100,7 @@ function degreeMap(edges: LiteratureGraphEdge[]): Map<string, number> {
   return degrees;
 }
 
-function sampleLabelIds(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[]): Set<string> {
+function sampleLabelIds(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[], compact: boolean): Set<string> {
   const degrees = degreeMap(edges);
   const groups = new Map<Cluster, LiteratureGraphNode[]>();
   nodes.forEach((node) => {
@@ -108,7 +111,7 @@ function sampleLabelIds(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge
   groups.forEach((group) => {
     const limit = group.length <= 5 ? group.length : group.length <= 12 ? Math.ceil(group.length * 0.5) : group.length <= 24 ? Math.ceil(group.length * 0.25) : Math.max(4, Math.ceil(group.length * 0.12));
     [...group].sort((left, right) => (degrees.get(right.nodeId) ?? 0) - (degrees.get(left.nodeId) ?? 0) || left.label.localeCompare(right.label))
-      .slice(0, limit)
+      .slice(0, compact ? Math.min(limit, 2) : limit)
       .forEach((node) => labels.add(node.nodeId));
   });
   return labels;
@@ -118,23 +121,47 @@ function trimLabel(label: string): string {
   return label.length > 45 ? `${label.slice(0, 42).trim()}...` : label;
 }
 
-function geometry(nodes: LiteratureGraphNode[], colors: Record<BaseCluster, string>): { clusters: ElementDefinition[]; positions: Map<string, { x: number; y: number }> } {
+function edgeId(edge: LiteratureGraphEdge): string {
+  return JSON.stringify(["edge", edge.sourceId, edge.targetId, edge.edgeType, edge.relationSource]);
+}
+
+function geometry(nodes: LiteratureGraphNode[], colors: Record<BaseCluster, string>, compact: boolean): { clusters: ElementDefinition[]; positions: Map<string, { x: number; y: number }> } {
   const groups = new Map<Cluster, LiteratureGraphNode[]>();
   nodes.forEach((node) => {
     const group = clusterOf(node);
     groups.set(group, [...(groups.get(group) ?? []), node]);
   });
-  const visibleClusters = [...groups.entries()].filter(([, group]) => group.length).sort(([left], [right]) => (left === "COMMAND CORE" ? -1 : right === "COMMAND CORE" ? 1 : left.localeCompare(right)));
+  const rank = (cluster: string) => compact
+    ? (cluster.startsWith("FLEET WING /") ? 0 : cluster === "EVIDENCE ARRAY" ? 1 : 2)
+    : (cluster === "COMMAND CORE" ? 0 : 1);
+  const visibleClusters = [...groups.entries()].sort(([left], [right]) => rank(left) - rank(right) || left.localeCompare(right));
   const radius = (group: LiteratureGraphNode[]) => Math.max(92, 50 + Math.sqrt(group.length) * 29);
   const positions = new Map<string, { x: number; y: number }>();
   const clusterElements: ElementDefinition[] = [];
   const forwardSectors = visibleClusters.filter(([cluster]) => cluster !== "COMMAND CORE");
+  // A narrow map has room for a vertical sequence of clusters. Keep larger
+  // maps to four rows so filtering still leaves a usable overview.
+  const columns = Math.max(1, Math.ceil(visibleClusters.length / 4));
+  const cellSize = 2 * Math.max(0, ...visibleClusters.map(([, group]) => radius(group))) + 42;
+  // A paper-and-evidence map often has only two clusters. Size their separation
+  // from their contents so fitting the map does not shrink labels around an empty corridor.
+  const pairSpacing = visibleClusters.length === 2
+    ? radius(visibleClusters[0][1]) + radius(visibleClusters[1][1]) + 60 : 0;
   visibleClusters.forEach(([cluster, group], index) => {
       const sectorIndex = forwardSectors.findIndex(([name]) => name === cluster);
       const angle = forwardSectors.length <= 1 ? 0 : -0.98 + sectorIndex * (1.96 / (forwardSectors.length - 1));
       const itemRadius = radius(group);
-      const x = cluster === "COMMAND CORE" ? -330 : 158 + Math.cos(angle) * 240;
-      const y = cluster === "COMMAND CORE" ? 0 : Math.sin(angle) * 330;
+      let x = cluster === "COMMAND CORE" ? -330 : 158 + Math.cos(angle) * 240;
+      let y = cluster === "COMMAND CORE" ? 0 : Math.sin(angle) * 330;
+      if (pairSpacing) {
+        const offset = (index - .5) * pairSpacing;
+        x = forwardSectors.length === 1 ? offset : 0;
+        y = forwardSectors.length === 1 ? 0 : offset;
+      }
+      if (compact) {
+        x = (index % columns) * (cellSize + 40);
+        y = Math.floor(index / columns) * cellSize;
+      }
       const clusterId = `sector:${index}:${cluster}`;
       clusterElements.push({ data: { id: clusterId, isCluster: "yes", label: `${cluster}\n${group.length} contact${group.length === 1 ? "" : "s"}`, color: clusterColor(cluster, colors), diameter: itemRadius * 2 }, position: { x, y }, selectable: false, grabbable: false });
       const usableRadius = Math.max(28, itemRadius - 35);
@@ -156,14 +183,55 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
   let cy: Core | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let resizeFrame: number | undefined;
+  let previousLayout = "";
+  const [compactLayout, setCompactLayout] = createSignal(false);
+  const [zoomPercent, setZoomPercent] = createSignal(100);
 
-  const applySelection = () => {
+  const revealSelection = () => {
     if (!cy) return;
-    cy.elements().removeClass("is-emphasized");
+    const target = cy.$(".is-emphasized");
+    if (target.empty() || !cy.width() || !cy.height()) return;
+    const node = target.nodes()[0];
+    const point = node ? node.renderedPosition() : target.edges()[0].renderedMidpoint();
+    const inset = Math.min(32, cy.width() / 3, cy.height() / 3);
+    const x = Math.min(Math.max(inset, point.x), cy.width() - inset) - point.x;
+    const y = Math.min(Math.max(inset, point.y), cy.height() - inset) - point.y;
+    if (x || y) cy.panBy({ x, y });
+  };
+  const applySelection = () => {
     const nodeId = props.selectedNodeId();
-    if (nodeId) cy.getElementById(nodeId).addClass("is-emphasized");
     const edge = props.selectedEdge();
-    if (edge) cy.getElementById(`${edge.sourceId}|${edge.targetId}|${edge.edgeType}`).addClass("is-emphasized");
+    if (!cy) return;
+    const elements = cy.elements();
+    const target = nodeId ? cy.getElementById(nodeId) : edge ? cy.getElementById(edgeId(edge)) : cy.collection();
+    cy.batch(() => {
+      elements.removeClass("is-emphasized is-adjacent is-subdued");
+      if (target.empty()) return;
+      const adjacent = target.nodes().nonempty() ? target.neighborhood() : target.connectedNodes();
+      elements.difference(adjacent.union(target)).addClass("is-subdued");
+      adjacent.addClass("is-adjacent");
+      target.addClass("is-emphasized");
+    });
+    revealSelection();
+  };
+
+  const fit = () => { if (cy) cy.fit(undefined, Math.min(48, cy.width() * .08)); };
+  const zoomBy = (factor: number) => {
+    if (cy) cy.zoom({ level: Math.max(cy.minZoom(), Math.min(cy.maxZoom(), cy.zoom() * factor)), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || !cy) return;
+    switch (event.key) {
+      case "+": case "=": zoomBy(1.22); break;
+      case "-": zoomBy(1 / 1.22); break;
+      case "0": fit(); break;
+      case "ArrowLeft": cy.panBy({ x: 40, y: 0 }); break;
+      case "ArrowRight": cy.panBy({ x: -40, y: 0 }); break;
+      case "ArrowUp": cy.panBy({ x: 0, y: 40 }); break;
+      case "ArrowDown": cy.panBy({ x: 0, y: -40 }); break;
+      default: return;
+    }
+    event.preventDefault();
   };
 
   const redraw = () => {
@@ -176,62 +244,81 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
     const nodes = props.nodes().slice(0, 96);
     const nodeIds = new Set(nodes.map((node) => node.nodeId));
     const edges = props.edges().filter((edge) => nodeIds.has(edge.sourceId) && nodeIds.has(edge.targetId)).slice(0, 144);
-    const labelIds = sampleLabelIds(nodes, edges);
+    const edgesById = new Map(edges.map(edge => [edgeId(edge), edge]));
+    const compact = compactLayout();
+    const labelIds = sampleLabelIds(nodes, edges, compact);
     const paperStates = props.paperStates();
     const colors: Record<BaseCluster, string> = Object.fromEntries([["Mission", themeStyle.getPropertyValue("--signal-blue").trim() || COLORS.Mission], ["Papers", themeStyle.getPropertyValue("--signal-teal").trim() || COLORS.Papers], ["Evidence", themeStyle.getPropertyValue("--signal-violet").trim() || COLORS.Evidence], ["Conditions", themeStyle.getPropertyValue("--signal-amber").trim() || COLORS.Conditions], ["References", themeStyle.getPropertyValue("--signal-rose").trim() || COLORS.References], ["Structure", themeStyle.getPropertyValue("--line").trim() || COLORS.Structure]]) as Record<BaseCluster, string>;
 const reviewColors: Record<string, string> = { screening: muted, included: themeStyle.getPropertyValue("--signal-teal").trim() || COLORS.Papers, parsing: themeStyle.getPropertyValue("--signal-blue").trim() || COLORS.Mission, source_recorded: themeStyle.getPropertyValue("--signal-amber").trim() || COLORS.Evidence, source_map: themeStyle.getPropertyValue("--signal-amber").trim() || COLORS.Evidence, evidence_review: themeStyle.getPropertyValue("--signal-teal").trim() || COLORS.Papers, provenance_audit: themeStyle.getPropertyValue("--signal-amber").trim() || COLORS.Evidence, accepted_evidence: themeStyle.getPropertyValue("--signal-violet").trim() || COLORS.References, failed: themeStyle.getPropertyValue("--signal-rose").trim() || COLORS.Structure, excluded: muted, untracked: muted };
-    const { clusters, positions } = geometry(nodes, colors);
+    const { clusters, positions } = geometry(nodes, colors, compact);
+    const layoutKey = JSON.stringify([compact, nodes.map(node => [node.nodeId, clusterOf(node)])]);
+    const viewport = cy && layoutKey === previousLayout ? { zoom: cy.zoom(), pan: cy.pan() } : null;
+    previousLayout = layoutKey;
     const elements: ElementDefinition[] = [
       ...clusters,
       ...nodes.map((node) => { const reviewState = paperStates[node.nodeId] ?? "untracked"; return { data: { id: node.nodeId, isCluster: "no", label: node.label, displayLabel: labelIds.has(node.nodeId) ? trimLabel(node.label) : "", color: colors[baseClusterOf(node)], nodeKind: node.kind, shipRole: shipRole(node), reviewState, reviewColor: reviewColors[reviewState] ?? muted, reviewWidth: reviewState === "untracked" ? 1.5 : 2.8 }, position: positions.get(node.nodeId) }; }),
-      ...edges.map((edge) => ({ data: { id: `${edge.sourceId}|${edge.targetId}|${edge.edgeType}`, source: edge.sourceId, target: edge.targetId, label: edge.edgeType.replaceAll("_", " "), color: edgeColor(edge, colors), edgeType: edge.edgeType, flightRole: flightRole(edge) } })),
+      ...Array.from(edgesById, ([id, edge]) => ({ data: { id, source: edge.sourceId, target: edge.targetId, label: edge.edgeType.replaceAll("_", " "), color: edgeColor(edge, colors), edgeType: edge.edgeType, flightRole: flightRole(edge) } })),
     ];
     cy?.destroy();
     cy = undefined;
     cy = cytoscape({
       container: host,
       elements,
-      layout: { name: "preset", fit: true, padding: 62 },
+      layout: { name: "preset", fit: false },
       autoungrabify: true,
-      minZoom: 0.3,
+      minZoom: 0.1,
       maxZoom: 2.5,
       wheelSensitivity: 0.16,
       style: [
         { selector: 'node[isCluster = "yes"]', style: { shape: "ellipse", width: "data(diameter)", height: "data(diameter)", "background-color": "data(color)", "background-opacity": 0.035, "border-color": "data(color)", "border-opacity": 0.35, "border-width": 1.1, "border-style": "dashed", label: "data(label)", color: "data(color)", "font-size": "9px", "font-weight": 800, "text-wrap": "wrap", "text-valign": "top", "text-halign": "center", "text-margin-y": -10, events: "no", "z-index": -10, "overlay-opacity": 0 } },
         { selector: 'node[isCluster = "no"]', style: { shape: "diamond", width: 12, height: 12, "background-color": "data(color)", "border-color": "data(reviewColor)", "border-width": "data(reviewWidth)", label: "data(displayLabel)", color: ink, "font-size": "9px", "font-weight": 720, "text-wrap": "wrap", "text-max-width": "138px", "text-halign": "right", "text-margin-x": 10, "text-outline-color": paper, "text-outline-width": "2px", "text-background-opacity": 0, "overlay-opacity": 0 } },
         { selector: 'node[shipRole = "command"]', style: { width: 23, height: 19, shape: "hexagon", "background-color": "data(color)" } },
-        { selector: 'node[shipRole = "ship"]', style: { width: 16, height: 13, shape: "vee" } },
+        { selector: 'node[shipRole = "ship"]', style: { width: compact ? 25 : 16, height: compact ? 21 : 13, shape: "vee" } },
         { selector: 'node[shipRole = "evidence"]', style: { width: 15, height: 15, shape: "round-diamond" } },
         { selector: 'node[shipRole = "sensor"]', style: { width: 12, height: 12, shape: "ellipse", "background-opacity": 0.35 } },
         { selector: 'node[shipRole = "beacon"]', style: { width: 10, height: 10, shape: "diamond", "background-opacity": 0.18 } },
-        { selector: "node.is-emphasized", style: { width: 20, height: 18, "border-width": 3, label: "data(label)", "z-index": 20 } },
+        { selector: 'node[isCluster = "no"]', style: { "font-size": compact ? 20 : 9 } },
+        { selector: "node.is-emphasized", style: { width: compact ? 29 : 20, height: compact ? 25 : 18, "border-width": 3, label: "data(label)", "font-size": compact ? 23 : 14, "font-weight": 800, "text-wrap": "wrap", "text-max-width": "170px", "z-index": 20 } },
         { selector: "edge", style: { width: 1.1, "line-color": "data(color)", "target-arrow-color": "data(color)", "target-arrow-shape": "vee", "arrow-scale": 0.68, "curve-style": "bezier", opacity: 0.6, label: "", "overlay-opacity": 0 } },
         { selector: 'edge[flightRole = "formation"]', style: { width: 1.5, "line-style": "dashed", opacity: 0.8 } },
         { selector: 'edge[flightRole = "bibliography"]', style: { "line-style": "dotted", opacity: 0.52 } },
         { selector: 'edge[flightRole = "suggestion"]', style: { "line-style": "dashed", opacity: 0.44 } },
         { selector: "edge.is-emphasized", style: { width: 2.1, opacity: 1, label: "data(label)", "font-size": "8px", color: muted, "text-background-color": paper, "text-background-opacity": 0.9, "text-background-padding": "2px", "text-rotation": "autorotate", "z-index": 20 } },
+        { selector: "node.is-subdued", style: { opacity: 0.28 } },
+        { selector: "edge.is-subdued", style: { opacity: 0.13 } },
+        { selector: "node.is-adjacent", style: { "border-width": 2.8, "font-size": compact ? 21 : 12, "z-index": 12 } },
+        { selector: "edge.is-adjacent", style: { width: 2.8, opacity: 1, "z-index": 10 } },
       ],
     });
     cy.on("tap", 'node[isCluster = "no"]', (event) => props.onSelectNode(event.target.id()));
     cy.on("tap", "edge", (event) => {
-      const id = event.target.id().split("|");
-      const edge = edges.find((item) => item.sourceId === id[0] && item.targetId === id[1] && item.edgeType === id[2]);
+      const edge = edgesById.get(event.target.id());
       if (edge) props.onSelectEdge(edge);
     });
     cy.on("tap", (event) => { if (event.target === cy) props.onSelectNode(""); });
-    props.onReady({ fit: () => cy?.fit(undefined, 62), zoomIn: () => { if (cy) cy.zoom({ level: Math.min(2.5, cy.zoom() * 1.22), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } }); }, zoomOut: () => { if (cy) cy.zoom({ level: Math.max(0.3, cy.zoom() / 1.22), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } }); } });
-    applySelection();
+    cy.on("zoom", () => { if (cy) setZoomPercent(Math.round(cy.zoom() * 100)); });
+    if (viewport) cy.viewport(viewport);
+    else fit();
+    setZoomPercent(Math.round(cy.zoom() * 100));
+    props.onReady({ fit, zoomIn: () => zoomBy(1.22), zoomOut: () => zoomBy(1 / 1.22) });
+    // A selection is a style change. Keep its reactive reads out of the renderer lifecycle.
+    untrack(applySelection);
   };
 
   onMount(() => {
+    const narrow = window.matchMedia("(max-width: 760px)");
+    const updateLayout = () => setCompactLayout(narrow.matches);
+    updateLayout();
+    narrow.addEventListener("change", updateLayout);
+    onCleanup(() => narrow.removeEventListener("change", updateLayout));
     if (host && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => {
         if (resizeFrame !== undefined) window.cancelAnimationFrame(resizeFrame);
-        resizeFrame = window.requestAnimationFrame(() => { if (cy) cy.resize(); });
+        resizeFrame = window.requestAnimationFrame(() => { if (cy) { cy.resize(); revealSelection(); } });
       });
       resizeObserver.observe(host);
     }
-    createEffect(() => { props.theme(); props.nodes(); props.edges(); props.paperStates(); redraw(); });
+    createEffect(redraw);
   });
   createEffect(applySelection);
   onCleanup(() => {
@@ -241,5 +328,10 @@ const reviewColors: Record<string, string> = { screening: muted, included: theme
     cy = undefined;
     props.onReady(null);
   });
-  return <div class="cytoscape-literature-canvas" ref={host} aria-label="Interactive literature graph" />;
+  return <>
+    <div class="cytoscape-literature-canvas" ref={host} tabIndex={0} role="group" onKeyDown={onKeyDown}
+      aria-label={zh("Interactive literature graph", "交互式文献图谱")}
+      aria-description={zh("Arrow keys pan, plus and minus zoom, and zero fits the map.", "方向键平移，加减键缩放，0 键适配画布。")} />
+    <output class="canvas-zoom-readout" aria-label={zh("Map zoom level", "图谱缩放比例")} aria-live="off">{zoomPercent()}%</output>
+  </>;
 }

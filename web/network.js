@@ -111,6 +111,14 @@ function makeGraph(bundle) {
       edges.push({ from: condition.id, to: unknownNode.id, kind: "open_question", label: "待核查" });
     });
   });
+  const rows = new Map();
+  for (const node of nodes) {
+    if (!rows.has(node.y)) rows.set(node.y, []);
+    rows.get(node.y).push(node);
+  }
+  for (const row of rows.values()) {
+    row.forEach((node, index) => { node.x = position(index, row.length, node.y).x; });
+  }
   return { nodes, edges: edges.filter((edge) => byId.has(edge.from) && byId.has(edge.to)) };
 }
 
@@ -130,24 +138,50 @@ function inspector(node) {
   panel.replaceChildren(list);
 }
 
+let inspectedId = null;
 function renderNetwork(bundle) {
   const svg = document.querySelector("#evidence-network");
   const filter = document.querySelector("#network-kind-filter").value;
+  const terms = document.querySelector("#network-search").value.normalize("NFKC").trim().toLowerCase().split(/\s+/u).filter(Boolean);
   const graph = makeGraph(bundle);
-  const shown = graph.nodes.filter((node) => filter === "all" || node.kind === "mission" || node.kind === filter);
+  const matches = graph.nodes.filter(node => {
+    if (filter !== "all" && node.kind !== filter) return false;
+    const text = [node.label, node.id, node.data.doi, node.data.document_id, node.data.locator_hint, node.data.provenance?.locator]
+      .filter(value => typeof value === "string").join(" ").normalize("NFKC").toLowerCase();
+    return terms.every(term => text.includes(term));
+  });
+  // The task anchor keeps retrieval routes visible when a node category is selected.
+  const anchor = graph.nodes.find(node => node.kind === "mission");
+  const shown = filter !== "all" && !terms.length && matches.length && anchor ? [anchor, ...matches] : matches;
   const shownIds = new Set(shown.map((node) => node.id));
+  const byId = new Map(shown.map(node => [node.id, node]));
+  const buttons = new Map();
+  const selectNode = node => {
+    buttons.get(inspectedId)?.setAttribute("aria-pressed", "false");
+    inspectedId = node.id;
+    buttons.get(node.id)?.setAttribute("aria-pressed", "true");
+    inspector(node);
+  };
+  document.querySelector("#network-count").textContent = `匹配 ${matches.length} / ${graph.nodes.length} 个节点`;
   svg.replaceChildren();
   graph.edges.filter((edge) => shownIds.has(edge.from) && shownIds.has(edge.to)).forEach((edge) => {
-    const a = graph.nodes.find((node) => node.id === edge.from); const b = graph.nodes.find((node) => node.id === edge.to);
+    const a = byId.get(edge.from); const b = byId.get(edge.to);
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line"); line.setAttribute("x1", a.x); line.setAttribute("y1", a.y); line.setAttribute("x2", b.x); line.setAttribute("y2", b.y); line.setAttribute("class", `graph-edge graph-edge-${edge.kind}`); const title = document.createElementNS("http://www.w3.org/2000/svg", "title"); title.textContent = edge.label; line.append(title); svg.append(line);
   });
   shown.forEach((node) => {
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g"); group.setAttribute("class", `graph-node ${node.kind}`); group.setAttribute("tabindex", "0"); group.setAttribute("role", "button"); group.setAttribute("aria-label", node.label);
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle"); circle.setAttribute("cx", node.x); circle.setAttribute("cy", node.y); circle.setAttribute("r", node.kind === "mission" ? "43" : node.kind === "paper" ? "35" : "31");
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text"); label.setAttribute("x", node.x); label.setAttribute("y", node.y + 5); label.setAttribute("text-anchor", "middle"); label.textContent = node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label;
-    group.append(circle, label); const select = () => inspector(node); group.addEventListener("click", select); group.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); } }); svg.append(group);
+    group.setAttribute("aria-pressed", "false");
+    buttons.set(node.id, group);
+    group.append(circle, label); const select = () => selectNode(node); group.addEventListener("click", select); group.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); } }); svg.append(group);
   });
-  inspector(graph.nodes[0]);
+  if (matches.length) selectNode(matches.find(node => node.id === inspectedId) ?? matches[0]);
+  else {
+    inspectedId = null;
+    document.querySelector("#node-title").textContent = "没有匹配节点";
+    document.querySelector("#node-inspector").textContent = "可以更改检索词或节点类别。";
+  }
 }
 
 function loadNetworkBundle(event) {
@@ -158,4 +192,10 @@ function loadNetworkBundle(event) {
   reader.readAsText(file, "utf-8");
 }
 
-document.addEventListener("DOMContentLoaded", () => { window.networkBundle = networkDemo; renderNetwork(networkDemo); document.querySelector("#network-bundle-file").addEventListener("change", loadNetworkBundle); document.querySelector("#network-kind-filter").addEventListener("change", () => renderNetwork(window.networkBundle)); });
+document.addEventListener("DOMContentLoaded", () => {
+  window.networkBundle = networkDemo;
+  renderNetwork(networkDemo);
+  document.querySelector("#network-bundle-file").addEventListener("change", loadNetworkBundle);
+  document.querySelector("#network-kind-filter").addEventListener("change", () => renderNetwork(window.networkBundle));
+  document.querySelector("#network-search").addEventListener("input", () => renderNetwork(window.networkBundle));
+});

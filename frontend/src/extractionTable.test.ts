@@ -27,6 +27,25 @@ describe("cross-paper extraction rows", () => {
     expect(filterExtractionRows([row, gap], "", "awaiting_review", "")).toEqual([gap]);
     expect(filterExtractionRows([row, gap], "BiFeO3", "awaiting_review", "")).toEqual([]);
   });
+  it("requires the paper scope to match even for an empty response or a single matching row", () => {
+    const one = { ...table, document_id: "d1", rows: [row], summary: { document_count: 1, reviewed_count: 1, gap_count: 0 } };
+    expect(readExtractionTable(one, "fixture", "d1").rows).toEqual([row]);
+    expect(() => readExtractionTable(one, "fixture")).toThrow(/scope/);
+    expect(() => readExtractionTable({ ...one, document_id: undefined }, "fixture", "d1")).toThrow(/scope/);
+    expect(() => readExtractionTable({ ...table, document_id: "d1" }, "fixture", "d1")).toThrow(/scope/);
+    const empty = { ...one, rows: [], summary: { document_count: 0, reviewed_count: 0, gap_count: 0 } };
+    expect(readExtractionTable(empty, "fixture", "d1").rows).toEqual([]);
+    expect(() => readExtractionTable(empty, "fixture", "d2")).toThrow(/scope/);
+  });
+  it("puts the exact paper lookup in the Orca task and rejects rows from another paper", async () => {
+    const id = "文献 A+B/#1&2";
+    const tasks = await extractionOrcaTasks("http://127.0.0.1:8765", "fixture", [{ ...row, document_id: id }], id);
+    const target = JSON.parse(tasks.tasks[0].spec.split("\n").at(-1)!);
+    const url = new URL(target.extraction_table_url);
+    expect(url.pathname).toBe("/api/runs/fixture/extraction-table");
+    expect([...url.searchParams]).toEqual([["document_id", id]]);
+    await expect(extractionOrcaTasks(url.origin, "fixture", [row, gap], row.document_id)).rejects.toThrow(/document/);
+  });
   it("exports the matching rows with origin IDs, escapes embedded quotes and prevents spreadsheet formulas", () => {
     const csv = extractionCsv("fixture", [row]);
     expect(csv.split("\r\n")).toHaveLength(3);

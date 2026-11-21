@@ -14,21 +14,70 @@
 
 .paper-workflow-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .38rem .7rem; margin: .55rem 0 0; color: var(--muted); font: .59rem/1.35 ui-monospace, monospace; }
 .paper-workflow-legend small { flex-basis: 100%; color: var(--muted); letter-spacing: .07em; }
-/* A floating toolbar reserves its width for the adjacent wrapping legend. */
+.lens-canvas-region {
+  display: grid;
+  grid-template-areas: "legend tools" "map map" "caption caption";
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(16rem, 1fr) auto;
+}
 .lens-canvas-region .lens-canvas-tools {
-  position: relative;
+  grid-area: tools;
+  place-self: start end;
+  position: static;
   inset: auto;
-  float: right;
-  margin: .55rem .55rem .4rem .5rem;
+  margin: .55rem .55rem 1.5rem .5rem;
 }
 .lens-canvas-region .paper-workflow-legend {
+  grid-area: legend;
+  align-self: start;
   position: relative;
-  z-index: 1;
-  padding-inline-start: .5rem;
+  margin: .55rem 0 .5rem;
+  padding-inline-start: .6rem;
+}
+.lens-canvas-region :is(.cytoscape-literature-canvas, .graph-canvas-loading, .graph-canvas-fallback) {
+  grid-area: map;
+  position: relative;
+  inset: auto;
+  min-width: 0;
+  min-height: 0;
+}
+.cytoscape-literature-canvas:focus-visible {
+  outline: 2px solid var(--signal-teal);
+  outline-offset: -2px;
+}
+.lens-canvas-region .canvas-zoom-readout {
+  grid-area: tools;
+  place-self: start end;
+  margin: calc(.55rem + 2rem + .12rem) .65rem 0;
+  font: 600 .75rem/1.25 ui-monospace, monospace;
+  color: var(--muted);
   pointer-events: none;
+}
+.lens-canvas-region .lens-footnote {
+  grid-area: caption;
+  position: static;
+  margin: .4rem .75rem .6rem;
 }
 @media (max-width: 880px) {
   .lens-canvas-tools button { min-width: 44px; min-height: 44px; }
+  .lens-canvas-region .canvas-zoom-readout { margin-top: calc(.55rem + 44px + .12rem); }
+}
+@media (max-width: 760px) {
+  .lens-canvas-region {
+    grid-template-areas: "scale tools" "map map" "legend legend" "caption caption";
+    grid-template-rows: auto minmax(20rem, 1fr) auto auto;
+  }
+  .lens-canvas-region .lens-canvas-tools { margin: .25rem .55rem .25rem 0; }
+  .lens-canvas-region .canvas-zoom-readout {
+    grid-area: scale;
+    place-self: center end;
+    margin: 0 .55rem 0 0;
+  }
+  .lens-canvas-region .paper-workflow-legend {
+    margin: .35rem .6rem 0;
+    padding: .45rem 0 0;
+    border-top: 1px solid var(--line);
+  }
 }
 .paper-workflow-legend .state-source_recorded { color: var(--signal-amber); }
 .paper-workflow-legend span { display: inline-flex; align-items: center; gap: .25rem; }

@@ -603,6 +603,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .rail-run-actions > .rail-dsh-tools { grid-column: 1 / -1; }
 .rail-run-identity code { color: var(--ink); font: max(.72rem, 12px)/1.4 ui-monospace, "Cascadia Mono", monospace; overflow-wrap: anywhere; user-select: all; }
 .rail-run-identity > p { flex: 1 0 100%; margin: 0; }
+.rail-run-tools { display: contents; }
+.rail-run-tools > p { flex: 1 0 100%; margin: 0; }
+.graph-run-tools-toggle { display: none; }
+@media (max-width: 600px) {
+  .view-graph .graph-run-tools-toggle {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
+    padding: .3rem .6rem; color: var(--ink); border: 1px solid var(--line); background: transparent;
+  }
+  .view-graph .rail-run-tools:not(.expanded) { display: none; }
+}
 .rail-run-entry-note { color: var(--muted); font-size: max(.72rem, 12px); line-height: 1.45; overflow-wrap: anywhere; }
 .dsh-run-handoff { flex: 1 0 100%; min-width: 0; }
 .dsh-run-handoff > div { display: grid; justify-items: start; gap: .45rem; min-width: 0; padding: .5rem .6rem; border-top: 1px solid var(--line); }

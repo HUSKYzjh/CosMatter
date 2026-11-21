@@ -20,6 +20,10 @@
 .extraction-heading div { flex: 1 1 22rem; }
 .extraction-heading h2 { line-height: 1.25; font-size: clamp(1.15rem, 2vw, 1.65rem); }
 .extraction-heading p { margin-top: .4rem; color: var(--muted); }
+.extraction-heading h2:focus-visible { outline: 2px solid var(--signal-teal); outline-offset: 3px; }
+.extraction-paper-scope { overflow-wrap: anywhere; }
+.extraction-paper-scope strong { color: var(--ink); }
+.extraction-paper-scope code { font-size: .9em; }
 .extraction-panel .extraction-screening-note { padding: .5rem .7rem; margin-bottom: .8rem; border-inline-start: 2px solid var(--signal-amber); }
 .extraction-counts { padding: .7rem 0; border-block: 1px solid var(--line); }
 .extraction-counts strong { font-variant-numeric: tabular-nums; }

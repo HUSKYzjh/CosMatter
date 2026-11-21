@@ -9,6 +9,7 @@ were already written for a local run.
 from __future__ import annotations
 
 import json
+from itertools import chain
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ from cosmatter.models import (
     Stance,
     StationType,
     normalize_public_title,
+    normalized_doi_or_none,
     utc_now,
 )
 
@@ -59,7 +61,7 @@ from .source_map import (
 from .paper_structure import PaperStructureError, iter_paper_structures, load_paper_structure
 from .relation_reconciliation import RelationReconciliationError, load_relation_reconciliation
 from .candidate_duplicate_reconciliation import CandidateDuplicateReconciliationError, load_candidate_duplicate_queue, load_candidate_duplicate_reconciliation
-from .metadata_enrichment import MetadataEnrichmentError, load_metadata_enrichment
+from .metadata_enrichment import MetadataEnrichmentError, load_metadata_enrichment, resolved_dois
 from .condition_normalization import ConditionNormalizationError, load_condition_normalization
 from .delegated_trial import has_delegated_test_review_boundary
 from .evidence_maturity_registry import EvidenceMaturityRegistryError, audit_evidence_maturity_registry_against_runs, load_evidence_maturity_registry, validate_evidence_maturity_registry_audit
@@ -545,22 +547,20 @@ def _paper_structure_projection(structure: dict[str, Any] | None) -> dict[str, A
     entities = [{key: entity[key] for key in ("entity_id", "label", "kind", "segment_id")} for entity in structure["entities"]]
     relations = [{key: relation[key] for key in ("source_entity_id", "target_entity_id", "relation_type", "segment_id")} for relation in structure["relations"]]
     return {"document_id": structure["document_id"], "trust_status": structure["trust_status"], "entities": entities, "relations": relations}
-def _retrieval_candidate_projection(path: Path, prioritized_document_ids: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+def _retrieval_candidate_projection(payload: dict[str, Any] | None, prioritized_document_ids: tuple[str, ...] = ()) -> list[dict[str, Any]]:
     """Release public-looking candidate metadata, never query text or scores."""
-    if not path.exists():
+    if payload is None:
         return []
-    payload = _load_object(path, "retrieval candidate artifact")
     raw_candidates = payload.get("candidates")
     if not isinstance(raw_candidates, list):
         raise UiExportError("retrieval candidate artifact has invalid candidates")
-    result: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    papers: dict[str, dict[str, Any]] = {}
     for item in raw_candidates:
         if not isinstance(item, dict):
             raise UiExportError("retrieval candidate artifact contains an invalid candidate")
         document_id, title, source = item.get("document_id"), item.get("title"), item.get("source")
         if (
-            not isinstance(document_id, str) or not document_id or len(document_id) > 255 or document_id in seen
+            not isinstance(document_id, str) or not document_id or len(document_id) > 255 or document_id in papers
             or not isinstance(title, str) or not title.strip() or len(title.strip()) > 500
             or not isinstance(source, str) or not source.strip() or len(source.strip()) > 120
         ):
@@ -572,21 +572,22 @@ def _retrieval_candidate_projection(path: Path, prioritized_document_ids: tuple[
             safe_title = normalize_public_title(title)
         except ValueError as error:
             raise UiExportError("retrieval candidate title is not safe for UI export") from error
-        result.append({
+        doi = normalized_doi_or_none(item.get("doi"))
+        papers[document_id] = {
             "document_id": document_id,
             "title": safe_title,
             "source": source.strip(),
+            **({"doi": doi} if doi else {}),
             "publication_year": year,
             "is_content_accessible": item.get("is_content_accessible") is True,
-            "_source_order": len(result),
-        })
-        seen.add(document_id)
-    priority = {document_id: index for index, document_id in enumerate(prioritized_document_ids)}
-    result.sort(key=lambda item: (0, priority[item["document_id"]]) if item["document_id"] in priority else (1, item["_source_order"]))
-    projected = result[:_MAX_LITERATURE_GRAPH_CANDIDATES]
-    for item in projected:
-        item.pop("_source_order")
-    return projected
+        }
+    projected = {}
+    for document_id in chain(prioritized_document_ids, papers):
+        if document_id in papers:
+            projected[document_id] = papers[document_id]
+            if len(projected) == _MAX_LITERATURE_GRAPH_CANDIDATES:
+                break
+    return list(projected.values())
 
 
 def _citation_expansion_projection(path: Path, mission_id: str) -> dict[str, Any] | None:
@@ -613,6 +614,7 @@ def _literature_graph_projection(
     citation_expansion: dict[str, Any] | None = None,
     condition_matrix: list[dict[str, Any]] | None = None,
     material_fact_ledgers: tuple[dict[str, Any], ...] = (),
+    candidate_count: int | None = None,
 ) -> dict[str, Any]:
     """Build a bounded navigation graph with explicit non-evidence labels."""
     nodes: list[dict[str, Any]] = []
@@ -635,21 +637,51 @@ def _literature_graph_projection(
         edges.append({"source_id": source_id, "target_id": target_id, "edge_type": edge_type, "relation_source": relation_source, "trust_status": trust_status})
         edge_ids.add(key)
 
-    mission_node = f"mission:{mission.mission_id}"
-    add_node(mission_node, "mission", f"{mission.material} / {mission.property_name}", "mission_navigation")
-    for candidate in candidates:
+    def add_candidate(candidate: dict[str, Any]) -> None:
         paper_id = f"paper:{candidate['document_id']}"
-        add_node(paper_id, "candidate_paper", candidate["title"], "retrieval_candidate_not_scientific_evidence", source=candidate["source"], publication_year=candidate["publication_year"], is_content_accessible=candidate["is_content_accessible"])
+        doi = normalized_doi_or_none(candidate.get("doi"))
+        add_node(paper_id, "candidate_paper", candidate["title"], "retrieval_candidate_not_scientific_evidence",
+                 source=candidate["source"], publication_year=candidate["publication_year"],
+                 is_content_accessible=candidate["is_content_accessible"], **({"doi": doi} if doi else {}))
         add_edge(mission_node, paper_id, "retrieval_candidate", candidate["source"], "retrieval_candidate_not_scientific_evidence")
 
+    mission_node = f"mission:{mission.mission_id}"
+    add_node(mission_node, "mission", f"{mission.material} / {mission.property_name}", "mission_navigation")
+    candidate_papers = {paper["document_id"]: paper for paper in candidates[:_MAX_LITERATURE_GRAPH_CANDIDATES]}
+    if len({card["evidence_id"] for card in evidence_cards}) != len(evidence_cards):
+        raise UiExportError("multiple accepted cards share an evidence identity")
+    first_card: dict[str, dict[str, Any]] = {}
+    remaining_cards = []
     for card in evidence_cards:
+        document_id = card["provenance"]["document_id"]
+        if document_id in first_card:
+            remaining_cards.append(card)
+        else:
+            first_card[document_id] = card
+    needed = 1 + len(candidate_papers.keys() | first_card.keys()) + len(evidence_cards)
+    under_pressure = needed > _MAX_LITERATURE_GRAPH_NODES
+    if not under_pressure:
+        for candidate in candidate_papers.values():
+            add_candidate(candidate)
+    # At capacity, give distinct reviewed sources a turn before repeated observations.
+    ordered_cards = [*first_card.values(), *remaining_cards] if under_pressure else evidence_cards
+    for card in ordered_cards:
         provenance = card["provenance"]
         paper_id = f"paper:{provenance['document_id']}"
-        if paper_id not in node_ids:
-            add_node(paper_id, "evidence_paper", provenance["document_id"], "accepted_evidence_source", source=provenance["source"], publication_year=None, is_content_accessible=provenance["access_policy"] != AccessPolicy.METADATA_ONLY.value)
         evidence_id = f"evidence:{card['evidence_id']}"
+        required_slots = int(paper_id not in node_ids) + int(evidence_id not in node_ids)
+        if required_slots > _MAX_LITERATURE_GRAPH_NODES - len(nodes):
+            continue
+        if paper_id not in node_ids:
+            if provenance["document_id"] in candidate_papers:
+                add_candidate(candidate_papers[provenance["document_id"]])
+            else:
+                add_node(paper_id, "evidence_paper", provenance["document_id"], "accepted_evidence_source", source=provenance["source"], publication_year=None, is_content_accessible=provenance["access_policy"] != AccessPolicy.METADATA_ONLY.value)
         add_node(evidence_id, "accepted_evidence", card["claim"], "accepted_evidence")
         add_edge(paper_id, evidence_id, "source_provenance", provenance["source"], "accepted_evidence")
+    if under_pressure:
+        for candidate in candidate_papers.values():
+            add_candidate(candidate)
 
     # The condition matrix is a comparison artifact, not a scientific conclusion.
     # Project it explicitly so researchers can see which accepted EvidenceCards
@@ -737,7 +769,15 @@ def _literature_graph_projection(
             relation_roots[paper_id].update(kind="structured_paper", trust_status=structures_by_document.get(document_id, ledger)["trust_status"])
         else:
             add_node(paper_id, "structured_paper", document_id, ledger["trust_status"])
-    return {"trust_status": "navigation_metadata_and_reviewed_artifacts_not_a_scientific_conclusion", "nodes": nodes, "edges": edges}
+    return {
+        "trust_status": "navigation_metadata_and_reviewed_artifacts_not_a_scientific_conclusion", "nodes": nodes, "edges": edges,
+        "coverage": {
+            "candidate_count": len(candidates) if candidate_count is None else candidate_count,
+            "visible_candidate_count": sum(node["kind"] == "candidate_paper" for node in nodes),
+            "accepted_evidence_count": len(evidence_cards),
+            "linked_accepted_evidence_count": sum(edge["edge_type"] == "source_provenance" and edge["trust_status"] == "accepted_evidence" for edge in edges),
+        },
+    }
 
 def _counterevidence_readiness_summary(run_dir: Path, mission_id: str) -> dict[str, Any]:
     """Project only counterevidence gate progress, never plan or query text.
@@ -1319,6 +1359,7 @@ def build_ui_bundle(
     simulation_evidence_delivery_status: str = "not_supplied",
     delegated_test_boundary: bool = False,
     workflow_track_summary: dict[str, Any] | None = None,
+    retrieval_candidate_count: int | None = None,
 ) -> dict[str, Any]:
     """Produce the minimal browser-safe projection of a mission assignment."""
     if mission.mission_id != assignment.mission_id:
@@ -1461,6 +1502,7 @@ def build_ui_bundle(
             citation_expansion,
             condition_matrix,
             material_fact_ledgers=tuple(fact_ledgers),
+            candidate_count=retrieval_candidate_count,
         ),
         "mission_report": mission_report.to_dict() if mission_report is not None else None,
         "audit_summary": audit_summary or {
@@ -1503,19 +1545,27 @@ def project_run_for_ui(runs_dir: Path, run_id: str) -> dict[str, Any]:
     crossref_relations = _crossref_relation_expansion_projection(run_dir / "crossref_relation_expansion.json", mission.mission_id)
     citation_expansion = _citation_expansion_projection(run_dir / "citation_expansion.json", mission.mission_id)
     candidate_history_path = run_dir / "retrieval_candidates.json"
-    candidate_history: dict[str, Any] | None = None
+    candidate_history = _load_object(candidate_history_path, "candidate history") if candidate_history_path.exists() else None
     try:
         research_guide = load_reading_guide(run_dir / "reading_guide.json", mission.mission_id)
     except ReadingGuideError as error:
         raise UiExportError(str(error)) from error
-    prioritized_documents = tuple(item["document_id"] for item in research_guide["items"]) if research_guide is not None else ()
-    retrieval_candidates = _retrieval_candidate_projection(candidate_history_path, prioritized_documents)
+    accepted_cards = [] if delegated_test_boundary else approved_evidence_projection(mission.mission_id, evidence_cards, verification_decisions)[0]
+    # Preserve public titles and identifiers for verified source papers even near the end of retrieval history.
+    priority = [card["provenance"]["document_id"] for card in accepted_cards]
+    if research_guide:
+        priority.extend(item["document_id"] for item in research_guide["items"])
+    prioritized_documents = tuple(dict.fromkeys(priority))
+    retrieval_candidates = _retrieval_candidate_projection(candidate_history, prioritized_documents)
     try:
-        if candidate_history_path.exists():
-            candidate_history = _load_object(candidate_history_path, "candidate history")
+        if candidate_history is not None:
             metadata_enrichment = load_metadata_enrichment(
                 run_dir / "candidate_metadata_enrichment.json", mission.mission_id, candidate_history
             )
+            enriched_dois = resolved_dois(metadata_enrichment)
+            for candidate in retrieval_candidates:
+                if "doi" not in candidate and candidate["document_id"] in enriched_dois:
+                    candidate["doi"] = enriched_dois[candidate["document_id"]]
             candidate_duplicate_queue = load_candidate_duplicate_queue(
                 run_dir / "candidate_duplicate_queue.json", mission.mission_id, candidate_history, metadata_enrichment
             )
@@ -1563,7 +1613,7 @@ def project_run_for_ui(runs_dir: Path, run_id: str) -> dict[str, Any]:
             mission.mission_id,
             candidate_history,
             all_source_maps,
-            len(approved_evidence_projection(mission.mission_id, evidence_cards, verification_decisions)[0]),
+            len(accepted_cards),
             delegated_test_boundary,
         )
         # Automated-trial maps are valid private workflow artifacts, but they
@@ -1635,6 +1685,7 @@ def project_run_for_ui(runs_dir: Path, run_id: str) -> dict[str, Any]:
         candidate_duplicate_reconciliation=candidate_duplicate_reconciliation,
         condition_normalization=condition_normalization,
         retrieval_candidates=retrieval_candidates,
+        retrieval_candidate_count=len(candidate_history["candidates"]) if candidate_history is not None else 0,
         research_gap_candidates=research_gap_candidates,
         material_fact_artifacts=material_fact_artifacts,
         audit_summary=audit_summary,

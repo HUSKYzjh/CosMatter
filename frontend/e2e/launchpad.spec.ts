@@ -1282,7 +1282,7 @@ test("loads an explicitly server-selected UI bundle as a read-only literature ma
   const toolbar = await canvas.locator(".lens-canvas-tools").boundingBox();
   const legend = await canvas.locator(".paper-workflow-legend").boundingBox();
   if (!toolbar || !legend) throw new Error("Both zoom controls and map legend must be visible");
-  expect(legend.x + legend.width).toBeLessThanOrEqual(toolbar.x);
+  expect(legend.y).toBeGreaterThanOrEqual(toolbar.y + toolbar.height);
   expect(await inspector.locator(":scope > small").evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(12);
   expect(await inspector.locator("p").first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(13);
   expect(await inspector.locator("dd").evaluateAll((elements) => elements.every((element) => Number.parseFloat(getComputedStyle(element).fontSize) >= 13))).toBe(true);

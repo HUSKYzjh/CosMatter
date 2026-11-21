@@ -613,3 +613,4 @@ input:focus, textarea:focus, select:focus { background: color-mix(in srgb, var(-
     text-wrap: balance;
   }
 }
+.graph-node[aria-pressed="true"] circle { stroke: currentColor; stroke-width: 4px; }

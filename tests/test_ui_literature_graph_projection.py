@@ -1,19 +1,43 @@
 import json
-import tempfile
 import unittest
-from pathlib import Path
 
 from cosmatter.models import MissionBrief
-from cosmatter.ui_export import _literature_graph_projection, _retrieval_candidate_projection
+from cosmatter.ui_export import UiExportError, _literature_graph_projection, _retrieval_candidate_projection
 
 
 class UiLiteratureGraphProjectionTests(unittest.TestCase):
+    def test_bounded_graph_retains_complete_reviewed_pairs_before_discovery_metadata(self) -> None:
+        mission = MissionBrief("question", "BiFeO3", "phase", "films")
+        candidates = [{"document_id": f"candidate_{i}", "title": f"Paper {i}", "source": "fixture",
+                       "publication_year": None, "is_content_accessible": False} for i in range(48)]
+        cards = [{"evidence_id": f"card_{i}", "claim": "Reviewed claim", "provenance": {
+            "document_id": f"reviewed_{i}", "source": "fixture", "access_policy": "oa"}} for i in range(40)]
+        graph = _literature_graph_projection(mission, cards, candidates, None, None, None, candidate_count=160)
+        self.assertEqual(len(graph["nodes"]), 96)
+        self.assertEqual(graph["coverage"], {"candidate_count": 160, "visible_candidate_count": 15,
+                                            "accepted_evidence_count": 40, "linked_accepted_evidence_count": 40})
+        links = {(edge["source_id"], edge["target_id"]) for edge in graph["edges"] if edge["edge_type"] == "source_provenance"}
+        self.assertEqual(links, {(f"paper:reviewed_{i}", f"evidence:card_{i}") for i in range(40)})
+        self.assertFalse(any(edge["trust_status"] == "accepted_evidence" for edge in graph["edges"] if edge["edge_type"] == "retrieval_candidate"))
+
+        # Even when one publication has many observations, independent papers stay reachable.
+        additional = [dict(cards[0], evidence_id=f"additional_{i}") for i in range(100)]
+        crowded = _literature_graph_projection(mission, [*additional, *cards], candidates, None, None, None)
+        sources = {edge["source_id"] for edge in crowded["edges"] if edge["edge_type"] == "source_provenance"}
+        self.assertEqual(sources, {f"paper:reviewed_{i}" for i in range(40)})
+        self.assertEqual(crowded["coverage"]["linked_accepted_evidence_count"], 55)
+        node_ids = {node["node_id"] for node in crowded["nodes"]}
+        self.assertTrue(all(edge["source_id"] in node_ids and edge["target_id"] in node_ids for edge in crowded["edges"]))
+        with self.assertRaisesRegex(UiExportError, "share an evidence identity"):
+            _literature_graph_projection(mission, [cards[0], dict(cards[1], evidence_id="card_0")], [], None, None, None)
+
     def test_candidate_projection_excludes_query_scores_and_raw_fields(self) -> None:
         payload = {
             "candidates": [
                 {
                     "document_id": "paper_1",
                     "title": "Bounded paper title",
+                    "doi": "https://doi.org/10.1234/FIXTURE",
                     "source": "Sciverse",
                     "publication_year": 2024,
                     "is_content_accessible": True,
@@ -23,11 +47,9 @@ class UiLiteratureGraphProjectionTests(unittest.TestCase):
                 }
             ]
         }
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "retrieval_candidates.json"
-            path.write_text(json.dumps(payload), encoding="utf-8")
-            candidates = _retrieval_candidate_projection(path)
+        candidates = _retrieval_candidate_projection(payload)
         self.assertEqual(candidates[0]["title"], "Bounded paper title")
+        self.assertEqual(candidates[0]["doi"], "10.1234/fixture")
         serialised = json.dumps(candidates)
         self.assertNotIn("never send", serialised)
         self.assertNotIn("score", serialised)
@@ -45,10 +67,7 @@ class UiLiteratureGraphProjectionTests(unittest.TestCase):
                 for index in range(60)
             ]
         }
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "retrieval_candidates.json"
-            path.write_text(json.dumps(payload), encoding="utf-8")
-            candidates = _retrieval_candidate_projection(path, ("paper_59", "paper_58"))
+        candidates = _retrieval_candidate_projection(payload, ("paper_59", "paper_58"))
 
         self.assertEqual(len(candidates), 48)
         self.assertEqual([item["document_id"] for item in candidates[:2]], ["paper_59", "paper_58"])

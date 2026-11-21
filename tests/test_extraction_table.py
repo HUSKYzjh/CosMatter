@@ -7,6 +7,8 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from cosmatter.candidate_screening import candidate_screening_from_review, write_candidate_screening
@@ -31,14 +33,18 @@ class ExtractionTableTests(unittest.TestCase):
             "question": "Which conditions accompanied the reported phase transition?", "material": "BiFeO3",
             "property": "temperature", "scope": "bulk measurements", "run_id": self.run,
         })["mission_id"])
+        self._screen(("alpha", "beta", "gamma", "excluded"))
+
+    def _screen(self, documents):
         papers = tuple(PaperCandidate(document_id=doc, title=f"Paper {doc}", query="synthetic", source="fixture",
-                                      doi="10.1234/" + doc) for doc in ("alpha", "beta", "gamma", "excluded"))
+                                      doi="10.1234/" + doc if doc.isascii() else None) for doc in documents)
         path = write_candidate_artifact(self.directory, "synthetic", papers)
-        decisions = [{"document_id": paper.document_id,
-                      "decision": "exclude" if paper.document_id == "excluded" else "include_for_fulltext",
-                      "reason_codes": ["out_of_scope_material" if paper.document_id == "excluded" else "material_match"]}
-                     for paper in papers]
-        review = candidate_screening_from_review(self.mission, json.loads(path.read_text(encoding="utf-8")), {"decisions": decisions})
+        candidates = json.loads(path.read_text(encoding="utf-8"))
+        decisions = [{"document_id": paper["document_id"],
+                      "decision": "exclude" if paper["document_id"] == "excluded" else "include_for_fulltext",
+                      "reason_codes": ["out_of_scope_material" if paper["document_id"] == "excluded" else "material_match"]}
+                     for paper in candidates["candidates"]]
+        review = candidate_screening_from_review(self.mission, candidates, {"decisions": decisions})
         write_candidate_screening(self.directory, review)
 
     def _write(self, filename, value):
@@ -116,6 +122,44 @@ class ExtractionTableTests(unittest.TestCase):
         self.api.cancel(self.run)
         cancelled = self.api.extraction_table(self.run)["rows"][0]
         self.assertEqual((cancelled["status"], cancelled["reader_available"]), ("reviewed", False))
+
+    def test_document_query_limits_json_and_csv_to_the_exact_paper(self):
+        reserved = "论文 A+B/%2F?x=1&v=#"
+        self._screen(("alpha", "alpha-long", reserved, reserved + "2", "excluded"))
+        self._cards()
+        with build_ui_preview_server(port=0, api=self.api) as server:
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                url = f"http://127.0.0.1:{server.server_port}/api/runs/{self.run}/extraction-table"
+                with urlopen(url, timeout=5) as response:
+                    full = json.load(response)
+                self.assertNotIn("document_id", full)
+                self.assertEqual(full["summary"], {"document_count": 6, "reviewed_count": 1, "gap_count": 5})
+                for doc in ("alpha", reserved, "al", "excluded"):
+                    with self.subTest(doc=doc):
+                        query = "?" + urlencode({"document_id": doc})
+                        with urlopen(url + query, timeout=5) as response:
+                            table = json.load(response)
+                        expected = [row for row in full["rows"] if row["document_id"] == doc]
+                        self.assertEqual((table["document_id"], table["screening_status"], table["rows"]),
+                                         (doc, "current", expected))
+                        self.assertEqual(table["summary"], {"document_count": int(bool(expected)),
+                                         "reviewed_count": int(doc == "alpha"), "gap_count": int(doc == reserved)})
+                        with urlopen(url + ".csv" + query, timeout=5) as response:
+                            csv_rows = list(csv.DictReader(io.StringIO(response.read().decode("utf-8-sig"))))
+                        self.assertEqual([row["document_id"] for row in csv_rows], [doc] * len(expected))
+
+                for query in ("document_id=", "document_id=%20", "document_id", "unknown=alpha",
+                              "document_id=alpha&document_id=alpha", "document_id=alpha&extra=yes",
+                              "document_id=%zz", "document_id=%FF", "document_id=%00", "document_id=" + "a" * 256):
+                    with self.subTest(query=query), self.assertRaises(HTTPError) as caught:
+                        urlopen(url + "?" + query, timeout=5)
+                    self.assertEqual(caught.exception.code, 400)
+                    caught.exception.close()
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
 
     def test_unmatched_source_and_delegated_human_looking_records_stay_out(self):
         self._cards(mismatch=True)

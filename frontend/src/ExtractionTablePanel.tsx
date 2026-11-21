@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createResource, createSignal } from "solid-js";
+import { For, Show, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { extractionCsv, extractionOrcaTasks, extractionStatuses, filterExtractionRows, readExtractionTable, type ExtractionStatus } from "./extractionTable";
 import { isLoopbackWorkbenchLocation, localRunLink } from "./liveRunIdentity";
 import { getExtractionTable } from "./localApi";
@@ -16,16 +16,27 @@ const stances: Record<string, [string, string]> = {
 };
 const pageSize = 20;
 
-export function ExtractionTablePanel(props: { runId: string; locale: "zh" | "en" }) {
+export interface ExtractionPaper { documentId: string; title: string }
+
+export function ExtractionTablePanel(props: {
+  runId: string; locale: "zh" | "en"; paper: ExtractionPaper | null; onViewAll: () => void; onBackToMap: () => void;
+}) {
   const t = (zh: string, en: string) => props.locale === "zh" ? zh : en;
-  const [table, { refetch }] = createResource(() => props.runId, async id => readExtractionTable(await getExtractionTable(id), id));
+  const [table, { refetch }] = createResource(
+    () => ({ runId: props.runId, documentId: props.paper?.documentId }),
+    async ({ runId, documentId }) => readExtractionTable(await getExtractionTable(runId, documentId), runId, documentId),
+  );
   const [query, setQuery] = createSignal("");
   const [status, setStatus] = createSignal<ExtractionStatus | "all">("all");
   const [property, setProperty] = createSignal("");
   const [page, setPage] = createSignal(1);
-  const ready = () => table.state === "ready" ? table() : undefined;
+  const ready = () => {
+    const result = table.state === "ready" ? table() : undefined;
+    return result?.run_id === props.runId && result?.document_id === props.paper?.documentId ? result : undefined;
+  };
+  const scopedRows = createMemo(() => ready()?.rows ?? []);
   const properties = createMemo(() => [...new Set((ready()?.rows ?? []).flatMap(row => row.property_name ? [row.property_name] : []))].sort());
-  const filtered = createMemo(() => filterExtractionRows(ready()?.rows ?? [], query(), status(), property()));
+  const filtered = createMemo(() => props.paper ? scopedRows() : filterExtractionRows(scopedRows(), query(), status(), property()));
   const lastPage = () => Math.max(1, Math.ceil(filtered().length / pageSize));
   const currentPage = () => Math.min(page(), lastPage());
   const visibleRows = () => filtered().slice((currentPage() - 1) * pageSize, currentPage() * pageSize);
@@ -33,13 +44,19 @@ export function ExtractionTablePanel(props: { runId: string; locale: "zh" | "en"
   const stance = (value: string) => Object.hasOwn(stances, value) ? t(...stances[value]) : value;
   const entries = (fields: Record<string, string | number | boolean | null>) => Object.entries(fields).map(([key, value]) => key + " = " + (value ?? missing())).join(" · ");
   const reset = () => { setQuery(""); setStatus("all"); setProperty(""); setPage(1); };
+  let heading: HTMLHeadingElement | undefined;
+  let mounted = true;
+  onCleanup(() => { mounted = false; });
+  const focusHeading = () => requestAnimationFrame(() => { if (heading?.isConnected) heading.focus(); });
+  onMount(() => { if (props.paper) focusHeading(); });
   async function download(format: "csv" | "orca") {
     const runId = ready()?.run_id;
     const rows = filtered();
     if (!runId || runId !== props.runId || !rows.length) return;
     const blob = format === "orca"
-      ? new Blob([JSON.stringify(await extractionOrcaTasks(window.location.origin, runId, rows), null, 2), "\n"], { type: "application/json;charset=utf-8" })
+      ? new Blob([JSON.stringify(await extractionOrcaTasks(window.location.origin, runId, rows, props.paper?.documentId), null, 2), "\n"], { type: "application/json;charset=utf-8" })
       : new Blob(["\uFEFF", extractionCsv(runId, rows)], { type: "text/csv;charset=utf-8" });
+    if (!mounted || ready()?.run_id !== runId || filtered() !== rows) return;
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -51,21 +68,27 @@ export function ExtractionTablePanel(props: { runId: string; locale: "zh" | "en"
   }
   return <section class="extraction-panel" aria-label={t("跨文献证据对照表", "Cross-paper evidence table")}>
     <header class="extraction-heading"><div>
-      <h2>{t("跨文献证据对照表", "Cross-paper evidence table")}</h2>
-      <p>{t("按论文核对研究对象、测量条件和来源定位。已纳入但缺少已核对证据的论文单列为缺口。", "Compare materials, measurement conditions and sources by paper. Included papers awaiting verified evidence appear as gaps.")}</p>
+      <h2 ref={heading} tabIndex={-1}>{t("跨文献证据对照表", "Cross-paper evidence table")}</h2>
+      <Show when={props.paper} fallback={<p>{t("按论文核对研究对象、测量条件和来源定位。已纳入但缺少已核对证据的论文单列为缺口。", "Compare materials, measurement conditions and sources by paper. Included papers awaiting verified evidence appear as gaps.")}</p>}>{paper =>
+        <p class="extraction-paper-scope"><span>{t("当前论文", "Current paper")}</span> <strong>{paper().title || paper().documentId}</strong> <code>{paper().documentId}</code></p>
+      }</Show>
     </div><ActionButton size="sm" busy={table.loading} busyLabel={t("读取中", "Loading")} onClick={() => void refetch()}>{t("刷新对照表", "Refresh table")}</ActionButton></header>
+    <Show when={props.paper}><div class="extraction-controls">
+      <ActionButton size="sm" onClick={props.onBackToMap}>{t("返回星图", "Back to map")}</ActionButton>
+      <ActionButton size="sm" onClick={() => { reset(); props.onViewAll(); focusHeading(); }}>{t("查看全部论文", "View all papers")}</ActionButton>
+    </div></Show>
     <Show when={table.loading}><p role="status">{t("正在读取本次运行的文献和审核记录…", "Loading papers and review records for this run…")}</p></Show>
     <Show when={table.state === "errored"}><p role="alert">{t("无法读取本次运行的对照表。请检查本机工作台连接，再刷新对照表。", "The table for this run could not be read. Check the local workbench connection, then refresh the table.")}</p></Show>
     <Show when={ready()}>{current => <>
       <Show when={current().screening_status !== "current"}><p class="extraction-screening-note" role="status">{current().screening_status === "outdated"
         ? t("候选列表已变更。请在文献关系图中重新核对筛选清单，以更新纳入文献。", "The candidate list changed. Recheck screening in the literature map to update the included papers.")
         : t("本次运行尚未登记文献筛选清单。已核对的来源可单独列出。", "This run has no recorded screening checklist. Independently verified sources can still appear.")}</p></Show>
-      <div class="extraction-counts">
+      <Show when={!props.paper}><div class="extraction-counts">
         <span><strong>{current().summary.document_count}</strong> {t("篇文献", "papers")}</span>
         <span><strong>{current().summary.reviewed_count}</strong> {t("条已核对证据", "verified evidence rows")}</span>
         <span><strong>{current().summary.gap_count}</strong> {t("篇有待补齐", "papers with gaps")}</span>
-      </div>
-      <Show when={current().rows.length}>
+      </div></Show>
+      <Show when={!props.paper && current().rows.length}>
         <div class="extraction-filters">
           <label>{t("搜索对照表", "Search the table")}<input type="search" value={query()} placeholder={t("文献、材料、条件或图号", "Paper, material, condition or figure")} onInput={event => { setQuery(event.currentTarget.value); setPage(1); }} /></label>
           <label>{t("审核状态", "Review status")}<select value={status()} onChange={event => { setStatus(event.currentTarget.value as ExtractionStatus | "all"); setPage(1); }}>
@@ -77,12 +100,18 @@ export function ExtractionTablePanel(props: { runId: string; locale: "zh" | "en"
           </select></label></Show>
         </div>
       </Show>
-      <div class="extraction-controls"><p role="status">{t(`匹配 ${filtered().length} / ${current().rows.length} 行`, `${filtered().length} of ${current().rows.length} rows match`)}</p>
+      <div class="extraction-controls"><p role="status">{props.paper
+        ? t(`本篇共 ${scopedRows().length} 条核验记录`, `${scopedRows().length} verification records for this paper`)
+        : t(`匹配 ${filtered().length} / ${current().rows.length} 行`, `${filtered().length} of ${current().rows.length} rows match`)}</p>
         <Show when={Boolean(query() || property() || status() !== "all")}><ActionButton size="sm" variant="quiet" onClick={reset}>{t("清除对照筛选", "Clear table filters")}</ActionButton></Show>
         <ActionButton size="sm" disabled={!filtered().length} onClick={() => void download("csv")}>{t("导出匹配行 CSV", "Export matching rows as CSV")}</ActionButton>
-        <Show when={isLoopbackWorkbenchLocation(window.location)}><ActionButton size="sm" disabled={!filtered().length} onClick={() => void download("orca")}>{t("导出 Orca 核验任务", "Export Orca verification tasks")}</ActionButton></Show>
+        <Show when={isLoopbackWorkbenchLocation(window.location)}><ActionButton size="sm" disabled={!filtered().length} onClick={() => void download("orca")}>{props.paper
+          ? t("导出本篇 Orca 核验任务", "Export Orca task for this paper")
+          : t("导出 Orca 核验任务", "Export Orca verification tasks")}</ActionButton></Show>
       </div>
-      <Show when={current().rows.length} fallback={<p role="status">{t("当前没有可展示的纳入文献或已核对证据。可在关系图中核对文献筛选。", "No included papers or verified evidence are available to display. Check paper screening in the map.")}</p>}>
+      <Show when={scopedRows().length} fallback={<p role="status">{props.paper
+        ? t("这篇论文暂无可导出的核验记录。", "This paper has no verification records to export.")
+        : t("当前没有可展示的纳入文献或已核对证据。可在关系图中核对文献筛选。", "No included papers or verified evidence are available to display. Check paper screening in the map.")}</p>}>
         <Show when={filtered().length} fallback={<p>{t("当前筛选未匹配记录。", "No records match these filters.")}</p>}>
           <table class="extraction-table" aria-label={t("文献与测量记录", "Papers and measurements")}>
             <thead><tr><th scope="col">{t("文献", "Paper")}</th><th scope="col">{t("材料与性质", "Material and property")}</th><th scope="col">{t("证据与条件", "Evidence and conditions")}</th><th scope="col">{t("来源定位", "Source location")}</th></tr></thead>

@@ -1,19 +1,168 @@
-import { For, Show, createEffect, createSignal } from "solid-js";
-import { approveEvidenceGraphPlan, draftEvidenceGraphPlan, getEvidenceGraphPage, requestEvidenceGraphReview, type EvidenceGraphNodeType, type EvidenceGraphPage, type EvidenceGraphPlanDraft } from "./localApi";
-import { safeOperationFeedback } from "./importFeedback";
-import { createExclusiveSubmissionGate } from "./exclusiveSubmissionGate";
+import { For, Show, batch, createEffect, createSignal, onCleanup } from "solid-js";
+import {
+  approveEvidenceGraphPlan, draftEvidenceGraphPlan, getEvidenceGraphPage, requestEvidenceGraphReview,
+  type EvidenceGraphNodeType, type EvidenceGraphPage, type EvidenceGraphPlanDraft,
+} from "./localApi";
+import { safeMutationFeedback } from "./importFeedback";
 import { createLatestRequestGate } from "./latestRequestGate";
+
 const TYPES: EvidenceGraphNodeType[] = ["EvidenceCard", "Paper", "Entity", "Condition", "Mission"];
-export function EvidenceGraphExplorer(props: { runId: string; locale: "zh" | "en" }) {
-  const [type, setType] = createSignal<EvidenceGraphNodeType>("EvidenceCard"); const [offset, setOffset] = createSignal(0); const [page, setPage] = createSignal<EvidenceGraphPage | null>(null); const [error, setError] = createSignal<string | null>(null); const [selectedNodeIds, setSelectedNodeIds] = createSignal<string[]>([]); const [intent, setIntent] = createSignal(""); const [reviewer, setReviewer] = createSignal(""); const [notice, setNotice] = createSignal<string | null>(null); const [draft, setDraft] = createSignal<EvidenceGraphPlanDraft | null>(null); const [actionBusy, setActionBusy] = createSignal(false); const pageRequestGate = createLatestRequestGate(); const actionGate = createExclusiveSubmissionGate(); const limit = 25; const t = (zh: string, en: string) => props.locale === "zh" ? zh : en;
-  createEffect(() => { const nodeType = type(); const pageOffset = offset(); const isLatest = pageRequestGate.begin(); setError(null); setSelectedNodeIds([]); setDraft(null); void getEvidenceGraphPage(props.runId, { nodeType, offset: pageOffset, limit }).then((result) => { if (isLatest()) setPage(result); }).catch((reason: unknown) => { if (isLatest()) setError(safeOperationFeedback(reason, t("无法读取已审核证据图；当前图工件保持不变。", "Unable to read the accepted-evidence graph; the current graph artifact is unchanged."))); }); });
-  const chooseType = (item: EvidenceGraphNodeType) => { setType(item); setOffset(0); };
-  const toggleNode = (nodeId: string) => setSelectedNodeIds((current) => current.includes(nodeId) ? current.filter((item) => item !== nodeId) : current.length < 25 ? [...current, nodeId] : current);
-  const selected = () => selectedNodeIds();
-  const beginAction = () => { if (actionBusy() || !actionGate.tryStart()) { setNotice(t("正在提交一个图审核操作；请等待当前请求结束。", "A graph-review operation is already being submitted; wait for the current request to finish.")); return false; } setActionBusy(true); return true; };
-  const finishAction = () => { actionGate.finish(); setActionBusy(false); };
-  const requestReview = async () => { if (!beginAction()) return; setNotice(t("正在提交待人工审核请求；不接受证据。", "Submitting the pending human-review request; it accepts no evidence.")); try { const result = await requestEvidenceGraphReview(props.runId, selected(), intent()); setNotice(t(`已提交待人工审核请求 ${result.request_id}；它不接受证据。`, `Pending human-review request ${result.request_id} submitted; it accepts no evidence.`)); } catch (reason) { setNotice(safeOperationFeedback(reason, t("无法提交图审核请求；已审核图工件保持不变。", "Unable to submit the graph-review request; the accepted graph artifact is unchanged."))); } finally { finishAction(); } };
-  const createDraft = async () => { if (!beginAction()) return; setNotice(t("正在创建不受信图计划草案；它尚未执行。", "Creating an untrusted graph-plan draft; it has not executed.")); try { const result = await draftEvidenceGraphPlan(props.runId, selected(), intent()); setDraft(result); setNotice(t(`已保存不可信草案 ${result.plan_id}；尚未执行。`, `Untrusted draft ${result.plan_id} saved; it has not executed.`)); } catch (reason) { setNotice(safeOperationFeedback(reason, t("无法创建图计划草案；已审核图工件保持不变。", "Unable to create the graph-plan draft; the accepted graph artifact is unchanged."))); } finally { finishAction(); } };
-  const approveDraft = async () => { const current = draft(); if (!current || !beginAction()) return; setNotice(t("正在记录人工跟进确认；不授予执行或证据接受。", "Recording the human follow-up; it grants neither execution nor evidence acceptance.")); try { const result = await approveEvidenceGraphPlan(props.runId, current.plan_id, reviewer(), intent()); setNotice(t(`已记录人工跟进确认 ${result.approval_id}；仍未授予执行或证据接受。`, `Human follow-up ${result.approval_id} recorded; it grants neither execution nor evidence acceptance.`)); } catch (reason) { setNotice(safeOperationFeedback(reason, t("无法记录人工跟进确认；已审核图工件保持不变。", "Unable to record the human follow-up; the accepted graph artifact is unchanged."))); } finally { finishAction(); } };
-  return <section class="evidence-graph-explorer"><small>{t("审核后图投影 / 只读", "ACCEPTED-EVIDENCE GRAPH / READ ONLY")}</small><h2>{t("有界证据图", "Bounded evidence graph")}</h2><p>{t("仅读取已人工接受 EvidenceCard 派生图；不包含原文、私有路径或科学结论。", "Reads only the graph derived from accepted EvidenceCards; no source text, private paths, or scientific conclusion.")}</p><div class="graph-type-tabs"><For each={TYPES}>{(item) => <button type="button" classList={{ active: type() === item }} onClick={() => chooseType(item)}>{item}</button>}</For></div><Show when={page()}>{(value) => <><p>{t(`范围：${value().mission_id}；${value().page.node_total} 个节点；当前 ${value().nodes.length} 个。`, `Scope: ${value().mission_id}; ${value().page.node_total} node(s); ${value().nodes.length} shown.`)}</p><Show when={value().page.truncated}><p class="graph-truncated">{t("结果已截断；当前页面不是全局知识图。", "Results are truncated; this page is not global.")}</p></Show><ul><For each={value().nodes}>{(node) => <li><label><input type="checkbox" checked={selected().includes(node.node_id)} onChange={() => toggleNode(node.node_id)} /><strong>{node.label}</strong><span>{node.node_type}</span></label></li>}</For></ul><section class="graph-plan-review" aria-label={t("图计划人工审核", "Graph plan human review")}><small>{t("人工审核桥", "HUMAN REVIEW BRIDGE")}</small><p>{t(`已选择 ${selected().length} 个节点（最多 25 个）。草案、请求和确认都不会改图、执行检索或接受证据。`, `${selected().length} node(s) selected (maximum 25). Drafts, requests, and acknowledgements cannot alter the graph, execute retrieval, or accept evidence.`)}</p><label>{t("审核或检查理由", "Review or inspection rationale")}<input value={intent()} onInput={(event) => setIntent(event.currentTarget.value)} maxlength="500" /></label><div class="graph-type-tabs"><button type="button" disabled={actionBusy() || !selected().length || !intent().trim()} onClick={requestReview}>{actionBusy() ? t("提交中…", "Submitting…") : t("提交待审请求", "Request human review")}</button><button type="button" disabled={actionBusy() || !selected().length || !intent().trim()} onClick={createDraft}>{actionBusy() ? t("创建中…", "Creating…") : t("创建不可信草案", "Create untrusted draft")}</button></div><Show when={draft()}><label>{t("人工审核者", "Human reviewer")}<input value={reviewer()} onInput={(event) => setReviewer(event.currentTarget.value)} maxlength="200" /></label><button type="button" disabled={actionBusy() || !reviewer().trim()} onClick={approveDraft}>{actionBusy() ? t("记录中…", "Recording…") : t("记录人工跟进确认", "Record human acknowledgement")}</button></Show><Show when={notice()}>{(message) => <p class="graph-truncated" role="status">{message()}</p>}</Show></section><div class="graph-type-tabs"><button type="button" disabled={offset() === 0} onClick={() => setOffset(Math.max(0, offset() - limit))}>{t("上一页", "Previous")}</button><button type="button" disabled={!value().page.truncated} onClick={() => setOffset(offset() + limit)}>{t("下一页", "Next")}</button></div><p>{value().page.empty_result_meaning}</p></>}</Show><Show when={error()}>{(message) => <p class="graph-truncated">{message()}</p>}</Show></section>;
+const limit = 25;
+type Props = { runId: string; missionId: string; locale: "zh" | "en" };
+const text = (locale: Props["locale"], zh: string, en: string) => locale === "zh" ? zh : en;
+function receiptId(value: unknown, prefix: string): boolean {
+  return typeof value === "string" && value.startsWith(prefix) && /^[A-Za-z0-9_-]{1,160}$/.test(value);
+}
+
+function matchesPage(response: EvidenceGraphPage, type: EvidenceGraphNodeType, offset: number, mission: string) {
+  const meta = response?.page;
+  return response?.schema_version === "1.0" && response.trust_status === "accepted_evidence_projection_not_scientific_conclusion"
+    && Boolean(mission) && response.mission_id === mission && Boolean(response.graph_id?.startsWith("graph:"))
+    && meta?.offset === offset && meta.limit === limit && meta.node_types?.length === 1 && meta.node_types[0] === type
+    && Number.isSafeInteger(meta.node_total) && meta.node_total >= 0 && Array.isArray(response.nodes)
+    && response.nodes.length === Math.min(limit, Math.max(0, meta.node_total - offset)) && meta.truncated === (offset + response.nodes.length < meta.node_total)
+    && response.nodes.every(node => node && typeof node.node_id === "string" && node.node_id.length > 0 && node.node_type === type && typeof node.label === "string")
+    && new Set(response.nodes.map(node => node.node_id)).size === response.nodes.length;
+}
+
+export function EvidenceGraphExplorer(props: Props) {
+  const [activated, setActivated] = createSignal(false);
+  return <details class="graph-review-tools" onToggle={event => { if (event.currentTarget.open) setActivated(true); }}>
+    <summary>{text(props.locale, "已接受证据的审核队列", "Accepted evidence review queue")}</summary>
+    <Show when={activated()}><EvidencePages {...props} /></Show>
+  </details>;
+}
+
+function EvidencePages(props: Props) {
+  const [type, setType] = createSignal<EvidenceGraphNodeType>("EvidenceCard");
+  const [offset, setOffset] = createSignal(0);
+  const [attempt, retry] = createSignal(0);
+  const [page, setPage] = createSignal<EvidenceGraphPage | null>(null);
+  const [failed, setFailed] = createSignal(false);
+  const reads = createLatestRequestGate();
+  const t = (zh: string, en: string) => text(props.locale, zh, en);
+  createEffect(() => {
+    attempt();
+    const run = props.runId, mission = props.missionId, nodeType = type(), start = offset();
+    const current = reads.begin();
+    setPage(null);
+    setFailed(false);
+    void getEvidenceGraphPage(run, { nodeType, offset: start, limit }).then(result => {
+      if (!current()) return;
+      if (!matchesPage(result, nodeType, start, mission)) { setFailed(true); return; }
+      setPage(result);
+    }).catch(() => { if (current()) setFailed(true); });
+  });
+  onCleanup(() => reads.invalidate());
+  return <section class="evidence-graph-explorer">
+    <div class="graph-type-tabs"><For each={TYPES}>{item =>
+      <button type="button" classList={{ active: type() === item }} aria-pressed={type() === item}
+        onClick={() => batch(() => { setType(item); setOffset(0); })}>{item}</button>
+    }</For></div>
+    <Show when={failed()}><p class="graph-truncated" role="alert">{t("无法读取当前页。", "Could not load this page.")}</p>
+      <button type="button" onClick={() => retry(value => value + 1)}>{t("重试读取", "Retry loading")}</button>
+    </Show>
+    <Show when={!page() && !failed()}><p role="status">{t("正在读取当前页…", "Loading this page…")}</p></Show>
+    <Show when={page()} keyed>{value => <>
+      <p>{value.nodes.length ? t(
+        `当前 ${value.page.offset + 1}–${value.page.offset + value.nodes.length} / ${value.page.node_total} 个节点`,
+        `Showing ${value.page.offset + 1}–${value.page.offset + value.nodes.length} of ${value.page.node_total} nodes`,
+      ) : value.page.node_total ? t("当前页已空，可返回上一页。", "This page is empty. Return to the previous page.")
+        : t("当前类型没有已核对节点。", "No reviewed nodes of this type.")}</p>
+      <Show when={value.nodes.length}><ReviewPage runId={props.runId} locale={props.locale} page={value} /></Show>
+      <div class="graph-type-tabs">
+        <button type="button" disabled={offset() === 0} onClick={() => setOffset(Math.max(0, offset() - limit))}>{t("上一页", "Previous")}</button>
+        <button type="button" disabled={!value.page.truncated} onClick={() => setOffset(offset() + limit)}>{t("下一页", "Next")}</button>
+      </div>
+    </>}</Show>
+  </section>;
+}
+
+function ReviewPage(props: Pick<Props, "runId" | "locale"> & { page: EvidenceGraphPage }) {
+  const [selected, setSelected] = createSignal<string[]>([]);
+  const [intent, setIntent] = createSignal("");
+  const [reviewer, setReviewer] = createSignal("");
+  const [draft, setDraft] = createSignal<EvidenceGraphPlanDraft | null>(null);
+  const [busy, setBusy] = createSignal(false);
+  const [notice, setNotice] = createSignal("");
+  const writes = createLatestRequestGate();
+  const t = (zh: string, en: string) => text(props.locale, zh, en);
+  onCleanup(() => writes.invalidate());
+
+  function resetDraft() {
+    writes.invalidate();
+    setDraft(null);
+    setReviewer("");
+    setNotice("");
+  }
+  function select(id: string) {
+    resetDraft();
+    setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+  }
+  async function submit(kind: "review" | "draft" | "approve") {
+    const run = props.runId, graph = props.page.graph_id, mission = props.page.mission_id;
+    const ids = selected(), rationale = intent().trim(), name = reviewer().trim(), plan = draft();
+    if (busy() || !ids.length || !rationale || (kind === "approve" && (!plan || !name))) return;
+    const current = writes.begin();
+    const bound = (result: object) => "graph_id" in result && result.graph_id === graph && "mission_id" in result && result.mission_id === mission;
+    const sameSelection = (received: string[]) => Array.isArray(received) && received.length === ids.length && ids.every(id => received.includes(id));
+    setBusy(true);
+    setNotice("");
+    try {
+      if (kind === "approve" && plan) {
+        const result = await approveEvidenceGraphPlan(run, plan.plan_id, name, rationale);
+        if (!current()) return;
+        if (!bound(result) || result.plan_id !== plan.plan_id || !receiptId(result.approval_id, "graph_plan_approval_") || result.reviewer !== name || result.rationale !== rationale
+          || result.status !== "human_approved_graph_plan_follow_up_not_execution_or_evidence_acceptance") {
+          setDraft(null);
+          throw new Error("approval identity mismatch");
+        }
+        setDraft(null);
+        setReviewer("");
+        setNotice(t(`已记录人工跟进确认 ${result.approval_id}。`, `Human acknowledgement recorded: ${result.approval_id}.`));
+      } else if (kind === "draft") {
+        setDraft(null);
+        setReviewer("");
+        const result = await draftEvidenceGraphPlan(run, ids, rationale);
+        if (!current()) return;
+        if (!bound(result) || !sameSelection(result.node_ids) || !receiptId(result.plan_id, "graph_plan_") || result.intent !== rationale
+          || result.proposed_action !== "request_human_to_review_or_project_graph" || result.trust_status !== "untrusted_graph_plan_draft_not_execution_or_evidence_acceptance") throw new Error("draft identity mismatch");
+        setDraft(result);
+        setNotice(t(`已保存待审核草案 ${result.plan_id}。`, `Draft saved for review: ${result.plan_id}.`));
+      } else {
+        const result = await requestEvidenceGraphReview(run, ids, rationale);
+        if (!current()) return;
+        if (!bound(result) || !sameSelection(result.node_ids) || !receiptId(result.request_id, "graph_review_") || result.rationale !== rationale
+          || result.status !== "pending_human_review_not_evidence_acceptance") throw new Error("review identity mismatch");
+        setNotice(t(`已提交待审请求 ${result.request_id}。`, `Review requested: ${result.request_id}.`));
+      }
+    } catch (error) {
+      if (current()) {
+        if (kind === "approve" && error instanceof Error && "failure" in error && error.failure === "write_outcome_unknown") setDraft(null);
+        setNotice(safeMutationFeedback(error, t("未能核对操作回执，请检查本次运行的工件。", "Could not verify the receipt. Check this run’s artifacts."),
+          t("请求结果未知，请先核对本次运行的工件。", "The outcome is unknown. Check this run’s artifacts first.")));
+      }
+    } finally { setBusy(false); }
+  }
+  return <>
+    <ul><For each={props.page.nodes}>{node => <li><label>
+      <input type="checkbox" disabled={busy()} checked={selected().includes(node.node_id)} onChange={() => select(node.node_id)} />
+      <strong>{node.label}</strong><span>{node.node_type}</span>
+    </label></li>}</For></ul>
+    <section class="graph-plan-review" aria-label={t("图计划人工审核", "Graph plan human review")}>
+      <p>{t(`已选择 ${selected().length} 个节点。提交后由研究者核对，确认只登记人工跟进。`,
+        `${selected().length} nodes selected. A researcher reviews the request. Acknowledgement records follow-up only.`)}</p>
+      <label>{t("审核或检查理由", "Review or inspection rationale")}<input value={intent()} disabled={busy()} maxlength="500"
+        onInput={event => { resetDraft(); setIntent(event.currentTarget.value); }} /></label>
+      <div class="graph-type-tabs">
+        <button type="button" disabled={busy() || !selected().length || !intent().trim()} onClick={() => void submit("review")}>{t("提交待审请求", "Request human review")}</button>
+        <button type="button" disabled={busy() || !selected().length || !intent().trim()} onClick={() => void submit("draft")}>{t("创建不可信草案", "Create untrusted draft")}</button>
+      </div>
+      <Show when={draft()}><label>{t("人工审核者", "Human reviewer")}<input value={reviewer()} maxlength="200" disabled={busy()}
+        onInput={event => setReviewer(event.currentTarget.value)} /></label>
+        <button type="button" disabled={busy() || !reviewer().trim()} onClick={() => void submit("approve")}>{t("记录人工跟进确认", "Record human acknowledgement")}</button>
+      </Show>
+      <p class="graph-truncated" role="status">{busy() ? t("正在提交…", "Submitting…") : notice()}</p>
+    </section>
+  </>;
 }

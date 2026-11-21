@@ -24,7 +24,8 @@ from cosmatter.candidate_duplicate_reconciliation import (
 )
 from cosmatter.dispatch import MissionDispatcher
 from cosmatter.material_extraction import material_facts_from_review, write_material_facts_for_document
-from cosmatter.models import MissionBrief, MissionState
+from cosmatter.metadata_enrichment import build_metadata_enrichment, write_metadata_enrichment
+from cosmatter.models import MissionBrief, MissionState, PaperCandidate
 from cosmatter.simulation_campaign import (
     SIMULATION_CAMPAIGN_BOUNDARY,
     SIMULATION_CAMPAIGN_SCHEMA_VERSION,
@@ -77,6 +78,25 @@ class UiExportTests(unittest.TestCase):
         self.assertNotIn("must never appear", serialised)
         self.assertNotIn("api_key", serialised)
         self.assertNotIn("authorization", serialised)
+
+    def test_graph_exposes_only_resolved_dois_for_current_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs_dir = Path(directory)
+            self._write_run(runs_dir, "doi_lookup")
+            run_dir = runs_dir / "doi_lookup"
+            original = {"document_id": "alpha", "title": "PST ordering", "source": "Sciverse", "publication_year": 2024}
+            candidates = {"candidates": [original, {**original, "document_id": "other", "title": "Other study"}]}
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps(candidates), encoding="utf-8")
+            hit = PaperCandidate(document_id="ref", title="PST ordering", source="Crossref", query="fixture",
+                                 publication_year=2024, doi="10.1234/PST")
+            artifact = build_metadata_enrichment("mission_ui_export_001", candidates, ("alpha", "other"), {
+                "alpha": {"Crossref": (hit,)}, "other": {"Crossref": ()},
+            })
+            write_metadata_enrichment(run_dir, artifact)
+            graph = json.loads(export_run_to_ui(runs_dir, "doi_lookup").read_text(encoding="utf-8"))["literature_graph"]
+            papers = {node["node_id"]: node for node in graph["nodes"] if node["kind"] == "candidate_paper"}
+            self.assertEqual(papers["paper:alpha"]["doi"], "10.1234/pst")
+            self.assertNotIn("doi", papers["paper:other"])
 
     def test_export_projects_a_redacted_review_gated_candidate_duplicate_queue(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -543,10 +563,23 @@ class UiExportTests(unittest.TestCase):
                 source_task={"provider": "mineru", "task_id": "task_fixture", "state": "done", "document_id": "doc_fixture"},
                 selection={"document_id": "doc_fixture", "segments": [{"segment_id": "s1", "locator": "page:1", "kind": "paragraph", "quote": "short synthetic quote"}]},
             ))
+            candidates = [{"document_id": f"paper_{i}", "title": f"Retrieved paper {i}", "source": "fixture"} for i in range(60)]
+            candidates.extend([
+                {"document_id": "doc_fixture_2", "title": "Late paper with a rejected card", "source": "fixture"},
+                {"document_id": "doc_fixture", "title": "Late paper with reviewed data", "source": "fixture", "doi": "10.1234/late"},
+            ])
+            (run_dir / "retrieval_candidates.json").write_text(json.dumps({"candidates": candidates}), encoding="utf-8")
             export_run_to_ui(runs_dir, "approved_evidence_run")
             bundle = json.loads((run_dir / "ui.json").read_text(encoding="utf-8"))
 
         self.assertEqual([card["evidence_id"] for card in bundle["evidence_cards"]], ["evidence_accepted"])
+        graph = bundle["literature_graph"]
+        self.assertEqual(graph["coverage"], {"candidate_count": 62, "visible_candidate_count": 48,
+                                            "accepted_evidence_count": 1, "linked_accepted_evidence_count": 1})
+        papers = {node["node_id"]: node for node in graph["nodes"] if node["kind"] == "candidate_paper"}
+        self.assertEqual((papers["paper:doc_fixture"]["label"], papers["paper:doc_fixture"]["doi"]),
+                         ("Late paper with reviewed data", "10.1234/late"))
+        self.assertNotIn("paper:doc_fixture_2", papers)
         self.assertEqual(bundle["status"]["verification_summary"]["rejected_count"], 1)
         self.assertEqual(bundle["verification_decisions"], [])
     def test_export_includes_valid_condition_matrix_artifact(self) -> None:

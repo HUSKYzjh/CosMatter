@@ -81,7 +81,7 @@ def _reader_edges(run_dir: Path, mission: MissionBrief) -> set[tuple[str, str]]:
         return set()
 
 
-def extraction_table(run_dir: Path, mission: MissionBrief) -> dict[str, Any]:
+def extraction_table(run_dir: Path, mission: MissionBrief, *, requested_document_id: str | None = None) -> dict[str, Any]:
     mission_id = mission.mission_id
     papers, selected, screening_status = _selected_papers(run_dir, mission_id)
     delegated = has_delegated_test_review_boundary(run_dir)
@@ -112,9 +112,11 @@ def extraction_table(run_dir: Path, mission: MissionBrief) -> dict[str, Any]:
     for card in sorted(cards, key=lambda item: item.evidence_id):
         cards_by_doc[card.provenance.document_id].append(card)
     accepted_docs = {c.provenance.document_id for c in cards if statuses.get(c.evidence_id) is ReviewStatus.ACCEPTED}
-    documents = sorted(selected | accepted_docs)
+    documents = selected | accepted_docs
+    if requested_document_id is not None:
+        documents = documents & {requested_document_id}
     gap_count = 0
-    for document_id in documents:
+    for document_id in sorted(documents):
         paper = papers.get(document_id, {})
         base = {
             "document_id": document_id, "title": normalize_public_title(paper["title"]) if paper else document_id,
@@ -164,6 +166,7 @@ def extraction_table(run_dir: Path, mission: MissionBrief) -> dict[str, Any]:
             rows.append({**base, "status": gap})
     return {
         "schema_version": "cosmatter.extraction-table/v1", "run_id": run_dir.name, "screening_status": screening_status,
+        **({"document_id": requested_document_id} if requested_document_id is not None else {}),
         "summary": {"document_count": len(documents), "reviewed_count": len(rows) - gap_count, "gap_count": gap_count}, "rows": rows,
     }
 

@@ -1,5 +1,5 @@
 import { packages as dshBundles } from "../../plugins/dsh-plugin-group.json";
-import { isLocalRunId } from "./liveRunIdentity";
+import { extractionTablePath, isLocalRunId } from "./liveRunIdentity";
 
 export interface LocalApiStatus {
   api_mode: "loopback_only";
@@ -194,9 +194,8 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = (init?.m
   });
 }
 function jsonPost<T>(path: string, payload: unknown): Promise<T> { return request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
-export function getExtractionTable(runId: string): Promise<unknown> {
-  if (!isLocalRunId(runId)) throw new Error("Invalid extraction table run");
-  return request(`./api/runs/${encodeURIComponent(runId)}/extraction-table`, { credentials: "omit", redirect: "error" });
+export function getExtractionTable(runId: string, documentId?: string): Promise<unknown> {
+  return request("." + extractionTablePath(runId, documentId), { credentials: "omit", redirect: "error" });
 }
 
 export async function getRecentLocalRuns(): Promise<RecentLocalRun[]> {

@@ -13,7 +13,7 @@ export interface EvidenceCard {
   conditions: Record<string, string | number | boolean | null>;
   quote: string;
   reviewStatus: "accepted";
-  provenance: { documentId: string; locator: string; source: string; accessPolicy: string };
+  provenance: { documentId: string; locator: string; source: string; accessPolicy: string; doi?: string };
   isSynthetic: boolean;
 }
 
@@ -146,13 +146,20 @@ export interface LiteratureGraphNode {
   kind: string;
   label: string;
   trustStatus: string;
+  doi?: string;
   source?: string;
   publicationYear?: number | null;
   isContentAccessible?: boolean;
   entityKind?: string;
 }
 export interface LiteratureGraphEdge { sourceId: string; targetId: string; edgeType: string; relationSource: string; trustStatus: string; }
-export interface LiteratureGraph { trustStatus: string; nodes: LiteratureGraphNode[]; edges: LiteratureGraphEdge[]; }
+export interface LiteratureGraphCoverage {
+  candidateCount: number;
+  visibleCandidateCount: number;
+  acceptedEvidenceCount: number;
+  linkedAcceptedEvidenceCount: number;
+}
+export interface LiteratureGraph { trustStatus: string; nodes: LiteratureGraphNode[]; edges: LiteratureGraphEdge[]; coverage?: LiteratureGraphCoverage; }
 export type ResearchTrack = "exact_material" | "mechanism_analogue" | "algorithm" | "unclassified_legacy";
 export type RouteEligibility = "primary_allowed" | "counterevidence_only";
 export interface ResearchGuideItem {
@@ -653,6 +660,15 @@ function conditionNormalization(value: unknown): ConditionNormalization | null {
   return { trustStatus: "human_reviewed_condition_normalization_no_conversion", mappings };
 }
 
+function graphCoverage(value: unknown): LiteratureGraphCoverage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { candidate_count, visible_candidate_count, accepted_evidence_count, linked_accepted_evidence_count } = value as JsonObject;
+  const count = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+  if (!count(candidate_count) || !count(visible_candidate_count) || !count(accepted_evidence_count) || !count(linked_accepted_evidence_count)
+    || visible_candidate_count > candidate_count || linked_accepted_evidence_count > accepted_evidence_count) return undefined;
+  return { candidateCount: candidate_count, visibleCandidateCount: visible_candidate_count, acceptedEvidenceCount: accepted_evidence_count, linkedAcceptedEvidenceCount: linked_accepted_evidence_count };
+}
+
 function literatureGraph(value: unknown): LiteratureGraph {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return { trustStatus: "unavailable", nodes: [], edges: [] };
   const raw = value as JsonObject;
@@ -664,6 +680,7 @@ function literatureGraph(value: unknown): LiteratureGraph {
     return [{
       nodeId: node.node_id.slice(0, 300), kind: node.kind.slice(0, 80), label: node.label.slice(0, 500), trustStatus: node.trust_status.slice(0, 160),
       source: typeof node.source === "string" ? node.source.slice(0, 120) : undefined,
+      doi: typeof node.doi === "string" && node.doi.length <= 255 ? node.doi : undefined,
       publicationYear: typeof node.publication_year === "number" ? node.publication_year : null,
       isContentAccessible: typeof node.is_content_accessible === "boolean" ? node.is_content_accessible : undefined,
       entityKind: typeof node.entity_kind === "string" ? node.entity_kind.slice(0, 80) : undefined,
@@ -677,7 +694,7 @@ function literatureGraph(value: unknown): LiteratureGraph {
     if (typeof edge.source_id !== "string" || typeof edge.target_id !== "string" || typeof edge.edge_type !== "string" || typeof edge.relation_source !== "string" || typeof edge.trust_status !== "string" || !nodeIds.has(edge.source_id) || !nodeIds.has(edge.target_id)) return [];
     return [{ sourceId: edge.source_id, targetId: edge.target_id, edgeType: edge.edge_type.slice(0, 80), relationSource: edge.relation_source.slice(0, 80), trustStatus: edge.trust_status.slice(0, 160) }];
   }).slice(0, 144);
-  return { trustStatus: typeof raw.trust_status === "string" ? raw.trust_status.slice(0, 160) : "unclassified", nodes, edges };
+  return { trustStatus: typeof raw.trust_status === "string" ? raw.trust_status.slice(0, 160) : "unclassified", nodes, edges, coverage: graphCoverage(raw.coverage) };
 }
 
 function researchGuide(value: unknown, missionId: string): ResearchGuide | null {
@@ -882,7 +899,8 @@ export function readBundle(value: unknown, source: ImportedBundle["source"] = "l
     const validStances = new Set(["support", "contradict", "context", "unknown"]);
     const validAccessPolicies = new Set(["oa", "authorized", "local_only"]);
     if (item.review_status !== "accepted" || !provenance || !evidenceId || !claim || !quote || !stance || !validStances.has(stance) || !documentId || !locator || !sourceName || typeof accessPolicy !== "string" || !validAccessPolicies.has(accessPolicy) || item.conditions === null || typeof item.conditions !== "object" || Array.isArray(item.conditions) || (item.is_synthetic !== undefined && typeof item.is_synthetic !== "boolean")) return [];
-    return [{ evidenceId, claim, stance, conditions: record(item.conditions), quote, reviewStatus: "accepted" as const, provenance: { documentId, locator, source: sourceName, accessPolicy }, isSynthetic: item.is_synthetic === true }];
+    const doi = typeof provenance.doi === "string" && provenance.doi.length <= 255 ? provenance.doi : undefined;
+    return [{ evidenceId, claim, stance, conditions: record(item.conditions), quote, reviewStatus: "accepted" as const, provenance: { documentId, locator, source: sourceName, accessPolicy, doi }, isSynthetic: item.is_synthetic === true }];
   }) : [];
   // A duplicate identifier makes graph edges and later reviewer decisions
   // ambiguous.  Discard every occurrence rather than selecting an arbitrary
