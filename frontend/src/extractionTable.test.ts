@@ -28,6 +28,13 @@ describe("cross-paper extraction rows", () => {
     expect(filterExtractionRows([row, gap], "", "awaiting_review", "")).toEqual([gap]);
     expect(filterExtractionRows([row, gap], "BiFeO3", "awaiting_review", "")).toEqual([]);
   });
+  it("finds a typeset paper title while preserving the recorded title in exports", () => {
+    const item = { ...row, title: "La$_2$O$_3$ film" };
+    for (const query of ["La₂O₃", "La2O3", item.title]) {
+      expect(filterExtractionRows([item, gap], query, "all", "")).toEqual([item]);
+    }
+    expect(extractionCsv("fixture", [item])).toContain(item.title);
+  });
   it("requires the paper scope to match even for an empty response or a single matching row", () => {
     const one = { ...table, document_id: "d1", rows: [row], summary: { document_count: 1, reviewed_count: 1, gap_count: 0 } };
     expect(readExtractionTable(one, "fixture", "d1").rows).toEqual([row]);

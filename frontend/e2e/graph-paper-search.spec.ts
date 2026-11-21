@@ -9,8 +9,9 @@ for (const width of [320, 1280]) {
     await page.setViewportSize({ width, height: 860 });
     const run = "search_fixture";
     const bundle = JSON.parse(await readFile(resolve("..", "examples/ui-demo/route_diagnostics.json"), "utf8"));
+    const printedTitle = "Film with piezoelectric response of La₂O₃";
     const nodes = Array.from({ length: 8 }, (_, n) => ({
-      node_id: `paper:film-${n}`, kind: "candidate_paper", label: n === 7 ? "Film with piezoelectric response" : "Film " + n,
+      node_id: `paper:film-${n}`, kind: "candidate_paper", label: n === 7 ? "Film with piezoelectric response of La$_2$O$_3$" : "Film " + n,
       doi: `10.1234/film-${n}`, publication_year: 2021, source: "Sciverse", trust_status: "retrieval_candidate",
     }));
     bundle.literature_graph = { trust_status: "fixture", coverage: { candidate_count: 28, visible_candidate_count: 8, accepted_evidence_count: 0, linked_accepted_evidence_count: 0 }, nodes, edges: [] };
@@ -42,11 +43,14 @@ for (const width of [320, 1280]) {
     await hit.press("Enter");
     const inspector = page.getByRole("complementary", { name: "图谱检查器" });
     await expect(inspector).toBeFocused();
-    await expect(inspector.getByRole("heading", { name: "Film with piezoelectric response" })).toBeVisible();
+    await expect(inspector.getByRole("heading", { name: printedTitle, exact: true })).toBeVisible();
     await expect(inspector.getByText("10.1234/film-7", { exact: true })).toBeVisible();
     await expect(page.getByLabel("主题簇")).toHaveValue("all");
     await inspector.getByRole("button", { name: "返回检索结果" }).click();
     await expect(input).toBeFocused();
+    await input.fill("La₂O₃");
+    await expect(search.getByRole("listitem")).toHaveCount(1);
+    await expect(hit.locator("strong")).toHaveText(printedTitle);
     await input.fill("Sciverse 2021");
     await expect(search.getByRole("listitem")).toHaveCount(6);
     await search.getByRole("button", { name: "下一页" }).click();

@@ -2,6 +2,7 @@ import { For, Show, createMemo, createResource, createSignal, onCleanup, onMount
 import { extractionCsv, extractionOrcaTasks, extractionStatuses, filterExtractionRows, readExtractionTable, type ExtractionStatus } from "./extractionTable";
 import { isLoopbackWorkbenchLocation, localRunLink } from "./liveRunIdentity";
 import { getExtractionTable } from "./localApi";
+import { displayPaperTitle } from "./paperTitle";
 import { ActionButton } from "./uiPrimitives";
 import "./extraction-table.css";
 
@@ -83,7 +84,7 @@ export function ExtractionTablePanel(props: {
         <ActionButton variant="quiet" size="sm" busy={table.loading} busyLabel={t("读取中", "Loading")} onClick={() => void refetch()}>{t("刷新对照表", "Refresh table")}</ActionButton>
       </div>
       <Show when={props.paper}>{paper => <>
-        <h2 ref={heading} tabIndex={-1}>{paper().title || paper().documentId}</h2>
+        <h2 ref={heading} tabIndex={-1}>{displayPaperTitle(paper().title) || paper().documentId}</h2>
         <Show when={paper().title && paper().title !== paper().documentId}><p class="extraction-paper-scope">{t("文献 ID", "Document ID")} <code>{paper().documentId}</code></p></Show>
       </>}</Show>
     </header>
@@ -126,7 +127,7 @@ export function ExtractionTablePanel(props: {
             <thead><tr><th scope="col">{props.paper ? t("核验记录", "Record") : t("文献", "Paper")}</th><th scope="col">{t("测量与证据", "Measurements and evidence")}</th><th scope="col">{t("材料与条件", "Material and conditions")}</th><th scope="col">{t("来源定位", "Source location")}</th></tr></thead>
             <tbody><For each={visibleRows()}>{row => <tr>
               <th scope="row" class="extraction-record">
-                <Show when={!props.paper || (row.title && row.title !== props.paper.title)}><span class="extraction-title">{row.title || row.document_id}</span></Show>
+                <Show when={!props.paper || (row.title && row.title !== props.paper.title)}><span class="extraction-title">{displayPaperTitle(row.title) || row.document_id}</span></Show>
                 <span class="extraction-status" classList={{ verified: row.status === "reviewed" }}>{t(...labels[row.status])}</span>
                 <Show when={row.evidence_id}>{id => <span class="extraction-reference">{t("证据", "Evidence")} <code>{id()}</code></span>}</Show>
                 <Show when={row.doi}>{doi => <span class="extraction-reference">DOI {doi()}</span>}</Show>
@@ -146,7 +147,7 @@ export function ExtractionTablePanel(props: {
                 <td class="extraction-source" data-heading={t("来源定位", "Source location")}><strong>{row.locator}</strong><span>{row.document_version ?? t("版本未记录", "Version unrecorded")}</span>
                   <Show when={row.source}>{source => <span class="extraction-reference">{source()}</span>}</Show>
                   <Show when={row.reader_available && row.evidence_id} fallback={<small>{t("本机阅读链接暂不可用", "Local reader link unavailable")}</small>}>{id =>
-                    <a href={localRunLink(window.location.origin, props.runId, row.document_id, id())} target="_blank" rel="noopener" aria-label={t(`在新标签页核对 ${row.title} 的 ${row.locator}`, `Verify ${row.locator} in ${row.title} in a new tab`)}>{t("核对原文 ↗", "Verify source ↗")}</a>
+                    <a href={localRunLink(window.location.origin, props.runId, row.document_id, id())} target="_blank" rel="noopener" aria-label={t(`在新标签页核对 ${displayPaperTitle(row.title) || row.document_id} 的 ${row.locator}`, `Verify ${row.locator} in ${displayPaperTitle(row.title) || row.document_id} in a new tab`)}>{t("核对原文 ↗", "Verify source ↗")}</a>
                   }</Show>
                 </td>
               </Show>

@@ -1,8 +1,14 @@
 import type { EvidenceCard, LiteratureGraphNode } from "./model";
 import { documentIdForReviewablePaper } from "./evidenceLinking";
+import { isPaperNode } from "./literatureTopology";
+import { displayPaperTitle } from "./paperTitle";
 
 function normalized(value: string) {
   return value.normalize("NFKC").trim().toLowerCase();
+}
+
+export function graphDisplayLabel(node: LiteratureGraphNode): string {
+  return isPaperNode(node) ? displayPaperTitle(node.label) : node.label;
 }
 
 export function graphDoi(node: LiteratureGraphNode): string | undefined {
@@ -43,13 +49,13 @@ export function searchGraph(nodes: LiteratureGraphNode[], input: string): Litera
   for (const node of nodes) {
     const doi = normalized(graphDoi(node) ?? "");
     const id = normalized(node.nodeId);
-    const title = normalized(node.label);
-    const metadata = [title, id, doi, normalized(node.source ?? ""), node.publicationYear ?? ""].join(" ");
+    const titles = [normalized(node.label), normalized(graphDisplayLabel(node))];
+    const metadata = [...titles, id, doi, normalized(node.source ?? ""), node.publicationYear ?? ""].join(" ");
     if (!terms.every(term => metadata.includes(term))) continue;
     let rank = 3;
-    if (phrase === doi || phrase === id || phrase === id.replace(/^paper:/, "") || phrase === title) rank = 0;
-    else if (title.startsWith(phrase)) rank = 1;
-    else if (title.includes(phrase)) rank = 2;
+    if (phrase === doi || phrase === id || phrase === id.replace(/^paper:/, "") || titles.includes(phrase)) rank = 0;
+    else if (titles.some(title => title.startsWith(phrase))) rank = 1;
+    else if (titles.some(title => title.includes(phrase))) rank = 2;
     matches.push({ node, rank });
   }
   return matches.sort((a, b) => a.rank - b.rank).map(match => match.node);

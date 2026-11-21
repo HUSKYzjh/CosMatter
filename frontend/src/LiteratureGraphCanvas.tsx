@@ -2,6 +2,7 @@ import cytoscape, { type Core, type ElementDefinition, type NodeSingular } from 
 import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
 
 import { TOPIC_LABELS, isPaperNode, topicFor } from "./literatureTopology";
+import { displayPaperTitle } from "./paperTitle";
 import type { LiteratureGraphEdge, LiteratureGraphNode } from "./model";
 import { zh } from "./zh";
 
@@ -244,17 +245,21 @@ function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[],
   const fontSize = compact ? 12 : 13;
   const titleWidth = compact ? 103 : 150;
   const prefixes = new Map<string, number>();
+  const titles = new Map<string, string>();
   context.font = `600 ${fontSize}px ${chartFont}`;
   for (const node of nodes) {
-    const prefix = briefLabel(node.label, titleWidth, measure);
+    const title = isPaperNode(node) ? displayPaperTitle(node.label) : node.label;
+    titles.set(node.nodeId, title);
+    const prefix = briefLabel(title, titleWidth, measure);
     prefixes.set(prefix, (prefixes.get(prefix) ?? 0) + 1);
   }
   const nodeLabel = (node: LiteratureGraphNode, available: number) => {
-    const prefix = briefLabel(node.label, titleWidth, measure);
-    if (prefixes.get(prefix) === 1) return briefLabel(node.label, available, measure);
+    const title = titles.get(node.nodeId)!;
+    const prefix = briefLabel(title, titleWidth, measure);
+    if (prefixes.get(prefix) === 1) return briefLabel(title, available, measure);
     const id = node.nodeId.replace(/^[^:]+:/u, "");
     const hint = id.length > 9 ? "…" + id.slice(-6) : id;
-    return briefLabel(hint + " · " + node.label, available, measure);
+    return briefLabel(hint + " · " + title, available, measure);
   };
   const labels = new Map<string, { text: string; visible: boolean; side: LabelSide }>();
   const bounds = new Map<string, Box>();

@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import type { LiteratureGraphEdge, LiteratureGraphNode } from "./model";
+import { graphDisplayLabel } from "./graphSearch";
 import "./graph-connections.css";
 
 type Label = readonly [string, string];
@@ -31,11 +32,11 @@ export function GraphConnections(props: {
     if (!other || other.nodeId === props.nodeId) return [];
     const labels = Object.hasOwn(relations, edge.edgeType) ? relations[edge.edgeType] : null;
     const label = labels ? t(...labels[outgoing ? 0 : 1]) : edge.edgeType.replaceAll("_", " ") + (outgoing ? " →" : " ←");
-    return [{ other, edge, label }];
+    return [{ other, edge, label, title: graphDisplayLabel(other) }];
   }));
   const titleCounts = createMemo(() => {
     const counts = new Map<string, number>();
-    for (const { other } of connections()) counts.set(other.label, (counts.get(other.label) ?? 0) + 1);
+    for (const { title } of connections()) counts.set(title, (counts.get(title) ?? 0) + 1);
     return counts;
   });
   const [limit, setLimit] = createSignal(6);
@@ -44,8 +45,8 @@ export function GraphConnections(props: {
     <Show when={connections().length} fallback={<p>{t("这份星图没有记录该节点的直接关系。", "This map records no direct connections for this node.")}</p>}>
       <ul><For each={connections().slice(0, limit())}>{entry => <li><button type="button" onClick={() => props.onFollow(entry.other)}>
         <small>{entry.label}{entry.edge.relationSource ? " · " + entry.edge.relationSource : ""}</small>
-        <strong>{entry.other.label || entry.other.nodeId}</strong>
-        <Show when={entry.other.label && (titleCounts().get(entry.other.label) ?? 0) > 1}>
+        <strong>{entry.title || entry.other.nodeId}</strong>
+        <Show when={entry.title && (titleCounts().get(entry.title) ?? 0) > 1}>
           <code>{entry.other.nodeId}</code>
         </Show>
       </button></li>}</For></ul>

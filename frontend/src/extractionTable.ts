@@ -1,4 +1,5 @@
 import { extractionTablePath, isLoopbackWorkbenchLocation, localPaperMapLink, localRunLink, parseLocalRunLink } from "./liveRunIdentity";
+import { displayPaperTitle } from "./paperTitle";
 
 export const extractionStatuses = ["reviewed", "awaiting_extraction", "awaiting_review", "unverified_source"] as const;
 export type ExtractionStatus = typeof extractionStatuses[number];
@@ -79,7 +80,8 @@ export function filterExtractionRows(rows: ExtractionRow[], query: string, statu
   return rows.filter(row => {
     if ((status !== "all" && row.status !== status) || (property && row.property_name !== property)) return false;
     if (!terms.length) return true;
-    const fields = [row.document_id, row.title, row.doi, row.claim, row.material, row.property_name, row.evidence_id, row.locator,
+    const shownTitle = displayPaperTitle(row.title);
+    const fields = [row.document_id, row.title, shownTitle, shownTitle.normalize("NFKC"), row.doi, row.claim, row.material, row.property_name, row.evidence_id, row.locator,
       row.document_version, row.source, ...Object.entries(row.conditions).flat(),
       ...row.reported_facts.flatMap(fact => [fact.name, fact.value, fact.unit, ...Object.entries(fact.qualifiers).flat()])];
     const text = fields.filter(field => field !== null).join(" ").toLowerCase();

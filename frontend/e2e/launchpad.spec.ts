@@ -1268,7 +1268,14 @@ test("loads an explicitly server-selected UI bundle as a read-only literature ma
   await expect(page.locator(".workbench")).toHaveClass(/view-graph/, lazyWorkspaceContentLoad);
   await expect(page.getByText("只读预览：可查看阶段与空态")).toBeVisible();
   await expect(page.locator(".fleet-reading-cards")).toContainText("Phase transitions in BiFeO3", lazyWorkspaceContentLoad);
-  await expect(page.locator(".rail-context")).toHaveJSProperty("open", false);
+  const rail = page.locator(".rail-context");
+  await expect(rail).toHaveJSProperty("open", false);
+  const railSummary = rail.locator(":scope > summary");
+  await railSummary.press("Enter");
+  await expect(rail).toHaveJSProperty("open", true);
+  await expect(page.getByRole("region", { name: "航线提示" })).toBeVisible();
+  await railSummary.press("Space");
+  await expect(rail).toHaveJSProperty("open", false);
   await expect(page.locator(".fleet-reading-cards")).toContainText("任务对象与维度双命中", lazyWorkspaceContentLoad);
   await page.locator(".fleet-reading-cards button").first().click();
   const inspector = page.locator(".evidence-inspector");

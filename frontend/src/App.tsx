@@ -328,13 +328,14 @@ export function App() {
   let harnessCatalogueRequestEpoch = 0;
   let dshProfileRequestEpoch = 0;
   let localApiStatusRequestEpoch = 0;
-  // On compact screens the rail starts collapsed; never hide an active local
-  // operation behind that preference.
+  const railContextExpanded = () => view() === "graph" ? graphContextOpen() : railContextOpen();
+  function setCurrentRailContextOpen(open: boolean) {
+    if (untrack(view) === "graph") setGraphContextOpen(open);
+    else setRailContextOpen(open);
+  }
+  // A new recovery action must be visible even if the user collapsed its rail.
   createEffect(() => {
-    if (activeOperation()) {
-      setRailContextOpen(true);
-      if (view() === "graph") setGraphContextOpen(true);
-    }
+    if (routeRecovery()) setCurrentRailContextOpen(true);
   });
   const selectedDocumentId = createMemo(() => documentIdForReviewablePaper(researchSession().selectedNode));
   const localApiUsable = createMemo(() => localApiEnabled() && apiCapabilityHealth() === "ready");
@@ -713,6 +714,7 @@ export function App() {
   function beginActiveOperation(label: string, detail: string) {
     const next = operationActivity.start(label, detail);
     setActiveOperation(next);
+    setCurrentRailContextOpen(true);
     return next.id;
   }
   function finishActiveOperation(id: number) {
@@ -876,7 +878,10 @@ export function App() {
     if (!recovery) return;
     if (recovery.target === "task-control") { openManualTaskControl(); return; }
     if (recoveryNeedsPaper()) {
-      if (navigate("graph")) setStatus(gateCopy().paper);
+      if (navigate("graph")) {
+        setStatus(gateCopy().paper);
+        setCurrentRailContextOpen(true);
+      }
       return;
     }
     if (navigate(recovery.target)) {
@@ -2266,9 +2271,11 @@ export function App() {
         <Show when={runId()} keyed>{(activeRunId) => <DshRunHandoff runId={activeRunId} locale={language()} />}</Show>
         </div>
       </div>}</Show>
-      <details class="rail-context" open={view() === "graph" ? graphContextOpen() : railContextOpen()}
-        onToggle={event => (view() === "graph" ? setGraphContextOpen : setRailContextOpen)(event.currentTarget.open)}>
-        <summary><span>{text("任务概览与本地状态", "Mission context and local status")}</span><small title={text("展开查看航线、审核锚点与本地状态", "Expand route, review anchor, and local status")}>{railContextSummary()}</small></summary>
+      <details class="rail-context" open={railContextExpanded()}>
+        <summary onClick={event => {
+          event.preventDefault();
+          setCurrentRailContextOpen(!railContextExpanded());
+        }}><span>{text("任务概览与本地状态", "Mission context and local status")}</span><small title={text("展开查看航线、审核锚点与本地状态", "Expand route, review anchor, and local status")}>{railContextSummary()}</small></summary>
       <Show when={journeyRelay().current}>{(current) => <section class="route-command-handoff" aria-label={text("当前航线交接", "Current route handoff")}>
         <header><small>{text("当前航线交接", "CURRENT ROUTE HANDOFF")}</small><span>{text("只投影当前任务门禁；不启动任何执行。", "Projects current task gates only; it starts no execution.")}</span></header>
         <div class="route-handoff-vector"><section class={`route-handoff-origin state-${current().state}`}><small>{text("当前舰位", "CURRENT STATION")}</small><strong>{language() === "zh" ? current().zh : current().en}</strong><span>{journeyOutputLabel(current())}</span></section><i aria-hidden="true">→</i><Show when={journeyRelay().next} fallback={<section class="route-handoff-destination state-complete"><small>{text("航线状态", "ROUTE STATE")}</small><strong>{text("等待人工复核", "Awaiting human review")}</strong><span>{text("当前链路没有自动完成动作。", "The current chain has no automatic completion action.")}</span></section>}>{(next) => <button type="button" class={`route-handoff-destination state-${launchPreview() && next().state === "blocked" ? "preview" : next().state}`} onClick={() => navigate(next().view)}><small>{launchPreview() && next().state === "blocked" ? text("预览下一空态", "PREVIEW EMPTY STATE") : next().state === "blocked" ? text("待补齐门禁", "GATE TO COMPLETE") : text("下一交接", "NEXT HANDOFF")}</small><strong>{language() === "zh" ? next().zh : next().en}</strong><span>{launchPreview() && next().state === "blocked" ? text("只读预览允许查看该阶段空态；不会创建任务、上传文件或执行外部操作。", "Read-only preview may show this stage's empty state; it creates no task, upload, or external action.") : next().state === "blocked" ? journeyStateLabel(next()) : journeyOutputLabel(next())}</span></button>}</Show></div>

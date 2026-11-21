@@ -65,6 +65,7 @@ test("opens source-map review from a DSH run after the matching paper is selecte
   await page.getByRole("button", { name: /^02 受控编排/ }).click();
   await recovery.getByRole("button", { name: "选择论文以核对来源" }).click();
   await expect(workbench).toHaveClass(/view-graph/);
+  await expect(relay).toBeVisible();
   await expect(relay).toContainText("请先在文献星图选择一篇待核对论文");
 
   const cards = page.locator(".fleet-reading-cards");

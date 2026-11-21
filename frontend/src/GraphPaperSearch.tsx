@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, createUniqueId, on, type JSX } from "solid-js";
-import { graphDoi } from "./graphSearch";
+import { graphDisplayLabel, graphDoi } from "./graphSearch";
 import type { LiteratureGraphCoverage, LiteratureGraphNode } from "./model";
 import "./graph-paper-search.css";
 
@@ -66,7 +66,7 @@ export function GraphPaperSearch(props: {
       <Show when={shown().length}><ol class="graph-search-results" ref={results} aria-label={t("检索结果", "Search results")}>
         <For each={shown()}>{node => <li><button type="button" aria-current={props.selectedId === node.nodeId ? "true" : undefined}
           onClick={() => props.select(node)}>
-          <strong>{node.label}</strong>
+          <strong>{graphDisplayLabel(node)}</strong>
           <span>{[node.publicationYear, node.source, graphDoi(node), node.nodeId].filter(Boolean).join(" · ")}</span>
           <Show when={!props.visibleIds.has(node.nodeId)}><em>{t("显示被筛选隐藏的节点", "Reveal filtered node")}</em></Show>
         </button></li>}</For>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type EvidenceCard, type LiteratureGraphNode } from "./model";
-import { graphDoi, searchGraph, searchableGraphNodes } from "./graphSearch";
+import { graphDisplayLabel, graphDoi, searchGraph, searchableGraphNodes } from "./graphSearch";
 
 const paper: LiteratureGraphNode = { nodeId: "paper:alpha", kind: "candidate_paper", label: "Piezoelectric response of BiFeO₃", source: "Sciverse", publicationYear: 2024, doi: "10.1234/alpha", trustStatus: "retrieval_candidate" };
 const citation: LiteratureGraphNode = { nodeId: "doi:10.1234/beta", kind: "citation_work", label: "10.1234/beta", trustStatus: "bibliographic" };
@@ -17,6 +17,17 @@ describe("local map lookup", () => {
     const longer = { ...paper, nodeId: "paper:alpha-2", doi: "10.1234/alpha-2" };
     const duplicate = { ...paper, nodeId: "paper:beta-edition" };
     expect(searchGraph([longer, paper, duplicate], "10.1234/alpha")).toEqual([paper, duplicate, longer]);
+  });
+  it("finds the same paper by its original, typeset or plain-digit title", () => {
+    const title = "La$_2$O$_3$-modified films";
+    const oxide = { ...paper, label: title };
+    const extended = { ...paper, nodeId: "paper:long", label: title + " in devices" };
+    for (const query of [title, "La₂O₃-modified films", "La2O3-modified films"]) {
+      expect(searchGraph([extended, oxide], query)).toEqual([oxide, extended]);
+    }
+    expect(graphDisplayLabel(oxide)).toBe("La₂O₃-modified films");
+    expect(oxide.label).toBe(title);
+    expect(graphDisplayLabel({ ...oxide, kind: "accepted_evidence" })).toBe(title);
   });
   it("can use an older bundle's unambiguous recorded DOI without joining unrelated papers", () => {
     const legacy = { ...paper, doi: undefined };
