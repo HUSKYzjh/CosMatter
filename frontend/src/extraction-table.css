@@ -6,75 +6,133 @@
   border-color: var(--signal-teal); box-shadow: inset 0 -2px var(--signal-teal);
 }
 .extraction-panel {
-  min-width: 0; padding: clamp(1rem, 2vw, 1.65rem);
-  border: 1px solid var(--line); border-radius: .7rem; background: var(--surface); color: var(--ink); line-height: 1.55;
+  container-type: inline-size;
+  min-width: 0;
+  padding: clamp(.9rem, 2vw, 1.65rem);
+  border: 1px solid var(--line);
+  border-radius: .4rem;
+  background: var(--surface);
+  color: var(--ink);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .extraction-panel :is(h2, p, ul) { margin: 0; }
-.extraction-panel :is(input, select, a, button):focus-visible, .literature-display-switch button:focus-visible {
-  outline: 2px solid var(--signal-teal); outline-offset: 3px;
+.extraction-panel :is(input, select, a, button, h2):focus-visible,
+.literature-display-switch button:focus-visible {
+  outline: 2px solid var(--signal-teal);
+  outline-offset: 2px;
 }
-.extraction-heading, .extraction-controls, .extraction-counts {
-  display: flex; align-items: center; flex-wrap: wrap; gap: .65rem 1rem;
+.extraction-heading-line, .extraction-controls, .extraction-exports {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .25rem .85rem;
 }
-.extraction-heading { justify-content: space-between; align-items: flex-start; margin-bottom: .85rem; }
-.extraction-heading div { flex: 1 1 22rem; }
-.extraction-heading h2 { line-height: 1.25; font-size: clamp(1.15rem, 2vw, 1.65rem); }
-.extraction-heading p { margin-top: .4rem; color: var(--muted); }
-.extraction-heading h2:focus-visible { outline: 2px solid var(--signal-teal); outline-offset: 3px; }
-.extraction-paper-scope { display: flex; align-items: baseline; flex-wrap: wrap; gap: .2rem .55rem; overflow-wrap: anywhere; }
-.extraction-paper-scope strong { color: var(--ink); }
-.extraction-paper-scope code { padding: .03rem .32rem; border-radius: .2rem; font-size: .85em; background: var(--surface-strong); }
-.extraction-panel .extraction-screening-note { padding: .5rem .7rem; margin-bottom: .8rem; border-inline-start: 2px solid var(--signal-amber); }
-.extraction-counts { gap: .5rem 1.6rem; padding: .8rem 0; border-block: 1px solid var(--line); color: var(--muted); }
-.extraction-counts strong { padding-right: .13rem; color: var(--ink); font-size: 1.3rem; line-height: 1; font-variant-numeric: tabular-nums; }
-.extraction-filters { display: flex; flex-wrap: wrap; gap: .65rem 1rem; margin: 1rem 0 .5rem; }
-.extraction-filters label { flex: 1 1 10rem; min-width: 0; display: grid; gap: .25rem; font-weight: 600; }
-.extraction-filters label:first-child { flex: 2 1 16rem; }
+.extraction-heading-line { justify-content: space-between; }
+.extraction-heading h2 {
+  flex: 1 1 12rem;
+  font: 650 clamp(1.25rem, 2.5vw, 1.9rem)/1.25 Georgia, "Songti SC", SimSun, serif;
+  text-wrap: pretty;
+  color: var(--ink);
+}
+.extraction-single .extraction-heading h2 { margin-top: .3rem; }
+.extraction-panel .extraction-paper-scope { margin-top: .25rem; color: var(--muted); font-size: .83rem; }
+.extraction-paper-scope code, .extraction-reference code { font-size: .96em; }
+.extraction-panel .cm-action { border-radius: .25rem; box-shadow: none; }
+.extraction-panel .cm-action--quiet {
+  min-height: 2.25rem;
+  color: var(--signal-teal);
+  padding-inline: .2rem;
+  border-color: transparent;
+  background: transparent;
+}
+.extraction-panel .cm-action--quiet:not(:disabled):hover { text-decoration: underline; text-underline-offset: .17em; }
+.extraction-panel .extraction-screening-note { margin: .65rem 0; padding: .4rem .65rem; border-inline-start: 2px solid var(--signal-amber); }
+.extraction-counts { display: flex; flex-wrap: wrap; gap: .32rem 1.25rem; margin-top: .7rem; color: var(--muted); font-size: .86rem; }
+.extraction-counts strong { color: var(--ink); font: 650 1.18rem/1.1 Georgia, serif; font-variant-numeric: lining-nums tabular-nums; }
+.extraction-filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .5rem .85rem; margin-top: .85rem; }
+.extraction-filters label { display: grid; align-content: end; gap: .25rem; min-width: 0; font-size: .84rem; color: var(--muted); }
 .extraction-filters :is(input, select) {
-  box-sizing: border-box; width: 100%; min-width: 0; min-height: 2.6rem;
-  padding: .4rem .55rem; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; font-weight: 400;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: .4rem .55rem;
+  border: 1px solid var(--line);
+  border-radius: .25rem;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
 }
-.extraction-controls { margin-block: .7rem; }
-.extraction-controls p { margin-right: auto; }
-.extraction-table { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: left; }
-.extraction-table th, .extraction-table td { vertical-align: top; padding: .72rem .65rem; overflow-wrap: anywhere; }
-.extraction-table thead th { border-block: 1px solid var(--line); color: var(--ink); font-size: .85rem; background: var(--surface-strong); }
+.extraction-controls { margin-block: .55rem; }
+.extraction-results { justify-content: space-between; }
+.extraction-results p { color: var(--muted); font-size: .85rem; }
+.extraction-exports { margin-inline-start: auto; }
+.extraction-footer { display: flex; margin-top: .7rem; }
+.extraction-table { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: start; }
+.extraction-table :is(th, td) { padding: .85rem .7rem; text-align: start; vertical-align: top; overflow-wrap: anywhere; }
+.extraction-table thead th {
+  border-block: 1px solid var(--line); background: var(--surface-strong);
+  color: var(--ink); font-size: .83rem; line-height: 1.35;
+}
 .extraction-table thead th:nth-child(1) { width: 25%; }
-.extraction-table thead th:nth-child(2) { width: 16%; }
-.extraction-table thead th:nth-child(3) { width: 36%; }
-.extraction-table thead th:nth-child(4) { width: 23%; }
-.extraction-table tbody tr { border-bottom: 1px solid var(--line); }
-.extraction-table tbody th { font-weight: 500; }
+.extraction-table thead th:nth-child(2) { width: 37%; }
+.extraction-table thead th:nth-child(3), .extraction-table thead th:nth-child(4) { width: 19%; }
+.extraction-single .extraction-table thead th:nth-child(1) { width: 18%; }
+.extraction-single .extraction-table thead th:nth-child(2) { width: 44%; }
+.extraction-table tbody tr { border-block-end: 1px solid var(--line); }
+.extraction-table tbody th { font-weight: 450; }
 .extraction-table td > :is(strong, span, a, small), .extraction-title, .extraction-reference { display: block; }
-.extraction-title { font-weight: 650; }
-.extraction-status { display: inline-flex; align-items: center; gap: .35rem; margin-bottom: .35rem; color: var(--muted); font-size: .82rem; }
-.extraction-status::before { content: ""; width: .47rem; height: .47rem; border: 1.5px solid currentColor; border-radius: 50%; }
+.extraction-title { margin-block-end: .25rem; color: var(--ink); font: 650 1.1rem/1.3 Georgia, "Songti SC", SimSun, serif; }
+.extraction-status { display: inline-flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .83rem; }
+.extraction-status::before { content: ""; flex: none; width: .48rem; height: .48rem; border: 1.5px solid currentColor; border-radius: 50%; }
 .extraction-status.verified { color: var(--signal-teal); }
 .extraction-status.verified::before { background: currentColor; }
-.extraction-reference, .extraction-conditions, .extraction-gap, .extraction-facts small { color: var(--muted); }
+.extraction-reference, .extraction-conditions, .extraction-gap, .extraction-table small { color: var(--muted); }
 .extraction-reference, .extraction-conditions, .extraction-table small { font-size: .84rem; }
-.extraction-conditions, .extraction-facts { margin-top: .4rem; }
-.extraction-facts { border-inline-start: 2px solid var(--signal-teal); padding: .3rem .65rem; background: color-mix(in srgb, var(--signal-teal) 5%, var(--surface)); }
-.extraction-facts > small { color: var(--muted); }
-.extraction-facts ul { padding-left: 0; list-style: none; }
-.extraction-facts li { margin-top: .22rem; }
-.extraction-facts li strong { color: var(--ink); font-size: 1.08em; font-variant-numeric: tabular-nums; }
-.extraction-facts li span { display: block; font-size: .84rem; }
-.extraction-table a { margin-top: .45rem; color: var(--signal-teal); text-decoration: underline; text-underline-offset: .17em; }
-@media (max-width: 800px) {
+.extraction-reference, .extraction-conditions { margin-top: .2rem; }
+.extraction-facts {
+  margin-bottom: .55rem;
+  padding: .5rem .7rem .6rem;
+  border-inline-start: 2px solid var(--signal-teal);
+  background: color-mix(in srgb, var(--signal-teal) 6%, var(--surface));
+}
+.extraction-facts ul { list-style: none; padding: 0; }
+.extraction-facts li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .7rem; margin-top: .2rem; }
+.extraction-facts li + li { padding-top: .35rem; border-top: 1px solid var(--line); }
+.extraction-fact-name { font-size: .9rem; }
+.extraction-facts li strong {
+  color: var(--signal-teal);
+  font: 650 1.5rem/1.25 Georgia, "Songti SC", SimSun, serif;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.extraction-facts li strong span { font: 550 .73em/1.2 system-ui, sans-serif; }
+.extraction-facts li small { flex-basis: 100%; }
+.extraction-source > strong { font-variant-numeric: tabular-nums; }
+.extraction-table a { width: fit-content; max-width: 100%; margin-block-start: .45rem; color: var(--signal-teal); text-underline-offset: .18em; }
+@container (max-width: 42rem) {
+  .extraction-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .extraction-filters label:first-child { grid-column: 1 / -1; }
   .extraction-table, .extraction-table tbody { display: block; }
   .extraction-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .extraction-table tbody tr { display: grid; gap: .65rem; padding: .8rem 0; border-top: 1px solid var(--line); border-bottom: 0; }
+  .extraction-table tbody tr {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .65rem .8rem; padding: .85rem 0; border-block: 1px solid var(--line);
+  }
+  .extraction-table tbody tr + tr { border-top: 0; }
   .extraction-table tbody :is(th, td) { display: block; min-width: 0; padding: 0; }
-  .extraction-table td[data-heading]::before { content: attr(data-heading); display: block; color: var(--muted); font-size: .8rem; }
-  .extraction-table tbody tr { gap: .8rem; padding: 1rem 0; }
-  .extraction-table td[data-heading] { padding-inline-start: .75rem; border-inline-start: 1px solid var(--line); }
-  .extraction-table .extraction-title { font-size: 1.04rem; line-height: 1.38; }
-  .extraction-table td[data-heading]::before { font-weight: 650; margin-bottom: .13rem; }
+  .extraction-record, .extraction-gap, .extraction-observation { grid-column: 1 / -1; }
+  .extraction-record .extraction-status { margin-inline-end: .55rem; }
+  .extraction-record .extraction-reference { display: inline-block; margin: 0 .55rem 0 0; }
+  .extraction-table :is(.extraction-material, .extraction-source)::before,
+  .extraction-observation:not(:has(.extraction-facts))::before {
+    content: attr(data-heading);
+    display: block; margin-bottom: .15rem; color: var(--muted); font-size: .8rem;
+  }
 }
-@media (max-width: 560px) {
-  .extraction-heading { gap: .55rem; }
-  .extraction-controls { gap: .45rem .65rem; }
-  .extraction-controls p { flex-basis: 100%; color: var(--muted); }
+@container (max-width: 30rem) {
+  .extraction-heading h2 { flex-basis: 9rem; }
+  .extraction-exports { margin-inline-start: 0; }
   .extraction-panel :is(.cm-action, input, select) { min-height: 44px; }
+  .extraction-table a { padding-block: .5rem; margin-block-start: .1rem; }
 }

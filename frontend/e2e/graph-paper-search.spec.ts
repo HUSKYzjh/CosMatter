@@ -27,6 +27,11 @@ for (const width of [320, 1280]) {
     const search = page.getByRole("region", { name: "检索当前星图" });
     const input = search.getByRole("searchbox");
     await expect(search).toContainText("8 / 28 篇候选", { timeout: 30_000 });
+    const question = page.locator(".graph-question");
+    await question.locator("summary").press("Enter");
+    await expect(question.locator("p")).toHaveText(bundle.mission.question);
+    await question.locator("summary").press("Enter");
+    await expect(question.locator("p")).toBeHidden();
     if (width <= 600) await page.getByRole("button", { name: "图谱显示选项" }).click();
     await page.getByLabel("主题簇").selectOption("ferroelectric");
     await input.fill("https://doi.org/10.1234/FILM-7");

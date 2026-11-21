@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, createUniqueId, on } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, createUniqueId, on, type JSX } from "solid-js";
 import { graphDoi } from "./graphSearch";
 import type { LiteratureGraphCoverage, LiteratureGraphNode } from "./model";
 import "./graph-paper-search.css";
@@ -6,6 +6,7 @@ import "./graph-paper-search.css";
 const pageSize = 6;
 
 export function GraphPaperSearch(props: {
+  children: JSX.Element;
   locale: "zh" | "en";
   query: string;
   setQuery: (value: string) => void;
@@ -39,7 +40,8 @@ export function GraphPaperSearch(props: {
   return <section class="graph-paper-search" aria-labelledby={searchId}>
     <label class="graph-search-name" id={searchId} for={searchId + "-input"}>{t("检索当前星图", "Search this map")}</label>
     <div class="graph-search-input"><input id={searchId + "-input"} ref={element => { input = element; props.inputRef(element); }} type="search" value={props.query} autocomplete="off"
-      placeholder={t("题名、DOI、文档 ID、来源或年份", "Title, DOI, document ID, source or year")}
+      placeholder={t("题名、DOI 或文档 ID", "Title, DOI or ID")}
+      title={t("按题名、DOI、文档 ID、来源或年份检索", "Search by title, DOI, document ID, source or year")}
       onInput={event => props.setQuery(event.currentTarget.value)}
       onKeyDown={event => {
         if (event.isComposing || event.keyCode === 229) return;
@@ -49,6 +51,7 @@ export function GraphPaperSearch(props: {
       }} />
       <Show when={props.query}><button type="button" onClick={clear}>{t("清除检索", "Clear search")}</button></Show>
     </div>
+    {props.children}
     <Show when={props.coverage || props.openChecklist}><div class="graph-search-labels">
       <Show when={props.coverage}>{coverage => <>
         <span>{t(`图中 ${coverage().visibleCandidateCount} / ${coverage().candidateCount} 篇候选`, `${coverage().visibleCandidateCount} of ${coverage().candidateCount} candidates on map`)}</span>

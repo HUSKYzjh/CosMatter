@@ -36,7 +36,7 @@
 }
 .view-graph .research-rail {
   color: var(--ink);
-  background: var(--paper);
+  background: color-mix(in srgb, var(--surface-strong) 42%, var(--paper));
   border-color: var(--line);
   box-shadow: none;
   backdrop-filter: none;
@@ -71,6 +71,7 @@
   background: none;
   border: none;
   box-shadow: none;
+  text-shadow: none;
 }
 .view-graph .research-rail .wordmark span { color: var(--signal-teal); font: inherit; letter-spacing: inherit; }
 .view-graph .rail-kicker {
@@ -124,17 +125,34 @@
 .view-graph .rail-run-shortcuts .rail-dsh-tools { color: var(--signal-teal); font-weight: 650; }
 .view-graph .rail-footer .language-toggle { border: 0; background: none; gap: .1rem; }
 .view-graph .rail-footer .language-toggle button.active { color: var(--surface); background: var(--ink); }
-.view-graph .research-rail .rail-context summary { color: var(--ink); }
+.view-graph .research-rail .rail-context summary { color: var(--ink); cursor: pointer; }
+.view-graph .research-rail .rail-context > summary:focus-visible { outline: 2px solid var(--signal-teal); outline-offset: 1px; }
 @media (min-width: 1041px) {
-  .view-graph .research-rail { gap: .82rem; padding: 1.5rem 1.1rem 1rem; }
+  .view-graph .research-rail { gap: .8rem; padding: 1.45rem 1rem 1rem; }
+  .view-graph .research-rail .journey-track button {
+    grid-template-columns: 1.6rem minmax(0, 1fr);
+    align-items: baseline; padding: .35rem .45rem; gap: .2rem;
+  }
+  .view-graph .journey-track button small { font-size: .75rem; line-height: 1.45; white-space: normal; text-overflow: clip; overflow-wrap: anywhere; }
+  .view-graph .journey-track button strong { font-size: .91rem; }
+  .view-graph .rail-run-identity { gap: .4rem; }
+  .view-graph .rail-run-id { display: grid; gap: .18rem; }
+  .view-graph .rail-context { display: block; min-width: 0; border-block: 1px solid var(--line); }
+  .view-graph .rail-context[open] { display: grid; }
+  .view-graph .rail-context > summary { display: grid; grid-template-columns: 1fr auto; gap: .12rem .35rem; align-items: center; min-height: 44px; padding: .5rem 0; list-style: none; }
+  .view-graph .rail-context > summary::-webkit-details-marker { display: none; }
+  .view-graph .rail-context > summary::after { content: "+"; grid-area: 1 / 2 / span 2; font: 1.15rem/1.2 system-ui, sans-serif; color: var(--signal-teal); }
+  .view-graph .rail-context[open] > summary::after { content: "−"; }
+  .view-graph .rail-context > summary span { font-size: .82rem; font-weight: 650; }
+  .view-graph .rail-context > summary small { grid-column: 1; color: var(--muted); font-size: .75rem; line-height: 1.4; overflow-wrap: anywhere; }
   .view-graph .research-rail > .rail-footer {
     position: sticky;
     bottom: -1rem;
     z-index: 2;
-    margin: auto -1.1rem -1rem;
-    padding: .65rem 1.1rem;
+    margin: auto -1rem -1rem;
+    padding: .65rem 1rem;
     border-top: 1px solid var(--line);
-    background: var(--paper);
+    background: color-mix(in srgb, var(--surface-strong) 42%, var(--paper));
   }
 }
 @media (min-width: 601px) and (max-width: 1040px) {
@@ -166,10 +184,12 @@
   .view-graph .research-rail { column-gap: .5rem; row-gap: .38rem; padding: .65rem 1rem; }
   .view-graph .research-rail .wordmark { font-size: 1.13rem; }
   .view-graph .journey-track { padding: .25rem 0; gap: .12rem; }
+  :lang(en) .view-graph .research-rail .journey-track { grid-template-columns: repeat(5, minmax(max-content, 1fr)); }
+  :lang(en) .view-graph .research-rail .journey-track button strong { font-size: .76rem; }
   .view-graph .journey-track button { align-items: center; padding: .2rem .08rem; text-align: center; }
   .view-graph .journey-track button strong { align-self: center; }
   .view-graph .journey-track button[aria-current="step"] { box-shadow: inset 0 -2px var(--signal-teal); }
-  .view-graph .rail-context { background: none; border-color: var(--line); }
+  .view-graph .rail-context { padding: 0; background: none; border-color: var(--line); border-bottom: 0; }
   .view-graph .rail-context > summary {
     grid-template-columns: auto minmax(0, 1fr) minmax(0, .85fr);
     align-items: center;
@@ -177,4 +197,7 @@
     min-height: 44px;
   }
   .view-graph .rail-context > summary small { grid-column: 3; max-width: none; text-align: end; }
+  .view-graph .rail-context > summary :is(span, small) { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+  .view-graph .rail-context > summary::before { grid-row: 1; }
+  .view-graph .rail-context[open] > :not(summary) { margin-inline: .4rem; }
 }

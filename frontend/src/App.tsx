@@ -314,6 +314,7 @@ export function App() {
   const [planApproved, setPlanApproved] = createSignal(false);
   const [manualControlOpen, setManualControlOpen] = createSignal(false);
   const [railContextOpen, setRailContextOpen] = createSignal(true);
+  const [graphContextOpen, setGraphContextOpen] = createSignal(false);
   const [graphRunToolsOpen, setGraphRunToolsOpen] = createSignal(false);
   const [approvedQueryCount, setApprovedQueryCount] = createSignal(0);
   const [approvedCounterQueryCount, setApprovedCounterQueryCount] = createSignal(0);
@@ -329,7 +330,12 @@ export function App() {
   let localApiStatusRequestEpoch = 0;
   // On compact screens the rail starts collapsed; never hide an active local
   // operation behind that preference.
-  createEffect(() => { if (activeOperation()) setRailContextOpen(true); });
+  createEffect(() => {
+    if (activeOperation()) {
+      setRailContextOpen(true);
+      if (view() === "graph") setGraphContextOpen(true);
+    }
+  });
   const selectedDocumentId = createMemo(() => documentIdForReviewablePaper(researchSession().selectedNode));
   const localApiUsable = createMemo(() => localApiEnabled() && apiCapabilityHealth() === "ready");
   const previewCanActOnRun = createMemo(() => previewAllowsRunAction(launchPreview(), liveRunId()));
@@ -2260,7 +2266,8 @@ export function App() {
         <Show when={runId()} keyed>{(activeRunId) => <DshRunHandoff runId={activeRunId} locale={language()} />}</Show>
         </div>
       </div>}</Show>
-      <details class="rail-context" open={railContextOpen()} onToggle={(event) => setRailContextOpen(event.currentTarget.open)}>
+      <details class="rail-context" open={view() === "graph" ? graphContextOpen() : railContextOpen()}
+        onToggle={event => (view() === "graph" ? setGraphContextOpen : setRailContextOpen)(event.currentTarget.open)}>
         <summary><span>{text("任务概览与本地状态", "Mission context and local status")}</span><small title={text("展开查看航线、审核锚点与本地状态", "Expand route, review anchor, and local status")}>{railContextSummary()}</small></summary>
       <Show when={journeyRelay().current}>{(current) => <section class="route-command-handoff" aria-label={text("当前航线交接", "Current route handoff")}>
         <header><small>{text("当前航线交接", "CURRENT ROUTE HANDOFF")}</small><span>{text("只投影当前任务门禁；不启动任何执行。", "Projects current task gates only; it starts no execution.")}</span></header>

@@ -15,41 +15,57 @@
 .workbench .frontier-literature-workbench {
   background: var(--paper);
   color: var(--ink);
-  padding: clamp(1.15rem, 2.25vw, 2.5rem) clamp(1rem, 2.7vw, 3rem);
+  padding: clamp(1rem, 1.8vw, 2rem) clamp(1rem, 2.7vw, 3rem);
 }
 .frontier-literature-workbench .stage-header.graph-header {
   display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap;
-  gap: .65rem 1.5rem; margin: 0; padding: 0 0 .85rem;
-  border: 0; border-bottom: 1px solid var(--line);
+  gap: .3rem 1.25rem; margin: 0; padding: 0;
+  border: 0; border-bottom: 1px solid color-mix(in srgb, var(--ink) 36%, var(--line));
   color: var(--ink); background: transparent; box-shadow: none;
 }
 .frontier-literature-workbench .graph-header::before, .frontier-literature-workbench .graph-header::after,
 .frontier-literature-workbench .lens-canvas-region::before, .frontier-literature-workbench .lens-canvas-region::after,
 .frontier-literature-workbench .evidence-inspector::before { content: none; }
-.graph-heading-copy { flex: 1 1 19rem; min-width: 0; }
+.graph-heading-copy { flex: 1 1 19rem; min-width: 0; margin-block-end: .55rem; }
 .frontier-literature-workbench .stage-header.graph-header h1 {
-  margin: 0; font: 650 clamp(1.85rem, 3.4vw, 3.15rem)/1.13 Georgia, "Songti SC", SimSun, serif;
+  margin: 0; font: 600 clamp(1.85rem, 3vw, 2.8rem)/1.13 Georgia, "Songti SC", SimSun, serif;
   letter-spacing: -.025em; color: var(--ink);
 }
-.frontier-literature-workbench .stage-header.graph-header .graph-mission {
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  margin: .32rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.38;
+.graph-question, .frontier-literature-workbench .stage-header.graph-header .graph-mission { margin: .25rem 0 0; }
+.graph-question summary {
+  display: flex; width: fit-content; align-items: baseline; gap: .5rem; min-width: 0;
+  color: var(--muted); font-size: .87rem; line-height: 1.4; cursor: pointer; list-style: none;
+  overflow-wrap: anywhere;
+}
+.graph-question summary::-webkit-details-marker { display: none; }
+.graph-question summary span { flex: none; font-family: inherit; font-size: .77rem; font-weight: 600; color: var(--signal-teal); }
+.graph-question summary::after {
+  content: ""; width: .36rem; height: .36rem; flex: none; align-self: center;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: translateY(-.11rem) rotate(45deg);
+}
+.graph-question[open] summary::after { transform: translateY(.1rem) rotate(225deg); }
+.graph-question summary:hover { color: var(--signal-teal); text-decoration: underline; text-underline-offset: .18em; }
+.graph-question summary:focus-visible { outline: 2px solid var(--signal-teal); outline-offset: 2px; }
+.frontier-literature-workbench .graph-question p {
+  max-width: 76ch; padding-inline-start: .7rem; border-inline-start: 2px solid var(--signal-teal);
+  margin: .5rem 0; color: var(--ink); font-size: .95rem; line-height: 1.5; overflow-wrap: anywhere;
 }
 .frontier-literature-workbench .literature-display-switch {
-  display: inline-flex; align-items: stretch; flex-wrap: wrap; gap: .25rem;
-  margin: 0; padding: .18rem; border: 1px solid var(--line); border-radius: .42rem;
-  background: var(--surface-strong);
+  display: inline-flex; align-items: stretch; flex-wrap: wrap; align-self: flex-end; gap: .9rem;
+  margin: 0 0 -1px; padding: 0; border: 0; border-radius: 0; background: transparent;
 }
 .frontier-literature-workbench .literature-display-switch .cm-action {
-  border: 0; min-height: 2.25rem; border-radius: .28rem;
-  padding: .36rem .72rem; box-shadow: none; background: transparent;
+  border: 0; border-block-end: 3px solid transparent; min-height: 2.5rem; border-radius: 0;
+  padding: .38rem .1rem; box-shadow: none; background: transparent;
   color: var(--muted); font-size: .83rem; font-weight: 650;
 }
 .frontier-literature-workbench .literature-display-switch .cm-action[aria-pressed="true"] {
-  color: var(--surface); background: var(--signal-teal); box-shadow: none;
+  color: var(--signal-teal); border-color: var(--signal-teal); background: transparent; box-shadow: none;
 }
+.frontier-literature-workbench .literature-display-switch .cm-action:is(:hover, :focus-visible) { color: var(--signal-teal); }
 .frontier-literature-workbench .graph-controls {
-  max-width: none; align-items: center; gap: .4rem; padding: 0 0 .8rem; border: 0;
+  max-width: none; align-items: center; justify-content: end; gap: .25rem; padding: 0; border: 0;
 }
 .frontier-literature-workbench .graph-controls label {
   display: flex; align-items: center; flex-wrap: wrap; gap: .42rem;
@@ -61,7 +77,8 @@
   border: 1px solid var(--line); border-radius: .32rem; color: var(--ink); background: transparent; box-shadow: none;
 }
 .frontier-literature-workbench .graph-controls select { min-width: 7rem; background: var(--surface); }
-.frontier-literature-workbench .graph-controls button.active { background: var(--surface-strong); color: var(--signal-teal); border-color: var(--signal-teal); }
+.frontier-literature-workbench .graph-controls button { border: 1px solid transparent; color: var(--muted); }
+.frontier-literature-workbench .graph-controls button:is(:hover:not(:disabled), .active) { background: var(--surface-strong); color: var(--signal-teal); }
 .frontier-literature-workbench .graph-controls button:disabled { opacity: .58; }
 .frontier-literature-workbench :is(.graph-controls, .graph-options, .lens-canvas-tools, .evidence-inspector) button:focus-visible {
   outline: 2px solid var(--signal-teal); outline-offset: 2px;
@@ -83,13 +100,15 @@
 }
 .lens-canvas-region .lens-canvas-tools {
   grid-area: tools; place-self: center end; position: static; inset: auto;
-  gap: .14rem; margin: .3rem .5rem .3rem 0; padding: 0; border: 0;
+  gap: 0; margin: .28rem .5rem .28rem 0; padding: 0; border: 1px solid var(--line); border-radius: .3rem;
 }
 .lens-canvas-region .lens-canvas-tools button {
   display: inline-grid; place-content: center; width: 2.05rem; height: 2.05rem;
   margin: 0; padding: 0; font: 500 1.2rem/1 system-ui, sans-serif;
-  color: var(--ink); border: 1px solid var(--line); border-radius: .3rem; background: var(--surface);
+  color: var(--ink); border: 0; border-radius: 0; background: transparent;
 }
+.lens-canvas-region .lens-canvas-tools button + button { border-inline-start: 1px solid var(--line); }
+.lens-canvas-region .lens-canvas-tools .graph-fit-view { width: auto; padding: .2rem .55rem; color: var(--muted); font-family: inherit; font-size: .78rem; font-weight: 600; line-height: 1.2; }
 .lens-canvas-region .lens-canvas-tools button:hover { background: var(--surface-strong); }
 .lens-canvas-region .canvas-zoom-readout {
   grid-area: scale; place-self: center end; margin: 0 .6rem; pointer-events: none;
@@ -120,7 +139,7 @@
 .lens-canvas-region .lens-footnote { grid-area: caption; position: static; margin: 0; padding: .48rem .75rem; color: var(--muted); font-size: .79rem; line-height: 1.45; }
 .frontier-literature-workbench .evidence-inspector {
   min-width: 0; padding: clamp(.85rem, 1.8vw, 1.2rem); color: var(--ink);
-  border: 1px solid var(--line); border-block-start: 3px solid var(--signal-teal); border-radius: .4rem; background: var(--surface);
+  border: 1px solid var(--line); border-block-start: 3px solid var(--signal-teal); border-radius: .3rem; background: var(--surface);
 }
 .frontier-literature-workbench .evidence-inspector h2 {
   margin: .35rem 0 .48rem; overflow-wrap: anywhere; text-wrap: pretty; color: var(--ink);
@@ -135,6 +154,7 @@
 .frontier-literature-workbench .graph-record-meta { grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); gap: .65rem; }
 .frontier-literature-workbench :is(.evidence-inspector, .graph-paper-actions) > .cm-action { color: var(--signal-teal); border: 1px solid var(--line); border-radius: .3rem; }
 .graph-paper-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .85rem; }
+.frontier-literature-workbench .graph-paper-actions > .cm-action { background: var(--signal-teal); color: var(--surface); border-color: var(--signal-teal); }
 .graph-paper-actions a { display: inline-flex; align-items: center; gap: .2em; min-height: 2.75rem; color: var(--signal-teal); font-size: .85rem; text-underline-offset: .19em; }
 .graph-paper-actions a:focus-visible { outline: 2px solid var(--signal-teal); outline-offset: 2px; }
 .frontier-literature-workbench .graph-back-node, .frontier-literature-workbench .graph-search-return {
@@ -159,6 +179,9 @@
   .lens-canvas-region .lens-canvas-tools button { min-width: 44px; }
 }
 @media (max-width: 760px) {
+  .frontier-literature-workbench .graph-controls { justify-content: start; padding-block: .3rem; }
+  .frontier-literature-workbench .graph-options-toggle { min-height: 44px; margin: 0; padding-inline: .62rem; border-color: var(--line); color: var(--signal-teal); }
+  .frontier-literature-workbench .graph-options-toggle[aria-expanded="true"] { border-color: var(--signal-teal); background: var(--surface-strong); }
   .frontier-literature-workbench .lens-canvas-region {
     grid-template-areas: "scale tools" "map map" "legend legend" "caption caption";
     grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr) auto auto;
@@ -169,10 +192,8 @@
 }
 @media (max-width: 600px) {
   .workbench .frontier-literature-workbench { padding: .85rem clamp(.65rem, 3vw, 1.2rem); }
-  .frontier-literature-workbench .stage-header.graph-header { gap: .55rem; padding-bottom: .6rem; }
-  .graph-heading-copy { flex-basis: 100%; }
-  .frontier-literature-workbench .graph-options-toggle { min-height: 44px; margin-block: 0 .4rem; padding-inline: .15rem .45rem; border: 0; color: var(--signal-teal); }
-  .frontier-literature-workbench .graph-controls { align-items: center; padding-bottom: .5rem; }
+  .frontier-literature-workbench .stage-header.graph-header { gap: .1rem; }
+  .graph-heading-copy { flex-basis: 100%; margin-block-end: 0; }
   .frontier-literature-workbench .graph-controls label { width: auto; }
   .frontier-literature-workbench .graph-controls select { width: auto; }
 }

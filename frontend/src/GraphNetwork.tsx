@@ -379,7 +379,12 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     <header class="stage-header graph-header">
       <div class="graph-heading-copy">
         <h1>{hasCitationMap() && !hasReviewablePapers() ? t("引文星图", "Citation atlas") : t("文献星图", "Literature atlas")}</h1>
-        <Show when={missionSubject()}>{subject => <p class="graph-mission" title={subject()}>{subject()}</p>}</Show>
+        <Show when={props.bundle.mission.question.trim()} fallback={<p class="graph-mission">{missionSubject()}</p>}>
+          <details class="graph-question">
+            <summary><span>{t("研究问题", "Research question")}</span>{missionSubject()}</summary>
+            <p>{props.bundle.mission.question}</p>
+          </details>
+        </Show>
       </div>
       <Show when={props.runId && !props.readOnlyPreview}>
         <div class="literature-display-switch" role="group" aria-label={t("文献展示方式", "Literature view")}>
@@ -397,7 +402,40 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     <Show when={hasNavigableMap()}><GraphPaperSearch locale={props.locale} query={query()} setQuery={setSearchQuery}
       matches={searchMatches()} visibleIds={visibleIds()} selectedId={selectedNodeId()} coverage={graph().coverage}
       select={selectSearchMatch} inputRef={element => { searchInput = element; }}
-      openChecklist={hasReviewablePapers() && props.runId && props.onLoadScreening && props.onSubmitScreening ? openSearchChecklist : undefined} /></Show>
+      openChecklist={hasReviewablePapers() && props.runId && props.onLoadScreening && props.onSubmitScreening ? openSearchChecklist : undefined}>
+      <div class="graph-options" classList={{ expanded: showMobileOptions() }}>
+        <button class="graph-options-toggle" type="button" aria-label={t("图谱显示选项", "Map display options")} aria-expanded={showMobileOptions()}
+          aria-controls="literature-display-options" onClick={() => setShowMobileOptions(!showMobileOptions())}>{t("筛选", "Filters")}</button>
+        <section id="literature-display-options" class="graph-controls" aria-label={t("图谱筛选", "Map filters")}>
+          <Show when={hasReviewablePapers()}>
+            <label>{t("主题簇", "Topic cluster")}
+              <select value={selectedTopic()} onChange={event => setSelectedTopic(event.currentTarget.value as TopicKey | "all")}>
+                <option value="all">{t("全部论文", "All papers")}</option>
+                <For each={TOPIC_KEYS}>{topic => <option value={topic}>{topicLabel(topic)}</option>}</For>
+              </select>
+            </label>
+          </Show>
+          <button type="button" classList={{ active: advanced() }} aria-expanded={advanced()} onClick={() => setAdvanced(!advanced())}>
+            {advanced() ? t("收起高级筛选", "Hide advanced filters") : t("高级筛选", "Advanced filters")}
+          </button>
+          <button type="button" disabled={!selectedNodeId()} aria-pressed={focusSelection()} classList={{ active: focusSelection() }}
+            onClick={() => setFocusSelection(!focusSelection())}>{t("聚焦选择", "Focus selection")}</button>
+          <button type="button" classList={{ active: inspectorOpen() }} aria-expanded={inspectorOpen()} onClick={() => setInspectorOpen(!inspectorOpen())}>
+            {inspectorOpen() ? t("收起检查器", "Hide inspector") : selectedNodeId() || selectedEdge() ? t("查看当前选择", "Inspect selection") : t("打开检查器", "Open inspector")}
+          </button>
+        </section>
+      </div>
+      <Show when={advanced()}><section class="advanced-filters">
+        <div><strong>{t("节点类型", "Node types")}</strong>
+          <For each={NODE_GROUPS}>{group => <label><input type="checkbox" checked={nodeVisibility()[group.id]}
+            onChange={event => setNodeVisibility(current => ({ ...current, [group.id]: event.currentTarget.checked }))} />{t(group.zh, group.en)}</label>}</For>
+        </div>
+        <div><strong>{t("关系类型", "Relation types")}</strong>
+          <For each={EDGE_GROUPS}>{group => <label><input type="checkbox" checked={edgeVisibility()[group.id]}
+            onChange={event => setEdgeVisibility(current => ({ ...current, [group.id]: event.currentTarget.checked }))} />{t(group.zh, group.en)}</label>}</For>
+        </div>
+      </section></Show>
+    </GraphPaperSearch></Show>
     <Show when={props.linkedDocumentId && !graphNodeForSessionDocument(graph().nodes, props.linkedDocumentId)}>
       <div class="graph-screening-cue" role="status"><p>{t("当前文献星图找不到链接指定的论文。", "The paper in this link is unavailable in the current literature map.")}</p></div>
     </Show>
@@ -405,13 +443,6 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
       <div class="graph-screening-cue" role="status"><p>{t("链接指定的 EvidenceCard 或其已审核来源关系在当前运行中不可用。", "The linked EvidenceCard or its reviewed source relationship is unavailable in this run.")}</p></div>
     </Show>
     <Show when={hasNavigableMap()} fallback={<section class="graph-empty"><small>{t("文献星图待建立", "LITERATURE MAP PENDING")}</small><h2>{t("尚无可审查的文献或书目子图", "No reviewable literature or bibliography subgraph yet")}</h2><Show when={paperCount() > 0} fallback={<p>{t("当前任务只有边界标记，尚未导入或检索到论文元数据；书目关系、全文和 EvidenceCard 不会被自动虚构。", "The current task has only a boundary marker. No paper metadata has been imported or retrieved, and bibliography, full text, and EvidenceCards are never fabricated.")}</p>}><p>{t(`当前图谱含 ${paperCount()} 个仅供导航或演示的论文式节点；它们未形成任务可审核文献，不能用于筛选、全文处理或 EvidenceCard。`, `The map contains ${paperCount()} paper-like navigation or demo node(s). They have not formed reviewable literature for this mission and cannot enter screening, full-text work, or EvidenceCard review.`)}</p></Show><ActionButton variant="primary" onClick={() => props.onNavigate("workflow")}>{t("返回舰桥查看工件状态", "Return to bridge and inspect artifact status")}</ActionButton></section>}>
-    <div class="graph-options" classList={{ expanded: showMobileOptions() }}>
-      <button class="graph-options-toggle" type="button" aria-expanded={showMobileOptions()} aria-controls="literature-display-options" onClick={() => setShowMobileOptions(!showMobileOptions())}>{t("图谱显示选项", "Map display options")}</button>
-      <div id="literature-display-options">
-    <section class="graph-controls" aria-label={t("图谱筛选", "Map filters")}><Show when={hasReviewablePapers()}><label>{t("主题簇", "Topic cluster")}<select value={selectedTopic()} onChange={(event) => setSelectedTopic(event.currentTarget.value as TopicKey | "all")}><option value="all">{t("全部论文", "All papers")}</option><For each={TOPIC_KEYS}>{(topic) => <option value={topic}>{topicLabel(topic)}</option>}</For></select></label></Show><button type="button" classList={{ active: advanced() }} onClick={() => setAdvanced((value) => !value)}>{advanced() ? t("收起高级筛选", "Hide advanced filters") : t("高级筛选", "Advanced filters")}</button><button type="button" onClick={() => controls()?.fit()}>{t("适配画布", "Fit canvas")}</button><button type="button" disabled={!selectedNodeId()} classList={{ active: focusSelection() }} onClick={() => setFocusSelection((value) => !value)}>{t("聚焦选择", "Focus selection")}</button><button type="button" classList={{ active: inspectorOpen() }} aria-expanded={inspectorOpen()} onClick={() => setInspectorOpen((value) => !value)}>{inspectorOpen() ? t("收起检查器", "Hide inspector") : selectedNodeId() || selectedEdge() ? t("查看当前选择", "Inspect selection") : t("打开检查器", "Open inspector")}</button></section>
-    <Show when={advanced()}><section class="advanced-filters"><div><strong>{t("节点类型", "Node types")}</strong><For each={NODE_GROUPS}>{(group) => <label><input type="checkbox" checked={nodeVisibility()[group.id]} onChange={() => setNodeVisibility((current) => ({ ...current, [group.id]: !current[group.id] }))} />{t(group.zh, group.en)}</label>}</For></div><div><strong>{t("关系类型", "Relation types")}</strong><For each={EDGE_GROUPS}>{(group) => <label><input type="checkbox" checked={edgeVisibility()[group.id]} onChange={() => setEdgeVisibility((current) => ({ ...current, [group.id]: !current[group.id] }))} />{t(group.zh, group.en)}</label>}</For></div></section></Show>
-      </div>
-    </div>
     <Show when={selectedPaperHidden()}><section class="graph-hidden-selection" aria-live="polite"><div><small>{t("当前选择已被筛选隐藏", "CURRENT SELECTION HIDDEN")}</small><strong>{selectedNode()?.label ?? ""}</strong><p>{t("该论文仍是本次阅读会话的选择，但当前搜索、主题或节点筛选未将其显示在画布中。", "This paper remains selected for the current reading session, but the current search, topic, or node filter hides it from the canvas.")}</p></div><ActionButton size="sm" variant="secondary" onClick={revealSelectedPaper}>{t("显示当前论文", "Reveal current paper")}</ActionButton></section></Show>
     <Show when={!props.runId && hasReviewablePapers() && props.onLoadScreening && props.onSubmitScreening && hasPersistedScreening() && !screeningPanelOpen()}>
       <ActionButton size="sm" onClick={() => openScreening()}>{t("查看已登记筛选", "View recorded screening")}</ActionButton>
@@ -425,6 +456,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     <section class="graph-workspace" classList={{ "inspector-open": inspectorOpen() }}>
       <section class="lens-canvas-region">
         <div class="lens-canvas-tools">
+          <button type="button" class="graph-fit-view" onClick={() => controls()?.fit()}>{t("适配画布", "Fit canvas")}</button>
           <button type="button" aria-label={t("放大", "Zoom in")} onClick={() => controls()?.zoomIn()}>+</button>
           <button type="button" aria-label={t("缩小", "Zoom out")} onClick={() => controls()?.zoomOut()}>−</button>
         </div>

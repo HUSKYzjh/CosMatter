@@ -53,6 +53,19 @@ for (const width of [320, 1280]) {
     await panel.getByRole("button", { name: "刷新对照表" }).click();
     await expect(panel.getByRole("table")).toContainText("Film B");
     await expect(panel.getByRole("table")).toContainText("38 pm/V");
+    const film = panel.getByRole("row", { name: /Film A/ });
+    const observation = film.locator(".extraction-observation");
+    await expect(observation).toContainText("direction = z");
+    await expect(film.locator(".extraction-material")).toContainText("temperature_K = 300");
+    await expect(film.locator(".extraction-source")).toContainText(locator);
+    await expect(panel.getByRole("row", { name: /Film B/ }).locator(".extraction-facts")).toHaveCount(0);
+    if (width === 320) {
+      const value = (await observation.locator("li strong").boundingBox())!;
+      const material = (await film.locator(".extraction-material").boundingBox())!;
+      const source = (await film.locator(".extraction-source").boundingBox())!;
+      expect(value.y + value.height).toBeLessThanOrEqual(material.y);
+      expect(material.x + material.width).toBeLessThanOrEqual(source.x);
+    }
     await panel.getByLabel("审核状态").selectOption("awaiting_extraction");
     await expect(panel.getByRole("table")).not.toContainText("Film A");
     await expect(panel.getByRole("link")).toHaveCount(0);

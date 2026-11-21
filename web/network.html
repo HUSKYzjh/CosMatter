@@ -38,12 +38,12 @@
             <label>节点类别<select id="network-kind-filter"><option value="all">全部节点</option><option value="paper">候选论文</option><option value="evidence">证据</option><option value="condition">条件簇</option><option value="setting">实验 / 计算设置</option><option value="unknown">未知项</option><option value="external_relation">外部关系元数据</option></select></label>
           </div>
           <div class="atlas-plot-frame">
-            <div class="atlas-plot-heading"><h2>文献关系</h2><p id="network-count" role="status"></p></div>
+            <div class="atlas-plot-heading"><h2>文献关系</h2><p id="network-count" role="status"></p><button type="button" id="atlas-neighborhood" aria-controls="evidence-network" aria-pressed="false">直接关系</button></div>
             <div class="atlas-plot-window"><svg id="evidence-network" role="group" aria-label="条件感知证据关系网络"></svg></div>
           </div>
           <ul class="graph-legend" aria-label="关系图例"><li class="edge-retrieval_candidate">检索候选</li><li class="edge-source_provenance">证据出处</li><li class="edge-support">审核支持</li><li class="edge-contradict">审核反驳</li><li class="edge-open_question">待核查条件</li><li class="edge-condition_recorded">报告条件</li><li class="edge-citation_reference">OpenAlex 引用</li><li class="edge-algorithmic_related">OpenAlex 算法相关</li><li class="edge-crossref_reference">Crossref 登记参考文献</li><li class="edge-identity_matched">人工标识匹配</li><li class="edge-identity_conflict">人工标识冲突</li><li class="edge-identity_unresolved">人工标识未决</li></ul>
         </article>
-        <aside class="graph-inspector" aria-labelledby="node-title"><p class="atlas-inspector-label">节点详情</p><h2 id="node-title" tabindex="-1">选择一个节点</h2><div id="node-inspector">选择节点可查看工件字段和来源定位。</div><button type="button" id="atlas-back-to-node" hidden>返回图中节点</button></aside>
+        <aside class="graph-inspector" aria-labelledby="node-title"><p class="atlas-inspector-label">节点详情</p><h2 id="node-title" tabindex="-1">选择一个节点</h2><nav class="atlas-neighbors" aria-label="图内直接关系" hidden><h3>图内直接关系</h3><ul></ul></nav><div id="node-inspector">选择节点可查看工件字段和来源定位。</div><button type="button" id="atlas-back-to-node" hidden>返回图中节点</button></aside>
       </section>
     </main>
     <footer class="site-footer"><p>星图根据本地工件绘制。书目连线供导航，科学主张及实验条件须回到证据出处核对。</p></footer>

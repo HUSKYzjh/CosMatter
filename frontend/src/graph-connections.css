@@ -8,7 +8,9 @@
   text-align: start; color: inherit; background: transparent; border: 0; white-space: normal; overflow-wrap: anywhere;
 }
 .graph-connections li button:hover, .graph-edge-endpoint:hover { background: var(--surface-strong); text-decoration: underline; }
-.graph-connections li button { position: relative; padding-inline-end: 1.25rem; }
+.graph-connections li button { position: relative; padding: .6rem 1.25rem .6rem .3rem; gap: .22rem; }
+.graph-connections li strong { color: var(--ink); font-weight: 620; line-height: 1.4; }
+.graph-connections li small { color: var(--muted); }
 .graph-connections li button::after {
   content: ""; position: absolute; inset-inline-end: .45rem; top: 50%; width: .38rem; height: .38rem;
   border-block-start: 1.5px solid var(--signal-teal); border-inline-end: 1.5px solid var(--signal-teal); transform: translateY(-50%) rotate(45deg);
@@ -19,12 +21,18 @@
 .graph-review-tools summary { cursor: pointer; font-weight: 600; padding: .7rem; min-height: 44px; }
 .graph-review-tools { min-width: 0; border-block-start: 1px solid var(--line, currentColor); }
 .graph-options-toggle { display: none; }
-@media (max-width: 600px) {
+@media (max-width: 760px) {
+  .graph-options { display: contents; }
   .graph-options-toggle {
-    display: inline-flex; align-items: center; gap: .4rem; min-height: 44px;
+    display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-height: 44px;
     color: inherit; background: transparent; border: 0; text-align: start;
   }
-  .graph-options-toggle::before { content: "▸"; }
-  .graph-options-toggle[aria-expanded="true"]::before { content: "▾"; }
+  .graph-options-toggle::before { content: ""; width: .85rem; height: .8rem; color: currentColor;
+    background: linear-gradient(currentColor, currentColor) left 20% / 100% 1px,
+      linear-gradient(currentColor, currentColor) center 54% / 68% 1px,
+      linear-gradient(currentColor, currentColor) center 88% / 32% 1px;
+    background-repeat: no-repeat; }
+  .graph-options.expanded > #literature-display-options { grid-column: 1 / -1; }
   .graph-options:not(.expanded) > #literature-display-options { display: none; }
+  .graph-paper-search:has(.graph-options:not(.expanded)) > .advanced-filters { display: none; }
 }

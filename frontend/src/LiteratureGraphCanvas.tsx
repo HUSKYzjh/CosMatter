@@ -54,6 +54,17 @@ function clusterOf(node: LiteratureGraphNode): Cluster {
   return node.kind === "research_gap_candidate" ? "Gaps" : baseClusterOf(node);
 }
 
+// Topic ink belongs to the map region. The ring around a paper continues to
+// encode its workflow state, including when two topics share the same state.
+function regionColor(node: LiteratureGraphNode, colors: Record<BaseCluster, string>): string {
+  if (!isPaperNode(node)) return colors[baseClusterOf(node)];
+  const topicColors = {
+    ferroelectric: colors.Papers, piezoelectric: colors.Conditions, thin_film: colors.Mission,
+    domain_microstructure: colors.References, simulation_method: colors.Evidence, other: colors.Structure,
+  };
+  return topicColors[topicFor(node)];
+}
+
 function clusterCaption(node: LiteratureGraphNode): string {
   if (isPaperNode(node)) {
     const topic = topicFor(node);
@@ -96,12 +107,12 @@ function degreeMap(edges: LiteratureGraphEdge[]): Map<string, number> {
   return degrees;
 }
 
-const chartFont = "'Segoe UI', 'Microsoft YaHei', sans-serif";
+const chartFont = "Segoe UI, Microsoft YaHei, sans-serif";
 
 interface Box { x: number; y: number; w: number; h: number }
 interface Point { x: number; y: number }
 interface AtlasGroup { weight: number }
-type LabelSide = "below" | "above" | "right" | "left";
+type LabelSide = "below" | "above" | "right" | "left" | "below-start" | "below-end" | "above-start" | "above-end";
 
 function edgeId(edge: LiteratureGraphEdge): string {
   return JSON.stringify(["edge", edge.sourceId, edge.targetId, edge.edgeType, edge.relationSource]);
@@ -130,10 +141,10 @@ function overlaps(a: Box, b: Box): boolean {
 
 function labelBox(p: Point, width: number, height: number, side: LabelSide): Box {
   const inset = 12;
-  if (side === "below") return { x: p.x - width / 2, y: p.y + inset, w: width, h: height };
-  if (side === "above") return { x: p.x - width / 2, y: p.y - inset - height, w: width, h: height };
   if (side === "right") return { x: p.x + inset, y: p.y - height / 2, w: width, h: height };
-  return { x: p.x - inset - width, y: p.y - height / 2, w: width, h: height };
+  if (side === "left") return { x: p.x - inset - width, y: p.y - height / 2, w: width, h: height };
+  const x = side.endsWith("-start") ? p.x : side.endsWith("-end") ? p.x - width : p.x - width / 2;
+  return { x, y: side.startsWith("below") ? p.y + inset : p.y - inset - height, w: width, h: height };
 }
 
 function briefLabel(text: string, width: number, measure: (value: string) => number): string {
@@ -145,6 +156,60 @@ function briefLabel(text: string, width: number, measure: (value: string) => num
     prefix += char;
   }
   return prefix.trimEnd() + "…";
+}
+
+interface RouteObstacle { id: string; point: Point; radius: number; label?: Box }
+
+// Each curve sample only needs the markers/titles that cover its local cell.
+function indexObstacles(obstacles: RouteObstacle[], area: Box) {
+  const size = 40, columns = Math.ceil(area.w / size), rows = Math.ceil(area.h / size);
+  const cells = Array.from({ length: columns * rows }, () => [] as RouteObstacle[]);
+  for (const item of obstacles) {
+    const { x, y } = item.point, pad = item.radius + 3, label = item.label;
+    const left = Math.max(0, Math.floor(Math.min(x - pad, label ? label.x - 2 : x) / size));
+    const right = Math.min(columns - 1, Math.floor(Math.max(x + pad, label ? label.x + label.w + 2 : x) / size));
+    const top = Math.max(0, Math.floor(Math.min(y - pad, label ? label.y - 2 : y) / size));
+    const bottom = Math.min(rows - 1, Math.floor(Math.max(y + pad, label ? label.y + label.h + 2 : y) / size));
+    for (let row = top; row <= bottom; row++) {
+      for (let column = left; column <= right; column++) cells[row * columns + column].push(item);
+    }
+  }
+  return (x: number, y: number) => cells[Math.floor(y / size) * columns + Math.floor(x / size)];
+}
+
+function evidenceBend(edge: LiteratureGraphEdge, source: Point, target: Point, area: Box, nearby: ReturnType<typeof indexObstacles>): number {
+  const dx = target.x - source.x, dy = target.y - source.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) return 0;
+  const normal = { x: -dy / length, y: dx / length };
+  let best = 0, bestScore = -Infinity;
+  // Test the straight path first. A small bend should clear unrelated markers
+  // and titles before a stronger detour is considered.
+  for (const bend of [0, 24, -24, 48, -48, 80, -80, 120, -120]) {
+    const steps = Math.ceil((length + Math.abs(bend)) / 6);
+    let clearance = Infinity;
+    let crossesTitle = false;
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const arc = 2 * t * (1 - t) * bend;
+      const x = source.x + t * dx + normal.x * arc;
+      const y = source.y + t * dy + normal.y * arc;
+      if (x < 2 || y < 2 || x > area.w - 2 || y > area.h - 2) { clearance = -Infinity; break; }
+      for (const other of nearby(x, y)) {
+        if (other.id === edge.sourceId || other.id === edge.targetId) continue;
+        const gapX = x - other.point.x, gapY = y - other.point.y;
+        const squared = gapX * gapX + gapY * gapY;
+        if (squared < (other.radius + 3) ** 2) clearance = Math.min(clearance, Math.sqrt(squared) - other.radius);
+        const box = other.label;
+        if (box && x >= box.x - 2 && x <= box.x + box.w + 2 && y >= box.y - 2 && y <= box.y + box.h + 2) crossesTitle = true;
+      }
+    }
+    // Three pixels cover the sampling interval. Prioritise the marker over its title.
+    if (clearance >= 3 && !crossesTitle) return bend;
+    const score = Math.min(clearance, 3) - Number(crossesTitle) * .5;
+    if (score > bestScore) { best = bend; bestScore = score; }
+  }
+  return best;
 }
 
 function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[], width: number, height: number, compact: boolean, colors: Record<BaseCluster, string>) {
@@ -164,9 +229,10 @@ function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[],
   const area = { x: 0, y: 0, w: width, h: height };
   const denseNarrow = compact && nodes.length > 16;
   const totalWeight = weights.reduce((sum, group) => sum + group.weight, 0);
+  const bandMinimum = Math.min(47, height / Math.max(1, ordered.length));
   let bandTop = 0;
   const cells = denseNarrow ? weights.map(group => {
-    const band = { ...area, y: bandTop, h: height * group.weight / totalWeight };
+    const band = { ...area, y: bandTop, h: bandMinimum + (height - bandMinimum * ordered.length) * group.weight / totalWeight };
     bandTop += band.h;
     return band;
   }) : ordered.length ? groupCells(weights, area) : [];
@@ -191,19 +257,24 @@ function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[],
     return briefLabel(hint + " · " + node.label, available, measure);
   };
   const labels = new Map<string, { text: string; visible: boolean; side: LabelSide }>();
+  const bounds = new Map<string, Box>();
   const degrees = degreeMap(edges);
   const byImportance = ordered.map(members => [...members].sort((a, b) =>
     (degrees.get(b.nodeId) ?? 0) - (degrees.get(a.nodeId) ?? 0) || a.label.localeCompare(b.label)));
   ordered.forEach((members, index) => {
     const cell = cells[index];
     const cap = members[0];
-    context.font = `600 11px ${chartFont}`;
+    context.font = `600 12px ${chartFont}`;
     const count = ` · ${members.length}`;
     const title = briefLabel(clusterCaption(cap), Math.max(18, cell.w - 32 - measure(count)), measure) + count;
-    const capPos = { x: cell.x + 9, y: cell.y + 11 };
+    const inset = denseNarrow ? 2 : 3;
+    const panel = { x: cell.x + inset, y: cell.y + inset, w: Math.max(1, cell.w - 2 * inset), h: Math.max(1, cell.h - 2 * inset) };
+    const capPos = { x: panel.x + 9, y: panel.y + 11 };
     const groupId = clusterOf(cap);
-    captions.push({ data: { id: `sector:${index}:${groupId}`, isCluster: "yes", label: title, color: colors[baseClusterOf(cap)] },
-      position: capPos, selectable: false, grabbable: false });
+    bounds.set(groupId, panel);
+    captions.push({ data: { id: `sector:${index}:${groupId}`, isCluster: "yes", region: groupId, label: title,
+      color: regionColor(cap, colors), width: panel.w, height: panel.h, labelInset: 9 - panel.w },
+      position: { x: panel.x + panel.w / 2, y: panel.y + panel.h / 2 }, selectable: false, grabbable: false });
     occupied.push({ x: capPos.x - 4, y: capPos.y - 10, w: measure(title) + 20, h: 22 });
     let groupNodes = members;
     let room = { x: cell.x + 10, y: cell.y + 26, w: Math.max(4, cell.w - 20), h: Math.max(6, cell.h - 31) };
@@ -211,10 +282,12 @@ function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[],
       // Each topic keeps one title even in a 49-paper overview on a phone.
       // Its label occupies the left column; the remaining markers use the right.
       const representative = byImportance[index][0];
-      const point = { x: cell.x + 10, y: Math.max(capPos.y + 20, cell.y + cell.h * .64) };
+      const clearance = representative.kind === "mission" ? 16 : 10;
+      const point = { x: panel.x + clearance + 4,
+        y: Math.min(panel.y + panel.h - clearance, Math.max(capPos.y + 18, cell.y + cell.h * .66)) };
       const labelColumn = Math.min(118, cell.w * .45);
       context.font = `600 ${fontSize}px ${chartFont}`;
-      const text = nodeLabel(representative, labelColumn - 23);
+      const text = nodeLabel(representative, labelColumn - 29);
       positions.set(representative.nodeId, point);
       labels.set(representative.nodeId, { text, visible: true, side: "right" });
       occupied.push(labelBox(point, measure(text) + 7, fontSize + 5, "right"));
@@ -229,7 +302,7 @@ function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[],
       const rowLength = Math.min(columns, groupNodes.length - row * columns);
       // Stagger neighbouring rows slightly to separate parallel paths at their endpoints.
       const x = room.x + ((i % columns + 0.5 + (columns > 1 && rowLength > 1 ? (row % 2 ? .12 : -.12) : 0)) / rowLength) * room.w;
-      const stagger = columns > 1 ? ((i % columns + index) % 3 - 1) * .12 : 0;
+      const stagger = columns > 1 && (!denseNarrow || rows < 3) ? ((i % columns + index) % 3 - 1) * .12 : 0;
       const y = room.y + (row + .44 + stagger) * room.h / rows;
       positions.set(member.nodeId, { x, y });
       occupied.push({ x: x - 10, y: y - 10, w: 20, h: 20 });
@@ -244,22 +317,56 @@ function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[],
       const node = members[i];
       if (!node || labels.has(node.nodeId)) continue;
       const p = positions.get(node.nodeId)!;
-      const text = nodeLabel(node, titleWidth);
-      const sides: LabelSide[] = ["below", "above", p.x < width / 2 ? "right" : "left", p.x < width / 2 ? "left" : "right"];
-      let visible = false;
-      let side = sides[0];
-      for (const candidate of sides) {
-        const box = labelBox(p, Math.ceil(measure(text)) + 10, fontSize + 9, candidate);
-        if (box.x < 0 || box.y < 0 || box.x + box.w > width || box.y + box.h > height || occupied.some(other => overlaps(box, other))) continue;
-        occupied.push(box);
-        side = candidate;
-        visible = true;
-        break;
+      const panel = bounds.get(clusterOf(node))!;
+      const sides: LabelSide[] = ["below", "above", "below-start", "below-end", "above-start", "above-end", "right", "left"];
+      let chosen = { text: nodeLabel(node, titleWidth), visible: false, side: sides[0] };
+      for (const side of sides) {
+        const left = p.x - panel.x - 4;
+        const right = panel.x + panel.w - p.x - 4;
+        const space = side === "left" ? left - 16 : side === "right" ? right - 16
+          : side.endsWith("-start") ? right : side.endsWith("-end") ? left : Math.min(left, right) * 2;
+        const text = nodeLabel(node, Math.min(titleWidth, space - 7));
+        if (space < 38 || text === "…") continue;
+        const box = labelBox(p, Math.ceil(measure(text)) + 8, fontSize + 6, side);
+        if (box.y < panel.y + 2 || box.y + box.h > panel.y + panel.h - 2 || occupied.some(other => overlaps(box, other))) continue;
+        if (!chosen.visible || measure(text) > measure(chosen.text)) chosen = { text, visible: true, side };
       }
-      labels.set(node.nodeId, { text, visible, side });
+      if (chosen.visible) occupied.push(labelBox(p, Math.ceil(measure(chosen.text)) + 8, fontSize + 6, chosen.side));
+      labels.set(node.nodeId, chosen);
     }
   }
-  return { captions, positions, labels };
+  // Let a busy retrieval hub fan towards each topic. Each curve still has its
+  // own original endpoints; no extra edges or citation relationships are added.
+  const routes = new Map<string, { weight: number; distance: number }>();
+  const nodeById = new Map(nodes.map(node => [node.nodeId, node]));
+  const nearby = indexObstacles(nodes.map(node => {
+    const point = positions.get(node.nodeId)!;
+    const label = labels.get(node.nodeId)!;
+    return { id: node.nodeId, point, radius: node.kind === "mission" ? 17 : 12,
+      label: label.visible ? labelBox(point, measure(label.text) + 6, fontSize + 4, label.side) : undefined };
+  }), area);
+  for (const edge of edges) {
+    const role = flightRole(edge);
+    const a = positions.get(edge.sourceId)!;
+    const b = positions.get(edge.targetId)!;
+    if (role === "evidence" || role === "condition") {
+      routes.set(edgeId(edge), { weight: .5, distance: evidenceBend(edge, a, b, area, nearby) });
+      continue;
+    }
+    if (role !== "formation" || (degrees.get(edge.sourceId) ?? 0) < 8) continue;
+    const target = nodeById.get(edge.targetId)!;
+    if (!isPaperNode(target)) continue;
+    const panel = bounds.get(clusterOf(target))!;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 1) continue;
+    const cx = (panel.x + panel.w * (denseNarrow ? .8 : .5) - a.x) * .7;
+    const cy = (panel.y + panel.h * .5 - a.y) * .45;
+    const weight = Math.min(.82, Math.max(.18, (cx * dx + cy * dy) / (length * length)));
+    const distance = Math.min(length * .32, Math.max(-length * .32, (dx * cy - dy * cx) / length));
+    routes.set(edgeId(edge), { weight, distance });
+  }
+  return { captions, positions, labels, routes };
 }
 
 export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
@@ -311,12 +418,14 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
     const elements = cy.elements();
     const target = nodeId ? cy.getElementById(nodeId) : edge ? cy.getElementById(edgeId(edge)) : cy.collection();
     cy.batch(() => {
-      elements.removeClass("is-emphasized is-adjacent is-subdued");
+      elements.removeClass("is-emphasized is-adjacent is-subdued active-region");
       if (target.empty()) return;
       const adjacent = target.nodes().nonempty() ? target.neighborhood() : target.connectedNodes();
       elements.difference(adjacent.union(target)).addClass("is-subdued");
       adjacent.addClass("is-adjacent");
       target.addClass("is-emphasized");
+      const selectedRegions = new Set((nodeId ? target.nodes() : target.connectedNodes()).map(node => node.data("region")));
+      cy!.nodes('[isCluster = "yes"]').filter(node => selectedRegions.has(node.data("region"))).removeClass("is-subdued").addClass("active-region");
     });
     settleLabels();
     revealSelection();
@@ -378,7 +487,7 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
     let chartWidth = container.clientWidth;
     let chartHeight = container.clientHeight;
     const layout = () => atlasLayout(nodes, edges, Math.max(240, chartWidth - 42), Math.max(240, chartHeight - 42), compact, colors);
-    const { captions, positions, labels } = layout();
+    const { captions, positions, labels, routes } = layout();
     const layoutKey = JSON.stringify([compact, nodes.map(node => [node.nodeId, clusterOf(node)])]);
     const viewport = cy && layoutKey === previousLayout ? { zoom: cy.zoom(), pan: cy.pan() } : null;
     previousLayout = layoutKey;
@@ -390,10 +499,11 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
         const label = labels.get(node.nodeId)!;
         return { data: { id: node.nodeId, isCluster: "no", label: node.label, shortLabel: label.text,
           displayLabel: label.visible ? label.text : "", labelSide: label.side, color: colors[group], nodeKind: node.kind,
-          group, reviewColor: reviewColors[reviewState] ?? colors[group] }, position: positions.get(node.nodeId) };
+          group, region: clusterOf(node), regionColor: regionColor(node, colors),
+          reviewColor: reviewColors[reviewState] ?? colors[group] }, position: positions.get(node.nodeId) };
       }),
       ...Array.from(edgesById, ([id, edge]) => ({ data: { id, source: edge.sourceId, target: edge.targetId,
-        label: edge.edgeType.replaceAll("_", " "), color: edgeColor(edge, colors), flightRole: flightRole(edge) } })),
+        label: edge.edgeType.replaceAll("_", " "), color: edgeColor(edge, colors), flightRole: flightRole(edge), ...routes.get(id) } })),
     ];
     cy?.destroy();
     cy = undefined;
@@ -407,41 +517,52 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
       wheelSensitivity: 0.16,
       style: [
         { selector: 'node[isCluster = "yes"]', style: {
-          shape: "round-rectangle", width: 9, height: 2, "background-color": "data(color)",
-          label: "data(label)", color: muted, "font-family": chartFont, "font-size": 11, "font-weight": 600,
-          "text-valign": "center", "text-halign": "right", "text-margin-x": 5,
-          "text-outline-color": paper, "text-outline-width": 2, events: "no", "overlay-opacity": 0,
+          shape: "round-rectangle", "corner-radius": "9px", width: "data(width)", height: "data(height)",
+          "background-color": "data(color)", "background-opacity": .068,
+          "border-color": "data(color)", "border-width": 1, "border-opacity": .30,
+          label: "data(label)", color: "data(color)", "font-family": chartFont, "font-size": 12, "font-weight": 600,
+          "text-valign": "top", "text-halign": "right", "text-margin-x": (node: NodeSingular) => node.data("labelInset"), "text-margin-y": 20,
+          "z-compound-depth": "bottom", events: "no", "overlay-opacity": 0,
         } },
         { selector: 'node[isCluster = "no"]', style: {
           shape: "ellipse", width: 13, height: 13, "background-color": "data(color)",
           "border-color": "data(reviewColor)", "border-width": 2, "border-position": "outside",
           label: "data(displayLabel)", color: ink, "font-family": chartFont, "font-size": compact ? 12 : 13, "font-weight": 600,
-          "text-valign": "bottom", "text-halign": "center", "text-margin-y": 5, "text-outline-color": paper, "text-outline-width": 2,
+          "text-valign": "bottom", "text-halign": "center", "text-margin-y": 5, "text-outline-color": paper, "text-outline-width": 1.5,
           "overlay-opacity": 0, "z-index": 2,
         } },
         { selector: 'node[group = "Mission"]', style: { width: 22, height: 22, shape: "hexagon", "border-color": "data(color)", "border-width": 1.5, "outline-color": "data(color)", "outline-offset": 2, "outline-width": 1 } },
-        { selector: 'node[group = "Papers"]', style: { "background-color": paper, "border-width": 2.7, "background-opacity": 1 } },
+        { selector: 'node[group = "Papers"]', style: { "background-color": paper, "border-width": 2.3,
+          "pie-size": "36%", "pie-1-background-color": "data(regionColor)", "pie-1-background-size": 100 } },
         { selector: 'node[group = "Evidence"]', style: { width: 14, height: 14, shape: "round-diamond" } },
         { selector: 'node[nodeKind = "research_gap_candidate"]', style: { shape: "triangle", "background-color": paper, "border-style": "dashed" } },
         { selector: 'node[group = "Conditions"]', style: { shape: "round-rectangle", "background-color": paper } },
         { selector: 'node[group = "References"]', style: { shape: "diamond", width: 10, height: 10, "background-color": paper } },
         { selector: 'node[group = "Structure"]', style: { width: 9, height: 9 } },
-        { selector: 'node[labelSide = "above"]', style: { "text-valign": "top", "text-margin-y": -5 } },
+        { selector: 'node[labelSide ^= "above"]', style: { "text-valign": "top", "text-margin-y": -5 } },
+        { selector: 'node[labelSide $= "-start"]', style: { "text-halign": "right", "text-margin-x": -6.5 } },
+        { selector: 'node[labelSide $= "-end"]', style: { "text-halign": "left", "text-margin-x": 6.5 } },
         { selector: 'node[labelSide = "right"]', style: { "text-valign": "center", "text-halign": "right", "text-margin-x": 6, "text-margin-y": 0 } },
         { selector: 'node[labelSide = "left"]', style: { "text-valign": "center", "text-halign": "left", "text-margin-x": -6, "text-margin-y": 0 } },
         { selector: "edge", style: { width: 1.35, "line-color": "data(color)", "target-arrow-color": "data(color)",
           "target-arrow-shape": "triangle", "arrow-scale": .65, "curve-style": "bezier", opacity: .72,
           label: "", "overlay-opacity": 0, "z-index": 0 } },
-        { selector: 'edge[flightRole = "formation"]', style: { width: 1, "line-color": muted, "target-arrow-shape": "none", opacity: nodes.length > 18 ? .25 : .45 } },
+        { selector: 'edge[flightRole = "formation"]', style: { width: 1, "line-color": muted, "target-arrow-shape": "none", opacity: nodes.length > 18 ? .18 : .44 } },
+        { selector: "edge[weight]", style: { "curve-style": "unbundled-bezier", "edge-distances": "node-position",
+          "control-point-distances": "data(distance)", "control-point-weights": "data(weight)" } },
         { selector: 'edge[flightRole = "bibliography"]', style: { opacity: .72 } },
         { selector: 'edge[flightRole = "suggestion"]', style: { "line-style": "dotted", opacity: .50, "target-arrow-shape": "none" } },
         { selector: "node.is-subdued", style: { opacity: .50 } },
-        { selector: "edge.is-subdued", style: { opacity: .13 } },
+        { selector: "edge.is-subdued", style: { opacity: .09 } },
+        { selector: "node.active-region", style: { "border-width": 1.6, "border-opacity": .78, "background-opacity": .105 } },
         { selector: "node.is-adjacent", style: { "outline-color": "data(color)", "outline-width": 1, "outline-offset": 2, "z-index": 5 } },
         { selector: "edge.is-adjacent", style: { width: 2, opacity: .94, "z-index": 1 } },
         { selector: "node.is-emphasized", style: { label: "data(shortLabel)", "background-color": "data(color)", "border-color": paper,
           "border-width": 2, "outline-color": "data(color)", "outline-offset": 1, "outline-width": 2,
           "font-weight": 700, "text-outline-width": 2.5, "z-index": 10 } },
+        { selector: 'node[group = "Papers"].is-emphasized', style: { "background-color": paper,
+          "border-color": "data(reviewColor)", "border-width": 2.3, "outline-color": ink, "outline-offset": 2.5,
+          "outline-width": 2.2, "pie-1-background-color": "data(regionColor)" } },
         { selector: "edge.is-emphasized", style: { width: 2.8, opacity: 1, label: "data(label)", "font-family": chartFont,
           "font-size": 12, color: ink, "text-background-color": paper, "text-background-opacity": 1, "text-background-padding": "3px", "z-index": 8 } },
         { selector: "node.label-collision", style: { label: "" } },
@@ -462,7 +583,7 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
       cy.startBatch();
       for (const caption of next.captions) {
         const marker = cy.getElementById(caption.data.id!);
-        marker.position(caption.position!).data("label", caption.data.label);
+        marker.position(caption.position!).data(caption.data);
       }
       for (const [id, point] of next.positions) {
         const label = next.labels.get(id)!;
@@ -470,6 +591,7 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
           shortLabel: label.text, displayLabel: label.visible ? label.text : "", labelSide: label.side,
         });
       }
+      for (const [id, route] of next.routes) cy.getElementById(id).data(route);
       cy.endBatch();
       settleLabels();
     };
