@@ -21,7 +21,7 @@ import { hasNavigableLiteratureGraph, missionJourney, type JourneyStage } from "
 import { automaticGraphHandoffAlreadySettled, automaticGraphHandoffTarget } from "./automaticGraphHandoff";
 import { automaticCancellationEnabled } from "./automaticCancellation";
 import { availableRetrievalSources, reconcileRetrievalSources, type LocalApiCapabilityHealth } from "./localApiCapabilities";
-import { isLocalRunId, liveBundleMatchesRun, localRunArtifactsLink, localRunLink, localRunScreeningLink, parseLocalRunLink, runtimeProjectionsMatchRun } from "./liveRunIdentity";
+import { isLocalRunId, liveBundleMatchesRun, localPaperMapLink, localRunArtifactsLink, localRunLink, localRunScreeningLink, parseLocalRunLink, runtimeProjectionsMatchRun, type LocalRunLinkTarget } from "./liveRunIdentity";
 import { operationRecovery, type OperationRecoveryKind } from "./operationRecovery";
 import { deriveMissionArtifactStatus, taskBoundaryFingerprint, type MissionArtifactStatus } from "./missionArtifactStatus";
 import { auditableAcceptedEvidence, documentIdForReviewablePaper, evidenceForPaper, reviewablePaperCount, reviewablePaperForDocumentId } from "./evidenceLinking";
@@ -1702,7 +1702,8 @@ export function App() {
     scheduleCurrentView(pdfEpoch, "workflow");
   }
 
-  async function openExistingRun(rawRunId: string, documentId: string | null = null, evidenceId: string | null = null, screeningRevision?: string, artifactList = false) {
+  async function openExistingRun(target: string | LocalRunLinkTarget) {
+    const { runId: rawRunId, documentId = null, evidenceId = null, screeningRevision, artifactList, view: requestedView } = typeof target === "string" ? { runId: target } : target;
     const runId = rawRunId.trim();
     if (!localApiEnabled() || !isLocalRunId(runId) || resumeSubmissionPending()) return;
     const previousEpoch = taskEpoch;
@@ -1740,7 +1741,8 @@ export function App() {
       ]);
       if (!stillOnLaunch()) return;
       const landing = localRunLanding(runId, snapshot.imported, stage);
-      const paper = documentId && landing.view === "graph" ? reviewablePaperForDocumentId(snapshot.imported.literatureGraph.nodes, documentId) : null;
+      const destination = requestedView === "map" && landing.state === "confirmed" && hasNavigableLiteratureGraph(snapshot.imported) ? "graph" : landing.view;
+      const paper = documentId && destination === "graph" ? reviewablePaperForDocumentId(snapshot.imported.literatureGraph.nodes, documentId) : null;
       const requestedEvidence = paper && evidenceId
         ? snapshot.imported.evidenceCards.find((card) => card.evidenceId === evidenceId && card.provenance.documentId === documentId) : null;
       const focusedEvidence = requestedEvidence ? focusEvidenceSession(snapshot.imported, requestedEvidence) : null;
@@ -1757,10 +1759,11 @@ export function App() {
       const attachedPdf = pdfTaskForSession(registry?.tasks ?? [], documentId);
       const savedSource = sources?.find((task) => task.document_id === documentId) ?? null;
       const sourceAction = candidatePdfAction(attachedPdf, savedSource);
-      const canOpenReader = focusedEvidence || (!evidenceId && paper && screeningAllowsSourceReview(screening, runId, documentId)
+      const canOpenReader = focusedEvidence || (requestedView !== "map" && !evidenceId && paper && screeningAllowsSourceReview(screening, runId, documentId)
         && (sourceAction === "recorded_reader" || sourceAction === "open_reader"));
-      const canonicalLink = screeningRevision ? localRunScreeningLink(window.location.origin, runId, screeningRevision)
-        : localRunLink(window.location.origin, runId, documentId, evidenceId);
+      const mapLink = requestedView === "map" && documentId ? localPaperMapLink(window.location.origin, runId, documentId) : null;
+      const canonicalLink = mapLink ?? (screeningRevision ? localRunScreeningLink(window.location.origin, runId, screeningRevision)
+        : localRunLink(window.location.origin, runId, documentId, evidenceId));
       window.history.replaceState(window.history.state, "", canonicalLink);
       const epoch = batch(() => {
         const currentEpoch = supersedeActiveRun("keep");
@@ -1782,7 +1785,7 @@ export function App() {
         setStatus(paper
           ? text(`已定位论文「${paper.label}」。`, `Opened paper “${paper.label}”.`)
           : text(`已打开本机运行 ${runId}。`, `Opened local run ${runId}.`));
-        setView(canOpenReader ? "reader" : landing.view);
+        setView(canOpenReader ? "reader" : destination);
         return currentEpoch;
       });
       const current = currentRunGuard(runId, epoch);
@@ -2144,7 +2147,7 @@ export function App() {
         setLaunchPreview(false);
         setView("launch");
       });
-      void openExistingRun(target.runId, target.documentId, target.evidenceId, target.screeningRevision, target.artifactList);
+      void openExistingRun(target);
     };
     followLocalRunLink();
     window.addEventListener("hashchange", followLocalRunLink);

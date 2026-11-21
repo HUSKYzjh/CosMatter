@@ -133,7 +133,10 @@
 .frontier-literature-workbench .evidence-inspector dt { font-size: .78rem; }
 .frontier-literature-workbench .evidence-inspector dl { border-block-start: 1px solid var(--line); }
 .frontier-literature-workbench .graph-record-meta { grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); gap: .65rem; }
-.frontier-literature-workbench .evidence-inspector > .cm-action { color: var(--signal-teal); border: 1px solid var(--line); border-radius: .3rem; }
+.frontier-literature-workbench :is(.evidence-inspector, .graph-paper-actions) > .cm-action { color: var(--signal-teal); border: 1px solid var(--line); border-radius: .3rem; }
+.graph-paper-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .85rem; }
+.graph-paper-actions a { display: inline-flex; align-items: center; gap: .2em; min-height: 2.75rem; color: var(--signal-teal); font-size: .85rem; text-underline-offset: .19em; }
+.graph-paper-actions a:focus-visible { outline: 2px solid var(--signal-teal); outline-offset: 2px; }
 .frontier-literature-workbench .graph-back-node, .frontier-literature-workbench .graph-search-return {
   color: var(--signal-teal); font-size: .83rem; padding: .32rem .5rem .32rem 0;
 }

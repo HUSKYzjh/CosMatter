@@ -34,7 +34,7 @@ cosmatter dsh-evidence --run-id YOUR_RUN --port 8765 --doi 10.1038/s41467-017-01
 
 Orca 可以分配工作树和跟踪尝试。CosMatter 返回计算的输入、单位或证据卡链接，供协调者核对。若工作树没有单独安装 CosMatter，可用原安装目录的 `.venv\Scripts\cosmatter.exe` 执行上述命令。[Orca 分工、命令和验收记录](docs/DSH_PUBLIC_PLUGIN_RESEARCH_AND_RECOMMENDATIONS_2026-08-29.zh-CN.md#orca-如何接入-cosmatter-的研究舰队)
 
-在文献星图选中论文，点击「核验这篇论文」和「导出本篇 Orca 核验任务」即可下载单篇任务单。同篇的证据卡共用一项任务，已纳入但待提取的文献可交给工作终端核实缺口。需要批量核验时，打开「跨文献证据对照」并导出匹配行。任务说明给出本机读取地址，要求返回原单位、定位或具体缺口。在目标 Orca Run 的协调终端创建任务后即可跟踪派工。[导入任务单](docs/DSH_PUBLIC_PLUGIN_RESEARCH_AND_RECOMMENDATIONS_2026-08-29.zh-CN.md#从跨文献对照表导入-orca-任务)
+在文献星图选中论文，点击「核验这篇论文」和「导出本篇 Orca 核验任务」即可下载单篇任务单。同篇的证据卡共用一项任务，已纳入但待提取的文献可交给工作终端核实缺口。在目标 Orca Run 的协调终端创建任务后即可跟踪派工。工作终端按任务单读取该篇记录，回报原单位、原文定位或具体缺口，并附上 `paper_url`。在本机打开回执里的链接即可回到星图中这篇论文。需要批量核验时，打开「跨文献证据对照」并导出匹配行。[导入任务单](docs/DSH_PUBLIC_PLUGIN_RESEARCH_AND_RECOMMENDATIONS_2026-08-29.zh-CN.md#从跨文献对照表导入-orca-任务)
 
 当前 M1.2 已实现：
 

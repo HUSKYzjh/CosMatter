@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { extractionCsv, extractionOrcaTasks, filterExtractionRows, readExtractionTable, type ExtractionRow } from "./extractionTable";
+import { localPaperMapLink, parseLocalRunLink } from "./liveRunIdentity";
 
 const row: ExtractionRow = {
   document_id: "d1", title: ' =HYPERLINK("file")', doi: "10.1000/test", status: "reviewed", evidence_id: "e1",
@@ -44,7 +45,28 @@ describe("cross-paper extraction rows", () => {
     const url = new URL(target.extraction_table_url);
     expect(url.pathname).toBe("/api/runs/fixture/extraction-table");
     expect([...url.searchParams]).toEqual([["document_id", id]]);
+    const map = new URL(target.paper_url);
+    expect(map.origin).toBe(url.origin);
+    expect(map.search).toBe("?api=local");
+    expect(parseLocalRunLink(map.hash)).toEqual({ runId: "fixture", documentId: id, evidenceId: null, view: "map" });
     await expect(extractionOrcaTasks(url.origin, "fixture", [row, gap], row.document_id)).rejects.toThrow(/document/);
+  });
+  it("returns from a gap task to the exact paper on the local map without a reader link", async () => {
+    for (const documentId of ["alpha", "alpha-long"]) {
+      const result = await extractionOrcaTasks("http://user:secret@localhost:8765/?token=private", "fixture", [{ ...gap, document_id: documentId }], documentId);
+      const spec = result.tasks[0].spec;
+      const target = JSON.parse(spec.split("\n").at(-1)!);
+      expect(target.paper_url).toBe(`http://localhost:8765/?api=local#run=fixture&document=${documentId}&view=map`);
+      expect(target.evidence).toEqual([]);
+      expect(spec).toContain("Include paper_url unchanged in your report");
+      expect(spec).not.toMatch(/secret|private/);
+    }
+    expect(localPaperMapLink("https://example.org", "fixture", "alpha")).toBeNull();
+    expect(localPaperMapLink("null", "fixture", "alpha")).toBeNull();
+    expect(localPaperMapLink("http://localhost", "fixture", "")).toBeNull();
+    for (const selector of ["view=map", "document=alpha&view=reader", "document=alpha&view=map&evidence=a1", "document=alpha&view=map&view=map"]) {
+      expect(parseLocalRunLink("#run=fixture&" + selector)).toBeNull();
+    }
   });
   it("exports the matching rows with origin IDs, escapes embedded quotes and prevents spreadsheet formulas", () => {
     const csv = extractionCsv("fixture", [row]);

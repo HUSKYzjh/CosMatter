@@ -9,7 +9,7 @@ export function isLoopbackWorkbenchLocation(location: Pick<URL, "protocol" | "ho
   return location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname);
 }
 
-export interface LocalRunLinkTarget { runId: string; documentId: string | null; evidenceId: string | null; screeningRevision?: string; artifactList?: true; }
+export interface LocalRunLinkTarget { runId: string; documentId: string | null; evidenceId: string | null; screeningRevision?: string; artifactList?: true; view?: "map"; }
 
 function validLinkIdentifier(value: string, maxLength: number): boolean {
   return value.length > 0 && value.length <= maxLength && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
@@ -24,12 +24,14 @@ export function parseLocalRunLink(hash: string): LocalRunLinkTarget | null {
   const evidenceId = params.get("evidence");
   const screeningRevision = params.get("screening");
   const artifacts = params.get("artifacts");
-  if (!isLocalRunId(runId) || new Set(keys).size !== keys.length || keys.some((key) => !["run", "document", "evidence", "screening", "artifacts"].includes(key))) return null;
+  const view = params.get("view");
+  if (!isLocalRunId(runId) || new Set(keys).size !== keys.length || keys.some((key) => !["run", "document", "evidence", "screening", "artifacts", "view"].includes(key))) return null;
   if (documentId !== null && !validLinkIdentifier(documentId, 255)) return null;
   if (evidenceId !== null && (!documentId || !validLinkIdentifier(evidenceId, 200))) return null;
   if (screeningRevision !== null && (documentId !== null || evidenceId !== null || !/^[a-f0-9]{64}$/.test(screeningRevision))) return null;
   if (artifacts !== null && (artifacts !== "1" || documentId !== null || evidenceId !== null || screeningRevision !== null)) return null;
-  return { runId, documentId, evidenceId, ...(screeningRevision === null ? {} : { screeningRevision }), ...(artifacts === "1" ? { artifactList: true } : {}) };
+  if (view !== null && (view !== "map" || !documentId || evidenceId !== null)) return null;
+  return { runId, documentId, evidenceId, ...(screeningRevision === null ? {} : { screeningRevision }), ...(artifacts === "1" ? { artifactList: true } : {}), ...(view === "map" ? { view } : {}) };
 }
 
 export function localRunLink(origin: string, runId: string, documentId: string | null = null, evidenceId: string | null = null): string {
@@ -41,6 +43,13 @@ export function localRunLink(origin: string, runId: string, documentId: string |
   }
   url.hash = params.toString();
   return url.href;
+}
+
+export function localPaperMapLink(origin: string, runId: string, documentId: string): string | null {
+  if (!URL.canParse(origin)) return null;
+  const location = new URL(origin);
+  if (!isLoopbackWorkbenchLocation(location) || !isLocalRunId(runId) || !validLinkIdentifier(documentId, 255)) return null;
+  return localRunLink(location.origin, runId, documentId) + "&view=map";
 }
 
 export function extractionTablePath(runId: string, documentId?: string): string {

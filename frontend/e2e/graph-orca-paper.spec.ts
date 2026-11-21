@@ -5,7 +5,7 @@ import type { ExtractionRow } from "../src/extractionTable";
 import { stageContractFixture } from "../src/stageContractFixture";
 
 const run = "map_orca_test";
-const papers = { alpha: "Alpha film", "alpha-long": "Longer ID", gap: "Included paper", absent: "Candidate only" };
+const papers = { "alpha-long": "Longer ID", alpha: "Alpha film", gap: "Included paper", absent: "Candidate only" };
 const tablePath = `/api/runs/${run}/extraction-table`;
 
 function emptyRow(document_id: keyof typeof papers): ExtractionRow {
@@ -34,7 +34,8 @@ async function openMap(page: Page, paper: keyof typeof papers) {
   const reads: string[] = [];
   const writes: string[] = [];
   const prefix = "/api/runs/" + run;
-  await page.route("**/api/**", route => {
+  const included = (["alpha-long", "alpha", "gap"] as const).map(document_id => ({ document_id, title: papers[document_id], source: "fixture" }));
+  await page.context().route("**/api/**", route => {
     const url = new URL(route.request().url());
     const path = url.pathname;
     if (route.request().method() !== "GET") {
@@ -54,9 +55,23 @@ async function openMap(page: Page, paper: keyof typeof papers) {
     if (path === prefix + "/ui") return route.fulfill({ json: bundle });
     if (path === prefix + "/status") return route.fulfill({ json: { run_id: run, mission_id: bundle.mission.mission_id, state: "INTAKE" } });
     if (path === prefix + "/stage-contract") return route.fulfill({ json: stageContractFixture(run, bundle.mission.mission_id, "extraction") });
+    if (path === prefix + "/candidate-screening") return route.fulfill({ json: {
+      run_id: run, candidate_count: included.length, candidates: included,
+      trust_status: "human_reviewed_candidate_screening_not_scientific_evidence",
+      decisions: included.map(({ document_id }) => ({ document_id, decision: "include_for_fulltext", reason_codes: ["material_match"] })),
+    } });
+    if (path === prefix + "/source-parse-status") return route.fulfill({ json: {
+      run_id: run, mission_id: bundle.mission.mission_id, trust_status: "saved_source_parse_state_not_scientific_evidence",
+      tasks: [{ document_id: "alpha", state: "done", markdown_ready: true, source_map_segment_count: 2 }],
+    } });
     return route.fulfill({ status: 404 });
   });
   await page.goto(`/?api=local#run=${run}&document=${paper}`);
+  if (paper === "alpha") {
+    const stages = page.getByRole("list", { name: "研究阶段" });
+    await expect(stages.getByRole("button", { name: /证据核对/ })).toHaveAttribute("aria-current", "step", { timeout: 30_000 });
+    await stages.getByRole("button", { name: /文献星图/ }).click();
+  }
   const inspector = page.getByRole("complementary", { name: "图谱检查器" });
   const verify = inspector.getByRole("button", { name: "核验这篇论文", exact: true });
   await expect(verify).toBeVisible({ timeout: 30_000 });
@@ -77,6 +92,20 @@ async function downloadPaperTask(page: Page, table: Locator) {
   return { title: task.task_title, spec: task.spec, target: JSON.parse(task.spec.split("\n").at(-1)) };
 }
 
+async function openExportedPaperLink(page: Page, inspector: Locator, paper: keyof typeof papers, exportedUrl: string) {
+  const link = inspector.getByRole("link", { name: "本篇星图链接", exact: true });
+  const href = await link.evaluate((anchor: HTMLAnchorElement) => anchor.href);
+  expect(exportedUrl).toBe(href);
+  const url = new URL(href);
+  expect(url.origin).toBe(new URL(page.url()).origin);
+  expect(url.searchParams.get("api")).toBe("local");
+  expect(Object.fromEntries(new URLSearchParams(url.hash.slice(1)))).toEqual({ run, document: paper, view: "map" });
+  const [restored] = await Promise.all([page.waitForEvent("popup"), link.click()]);
+  const selected = restored.getByRole("complementary", { name: "图谱检查器" });
+  await expect(selected.getByRole("heading", { name: papers[paper], exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(restored).toHaveURL(href);
+}
+
 test("exports exactly the selected paper and merges its two cards into one Orca task", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 860 });
   const { reads, writes, inspector, verify, table } = await openMap(page, "alpha");
@@ -94,6 +123,7 @@ test("exports exactly the selected paper and merges its two cards into one Orca 
   expect(result.spec).not.toContain("other-card");
   await table.getByRole("button", { name: "返回星图", exact: true }).press("Enter");
   await expect(inspector.getByRole("heading", { name: papers.alpha })).toBeVisible();
+  await openExportedPaperLink(page, inspector, "alpha", result.target.paper_url);
   expect(reads).toEqual([tablePath + "?document_id=alpha"]);
   expect(writes).toEqual([]);
 });
@@ -122,6 +152,8 @@ test("distinguishes a candidate with no table row from an included paper with an
   expect(result.target.evidence).toEqual([]);
   expect(result.spec).toContain("Keep this gap open");
   expect(await table.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await table.getByRole("button", { name: "返回星图", exact: true }).click();
+  await openExportedPaperLink(page, inspector, "gap", result.target.paper_url);
   expect(reads).toEqual([tablePath + "?document_id=absent", tablePath, tablePath + "?document_id=gap"]);
   expect(writes).toEqual([]);
 });
