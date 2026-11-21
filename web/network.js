@@ -12,7 +12,6 @@ const networkDemo = {
 
 function netText(value, fallback = "unknown") { return typeof value === "string" && value.trim() ? value.trim() : fallback; }
 function netArray(value) { return Array.isArray(value) ? value : []; }
-function position(index, count, y) { return { x: 110 + ((index + 1) * 780) / (Math.max(count, 1) + 1), y }; }
 
 function validateNetworkBundle(candidate) {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new Error("JSON 根节点必须是对象。");
@@ -28,52 +27,49 @@ function makeGraph(bundle) {
   const edges = [];
   const byId = new Map();
   const addNode = (node) => { if (!byId.has(node.id)) { byId.set(node.id, node); nodes.push(node); } return byId.get(node.id); };
-  const mission = addNode({ id: "mission", kind: "mission", label: `${netText(bundle.mission.material)} · ${netText(bundle.mission.property_name)}`, x: 500, y: 82, data: bundle.mission });
+  const mission = addNode({ id: "mission", kind: "mission", label: `${netText(bundle.mission.material)} · ${netText(bundle.mission.property_name)}`, data: bundle.mission });
   const guideItems = bundle.research_guide && Array.isArray(bundle.research_guide.items) ? bundle.research_guide.items : [];
-  guideItems.slice(0, 12).forEach((item, index) => {
-    const point = position(index, Math.min(guideItems.length, 12), 220);
-    const paper = addNode({ id: `paper:${netText(item.document_id)}`, kind: "paper", label: netText(item.title), x: point.x, y: point.y, data: item });
+  guideItems.slice(0, 12).forEach((item) => {
+    const paper = addNode({ id: `paper:${netText(item.document_id)}`, kind: "paper", label: netText(item.title), data: item });
     edges.push({ from: mission.id, to: paper.id, kind: "retrieval_candidate", label: item.track === "counterevidence" ? "反例检索候选" : "主检索候选" });
   });
   const approved = netArray(bundle.evidence_cards).filter((card) => card && card.review_status === "accepted" && card.provenance);
-  approved.forEach((card, index) => {
-    const point = position(index, Math.max(approved.length, 1), 365);
-    const evidence = addNode({ id: `evidence:${netText(card.evidence_id)}`, kind: "evidence", label: netText(card.evidence_id), x: point.x, y: point.y, data: card });
+  approved.forEach((card) => {
+    const evidence = addNode({ id: `evidence:${netText(card.evidence_id)}`, kind: "evidence", label: netText(card.evidence_id), data: card });
     const paperId = `paper:${netText(card.provenance.document_id)}`;
     if (!byId.has(paperId)) {
-      const paperPoint = position(byId.size, Math.max(approved.length, 1), 220);
-      addNode({ id: paperId, kind: "paper", label: netText(card.provenance.document_id), x: paperPoint.x, y: paperPoint.y, data: { document_id: card.provenance.document_id, title: card.provenance.document_id, source: "evidence provenance", content_status: "confirmed", track: "unclassified", role: "evidence_source", evidence_ids: [card.evidence_id] } });
+      addNode({ id: paperId, kind: "paper", label: netText(card.provenance.document_id), data: { document_id: card.provenance.document_id, title: card.provenance.document_id, source: "evidence provenance", content_status: "confirmed", track: "unclassified", role: "evidence_source", evidence_ids: [card.evidence_id] } });
       edges.push({ from: mission.id, to: paperId, kind: "retrieval_candidate", label: "证据出处论文" });
     }
     edges.push({ from: paperId, to: evidence.id, kind: "source_provenance", label: "document_id + locator" });
   });
   const settingNodeIds = new Map();
-  approved.forEach((card, evidenceIndex) => {
-    Object.entries(card.conditions || {}).slice(0, 12).forEach(([field, value], conditionIndex) => {
+  approved.forEach((card) => {
+    Object.entries(card.conditions || {}).slice(0, 12).forEach(([field, value]) => {
       if (value === null || typeof value === "object") return;
       const encoded = `${field}:${String(value)}`;
       let settingId = settingNodeIds.get(encoded);
       const computational = /method|code|functional|cutoff|kpoint|supercell|calculation/i.test(field);
       if (!settingId) {
-        const point = position(evidenceIndex * 12 + conditionIndex, Math.max(approved.length * 4, 1), 505);
         settingId = `setting:${encoded}`;
         settingNodeIds.set(encoded, settingId);
-        addNode({ id: settingId, kind: "setting", label: `${field} = ${String(value)}`, x: point.x, y: point.y, data: { field, value: String(value), category: computational ? "computational_setting" : "experimental_setting" } });
+        addNode({ id: settingId, kind: "setting", label: `${field} = ${String(value)}`, data: { field, value: String(value), category: computational ? "computational_setting" : "experimental_setting" } });
       }
       edges.push({ from: `evidence:${netText(card.evidence_id)}`, to: settingId, kind: "condition_recorded", label: "reported condition; not causal" });
     });
-  });  const relations = bundle.literature_relations;
+  });
+  const relations = bundle.literature_relations;
   if (relations && relations.trust_status === "public_relation_metadata_not_scientific_evidence" && relations.source && Array.isArray(relations.edges)) {
     const sourceDocumentId = netText(relations.source.document_id);
     const sourcePaperId = `paper:${sourceDocumentId}`;
     if (!byId.has(sourcePaperId)) {
-      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, x: 500, y: 220, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "confirmed", track: "unclassified", role: "relation_source", evidence_ids: [relations.source.evidence_id] } });
+      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "confirmed", track: "unclassified", role: "relation_source", evidence_ids: [relations.source.evidence_id] } });
     }
-    netArray(relations.edges).slice(0, 24).forEach((relation, index) => {
+    netArray(relations.edges).slice(0, 24).forEach((relation) => {
       if (!relation || !["citation_reference", "algorithmic_related"].includes(relation.edge_type)) return;
       const targetId = netText(relation.target_openalex_id);
-      const point = position(index, Math.min(netArray(relations.edges).length, 24), 645);
-      const target = addNode({ id: `external:${targetId}`, kind: "external_relation", label: targetId.replace("https://openalex.org/", ""), x: point.x, y: point.y, data: { relation_type: relation.edge_type, trust_status: relations.trust_status } });
+
+      const target = addNode({ id: `external:${targetId}`, kind: "external_relation", label: targetId.replace("https://openalex.org/", ""), data: { relation_type: relation.edge_type, trust_status: relations.trust_status } });
       edges.push({ from: sourcePaperId, to: target.id, kind: relation.edge_type, label: relation.edge_type === "citation_reference" ? "OpenAlex reference metadata" : "OpenAlex algorithmic related-work metadata" });
     });
   }
@@ -82,17 +78,17 @@ function makeGraph(bundle) {
     const sourceDocumentId = netText(crossrefRelations.source.document_id);
     const sourcePaperId = `paper:${sourceDocumentId}`;
     if (!byId.has(sourcePaperId)) {
-      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, x: 500, y: 220, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "confirmed", track: "unclassified", role: "relation_source", evidence_ids: [crossrefRelations.source.evidence_id] } });
+      addNode({ id: sourcePaperId, kind: "paper", label: sourceDocumentId, data: { document_id: sourceDocumentId, title: sourceDocumentId, source: "accepted evidence provenance", content_status: "confirmed", track: "unclassified", role: "relation_source", evidence_ids: [crossrefRelations.source.evidence_id] } });
     }
-    netArray(crossrefRelations.edges).slice(0, 12).forEach((relation, index) => {
+    netArray(crossrefRelations.edges).slice(0, 12).forEach((relation) => {
       if (!relation || relation.edge_type !== "crossref_reference") return;
       const targetDoi = netText(relation.target_doi);
       if (!targetDoi.startsWith("10.") || !targetDoi.includes("/")) return;
-      const point = position(index, Math.min(netArray(crossrefRelations.edges).length, 12), 600);
-      const target = addNode({ id: `crossref:${targetDoi}`, kind: "external_relation", label: `Crossref · ${targetDoi}`, x: point.x, y: point.y, data: { relation_type: "crossref_reference", relation_source: "Crossref", trust_status: crossrefRelations.trust_status, reference_field_present: crossrefRelations.reference_field_present === true } });
+      const target = addNode({ id: `crossref:${targetDoi}`, kind: "external_relation", label: `Crossref · ${targetDoi}`, data: { relation_type: "crossref_reference", relation_source: "Crossref", trust_status: crossrefRelations.trust_status, reference_field_present: crossrefRelations.reference_field_present === true } });
       edges.push({ from: sourcePaperId, to: target.id, kind: "crossref_reference", label: "Crossref deposited reference metadata; not scientific evidence" });
     });
-  }  const reconciliation = bundle.relation_reconciliation;
+  }
+  const reconciliation = bundle.relation_reconciliation;
   if (reconciliation && reconciliation.trust_status === "human_reviewed_cross_source_identity_not_scientific_evidence" && Array.isArray(reconciliation.mappings)) {
     reconciliation.mappings.slice(0, 12).forEach((mapping) => {
       if (!mapping || !["matched", "conflict", "unresolved"].includes(mapping.status)) return;
@@ -100,25 +96,16 @@ function makeGraph(bundle) {
       const crossrefId = `crossref:${netText(mapping.crossref_doi)}`;
       if (byId.has(openalexId) && byId.has(crossrefId)) edges.push({ from: openalexId, to: crossrefId, kind: `identity_${mapping.status}`, label: `human-reviewed identity ${mapping.status}; not scientific evidence` });
     });
-  }  netArray(bundle.condition_matrix).forEach((row, index) => {
-    const point = position(index, Math.max(netArray(bundle.condition_matrix).length, 1), 510);
-    const condition = addNode({ id: `condition:${index}`, kind: "condition", label: netText(row.condition_cluster), x: point.x, y: point.y, data: row });
+  }
+  netArray(bundle.condition_matrix).forEach((row, index) => {
+    const condition = addNode({ id: `condition:${index}`, kind: "condition", label: netText(row.condition_cluster), data: row });
     netArray(row.supporting_evidence_ids).forEach((evidenceId) => edges.push({ from: `evidence:${netText(evidenceId)}`, to: condition.id, kind: "support", label: "审核支持" }));
     netArray(row.contradicting_evidence_ids).forEach((evidenceId) => edges.push({ from: `evidence:${netText(evidenceId)}`, to: condition.id, kind: "contradict", label: "审核反驳" }));
     netArray(row.unknowns).forEach((unknown, unknownIndex) => {
-      const unknownPoint = position(index * 3 + unknownIndex, Math.max(netArray(row.unknowns).length * Math.max(netArray(bundle.condition_matrix).length, 1), 1), 635);
-      const unknownNode = addNode({ id: `unknown:${index}:${unknownIndex}`, kind: "unknown", label: netText(unknown), x: unknownPoint.x, y: unknownPoint.y, data: { condition_cluster: row.condition_cluster, unknown } });
+      const unknownNode = addNode({ id: `unknown:${index}:${unknownIndex}`, kind: "unknown", label: netText(unknown), data: { condition_cluster: row.condition_cluster, unknown } });
       edges.push({ from: condition.id, to: unknownNode.id, kind: "open_question", label: "待核查" });
     });
   });
-  const rows = new Map();
-  for (const node of nodes) {
-    if (!rows.has(node.y)) rows.set(node.y, []);
-    rows.get(node.y).push(node);
-  }
-  for (const row of rows.values()) {
-    row.forEach((node, index) => { node.x = position(index, row.length, node.y).x; });
-  }
   return { nodes, edges: edges.filter((edge) => byId.has(edge.from) && byId.has(edge.to)) };
 }
 
@@ -129,8 +116,8 @@ function inspector(node) {
   if (node.kind === "paper") fields = [["类型", "有界候选论文"], ["阅读角色", netText(node.data.role)], ["检索轨道", netText(node.data.track)], ["访问状态", netText(node.data.content_status)], ["来源定位", netText(node.data.locator_hint, "未记录")], ["关联证据", netArray(node.data.evidence_ids).join("、") || "尚无"]];
   else if (node.kind === "evidence") fields = [["类型", "已批准证据"], ["立场", netText(node.data.stance)], ["定位", `${netText(node.data.provenance.document_id)} · ${netText(node.data.provenance.locator)}`], ["主张", netText(node.data.claim)]];
   else if (node.kind === "condition") fields = [["类型", "条件簇"], ["差异字段", netArray(node.data.differing_fields).join("、") || "未记录"], ["支持证据", netArray(node.data.supporting_evidence_ids).join("、") || "无"], ["反驳证据", netArray(node.data.contradicting_evidence_ids).join("、") || "无"]];
-  else if (node.kind === "setting") fields = [["Type", node.data.category === "computational_setting" ? "computational setting" : "experimental setting"], ["Recorded field", netText(node.data.field)], ["Recorded value", netText(node.data.value)], ["Semantics", "reported condition; not causal"]];
-  else if (node.kind === "external_relation") fields = [["Type", "public relation metadata"], ["Relation", netText(node.data.relation_type)], ["Source", netText(node.data.relation_source, "OpenAlex")], ["Reference field", node.data.relation_source === "Crossref" ? (node.data.reference_field_present ? "deposited metadata available" : "not deposited / unavailable") : "not applicable"], ["Trust", "not scientific evidence"]];
+  else if (node.kind === "setting") fields = [["类型", node.data.category === "computational_setting" ? "计算设置" : "实验设置"], ["记录字段", netText(node.data.field)], ["报告值", netText(node.data.value)]];
+  else if (node.kind === "external_relation") fields = [["类型", "公开书目关系"], ["关系字段", netText(node.data.relation_type)], ["来源", netText(node.data.relation_source, "OpenAlex")], ["参考文献字段", node.data.relation_source === "Crossref" ? (node.data.reference_field_present ? "已有登记" : "未登记或不可用") : "不适用"]];
   else if (node.kind === "unknown") fields = [["类型", "待核查项"], ["所属条件簇", netText(node.data.condition_cluster)], ["未知项", netText(node.data.unknown)]];
   else fields = [["类型", "任务锚点"], ["材料", netText(node.data.material)], ["性质", netText(node.data.property_name)]];
   const list = document.createElement("dl"); list.className = "inspector-list";
@@ -139,6 +126,72 @@ function inspector(node) {
 }
 
 let inspectedId = null;
+const nodeKinds = { mission: "研究任务", paper: "论文", evidence: "已接受证据", setting: "研究条件", condition: "条件簇", unknown: "待核查", external_relation: "书目记录" };
+const labelMeasure = document.createElement("canvas").getContext("2d");
+
+function svgPart(name, attributes, text) {
+  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+  if (text !== undefined) element.textContent = text;
+  return element;
+}
+
+function shortLabel(value, maxWidth) {
+  if (labelMeasure.measureText(value).width <= maxWidth) return value;
+  const letters = Array.from(value);
+  const tail = letters.slice(-5).join("");
+  let low = 0;
+  let high = letters.length - 5;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (labelMeasure.measureText(letters.slice(0, mid).join("") + "…" + tail).width <= maxWidth) low = mid;
+    else high = mid - 1;
+  }
+  return letters.slice(0, low).join("") + "…" + tail;
+}
+
+function layoutAtlas(nodes, width) {
+  const margin = 16;
+  const columns = Math.max(1, Math.floor((width - 2 * margin) / 194));
+  let y = 43;
+  for (const [level, kind] of Object.keys(nodeKinds).entries()) {
+    const group = nodes.filter(node => node.kind === kind);
+    for (let offset = 0; offset < group.length; offset += columns) {
+      const row = group.slice(offset, offset + columns);
+      const cell = (width - 2 * margin) / row.length;
+      for (const [column, node] of row.entries()) {
+        node.width = Math.min(214, cell - 8);
+        const fraction = group.length === 1 ? [0.34, 0.68, 0.29, 0.64, 0.71, 0.37, 0.58][level] : 0.5;
+        node.x = Math.round(margin + column * cell + (cell - node.width) * fraction + 17);
+        node.y = y;
+      }
+      y += 76;
+    }
+  }
+  return Math.max(144, y - 36);
+}
+
+function edgePath(a, b) {
+  if (a.y === b.y) {
+    const middle = (a.x + b.x) / 2;
+    return `M ${a.x} ${a.y} Q ${middle} ${a.y - 48} ${b.x} ${b.y}`;
+  }
+  const middle = (a.y + b.y) / 2;
+  return `M ${a.x} ${a.y} C ${a.x} ${middle}, ${b.x} ${middle}, ${b.x} ${b.y}`;
+}
+
+function drawNode(node) {
+  const group = svgPart("g", { class: "graph-node " + node.kind, tabindex: 0, role: "button", "aria-label": node.label, "aria-pressed": "false" });
+  const x = node.x;
+  const y = node.y;
+  group.append(svgPart("title", {}, node.label),
+    svgPart("rect", { class: "atlas-node-box", x: x - 17, y: y - 24, width: node.width, height: 48, rx: 5 }),
+    svgPart("circle", { cx: x, cy: y, r: 7 }),
+    svgPart("text", { class: "atlas-kind", x: x + 16, y: y - 6 }, nodeKinds[node.kind]),
+    svgPart("text", { class: "atlas-title", x: x + 16, y: y + 15 }, shortLabel(node.label, node.width - 41)));
+  return group;
+}
+
 function renderNetwork(bundle) {
   const svg = document.querySelector("#evidence-network");
   const filter = document.querySelector("#network-kind-filter").value;
@@ -156,26 +209,52 @@ function renderNetwork(bundle) {
   const shownIds = new Set(shown.map((node) => node.id));
   const byId = new Map(shown.map(node => [node.id, node]));
   const buttons = new Map();
+  const drawnEdges = [];
+  const focusedNode = svg.contains(document.activeElement) ? document.activeElement.dataset.nodeId : null;
   const selectNode = node => {
     buttons.get(inspectedId)?.setAttribute("aria-pressed", "false");
     inspectedId = node.id;
     buttons.get(node.id)?.setAttribute("aria-pressed", "true");
+    for (const { edge, path } of drawnEdges) path.classList.toggle("incident", edge.from === node.id || edge.to === node.id);
     inspector(node);
   };
   document.querySelector("#network-count").textContent = `匹配 ${matches.length} / ${graph.nodes.length} 个节点`;
-  svg.replaceChildren();
-  graph.edges.filter((edge) => shownIds.has(edge.from) && shownIds.has(edge.to)).forEach((edge) => {
-    const a = byId.get(edge.from); const b = byId.get(edge.to);
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line"); line.setAttribute("x1", a.x); line.setAttribute("y1", a.y); line.setAttribute("x2", b.x); line.setAttribute("y2", b.y); line.setAttribute("class", `graph-edge graph-edge-${edge.kind}`); const title = document.createElementNS("http://www.w3.org/2000/svg", "title"); title.textContent = edge.label; line.append(title); svg.append(line);
-  });
-  shown.forEach((node) => {
-    const group = document.createElementNS("http://www.w3.org/2000/svg", "g"); group.setAttribute("class", `graph-node ${node.kind}`); group.setAttribute("tabindex", "0"); group.setAttribute("role", "button"); group.setAttribute("aria-label", node.label);
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle"); circle.setAttribute("cx", node.x); circle.setAttribute("cy", node.y); circle.setAttribute("r", node.kind === "mission" ? "43" : node.kind === "paper" ? "35" : "31");
-    const label = document.createElementNS("http://www.w3.org/2000/svg", "text"); label.setAttribute("x", node.x); label.setAttribute("y", node.y + 5); label.setAttribute("text-anchor", "middle"); label.textContent = node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label;
-    group.setAttribute("aria-pressed", "false");
+  const scrollFrame = svg.parentElement;
+  const width = Math.max(1, scrollFrame.clientWidth);
+  const height = layoutAtlas(shown, width);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.height = height + "px";
+  labelMeasure.font = "600 15px " + getComputedStyle(svg).fontFamily;
+  const drawing = document.createDocumentFragment();
+  const edgeKinds = new Set();
+  for (const edge of graph.edges) {
+    if (!shownIds.has(edge.from) || !shownIds.has(edge.to)) continue;
+    const path = svgPart("path", { class: "graph-edge graph-edge-" + edge.kind, d: edgePath(byId.get(edge.from), byId.get(edge.to)) });
+    path.append(svgPart("title", {}, edge.label));
+    drawing.append(path);
+    edgeKinds.add(edge.kind);
+    drawnEdges.push({ edge, path });
+  }
+  for (const item of document.querySelectorAll(".graph-legend li")) item.hidden = !edgeKinds.has(item.className.slice(5));
+  document.querySelector(".graph-legend").hidden = !edgeKinds.size;
+  for (const node of shown) {
+    const group = drawNode(node);
+    group.dataset.nodeId = node.id;
     buttons.set(node.id, group);
-    group.append(circle, label); const select = () => selectNode(node); group.addEventListener("click", select); group.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); } }); svg.append(group);
-  });
+    const inspect = () => {
+      selectNode(node);
+      if (window.matchMedia("(max-width: 980px)").matches) document.querySelector("#node-title").focus();
+    };
+    group.addEventListener("click", inspect);
+    group.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspect(); }
+    });
+    drawing.append(group);
+  }
+  if (!matches.length) drawing.append(svgPart("text", { x: width / 2, y: height / 2, "text-anchor": "middle", class: "atlas-empty" }, "没有匹配节点"));
+  svg.replaceChildren(drawing);
+  document.querySelector("#atlas-back-to-node").hidden = !matches.length;
+  if (focusedNode) buttons.get(focusedNode)?.focus({ preventScroll: true });
   if (matches.length) selectNode(matches.find(node => node.id === inspectedId) ?? matches[0]);
   else {
     inspectedId = null;
@@ -198,4 +277,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#network-bundle-file").addEventListener("change", loadNetworkBundle);
   document.querySelector("#network-kind-filter").addEventListener("change", () => renderNetwork(window.networkBundle));
   document.querySelector("#network-search").addEventListener("input", () => renderNetwork(window.networkBundle));
+  document.querySelector("#atlas-back-to-node").addEventListener("click", () => {
+    document.querySelector('#evidence-network [aria-pressed="true"]')?.focus();
+  });
+  const frame = document.querySelector(".atlas-plot-window");
+  let lastWidth = frame.clientWidth;
+  new ResizeObserver(() => {
+    if (frame.clientWidth !== lastWidth) { lastWidth = frame.clientWidth; renderNetwork(window.networkBundle); }
+  }).observe(frame);
 });

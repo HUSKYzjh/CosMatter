@@ -37,11 +37,7 @@ export function GraphPaperSearch(props: {
   }
 
   return <section class="graph-paper-search" aria-labelledby={searchId}>
-    <div class="graph-search-labels"><label id={searchId} for={searchId + "-input"}>{t("检索当前星图", "Search this map")}</label>
-      <Show when={props.coverage}>{coverage => <><span>{t(`星图含 ${coverage().visibleCandidateCount} / ${coverage().candidateCount} 篇候选`, `Map includes ${coverage().visibleCandidateCount} of ${coverage().candidateCount} candidates`)}</span>
-        <Show when={coverage().acceptedEvidenceCount > 0}><span>{t(`已关联 ${coverage().linkedAcceptedEvidenceCount} / ${coverage().acceptedEvidenceCount} 条已接受证据`, `${coverage().linkedAcceptedEvidenceCount} of ${coverage().acceptedEvidenceCount} accepted cards linked`)}</span></Show></>}</Show>
-      <Show when={props.openChecklist}>{open => <button class="graph-checklist-link" type="button" onClick={() => open()()}>{t("查看完整候选清单", "Open full candidate checklist")}</button>}</Show>
-    </div>
+    <label class="graph-search-name" id={searchId} for={searchId + "-input"}>{t("检索当前星图", "Search this map")}</label>
     <div class="graph-search-input"><input id={searchId + "-input"} ref={element => { input = element; props.inputRef(element); }} type="search" value={props.query} autocomplete="off"
       placeholder={t("题名、DOI、文档 ID、来源或年份", "Title, DOI, document ID, source or year")}
       onInput={event => props.setQuery(event.currentTarget.value)}
@@ -53,6 +49,13 @@ export function GraphPaperSearch(props: {
       }} />
       <Show when={props.query}><button type="button" onClick={clear}>{t("清除检索", "Clear search")}</button></Show>
     </div>
+    <Show when={props.coverage || props.openChecklist}><div class="graph-search-labels">
+      <Show when={props.coverage}>{coverage => <>
+        <span>{t(`图中 ${coverage().visibleCandidateCount} / ${coverage().candidateCount} 篇候选`, `${coverage().visibleCandidateCount} of ${coverage().candidateCount} candidates on map`)}</span>
+        <Show when={coverage().acceptedEvidenceCount > 0}><span>{t(`已关联 ${coverage().linkedAcceptedEvidenceCount} / ${coverage().acceptedEvidenceCount} 条已接受证据`, `${coverage().linkedAcceptedEvidenceCount} of ${coverage().acceptedEvidenceCount} accepted cards linked`)}</span></Show>
+      </>}</Show>
+      <Show when={props.openChecklist}>{open => <button class="graph-checklist-link" type="button" onClick={() => open()()}>{t("查看完整候选清单", "Open full candidate checklist")}</button>}</Show>
+    </div></Show>
     <Show when={props.query.trim()}>
       <div class="graph-search-count" role="status">{props.matches.length
         ? t(`匹配 ${props.matches.length} 个节点，显示第 ${current() * pageSize + 1}–${current() * pageSize + shown().length} 项`, `${props.matches.length} matching nodes, showing ${current() * pageSize + 1}–${current() * pageSize + shown().length}`)

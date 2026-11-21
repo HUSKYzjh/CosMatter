@@ -1,0 +1,180 @@
+/* Palette shared by the map, its data table and the navigation around them. */
+.workbench.view-graph.theme-light {
+  --paper: #f5f5ef;
+  --surface: #fffef8;
+  --surface-strong: #e9eee8;
+  --ink: #1e3337;
+  --muted: #506368;
+  --line: #bfcbc5;
+  --backdrop: #e2ebe5;
+  --signal-teal: #17665f;
+  --signal-blue: #315f78;
+  --signal-violet: #685689;
+  --signal-amber: #835521;
+  --signal-rose: #8a5064;
+}
+.workbench.view-graph.theme-dark {
+  --paper: #101e2a;
+  --surface: #152837;
+  --surface-strong: #203746;
+  --ink: #e9efed;
+  --muted: #a4b8bf;
+  --line: #37515b;
+  --backdrop: #172c39;
+  --signal-teal: #76d6bf;
+  --signal-blue: #89c4e2;
+  --signal-violet: #c6b4e7;
+  --signal-amber: #e7b877;
+  --signal-rose: #e4a1b5;
+}
+.workbench.view-graph.theme-eye {
+  --surface: #f1f1e4;
+  --surface-strong: #dce2d3;
+  --muted: #4d6054;
+  --signal-teal: #34684f;
+  --signal-amber: #755627;
+}
+.view-graph .research-rail {
+  color: var(--ink);
+  background: var(--paper);
+  border-color: var(--line);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.view-graph .research-rail::before,
+.view-graph .research-rail::after,
+.view-graph .research-rail .wordmark::after,
+.view-graph .journey-track li::before,
+.view-graph .journey-track li:not(:last-child)::after,
+.view-graph .journey-track button::after { display: none; }
+.view-graph .research-rail .wordmark {
+  display: flex;
+  align-items: baseline;
+  width: max-content;
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  box-shadow: none;
+  font: 750 1.38rem/1.25 "Inter", "Microsoft YaHei", system-ui, sans-serif;
+  letter-spacing: -.055em;
+}
+.view-graph .research-rail .wordmark::before {
+  content: "◇";
+  position: static;
+  align-self: center;
+  margin-right: .42rem;
+  color: var(--signal-teal);
+  font: 1.1rem/1 system-ui, sans-serif;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+.view-graph .research-rail .wordmark span { color: var(--signal-teal); font: inherit; letter-spacing: inherit; }
+.view-graph .rail-kicker {
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 550;
+  line-height: 1.45;
+  letter-spacing: .045em;
+}
+.view-graph .journey-track {
+  gap: .2rem;
+  padding: .5rem 0;
+  border-block: 1px solid var(--line);
+  background: none;
+}
+.view-graph .journey-track li { padding: 0; color: var(--muted); opacity: 1; }
+.view-graph .journey-track button {
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: .4rem;
+  padding: .42rem .5rem;
+  color: inherit;
+  background: none;
+  box-shadow: none;
+}
+.view-graph .journey-track button:hover { background: var(--surface-strong); }
+.view-graph .journey-track button[aria-current="step"] {
+  color: var(--signal-teal);
+  border-color: color-mix(in srgb, var(--signal-teal) 24%, var(--line));
+  background: color-mix(in srgb, var(--signal-teal) 10%, var(--surface));
+  box-shadow: inset 3px 0 var(--signal-teal);
+}
+.view-graph .journey-track button:focus-visible { outline: 2px solid var(--signal-teal); outline-offset: 1px; }
+.view-graph .journey-track button span { color: inherit; font-variant-numeric: tabular-nums; }
+.view-graph .journey-track button strong { font-family: inherit; font-weight: 650; }
+.view-graph .journey-track button small { color: var(--muted); }
+.view-graph .rail-run-entry-note,
+.view-graph .rail-run-id span { color: var(--muted); }
+.view-graph .rail-run-shortcuts > button,
+.view-graph .rail-run-actions > button,
+.view-graph .rail-footer button,
+.view-graph .rail-footer select {
+  color: var(--ink);
+  border-color: var(--line);
+  border-radius: .35rem;
+  background: var(--surface);
+  box-shadow: none;
+}
+.view-graph .rail-run-shortcuts .rail-dsh-tools { color: var(--signal-teal); font-weight: 650; }
+.view-graph .rail-footer .language-toggle { border: 0; background: none; gap: .1rem; }
+.view-graph .rail-footer .language-toggle button.active { color: var(--surface); background: var(--ink); }
+.view-graph .research-rail .rail-context summary { color: var(--ink); }
+@media (min-width: 1041px) {
+  .view-graph .research-rail { gap: .82rem; padding: 1.5rem 1.1rem 1rem; }
+  .view-graph .research-rail > .rail-footer {
+    position: sticky;
+    bottom: -1rem;
+    z-index: 2;
+    margin: auto -1.1rem -1rem;
+    padding: .65rem 1.1rem;
+    border-top: 1px solid var(--line);
+    background: var(--paper);
+  }
+}
+@media (min-width: 601px) and (max-width: 1040px) {
+  .view-graph .research-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: start;
+    gap: .45rem 1rem;
+    padding: .75rem clamp(1rem, 3vw, 2rem);
+  }
+  .view-graph .research-rail > * { grid-column: 1 / -1; }
+  .view-graph .research-rail > .wordmark { grid-area: 1 / 1; align-self: center; }
+  .view-graph .research-rail > .rail-footer {
+    grid-area: 1 / 2;
+    gap: .7rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .view-graph .rail-kicker { display: none; }
+  .view-graph .rail-run-id { flex: 0 1 auto; }
+  .view-graph .rail-run-entry-note { flex: 1 1 8rem; }
+  .view-graph .rail-run-shortcuts { flex: 0 1 auto; }
+  .view-graph .rail-run-shortcuts > button { min-height: 44px; }
+  .view-graph .graph-run-tools-toggle { display: inline-flex; align-items: center; padding: .35rem .65rem; border: 1px solid var(--line); }
+  .view-graph .rail-run-tools:not(.expanded) { display: none; }
+}
+@media (max-width: 760px) {
+  .view-graph .research-rail { column-gap: .5rem; row-gap: .38rem; padding: .65rem 1rem; }
+  .view-graph .research-rail .wordmark { font-size: 1.13rem; }
+  .view-graph .journey-track { padding: .25rem 0; gap: .12rem; }
+  .view-graph .journey-track button { align-items: center; padding: .2rem .08rem; text-align: center; }
+  .view-graph .journey-track button strong { align-self: center; }
+  .view-graph .journey-track button[aria-current="step"] { box-shadow: inset 0 -2px var(--signal-teal); }
+  .view-graph .rail-context { background: none; border-color: var(--line); }
+  .view-graph .rail-context > summary {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, .85fr);
+    align-items: center;
+    gap: .38rem;
+    min-height: 44px;
+  }
+  .view-graph .rail-context > summary small { grid-column: 3; max-width: none; text-align: end; }
+}

@@ -9,7 +9,7 @@
     <script src="shell.js" defer></script>
     <script src="network.js" defer></script>
   </head>
-  <body>
+  <body class="offline-atlas">
     <a class="site-skip" href="#top">跳至页面内容</a>
     <header class="site-header bridge-header">
       <a class="brand" href="index.html">Cos<span>Matter</span></a>
@@ -27,19 +27,25 @@
       </section>      <label class="theme-switch">色彩主题<select data-theme-select aria-label="色彩主题"><option value="dark">深色</option><option value="light">浅色</option><option value="eye">护眼</option></select></label>
     </header>
     <main id="top" tabindex="-1" class="workspace-page">
-      <section class="hero-banner"><p class="eyebrow">GRAPH NETWORK / 证据星图</p><h1>关系是导航线，不是因果判定</h1><p>节点由本地 UI JSON 的任务、已批准证据、条件簇和未知项派生。点击节点查看其许可范围内的字段。</p></section>
-      <section class="graph-toolbar panel">
-        <label class="bundle-import compact">导入已脱敏 UI JSON<input id="network-bundle-file" type="file" accept="application/json,.json"></label>
-        <label>节点类别<select id="network-kind-filter"><option value="all">全部节点</option><option value="paper">候选论文</option><option value="evidence">证据</option><option value="condition">条件簇</option><option value="setting">实验 / 计算设置</option><option value="unknown">未知项</option><option value="external_relation">外部关系元数据</option></select></label>
-        <label>搜索节点<input id="network-search" type="search" placeholder="题名、标识或来源定位"></label>
-        <p id="network-import-message" class="form-message" role="status">未导入文件；显示合成关系图。</p>
-        <p id="network-count" class="form-message" role="status"></p>
-      </section>
+      <header class="atlas-heading">
+        <div><h1>文献证据星图</h1><p id="network-import-message" role="status">正在展示本地合成示例</p></div>
+        <label class="atlas-import">导入本地 UI JSON<input id="network-bundle-file" type="file" accept="application/json,.json"></label>
+      </header>
       <section class="graph-layout">
-        <article class="panel graph-canvas-panel"><svg id="evidence-network" viewBox="0 0 1000 700" role="group" aria-label="条件感知证据关系网络"></svg><ul class="graph-legend" aria-label="关系图例"><li class="edge-retrieval_candidate">检索候选</li><li class="edge-source_provenance">证据出处</li><li class="edge-support">审核支持</li><li class="edge-contradict">审核反驳</li><li class="edge-open_question">待核查条件</li><li class="edge-condition_recorded">报告的实验/计算条件</li><li class="edge-citation_reference">OpenAlex 引用元数据</li><li class="edge-algorithmic_related">OpenAlex 算法相关元数据</li><li class="edge-crossref_reference">Crossref 登记参考文献元数据</li><li class="edge-identity_matched">人工标识对照：匹配</li><li class="edge-identity_conflict">人工标识对照：冲突</li><li class="edge-identity_unresolved">人工标识对照：未决</li></ul><p class="notice">连线代表受限工件关系：检索候选、出处、审核立场或待核查项；不表示论文影响力、相似度强度或材料因果关系。</p></article>
-        <aside class="panel graph-inspector"><p class="eyebrow">节点检查器</p><h2 id="node-title">选择一个节点</h2><div id="node-inspector">点击星图节点查看其类型、关联和可定位标识。</div></aside>
+        <article class="graph-canvas-panel">
+          <div class="atlas-filters">
+            <label>搜索节点<input id="network-search" type="search" placeholder="题名、标识或来源定位"></label>
+            <label>节点类别<select id="network-kind-filter"><option value="all">全部节点</option><option value="paper">候选论文</option><option value="evidence">证据</option><option value="condition">条件簇</option><option value="setting">实验 / 计算设置</option><option value="unknown">未知项</option><option value="external_relation">外部关系元数据</option></select></label>
+          </div>
+          <div class="atlas-plot-frame">
+            <div class="atlas-plot-heading"><h2>文献关系</h2><p id="network-count" role="status"></p></div>
+            <div class="atlas-plot-window"><svg id="evidence-network" role="group" aria-label="条件感知证据关系网络"></svg></div>
+          </div>
+          <ul class="graph-legend" aria-label="关系图例"><li class="edge-retrieval_candidate">检索候选</li><li class="edge-source_provenance">证据出处</li><li class="edge-support">审核支持</li><li class="edge-contradict">审核反驳</li><li class="edge-open_question">待核查条件</li><li class="edge-condition_recorded">报告条件</li><li class="edge-citation_reference">OpenAlex 引用</li><li class="edge-algorithmic_related">OpenAlex 算法相关</li><li class="edge-crossref_reference">Crossref 登记参考文献</li><li class="edge-identity_matched">人工标识匹配</li><li class="edge-identity_conflict">人工标识冲突</li><li class="edge-identity_unresolved">人工标识未决</li></ul>
+        </article>
+        <aside class="graph-inspector" aria-labelledby="node-title"><p class="atlas-inspector-label">节点详情</p><h2 id="node-title" tabindex="-1">选择一个节点</h2><div id="node-inspector">选择节点可查看工件字段和来源定位。</div><button type="button" id="atlas-back-to-node" hidden>返回图中节点</button></aside>
       </section>
     </main>
-    <footer class="site-footer"><p>CosMatter · Graph uses only manually selected, browser-safe JSON artifacts.</p></footer>
+    <footer class="site-footer"><p>星图根据本地工件绘制。书目连线供导航，科学主张及实验条件须回到证据出处核对。</p></footer>
   </body>
 </html>

@@ -33,6 +33,11 @@ export function GraphConnections(props: {
     const label = labels ? t(...labels[outgoing ? 0 : 1]) : edge.edgeType.replaceAll("_", " ") + (outgoing ? " →" : " ←");
     return [{ other, edge, label }];
   }));
+  const titleCounts = createMemo(() => {
+    const counts = new Map<string, number>();
+    for (const { other } of connections()) counts.set(other.label, (counts.get(other.label) ?? 0) + 1);
+    return counts;
+  });
   const [limit, setLimit] = createSignal(6);
   return <section class="graph-connections" aria-label={t("直接关系", "Direct connections")}>
     <h3>{t("直接关系", "Direct connections")} <small>{connections().length}</small></h3>
@@ -40,6 +45,9 @@ export function GraphConnections(props: {
       <ul><For each={connections().slice(0, limit())}>{entry => <li><button type="button" onClick={() => props.onFollow(entry.other)}>
         <small>{entry.label}{entry.edge.relationSource ? " · " + entry.edge.relationSource : ""}</small>
         <strong>{entry.other.label || entry.other.nodeId}</strong>
+        <Show when={entry.other.label && (titleCounts().get(entry.other.label) ?? 0) > 1}>
+          <code>{entry.other.nodeId}</code>
+        </Show>
       </button></li>}</For></ul>
       <Show when={connections().length > limit()}><button class="graph-more-links" type="button" onClick={() => setLimit(limit() + 12)}>
         {t(`再显示 ${Math.min(12, connections().length - limit())} 条关系`, `Show ${Math.min(12, connections().length - limit())} more connections`)}
