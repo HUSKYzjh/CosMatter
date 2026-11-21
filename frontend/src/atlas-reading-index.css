@@ -1,0 +1,199 @@
+.atlas-reading-index {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.reading-index-heading,
+.reading-index-controls,
+.reading-index-controls nav {
+  display: flex;
+  align-items: center;
+}
+
+.reading-index-heading {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .45rem 1rem;
+}
+
+.reading-index-heading h2 {
+  margin: 0;
+}
+
+.reading-index-controls {
+  gap: .8rem;
+  color: var(--muted);
+  font-size: .83rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.reading-index-controls nav {
+  gap: 1px;
+}
+
+.reading-index-controls button {
+  width: 2.75rem;
+  min-height: 2.75rem;
+  border: 0;
+  background: var(--surface-strong);
+  color: var(--signal-teal);
+  font-size: 1.12rem;
+  cursor: pointer;
+}
+
+.reading-index-controls button:disabled {
+  opacity: .42;
+  cursor: default;
+}
+
+.reading-index-policy {
+  margin: .25rem 0 .65rem;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.reading-index-policy summary {
+  width: fit-content;
+  max-width: 100%;
+  padding-block: .45rem;
+  text-decoration: underline;
+  text-underline-offset: .18em;
+  cursor: pointer;
+}
+
+.reading-index-policy p {
+  max-width: 75ch;
+  margin: .15rem 0 .65rem;
+  line-height: 1.6;
+}
+
+.atlas-reading-index .route-shortfall-warning {
+  margin-bottom: .75rem;
+  font: inherit;
+  font-size: .85rem;
+}
+
+.fleet-reading-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-block-start: 1px solid var(--ink);
+}
+
+.fleet-reading-cards li {
+  margin: 0;
+}
+
+.atlas-reading-index .fleet-reading-cards .fleet-formation-slot {
+  display: grid;
+  align-items: start;
+  grid-template-columns: 3ch minmax(0, 1fr) minmax(8rem, 21%) 4.4em;
+  gap: .3rem 1rem;
+  width: 100%;
+  min-height: 44px;
+  padding: .85rem .55rem;
+  border: 0;
+  border-block-end: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--ink);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+
+.reading-index-number,
+.reading-index-location {
+  color: var(--signal-teal);
+  font-variant-numeric: tabular-nums;
+}
+
+.reading-index-number {
+  font: .8rem/1.65 ui-monospace, "Cascadia Mono", monospace;
+}
+
+.reading-index-paper,
+.reading-index-review {
+  display: grid;
+  min-width: 0;
+  gap: .23rem;
+  overflow-wrap: anywhere;
+}
+
+.reading-index-paper strong {
+  font-family: Georgia, "Noto Serif SC", "Songti SC", SimSun, serif;
+  font-size: 1.07rem;
+  font-weight: 600;
+  line-height: 1.42;
+}
+
+.reading-index-citation,
+.reading-index-review {
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.5;
+}
+
+.reading-index-review span:last-child {
+  color: var(--ink);
+}
+
+.reading-index-location {
+  align-self: start;
+  justify-self: end;
+  font-size: .82rem;
+}
+
+.fleet-reading-cards .fleet-formation-slot[aria-current="true"] {
+  background: var(--surface-strong);
+  box-shadow: inset 3px 0 var(--signal-teal);
+}
+
+@media (hover: hover) {
+  .fleet-reading-cards .fleet-formation-slot:hover .reading-index-paper strong {
+    color: var(--signal-teal);
+    text-decoration: underline;
+    text-underline-offset: .17em;
+  }
+}
+
+.atlas-reading-index :is(button, summary):focus-visible {
+  outline: 2px solid var(--signal-teal);
+  outline-offset: -2px;
+}
+
+.reading-index-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@container (max-width: 42rem) {
+  .atlas-reading-index .fleet-reading-cards .fleet-formation-slot {
+    grid-template-columns: 2.4ch minmax(0, 1fr);
+    gap: .35rem .65rem;
+  }
+
+  .reading-index-review {
+    grid-column: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .15rem .65rem;
+  }
+
+  .reading-index-location {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: center;
+    font-size: .75rem;
+  }
+
+  .fleet-formation-slot[aria-current="true"] .reading-index-location {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: start;
+  }
+}

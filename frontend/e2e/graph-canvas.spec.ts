@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { Core } from "cytoscape";
 
 test("keeps source arrows clear of other papers and cards when opening the inspector", async ({ page }) => {
@@ -116,30 +116,67 @@ for (const width of [320, 1366]) {
   });
 }
 
+async function openDenseMap(page: Page) {
+  const topics = ["Ferroelectric polarization", "Piezoelectric strain", "Interface", "Domain", "Simulation", "Structure"];
+  const papers = Array.from({length: 48}, (_, i) => ({
+    node_id: "paper:p" + i, kind: "candidate_paper", label: `${topics[i % topics.length]} ${i} in doped samples`,
+    trust_status: "candidate_metadata",
+  }));
+  await page.route("**/ui.json", route => route.fulfill({ json: {
+    schema_version: "1.0", generated_at: "2026-09-05T00:00:00Z",
+    mission: { mission_id: "dense", question: "Compare papers", material: "BiFeO3", property_name: "strain", scope: "films" },
+    literature_graph: { trust_status: "navigation_metadata",
+      nodes: [{ node_id: "mission:dense", kind: "mission", label: "BiFeO3 films", trust_status: "mission_navigation" }, ...papers],
+      edges: papers.map(p => ({ source_id: "mission:dense", target_id: p.node_id, edge_type: "retrieval_candidate",
+        relation_source: "fixture", trust_status: "candidate_metadata" })) },
+  } }));
+  await page.goto("/?ui=server&api=local");
+  const map = page.getByRole("group", {name: "交互式文献图谱"});
+  await expect(map.locator("canvas").first()).toBeVisible({timeout: 30_000});
+  return map;
+}
+
+test.describe("touch navigation on a tall literature map", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 320, height: 640 } });
+  test("scrolls the page, then selects a paper by tapping its keyphrase", async ({ page }) => {
+    const map = await openDenseMap(page);
+    const initial = await map.evaluate(el => {
+      el.scrollIntoView({ block: "start" });
+      return scrollY;
+    });
+    const session = await page.context().newCDPSession(page);
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 145, y: 510 }] });
+    for (const y of [475, 440, 405, 370, 335, 300]) {
+      await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 145, y }] });
+    }
+    // Let the finger come to rest before lifting so the next tap has stationary coordinates.
+    await page.waitForTimeout(150);
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(initial + 100);
+    await expect(page.locator(".evidence-inspector")).toHaveCount(0);
+    const target = await map.evaluate(el => {
+      const cy = (el as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy;
+      const mapBounds = el.getBoundingClientRect();
+      const labels = cy.nodes('[nodeKind="candidate_paper"]').map(node => {
+        const box = node.renderedBoundingBox({ includeNodes: false, includeOverlays: false, includeUnderlays: false });
+        return { title: node.data("label") as string, x: mapBounds.x + (box.x1 + box.x2) / 2, y: mapBounds.y + (box.y1 + box.y2) / 2 };
+      });
+      return labels.find(label => label.y > 90 && label.y < innerHeight - 100)!;
+    });
+    await page.touchscreen.tap(target.x, target.y);
+    await expect(page.locator(".evidence-inspector h2")).toHaveText(target.title);
+  });
+});
+
 for (const width of [320, 1366]) {
   test(`keeps dense literature labels readable and separated at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 880 });
-    const topics = ["Ferroelectric polarization", "Piezoelectric strain", "Interface", "Domain", "Simulation", "Structure"];
-    const papers = Array.from({length: 48}, (_, i) => ({
-      node_id: "paper:p" + i, kind: "candidate_paper", label: `${topics[i % topics.length]} ${i} in doped samples`,
-      trust_status: "candidate_metadata",
-    }));
-    await page.route("**/ui.json", route => route.fulfill({ json: {
-      schema_version: "1.0", generated_at: "2026-09-05T00:00:00Z",
-      mission: { mission_id: "dense", question: "Compare papers", material: "BiFeO3", property_name: "strain", scope: "films" },
-      literature_graph: { trust_status: "navigation_metadata",
-        nodes: [{ node_id: "mission:dense", kind: "mission", label: "BiFeO3 films", trust_status: "mission_navigation" }, ...papers],
-        edges: papers.map(p => ({ source_id: "mission:dense", target_id: p.node_id, edge_type: "retrieval_candidate",
-          relation_source: "fixture", trust_status: "candidate_metadata" })) },
-    } }));
-    await page.goto("/?ui=server&api=local");
-    const map = page.getByRole("group", {name: "交互式文献图谱"});
-    await expect(map.locator("canvas").first()).toBeVisible({timeout: 30_000});
+    const map = await openDenseMap(page);
     const metrics = () => map.evaluate(el => {
       const cy = (el as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy;
       const papers = cy.nodes('[nodeKind="candidate_paper"]');
       const labels = papers.filter(node => Boolean(node.style("label")));
-      const hidden = papers.filter(node => !node.style("label"))[0];
+      const firstPaper = papers[0];
       const boxes = labels.map(node => node.renderedBoundingBox({ includeNodes: false, includeEdges: false, includeOverlays: false, includeUnderlays: false }));
       const regions = cy.nodes('[isCluster="yes"]');
       const regionsByTopic = new Map(regions.map(node => [node.data("region"), node] as const));
@@ -158,14 +195,14 @@ for (const width of [320, 1366]) {
         activeEdges: cy.edges(".is-adjacent").length, retrievalCurves: cy.edges('[flightRole="formation"][weight]').length,
         font: Math.min(...labels.map(node => parseFloat(node.style("font-size")) * cy.zoom())),
         overlaps: boxes.some((a,i) => boxes.slice(i+1).some(b => Math.min(a.x2,b.x2) > Math.max(a.x1,b.x1) && Math.min(a.y2,b.y2) > Math.max(a.y1,b.y1))),
-        hidden: hidden && { position: hidden.renderedPosition(), title: hidden.data("label") },
+        completePhrases: labels.every(node => !String(node.style("label")).includes("…")),
+        firstPaper: { position: firstPaper.renderedPosition(), title: firstPaper.data("label") },
       };
     });
     for (const inspect of [false, true]) {
       if (inspect) {
-        await map.scrollIntoViewIfNeeded();
-        const target = (await metrics()).hidden!;
-        expect(target).toBeTruthy();
+        const target = (await metrics()).firstPaper;
+        await map.evaluate((el, y) => window.scrollBy(0, el.getBoundingClientRect().y + y - innerHeight / 2), target.position.y);
         // A toolbar or banner can shift the canvas without changing its dimensions.
         // Prime hit testing at its old position, then click the same marker at its new one.
         const before = (await map.boundingBox())!;
@@ -183,7 +220,7 @@ for (const width of [320, 1366]) {
         const result = await metrics();
         const selectionMatches = inspect ? result.markedRegion.length === 1 && result.markedRegion[0] === result.selectedRegion && result.activeEdges === 1
           : result.markedRegion.length === 0 && result.activeEdges === 0;
-        return result.papers === 48 && result.labels >= 5 && result.font >= 10.5 && !result.overlaps
+        return result.papers === 48 && result.labels === result.papers && result.completePhrases && result.font >= 10.5 && !result.overlaps
           && result.topics === 6 && result.withinRegion && result.retrievalCurves === 48 && selectionMatches;
       }).toBe(true);
     }

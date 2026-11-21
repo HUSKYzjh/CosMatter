@@ -17,7 +17,7 @@ export function graphFootnote(input: GraphFootnoteInput): string {
     return x(`当前显示 ${input.paperLikeNodeCount} 个仅供导航或演示的论文式节点；它们没有当前任务可审核的 document ID，不能用于人工筛选、全文处理或 EvidenceCard。`, `Showing ${input.paperLikeNodeCount} paper-like navigation or demo node(s). They have no reviewable document ID for this mission and cannot enter screening, full-text work, or EvidenceCard review.`);
   }
   if (input.paperLikeNodeCount > input.reviewablePaperCount) {
-    return x(`当前显示 ${input.paperLikeNodeCount} 个论文式节点，其中 ${input.reviewablePaperCount} 篇可审查；其余仅供导航或演示。可见关系 ${input.visibleEdgeCount} 条。`, `Showing ${input.paperLikeNodeCount} paper-like node(s), including ${input.reviewablePaperCount} reviewable paper(s); the rest are navigation or demo records. ${input.visibleEdgeCount} relation(s) are visible.`);
+    return x(`当前显示 ${input.paperLikeNodeCount} 个论文式节点，其中 ${input.reviewablePaperCount} 篇可审查。可查看 ${input.visibleEdgeCount} 条关系。`, `Showing ${input.paperLikeNodeCount} paper-like nodes, including ${input.reviewablePaperCount} reviewable papers. ${input.visibleEdgeCount} relationships are available to inspect.`);
   }
-  return x(`当前显示 ${input.reviewablePaperCount} 篇可审查论文、${input.visibleEdgeCount} 条可见关系。`, `Showing ${input.reviewablePaperCount} reviewable paper(s) and ${input.visibleEdgeCount} visible relation(s).`);
+  return x(`当前显示 ${input.reviewablePaperCount} 篇可审查论文，可查看 ${input.visibleEdgeCount} 条关系。`, `Showing ${input.reviewablePaperCount} reviewable paper(s) with ${input.visibleEdgeCount} relationship(s) to inspect.`);
 }

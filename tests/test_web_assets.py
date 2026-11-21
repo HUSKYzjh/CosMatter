@@ -25,7 +25,7 @@ class WebAssetTests(unittest.TestCase):
         expected_scripts = {
             "index.html": ["shell.js", "app.js"],
             "workflow.html": ["shell.js", "workflow.js"],
-            "network.html": ["shell.js", "network.js"],
+            "network.html": ["shell.js", "paper-labels.js", "network.js"],
             "paper.html": ["shell.js", "paper.js"],
             "extensions.html": ["shell.js", "extensions.js"],
         }

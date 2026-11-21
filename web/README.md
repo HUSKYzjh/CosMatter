@@ -8,6 +8,8 @@
 
 ## 多页面舰桥
 
+离线星图直接加载随页面提供的 `paper-labels.js`。更新在线星图的题名短语规则后，在仓库根目录运行 `node frontend/scripts/build-offline-paper-labels.mjs` 同步离线脚本。加上 `--check` 可核对两份构建结果。生成脚本使用前端现有的 Vite 依赖。
+
 - `index.html`：任务舰桥，导入 UI 工件、筛选已批准证据并展开条件矩阵；
 - `workflow.html`：研究工作流，投影计划、检索、核验和报告门禁，并给出受控 CLI 的下一步提示；
 - `network.html`：星图网络，从候选论文、已批准证据、条件簇和未知项派生语义明确的关系图；

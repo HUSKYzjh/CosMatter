@@ -3,20 +3,46 @@
 .frontier-literature-workbench .graph-connections h3 small { color: var(--muted); font: inherit; font-size: .85rem; font-variant-numeric: tabular-nums; }
 .graph-connections ul { list-style: none; padding: 0; margin: 0; }
 .graph-connections li { border-block-start: 1px solid var(--line, currentColor); }
-.graph-connections li button, .graph-edge-endpoint {
-  display: grid; gap: .15rem; align-content: center; width: 100%; min-height: 44px; padding: .42rem .3rem;
-  text-align: start; color: inherit; background: transparent; border: 0; white-space: normal; overflow-wrap: anywhere;
+.graph-record-follow, .graph-edge-endpoint {
+  display: grid; position: relative; align-content: center; gap: .24rem; width: 100%; min-height: 44px;
+  padding: .6rem 1.25rem .6rem 0; text-align: start; color: var(--ink); background: transparent;
+  white-space: normal; overflow-wrap: anywhere;
 }
-.graph-connections li button:hover, .graph-edge-endpoint:hover { background: var(--surface-strong); text-decoration: underline; }
-.graph-connections li button { position: relative; padding: .6rem 1.25rem .6rem .3rem; gap: .22rem; }
-.graph-connections li strong { color: var(--ink); font-weight: 620; line-height: 1.4; }
-.graph-connections li small { color: var(--muted); }
-.graph-connections li button::after {
+.evidence-inspector .graph-record-follow, .evidence-inspector .graph-edge-endpoint { border: 0; }
+.graph-record-follow:hover strong, .graph-edge-endpoint:hover strong { color: var(--signal-teal); text-decoration: underline; text-underline-offset: .18em; }
+.graph-record-follow strong, .graph-edge-endpoint strong { font-weight: 620; font-size: .92rem; line-height: 1.45; }
+.graph-record-follow::after, .graph-edge-endpoint::after {
   content: ""; position: absolute; inset-inline-end: .45rem; top: 50%; width: .38rem; height: .38rem;
   border-block-start: 1.5px solid var(--signal-teal); border-inline-end: 1.5px solid var(--signal-teal); transform: translateY(-50%) rotate(45deg);
 }
-.graph-connections li code { color: var(--muted); font: .76rem/1.4 "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; }
-.graph-connections li small { font-size: .8rem; line-height: 1.45; }
+.frontier-literature-workbench .graph-record-follow small { color: var(--muted); font: inherit; font-size: .8rem; line-height: 1.45; }
+.evidence-inspector :is(.graph-record-follow, .graph-edge-endpoint, .graph-record-meta) code {
+  font: .82rem/1.45 "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere;
+}
+.graph-source-records { margin-block-end: 1.1rem; }
+.graph-source-records .graph-source-record {
+  display: grid; gap: .28rem; padding: .55rem .7rem; margin-block-start: .45rem; min-width: 0; overflow-wrap: anywhere;
+  border: 1px solid var(--line); border-inline-start: 3px solid var(--signal-violet); border-radius: .28rem;
+}
+.graph-source-record .graph-record-follow { padding-block: 0; }
+.graph-card-identity { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem; font-size: .78rem; color: var(--muted); }
+.graph-card-identity code { font-weight: 650; color: var(--ink); }
+.graph-record-origins { display: flex; flex-wrap: wrap; gap: .12rem .75rem; }
+.graph-record-origins, .graph-record-relation { color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.evidence-inspector .graph-source-link {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .2em .7em;
+  width: 100%; min-height: 44px; padding: .35rem 0; border: 0; border-block-start: 1px solid var(--line);
+  color: var(--signal-teal); background: transparent; font-size: .85rem; font-weight: 600;
+  text-align: start; white-space: normal; overflow-wrap: anywhere;
+}
+.graph-source-link span:last-child { text-decoration: underline; text-underline-offset: .18em; }
+.graph-source-link b { display: inline-block; text-decoration: none; }
+.graph-source-link:hover { background: var(--surface-strong); }
+.frontier-literature-workbench .graph-paper-reader { min-height: 44px; font-size: .85rem; color: var(--signal-teal); padding: .25rem 0; border: 0; text-decoration: underline; text-underline-offset: .18em; }
+.evidence-inspector .graph-record-meta > div, .graph-source-record button > * { min-width: 0; }
+.frontier-literature-workbench .evidence-inspector .graph-record-meta { margin-block: .5rem; padding-block-start: .45rem; }
+.frontier-literature-workbench .evidence-inspector .graph-edge-record { margin: .5rem 0; }
+.graph-edge-record code { color: var(--muted); }
 .graph-more-links, .graph-back-node { min-height: 44px; overflow-wrap: anywhere; white-space: normal; }
 .graph-review-tools summary { cursor: pointer; font-weight: 600; padding: .7rem; min-height: 44px; }
 .graph-review-tools { min-width: 0; border-block-start: 1px solid var(--line, currentColor); }

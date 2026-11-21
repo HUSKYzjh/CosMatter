@@ -26,7 +26,17 @@ function makeGraph(bundle) {
   const nodes = [];
   const edges = [];
   const byId = new Map();
-  const addNode = (node) => { if (!byId.has(node.id)) { byId.set(node.id, node); nodes.push(node); } return byId.get(node.id); };
+  const addNode = (node) => {
+    if (!byId.has(node.id)) {
+      if (node.kind === "paper") {
+        const title = netText(node.data.title, "");
+        node.phrase = (title && title !== node.data.document_id && CosMatterPaperLabels.paperKeyphrase(title, "zh")) || "题名待补";
+      }
+      byId.set(node.id, node);
+      nodes.push(node);
+    }
+    return byId.get(node.id);
+  };
   const mission = addNode({ id: "mission", kind: "mission", label: `${netText(bundle.mission.material)} · ${netText(bundle.mission.property_name)}`, data: bundle.mission });
   const guideItems = bundle.research_guide && Array.isArray(bundle.research_guide.items) ? bundle.research_guide.items : [];
   guideItems.slice(0, 12).forEach((item) => {
@@ -230,9 +240,33 @@ function drawNode(node, caption) {
   const y = node.y;
   group.append(svgPart("title", {}, node.label),
     svgPart("rect", { class: "atlas-node-box", x: x - 17, y: y - 24, width: node.width, height: 48, rx: 5 }),
-    nodeMarker(node),
-    svgPart("text", { class: "atlas-kind", x: x + 16, y: y - 6 }, shortLabel(caption ?? nodeKinds[node.kind], node.width - 41)),
-    svgPart("text", { class: "atlas-title", x: x + 16, y: y + 15 }, shortLabel(node.label, node.width - 41)));
+    nodeMarker(node));
+  if (node.kind === "paper") {
+    const text = svgPart("text", { class: "atlas-title", x: x + 16, y: y + 5 });
+    const phrase = node.phrase;
+    const maxWidth = node.width - 41;
+    if (labelMeasure.measureText(phrase).width <= maxWidth) {
+      text.textContent = phrase;
+    } else {
+      // Keep the entire phrase across two lines, preferring a word boundary.
+      const words = phrase.match(/\S+\s*/gu) ?? [];
+      const parts = words.length > 1 ? words : Array.from(phrase);
+      let split = 1;
+      while (split < parts.length - 1 && labelMeasure.measureText(parts.slice(0, split + 1).join("")).width <= maxWidth) split++;
+      for (const [index, line] of [parts.slice(0, split).join(""), parts.slice(split).join("")].entries()) {
+        const span = svgPart("tspan", { x: x + 16, y: y - 4 + index * 18 }, line);
+        if (labelMeasure.measureText(line.trimEnd()).width > maxWidth) {
+          span.setAttribute("textLength", String(maxWidth));
+          span.setAttribute("lengthAdjust", "spacingAndGlyphs");
+        }
+        text.append(span);
+      }
+    }
+    group.append(text);
+  } else {
+    group.append(svgPart("text", { class: "atlas-kind", x: x + 16, y: y - 6 }, shortLabel(caption ?? nodeKinds[node.kind], node.width - 41)),
+      svgPart("text", { class: "atlas-title", x: x + 16, y: y + 15 }, shortLabel(node.label, node.width - 41)));
+  }
   return group;
 }
 
@@ -290,7 +324,7 @@ function renderNetwork(bundle, preserveAnchor = false) {
   const graph = makeGraph(bundle);
   const matches = graph.nodes.filter(node => {
     if (filter !== "all" && node.kind !== filter) return false;
-    const text = [node.label, node.id, node.data.doi, node.data.document_id, node.data.locator_hint, node.data.provenance?.locator]
+    const text = [node.label, node.phrase, node.id, node.data.doi, node.data.document_id, node.data.locator_hint, node.data.provenance?.locator]
       .filter(value => typeof value === "string").join(" ").normalize("NFKC").toLowerCase();
     return terms.every(term => text.includes(term));
   });

@@ -92,7 +92,8 @@ describe("cross-paper extraction rows", () => {
     expect(spec).toContain("awaiting human review");
     expect(spec).toContain("original units and source locations");
     expect(JSON.parse(spec.split("\n").at(-1)!)).toEqual({
-      document_id: "d1", extraction_table_url: "http://localhost:8765/api/runs/fixture/extraction-table",
+      document_id: "d1", extraction_table_url: "http://localhost:8765/api/runs/fixture/extraction-table?document_id=d1",
+      paper_url: "http://localhost:8765/?api=local#run=fixture&document=d1&view=map",
       statuses: ["reviewed", "awaiting_review"], evidence: [
         { evidence_id: "e1", reader_url: "http://localhost:8765/?api=local#run=fixture&document=d1&evidence=e1" },
         { evidence_id: "e2", reader_url: null },

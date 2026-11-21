@@ -1,10 +1,11 @@
 import cytoscape, { type Core, type ElementDefinition, type NodeSingular } from "cytoscape";
-import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js";
 
 import { TOPIC_LABELS, isPaperNode, topicFor } from "./literatureTopology";
-import { displayPaperTitle } from "./paperTitle";
+import { retrievalHubs } from "./retrievalHubs";
 import type { LiteratureGraphEdge, LiteratureGraphNode } from "./model";
-import { zh } from "./zh";
+import { uiLanguage, zh } from "./zh";
+import { paperKeyphrase } from "./paperKeyphrase";
 
 type BaseCluster = "Mission" | "Papers" | "Evidence" | "Conditions" | "References" | "Structure";
 type Cluster = string;
@@ -109,6 +110,7 @@ function degreeMap(edges: LiteratureGraphEdge[]): Map<string, number> {
 }
 
 const chartFont = "Segoe UI, Microsoft YaHei, sans-serif";
+const headingFont = "Georgia, Noto Serif SC, SimSun, serif";
 
 interface Box { x: number; y: number; w: number; h: number }
 interface Point { x: number; y: number }
@@ -148,6 +150,24 @@ function labelBox(p: Point, width: number, height: number, side: LabelSide): Box
   return { x, y: side.startsWith("below") ? p.y + inset : p.y - inset - height, w: width, h: height };
 }
 
+/** Insert line breaks without dropping words, formula characters or qualifiers. */
+function wrapLabel(text: string, width: number, measure: (text: string) => number): string {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.trim().split(/\s+/u)) {
+    const next = line ? line + " " + word : word;
+    if (measure(next) <= width) { line = next; continue; }
+    if (line) lines.push(line);
+    line = "";
+    for (const char of word) {
+      if (line && measure(line + char) > width) { lines.push(line); line = ""; }
+      line += char;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.join("\n");
+}
+
 function briefLabel(text: string, width: number, measure: (value: string) => number): string {
   const full = text.replace(/\s+/gu, " ").trim();
   if (measure(full) <= width) return full;
@@ -156,6 +176,8 @@ function briefLabel(text: string, width: number, measure: (value: string) => num
     if (measure(prefix + char + "…") > width) break;
     prefix += char;
   }
+  const wordBreak = prefix.lastIndexOf(" ");
+  if (wordBreak > prefix.length * .72) prefix = prefix.slice(0, wordBreak);
   return prefix.trimEnd() + "…";
 }
 
@@ -228,117 +250,134 @@ function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[],
   const ordered = [...groups.values()].sort((a, b) => rank(a[0]) - rank(b[0]) || clusterOf(a[0]).localeCompare(clusterOf(b[0])));
   const weights = ordered.map(members => ({ weight: Math.sqrt(members.length) + .7 }));
   const area = { x: 0, y: 0, w: width, h: height };
-  const denseNarrow = compact && nodes.length > 16;
-  const totalWeight = weights.reduce((sum, group) => sum + group.weight, 0);
-  const bandMinimum = Math.min(47, height / Math.max(1, ordered.length));
-  let bandTop = 0;
-  const cells = denseNarrow ? weights.map(group => {
-    const band = { ...area, y: bandTop, h: bandMinimum + (height - bandMinimum * ordered.length) * group.weight / totalWeight };
-    bandTop += band.h;
-    return band;
-  }) : ordered.length ? groupCells(weights, area) : [];
+  const cells = ordered.length ? groupCells(weights, area) : [];
   const occupied: Box[] = [];
   const positions = new Map<string, Point>();
   const captions: ElementDefinition[] = [];
   const context = document.createElement("canvas").getContext("2d")!;
   const measure = (text: string) => context.measureText(text).width;
   const fontSize = compact ? 12 : 13;
-  const titleWidth = compact ? 103 : 150;
-  const prefixes = new Map<string, number>();
-  const titles = new Map<string, string>();
+  const titleWidth = compact ? 103 : 160;
+  const publication = (node: LiteratureGraphNode) => isPaperNode(node) || baseClusterOf(node) === "References";
+  const phrases = new Map(nodes.filter(publication).map(node =>
+    [node.nodeId, paperKeyphrase(node.label, uiLanguage()) || zh("Untitled paper", "题名未记录")]));
+  const nodeLabel = (node: LiteratureGraphNode, available: number) => publication(node)
+    ? phrases.get(node.nodeId)! : briefLabel(node.kind === "mission" ? node.label.split(" / ")[0] : node.label, available, measure);
   context.font = `600 ${fontSize}px ${chartFont}`;
-  for (const node of nodes) {
-    const title = isPaperNode(node) ? displayPaperTitle(node.label) : node.label;
-    titles.set(node.nodeId, title);
-    const prefix = briefLabel(title, titleWidth, measure);
-    prefixes.set(prefix, (prefixes.get(prefix) ?? 0) + 1);
-  }
-  const nodeLabel = (node: LiteratureGraphNode, available: number) => {
-    const title = titles.get(node.nodeId)!;
-    const prefix = briefLabel(title, titleWidth, measure);
-    if (prefixes.get(prefix) === 1) return briefLabel(title, available, measure);
-    const id = node.nodeId.replace(/^[^:]+:/u, "");
-    const hint = id.length > 9 ? "…" + id.slice(-6) : id;
-    return briefLabel(hint + " · " + title, available, measure);
-  };
   const labels = new Map<string, { text: string; visible: boolean; side: LabelSide }>();
   const bounds = new Map<string, Box>();
   const degrees = degreeMap(edges);
   const byImportance = ordered.map(members => [...members].sort((a, b) =>
     (degrees.get(b.nodeId) ?? 0) - (degrees.get(a.nodeId) ?? 0) || a.label.localeCompare(b.label)));
-  ordered.forEach((members, index) => {
-    const cell = cells[index];
-    const cap = members[0];
-    context.font = `600 12px ${chartFont}`;
-    const count = ` · ${members.length}`;
-    const title = briefLabel(clusterCaption(cap), Math.max(18, cell.w - 32 - measure(count)), measure) + count;
-    const inset = denseNarrow ? 2 : 3;
-    const panel = { x: cell.x + inset, y: cell.y + inset, w: Math.max(1, cell.w - 2 * inset), h: Math.max(1, cell.h - 2 * inset) };
-    const capPos = { x: panel.x + 9, y: panel.y + 11 };
-    const groupId = clusterOf(cap);
-    bounds.set(groupId, panel);
-    captions.push({ data: { id: `sector:${index}:${groupId}`, isCluster: "yes", region: groupId, label: title,
-      color: regionColor(cap, colors), width: panel.w, height: panel.h, labelInset: 9 - panel.w },
-      position: { x: panel.x + panel.w / 2, y: panel.y + panel.h / 2 }, selectable: false, grabbable: false });
-    occupied.push({ x: capPos.x - 4, y: capPos.y - 10, w: measure(title) + 20, h: 22 });
-    let groupNodes = members;
-    let room = { x: cell.x + 10, y: cell.y + 26, w: Math.max(4, cell.w - 20), h: Math.max(6, cell.h - 31) };
-    if (denseNarrow) {
-      // Each topic keeps one title even in a 49-paper overview on a phone.
-      // Its label occupies the left column; the remaining markers use the right.
-      const representative = byImportance[index][0];
-      const clearance = representative.kind === "mission" ? 16 : 10;
-      const point = { x: panel.x + clearance + 4,
-        y: Math.min(panel.y + panel.h - clearance, Math.max(capPos.y + 18, cell.y + cell.h * .66)) };
-      const labelColumn = Math.min(118, cell.w * .45);
-      context.font = `600 ${fontSize}px ${chartFont}`;
-      const text = nodeLabel(representative, labelColumn - 29);
-      positions.set(representative.nodeId, point);
-      labels.set(representative.nodeId, { text, visible: true, side: "right" });
-      occupied.push(labelBox(point, measure(text) + 7, fontSize + 5, "right"));
-      groupNodes = members.filter(member => member !== representative);
-      room = { x: cell.x + labelColumn + 8, y: cell.y + 6, w: cell.w - labelColumn - 14, h: Math.max(16, cell.h - 10) };
-    }
-    if (!groupNodes.length) return;
-    const columns = Math.max(1, Math.min(groupNodes.length, Math.round(Math.sqrt(groupNodes.length * room.w / room.h))));
-    const rows = Math.ceil(groupNodes.length / columns);
-    groupNodes.forEach((member, i) => {
-      const row = Math.floor(i / columns);
-      const rowLength = Math.min(columns, groupNodes.length - row * columns);
-      // Stagger neighbouring rows slightly to separate parallel paths at their endpoints.
-      const x = room.x + ((i % columns + 0.5 + (columns > 1 && rowLength > 1 ? (row % 2 ? .12 : -.12) : 0)) / rowLength) * room.w;
-      const stagger = columns > 1 && (!denseNarrow || rows < 3) ? ((i % columns + index) % 3 - 1) * .12 : 0;
-      const y = room.y + (row + .44 + stagger) * room.h / rows;
-      positions.set(member.nodeId, { x, y });
-      occupied.push({ x: x - 10, y: y - 10, w: 20, h: 20 });
+  const placeSparse = () => {
+    ordered.forEach((members, index) => {
+      const cell = cells[index];
+      const cap = members[0];
+      const capSize = compact ? 13 : 15;
+      context.font = `700 ${capSize}px ${headingFont}`;
+      const count = cap.kind === "mission" && members.length === 1 ? "" : `  ·  ${members.length}`;
+      const title = briefLabel(clusterCaption(cap), Math.max(18, cell.w - 33 - measure(count)), measure) + count;
+      const inset = 3;
+      const panel = { x: cell.x + inset, y: cell.y + inset, w: Math.max(1, cell.w - 2 * inset), h: Math.max(1, cell.h - 2 * inset) };
+      const capPos = { x: panel.x + 10, y: panel.y + 12 };
+      const groupId = clusterOf(cap);
+      bounds.set(groupId, panel);
+      captions.push({ data: { id: `sector:${index}:${groupId}`, isCluster: "yes", region: groupId, label: title,
+        color: regionColor(cap, colors), width: panel.w, height: panel.h, labelInset: 10 - panel.w },
+        position: { x: panel.x + panel.w / 2, y: panel.y + panel.h / 2 }, selectable: false, grabbable: false });
+      occupied.push({ x: capPos.x - 4, y: capPos.y - 10, w: measure(title) + 20, h: 22 });
+      const groupNodes = members;
+      const room = { x: cell.x + 10, y: cell.y + 28, w: Math.max(4, cell.w - 20), h: Math.max(6, cell.h - 33) };
+      const columns = Math.max(1, Math.min(groupNodes.length, Math.round(Math.sqrt(groupNodes.length * room.w / room.h))));
+      const rows = Math.ceil(groupNodes.length / columns);
+      groupNodes.forEach((member, i) => {
+        const row = Math.floor(i / columns);
+        const rowLength = Math.min(columns, groupNodes.length - row * columns);
+        // Stagger neighbouring rows slightly to separate parallel paths at their endpoints.
+        const x = room.x + ((i % columns + 0.5 + (columns > 1 && rowLength > 1 ? (row % 2 ? .12 : -.12) : 0)) / rowLength) * room.w;
+        const stagger = columns > 1 ? ((i % columns + index) % 3 - 1) * .12 : 0;
+        const y = room.y + (row + .44 + stagger) * room.h / rows;
+        positions.set(member.nodeId, { x, y });
+        occupied.push({ x: x - 10, y: y - 10, w: 20, h: 20 });
+      });
     });
-  });
 
-  context.font = `600 ${fontSize}px ${chartFont}`;
-  // Give every topic a first label before spending the remaining space on its other papers.
-  const max = Math.max(0, ...byImportance.map(group => group.length));
-  for (let i = 0; i < max; i++) {
+    context.font = `600 ${fontSize}px ${chartFont}`;
+    const sides: LabelSide[] = ["below", "above", "below-start", "below-end", "above-start", "above-end", "right", "left"];
     for (const members of byImportance) {
-      const node = members[i];
-      if (!node || labels.has(node.nodeId)) continue;
-      const p = positions.get(node.nodeId)!;
-      const panel = bounds.get(clusterOf(node))!;
-      const sides: LabelSide[] = ["below", "above", "below-start", "below-end", "above-start", "above-end", "right", "left"];
-      let chosen = { text: nodeLabel(node, titleWidth), visible: false, side: sides[0] };
-      for (const side of sides) {
-        const left = p.x - panel.x - 4;
-        const right = panel.x + panel.w - p.x - 4;
-        const space = side === "left" ? left - 16 : side === "right" ? right - 16
-          : side.endsWith("-start") ? right : side.endsWith("-end") ? left : Math.min(left, right) * 2;
-        const text = nodeLabel(node, Math.min(titleWidth, space - 7));
-        if (space < 38 || text === "…") continue;
-        const box = labelBox(p, Math.ceil(measure(text)) + 8, fontSize + 6, side);
-        if (box.y < panel.y + 2 || box.y + box.h > panel.y + panel.h - 2 || occupied.some(other => overlaps(box, other))) continue;
-        if (!chosen.visible || measure(text) > measure(chosen.text)) chosen = { text, visible: true, side };
+      const candidates: Array<{ id: string; text: string; side: LabelSide; box: Box; priority: number }> = [];
+
+      for (const node of members) {
+
+        const p = positions.get(node.nodeId)!;
+        const panel = bounds.get(clusterOf(node))!;
+        labels.set(node.nodeId, { text: nodeLabel(node, titleWidth), visible: false, side: "below" });
+        for (const side of sides) {
+          const left = p.x - panel.x - 4;
+          const right = panel.x + panel.w - p.x - 4;
+          const space = side === "left" ? left - 16 : side === "right" ? right - 16
+            : side.endsWith("-start") ? right : side.endsWith("-end") ? left : Math.min(left, right) * 2;
+          if (space < 38) continue;
+          const text = nodeLabel(node, Math.min(titleWidth, space - 7));
+          const span = measure(text);
+          if (text === "…" || span + 7 > space) continue;
+          const box = labelBox(p, Math.ceil(span) + 8, fontSize + 6, side);
+          if (box.y < panel.y + 2 || box.y + box.h > panel.y + panel.h - 2 || occupied.some(other => overlaps(box, other))) continue;
+          candidates.push({ id: node.nodeId, text, side, box, priority: (degrees.get(node.nodeId) ?? 0) * titleWidth + span });
+        }
       }
-      if (chosen.visible) occupied.push(labelBox(p, Math.ceil(measure(chosen.text)) + 8, fontSize + 6, chosen.side));
-      labels.set(node.nodeId, chosen);
+      candidates.sort((a, b) => b.priority - a.priority);
+      for (const { id, text, side, box } of candidates) {
+        if (labels.get(id)!.visible || occupied.some(other => overlaps(box, other))) continue;
+        labels.set(id, { text, visible: true, side });
+        occupied.push(box);
+      }
     }
+  };
+  // A crowded topic reserves a slot for every paper. The page can grow
+  // vertically so fitting the map never requires suppressing paper labels.
+  let phraseHeight = 0;
+  const dense = nodes.filter(publication).length >= 8;
+  if (!dense) placeSparse();
+  if (dense || nodes.some(node => publication(node) && !labels.get(node.nodeId)?.visible)) {
+    captions.length = 0;
+    const gap = 12;
+    const lanes = Math.max(1, Math.min(ordered.length, Math.floor((width + gap) / 320)));
+    const laneWidth = (width - (lanes - 1) * gap) / lanes;
+    const bottoms = Array<number>(lanes).fill(0);
+    // Place the research question first. Fit the largest topics next so the
+    // final column does not strand a tall topic below a nearly full column.
+    const tiles = [...ordered].sort((a, b) => Number(b[0].kind === "mission") - Number(a[0].kind === "mission") || b.length - a.length);
+    for (const [index, members] of tiles.entries()) {
+      const lane = bottoms.indexOf(Math.min(...bottoms));
+      const x = lane * (laneWidth + gap), y = bottoms[lane];
+      const pad = 14, top = 38;
+      const columns = Math.max(1, Math.min(members.length, Math.floor((laneWidth - pad * 2) / (compact ? 108 : 125))));
+      const cellWidth = (laneWidth - pad * 2) / columns;
+      const available = Math.max(24, cellWidth - 29);
+      context.font = `650 ${fontSize}px ${chartFont}`;
+      const lines = members.map(node => wrapLabel(nodeLabel(node, available), available, measure));
+      let rowY = y + top;
+      for (let first = 0; first < members.length; first += columns) {
+        const row = lines.slice(first, first + columns);
+        const rowHeight = Math.max(29, ...row.map(text => text.split("\n").length * (fontSize + 3) + 12));
+        for (const [col, text] of row.entries()) {
+          const id = members[first + col].nodeId;
+          positions.set(id, { x: x + pad + 5 + col * cellWidth, y: rowY + rowHeight / 2 });
+          labels.set(id, { text, visible: true, side: "right" });
+        }
+        rowY += rowHeight;
+      }
+      const h = rowY - y + 9, group = clusterOf(members[0]);
+      const title = clusterCaption(members[0]) + (members.length > 1 ? "  ·  " + members.length : "");
+      bounds.set(group, { x, y, w: laneWidth, h });
+      captions.push({ data: { id: `sector:${index}:${group}`, isCluster: "yes", region: group, label: title,
+        color: regionColor(members[0], colors), width: laneWidth, height: h, labelInset: 10 - laneWidth },
+        position: { x: x + laneWidth / 2, y: y + h / 2 }, selectable: false, grabbable: false });
+      bottoms[lane] = y + h + gap;
+    }
+    phraseHeight = Math.ceil(Math.max(...bottoms) - gap);
+    area.h = phraseHeight;
   }
   // Let a busy retrieval hub fan towards each topic. Each curve still has its
   // own original endpoints; no extra edges or citation relationships are added.
@@ -348,7 +387,7 @@ function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[],
     const point = positions.get(node.nodeId)!;
     const label = labels.get(node.nodeId)!;
     return { id: node.nodeId, point, radius: node.kind === "mission" ? 17 : 12,
-      label: label.visible ? labelBox(point, measure(label.text) + 6, fontSize + 4, label.side) : undefined };
+      label: label.visible ? labelBox(point, Math.max(...label.text.split("\n").map(measure)) + 6, (fontSize + 4) * label.text.split("\n").length, label.side) : undefined };
   }), area);
   for (const edge of edges) {
     const role = flightRole(edge);
@@ -365,19 +404,29 @@ function atlasLayout(nodes: LiteratureGraphNode[], edges: LiteratureGraphEdge[],
     const dx = b.x - a.x, dy = b.y - a.y;
     const length = Math.hypot(dx, dy);
     if (length < 1) continue;
-    const cx = (panel.x + panel.w * (denseNarrow ? .8 : .5) - a.x) * .7;
+    const cx = (panel.x + panel.w * .5 - a.x) * .7;
     const cy = (panel.y + panel.h * .5 - a.y) * .45;
     const weight = Math.min(.82, Math.max(.18, (cx * dx + cy * dy) / (length * length)));
     const distance = Math.min(length * .32, Math.max(-length * .32, (dx * cy - dy * cx) / length));
     routes.set(edgeId(edge), { weight, distance });
   }
-  return { captions, positions, labels, routes };
+  return { captions, positions, labels, routes, phraseHeight };
 }
 
 export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
+  // Revealing a search result can refilter to the same records. Preserve the
+  // interactive canvas (including its zoom and pointer state) in that case.
+  const sameRecords = (before: readonly unknown[], after: readonly unknown[]) =>
+    before.length === after.length && before.every((record, index) => record === after[index]);
+  const canvasNodes = createMemo(() => props.nodes().slice(0, 96), [], { equals: sameRecords });
+  const canvasEdges = createMemo(() => {
+    const ids = new Set(canvasNodes().map(node => node.nodeId));
+    return props.edges().filter(edge => ids.has(edge.sourceId) && ids.has(edge.targetId)).slice(0, 144);
+  }, [], { equals: sameRecords });
   let host: HTMLDivElement | undefined;
   let cy: Core | undefined;
   let resizeObserver: ResizeObserver | undefined;
+  let scrollingPage = false;
   let resizeFrame: number | undefined;
   let resizeLayout: (() => void) | undefined;
   let previousLayout = "";
@@ -440,7 +489,10 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
   const fit = () => {
     if (!cy) return;
     cy.fit(undefined, Math.min(22, cy.width() * .05));
-    if (cy.zoom() > 1.35) {
+    if (host?.classList.contains("phrase-atlas") && Math.abs(cy.zoom() - 1) < .05) {
+      cy.zoom(1);
+      cy.center();
+    } else if (cy.zoom() > 1.35) {
       cy.zoom(1.35);
       cy.center();
     }
@@ -471,10 +523,11 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
     const paper = themeStyle.getPropertyValue("--paper").trim() || "#ffffff";
     const ink = themeStyle.getPropertyValue("--ink").trim() || "#27344b";
     const muted = themeStyle.getPropertyValue("--muted").trim() || "#56616d";
-    const nodes = props.nodes().slice(0, 96);
-    const nodeIds = new Set(nodes.map((node) => node.nodeId));
-    const edges = props.edges().filter((edge) => nodeIds.has(edge.sourceId) && nodeIds.has(edge.targetId)).slice(0, 144);
+    const nodes = canvasNodes();
+    const edges = canvasEdges();
     const edgesById = new Map(edges.map(edge => [edgeId(edge), edge]));
+    const hubs = retrievalHubs(nodes, edges);
+    const papers = new Set(nodes.filter(isPaperNode).map(node => node.nodeId));
     const compact = compactLayout();
     const paperStates = props.paperStates();
     const token = (name: string, fallback: string) => themeStyle.getPropertyValue(name).trim() || fallback;
@@ -491,7 +544,13 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
     const container = host;
     let chartWidth = container.clientWidth;
     let chartHeight = container.clientHeight;
-    const layout = () => atlasLayout(nodes, edges, Math.max(240, chartWidth - 42), Math.max(240, chartHeight - 42), compact, colors);
+    const layout = () => {
+      const result = atlasLayout(nodes, edges, Math.max(160, chartWidth - 42), Math.max(240, chartHeight - 42), compact, colors);
+      container.classList.toggle("phrase-atlas", Boolean(result.phraseHeight));
+      if (result.phraseHeight) container.style.setProperty("--atlas-phrase-height", (result.phraseHeight + 44) + "px");
+      else container.style.removeProperty("--atlas-phrase-height");
+      return result;
+    };
     const { captions, positions, labels, routes } = layout();
     const layoutKey = JSON.stringify([compact, nodes.map(node => [node.nodeId, clusterOf(node)])]);
     const viewport = cy && layoutKey === previousLayout ? { zoom: cy.zoom(), pan: cy.pan() } : null;
@@ -508,13 +567,18 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
           reviewColor: reviewColors[reviewState] ?? colors[group] }, position: positions.get(node.nodeId) };
       }),
       ...Array.from(edgesById, ([id, edge]) => ({ data: { id, source: edge.sourceId, target: edge.targetId,
-        label: edge.edgeType.replaceAll("_", " "), color: edgeColor(edge, colors), flightRole: flightRole(edge), ...routes.get(id) } })),
+        label: edge.edgeType.replaceAll("_", " "), color: edgeColor(edge, colors), flightRole: flightRole(edge),
+        quietRoute: edge.edgeType === "retrieval_candidate" && hubs.has(edge.sourceId) && papers.has(edge.targetId) ? "yes" : "no",
+        ...routes.get(id) } })),
     ];
     cy?.destroy();
     cy = undefined;
+    container.style.removeProperty("cursor");
+    container.removeAttribute("title");
     cy = cytoscape({
       container: host,
       elements,
+      pixelRatio: Math.max(2, window.devicePixelRatio || 1),
       layout: { name: "preset", fit: false },
       autoungrabify: true,
       minZoom: 0.1,
@@ -522,23 +586,28 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
       wheelSensitivity: 0.16,
       style: [
         { selector: 'node[isCluster = "yes"]', style: {
-          shape: "round-rectangle", "corner-radius": "9px", width: "data(width)", height: "data(height)",
-          "background-color": "data(color)", "background-opacity": .068,
-          "border-color": "data(color)", "border-width": 1, "border-opacity": .30,
-          label: "data(label)", color: "data(color)", "font-family": chartFont, "font-size": 12, "font-weight": 600,
-          "text-valign": "top", "text-halign": "right", "text-margin-x": (node: NodeSingular) => node.data("labelInset"), "text-margin-y": 20,
+          shape: "round-rectangle", "corner-radius": "4px", width: "data(width)", height: "data(height)",
+          "background-color": "data(color)", "background-opacity": .042,
+          "border-color": "data(color)", "border-width": 1, "border-opacity": .23,
+          label: "data(label)", color: "data(color)", "font-family": headingFont, "font-size": compact ? 13 : 15, "font-weight": 700,
+          "text-valign": "top", "text-halign": "right", "text-margin-x": (node: NodeSingular) => node.data("labelInset"), "text-margin-y": compact ? 21 : 24,
           "z-compound-depth": "bottom", events: "no", "overlay-opacity": 0,
         } },
         { selector: 'node[isCluster = "no"]', style: {
           shape: "ellipse", width: 13, height: 13, "background-color": "data(color)",
           "border-color": "data(reviewColor)", "border-width": 2, "border-position": "outside",
-          label: "data(displayLabel)", color: ink, "font-family": chartFont, "font-size": compact ? 12 : 13, "font-weight": 600,
+          label: "data(displayLabel)", "text-events": "yes", "text-wrap": "wrap", "text-max-width": "1000px",
+          color: ink, "font-family": chartFont, "font-size": compact ? 12 : 13, "font-weight": 600,
           "text-valign": "bottom", "text-halign": "center", "text-margin-y": 5, "text-outline-color": paper, "text-outline-width": 1.5,
           "overlay-opacity": 0, "z-index": 2,
         } },
         { selector: 'node[group = "Mission"]', style: { width: 22, height: 22, shape: "hexagon", "border-color": "data(color)", "border-width": 1.5, "outline-color": "data(color)", "outline-offset": 2, "outline-width": 1 } },
         { selector: 'node[group = "Papers"]', style: { "background-color": paper, "border-width": 2.3,
           "pie-size": "36%", "pie-1-background-color": "data(regionColor)", "pie-1-background-size": 100 } },
+        ...(nodes.length <= 16 ? [] : [
+          { selector: 'node[group = "Papers"]', style: { width: 10, height: 10, "border-width": 1.7, "pie-size": "48%" } },
+          { selector: 'node[group = "Papers"][displayLabel = ""]', style: { width: 8, height: 8, "border-width": 1.4 } },
+        ]),
         { selector: 'node[group = "Evidence"]', style: { width: 14, height: 14, shape: "round-diamond" } },
         { selector: 'node[nodeKind = "research_gap_candidate"]', style: { shape: "triangle", "background-color": paper, "border-style": "dashed" } },
         { selector: 'node[group = "Conditions"]', style: { shape: "round-rectangle", "background-color": paper } },
@@ -552,33 +621,50 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
         { selector: "edge", style: { width: 1.35, "line-color": "data(color)", "target-arrow-color": "data(color)",
           "target-arrow-shape": "triangle", "arrow-scale": .65, "curve-style": "bezier", opacity: .72,
           label: "", "overlay-opacity": 0, "z-index": 0 } },
-        { selector: 'edge[flightRole = "formation"]', style: { width: 1, "line-color": muted, "target-arrow-shape": "none", opacity: nodes.length > 18 ? .18 : .44 } },
+        { selector: 'edge[flightRole = "formation"]', style: { width: 1.15, "line-color": muted, "target-arrow-shape": "none", "line-style": "dashed", "line-dash-pattern": [4, 4], opacity: .53 } },
         { selector: "edge[weight]", style: { "curve-style": "unbundled-bezier", "edge-distances": "node-position",
           "control-point-distances": "data(distance)", "control-point-weights": "data(weight)" } },
         { selector: 'edge[flightRole = "bibliography"]', style: { opacity: .72 } },
         { selector: 'edge[flightRole = "suggestion"]', style: { "line-style": "dotted", opacity: .50, "target-arrow-shape": "none" } },
         { selector: "node.is-subdued", style: { opacity: .50 } },
         { selector: "edge.is-subdued", style: { opacity: .09 } },
+        { selector: 'edge[quietRoute = "yes"]', style: { opacity: 0, events: "no" } },
         { selector: "node.active-region", style: { "border-width": 1.6, "border-opacity": .78, "background-opacity": .105 } },
         { selector: "node.is-adjacent", style: { "outline-color": "data(color)", "outline-width": 1, "outline-offset": 2, "z-index": 5 } },
-        { selector: "edge.is-adjacent", style: { width: 2, opacity: .94, "z-index": 1 } },
+        { selector: "edge.is-adjacent", style: { width: 2, opacity: .94, events: "yes", "z-index": 1 } },
         { selector: "node.is-emphasized", style: { label: "data(shortLabel)", "background-color": "data(color)", "border-color": paper,
           "border-width": 2, "outline-color": "data(color)", "outline-offset": 1, "outline-width": 2,
           "font-weight": 700, "text-outline-width": 2.5, "z-index": 10 } },
         { selector: 'node[group = "Papers"].is-emphasized', style: { "background-color": paper,
           "border-color": "data(reviewColor)", "border-width": 2.3, "outline-color": ink, "outline-offset": 2.5,
           "outline-width": 2.2, "pie-1-background-color": "data(regionColor)" } },
-        { selector: "edge.is-emphasized", style: { width: 2.8, opacity: 1, label: "data(label)", "font-family": chartFont,
+        { selector: "edge.is-emphasized", style: { width: 2.8, opacity: 1, events: "yes", label: "data(label)", "font-family": chartFont,
           "font-size": 12, color: ink, "text-background-color": paper, "text-background-opacity": 1, "text-background-padding": "3px", "z-index": 8 } },
         { selector: "node.label-collision", style: { label: "" } },
       ],
     });
-    cy.on("tap", 'node[isCluster = "no"]', (event) => props.onSelectNode(event.target.id()));
-    cy.on("tap", "edge", (event) => {
-      const edge = edgesById.get(event.target.id());
-      if (edge) props.onSelectEdge(edge);
+    cy.on("tap", event => {
+      // Cytoscape sees the start/end of a page swipe, but not its native scrolling moves.
+      if (scrollingPage && event.originalEvent?.type.startsWith("touch")) return;
+      const target = event.target;
+      if (target === cy) props.onSelectNode("");
+      else if (target.isNode() && target.data("isCluster") === "no") props.onSelectNode(target.id());
+      else if (target.isEdge()) {
+        const edge = edgesById.get(target.id());
+        if (edge) props.onSelectEdge(edge);
+      }
     });
-    cy.on("tap", (event) => { if (event.target === cy) props.onSelectNode(""); });
+    cy.on("mouseover", 'node[isCluster = "no"], edge', event => {
+      const element = event.target;
+      container.style.cursor = "pointer";
+      if (element.isNode()) {
+        container.title = element.data("shortLabel").replaceAll("\n", " ");
+      }
+    });
+    cy.on("mouseout", 'node[isCluster = "no"], edge', () => {
+      container.style.removeProperty("cursor");
+      container.removeAttribute("title");
+    });
     cy.on("zoom", () => { if (cy) setZoomPercent(Math.round(cy.zoom() * 100)); });
     resizeLayout = () => {
       if (!cy || (container.clientWidth === chartWidth && container.clientHeight === chartHeight)) return;
@@ -621,8 +707,32 @@ export function LiteratureGraphCanvas(props: LiteratureGraphCanvasProps) {
       const refreshHitCoordinates = () => cy?.resize();
       const starts = typeof PointerEvent !== "undefined" ? ["pointerdown"] : ["mousedown", "touchstart"];
       for (const event of starts) container.addEventListener(event, refreshHitCoordinates, { capture: true, passive: true });
+      let touchStart: Touch | undefined;
+      const beginTouch = (event: TouchEvent) => {
+        scrollingPage = false;
+        touchStart = event.touches.length === 1 && narrow.matches && container.classList.contains("phrase-atlas")
+          && container.clientHeight > window.innerHeight ? event.touches[0] : undefined;
+      };
+      const routeTouchMove = (event: TouchEvent) => {
+        if (!touchStart || event.touches.length !== 1) return;
+        if (!scrollingPage) {
+          const dx = Math.abs(event.touches[0].clientX - touchStart.clientX);
+          const dy = Math.abs(event.touches[0].clientY - touchStart.clientY);
+          if (Math.max(dx, dy) >= 6) {
+            if (dx > dy) { touchStart = undefined; return; } // horizontal graph pan
+            scrollingPage = true;
+          }
+        }
+        // Allow native momentum scrolling. The renderer's window listener otherwise
+        // cancels touchmove even when the gesture begins on a paper or its label.
+        event.stopPropagation();
+      };
+      container.addEventListener("touchstart", beginTouch, { capture: true, passive: true });
+      container.addEventListener("touchmove", routeTouchMove, { capture: true, passive: true });
       onCleanup(() => {
         for (const event of starts) container.removeEventListener(event, refreshHitCoordinates, true);
+        container.removeEventListener("touchstart", beginTouch, true);
+        container.removeEventListener("touchmove", routeTouchMove, true);
       });
     }
     if (host && typeof ResizeObserver !== "undefined") {

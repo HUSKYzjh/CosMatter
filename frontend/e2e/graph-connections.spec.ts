@@ -15,18 +15,21 @@ for (const width of [320, 1366]) {
       trust_status: "navigation_metadata", nodes: [
         node("paper:alpha", "candidate_paper", "Alpha film"), node("paper:beta", "candidate_paper", "Beta reference"),
         node("paper:gamma", "candidate_paper", "Gamma follow-up"), node("evidence:e1", "accepted_evidence", "Alpha measurement"),
-        node("evidence:e2", "evidence_card", "Unverified measurement"),
+        node("evidence:e2", "evidence_card", "Unverified measurement"), node("evidence:e3", "accepted_evidence", "Alpha measurement"),
       ], edges: [
         edge("paper:alpha", "paper:beta", "citation_reference", "OpenAlex"),
         edge("paper:alpha", "paper:gamma", "citation_cited_by", "OpenAlex"),
         edge("paper:alpha", "evidence:e1", "source_provenance", "reviewed source map", "accepted"),
+        edge("paper:alpha", "evidence:e3", "source_provenance", "reviewed source map", "accepted"),
+        edge("paper:beta", "evidence:e1", "source_provenance", "unverified cross-paper link", "candidate_metadata"),
         edge("paper:alpha", "evidence:e2", "source_provenance", "metadata link", "candidate_metadata"),
       ],
     };
     const card = { evidence_id: "e1", claim: "Alpha measurement", quote: "Fixture alpha reported 300 K.",
       review_status: "accepted", stance: "support", conditions: { temperature_K: 300 },
       provenance: { document_id: "alpha", locator: "Figure 5", source: "fixture", access_policy: "authorized" } };
-    bundle.evidence_cards = [card, { ...card, evidence_id: "e2", claim: "Unverified measurement" }];
+    bundle.evidence_cards = [card, { ...card, evidence_id: "e2", claim: "Unverified measurement" },
+      { ...card, evidence_id: "e3", provenance: { ...card.provenance, locator: "p. 9, Table II" }, quote: "Table II reports the other measurement." }];
     const writes: string[] = [];
     await page.route("**/api/**", route => {
       const url = new URL(route.request().url());
@@ -49,9 +52,17 @@ for (const width of [320, 1366]) {
       await tools.press("Enter");
       await expect(copyId).toBeHidden();
     }
+    const firstCard = links.getByRole("listitem").filter({ has: page.getByRole("button", { name: "在原文核对 · Figure 5 · e1" }) });
+    const otherCard = links.getByRole("listitem").filter({ has: page.getByRole("button", { name: "在原文核对 · p. 9, Table II · e3" }) });
+    await expect(firstCard).toContainText("证据来源 · fixture");
+    await expect(firstCard).toContainText("关系来源 · reviewed source map");
+    await expect(firstCard).toContainText("Alpha measurement");
+    await expect(otherCard).toContainText("Alpha measurement");
+    await expect(links.getByRole("button", { name: /在原文核对/ })).toHaveCount(2);
     await links.getByRole("button", { name: /引用了.*Beta reference/ }).press("Enter");
     await expect(inspector.getByRole("heading", { name: "Beta reference" })).toBeVisible();
     await expect(inspector).toBeFocused();
+    await expect(links.getByRole("button", { name: /在原文核对/ })).toHaveCount(0);
     await expect(links.getByRole("button", { name: /被其引用.*Alpha film/ })).toBeVisible();
     await inspector.getByRole("button", { name: /返回上一节点.*Alpha film/ }).click();
     await links.getByRole("button", { name: /被其引用.*Gamma follow-up/ }).click();
@@ -60,9 +71,13 @@ for (const width of [320, 1366]) {
     await links.getByRole("button", { name: /Unverified measurement/ }).click();
     await expect(inspector.getByRole("button", { name: /在原文核对/ })).toHaveCount(0);
     await inspector.getByRole("button", { name: /返回上一节点/ }).click();
-    await links.getByRole("button", { name: /Alpha measurement/ }).press("Enter");
-    await inspector.getByRole("button", { name: "在原文核对 · Figure 5" }).click();
+    await firstCard.getByRole("button", { name: /Alpha measurement/ }).press("Enter");
+    await expect(inspector.locator(".graph-record-meta")).toContainText("证据卡 IDe1");
+    await inspector.getByRole("button", { name: "在原文核对 · Figure 5 · e1" }).click();
     await expect(page.locator(".source-reader blockquote")).toHaveText(card.quote, { timeout: 30_000 });
+    await page.goto(`/?api=local#run=${run}&document=alpha&view=map`);
+    await otherCard.getByRole("button", { name: /在原文核对/ }).press("Enter");
+    await expect(page.locator(".source-reader blockquote")).toHaveText("Table II reports the other measurement.");
     expect(writes).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });

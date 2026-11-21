@@ -1,6 +1,50 @@
 import { test, expect } from "@playwright/test";
+import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
+import { paperKeyphrase } from "../src/paperKeyphrase";
+
+test("ships the current offline paper label bundle", async () => {
+  await promisify(execFile)(process.execPath, [resolve("scripts/build-offline-paper-labels.mjs"), "--check"]);
+});
+
+for (const width of [320, 1366]) {
+  test(`shows only the shared keyphrase on every offline paper node at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 880 });
+    await page.context().setOffline(true);
+    const requests: string[] = [];
+    page.on("request", request => { if (/^https?:/u.test(request.url())) requests.push(request.url()); });
+    await page.goto(pathToFileURL(resolve("..", "web/network.html")).href);
+    const titles = ["Critical phenomena and polarization rotation in epitaxial thin films", "Origin of stationary domain wall enhanced ferroelectric susceptibility"];
+    const bundle = { schema_version: "1.0", mission: { material: "BiFeO3" },
+      research_guide: { items: titles.map((title, i) => ({ document_id: "study-" + i, title })) },
+      evidence_cards: [{ evidence_id: "card", review_status: "accepted", provenance: { document_id: "untitled-record", locator: "p. 7" } }],
+      condition_matrix: [] };
+    await page.locator("#network-bundle-file").setInputFiles({ name: "titles.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(bundle)) });
+    const canvas = page.locator("#evidence-network");
+    for (const title of titles) {
+      const paper = canvas.getByRole("button", { name: title, exact: true });
+      await expect(paper.locator("text")).toHaveText([paperKeyphrase(title)]);
+      await paper.press("Enter");
+      await expect(page.locator("#node-title")).toHaveText(title);
+      const fits = await paper.evaluate(node => {
+        const text = node.querySelector("text")!.getBoundingClientRect();
+        const box = node.querySelector("rect")!.getBoundingClientRect();
+        return text.left >= box.left && text.right <= box.right && text.top >= box.top && text.bottom <= box.bottom;
+      });
+      expect(fits).toBe(true);
+    }
+    await expect(canvas.getByRole("button", { name: "untitled-record" }).locator("text")).toHaveText(["题名待补"]);
+    const search = page.getByRole("searchbox", { name: "搜索节点" });
+    for (const query of ["Critical phenomena", paperKeyphrase(titles[0])]) {
+      await search.fill(query);
+      await expect(canvas.locator(".paper")).toHaveCount(1);
+      await expect(page.locator("#node-title")).toHaveText(titles[0]);
+    }
+    expect(requests).toEqual([]);
+  });
+}
 
 test("follows a paper's direct relations on the offline map and returns to the same node in overview", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 880 });

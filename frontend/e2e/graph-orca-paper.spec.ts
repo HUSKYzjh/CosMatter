@@ -106,6 +106,38 @@ async function openExportedPaperLink(page: Page, inspector: Locator, paper: keyo
   await expect(restored).toHaveURL(href);
 }
 
+test("opens the exact paper from a local Orca receipt and clears previous results on a bad import", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 880 });
+  const { inspector, reads, writes } = await openMap(page, "alpha");
+  const inbox = page.locator(".orca-map-inbox");
+  await inbox.locator("summary").first().press("Enter");
+  const origin = new URL(page.url()).origin;
+  const receipt = (paper: string, outcome: string, id: string) => ({
+    type: "worker_done", delivery_contract: "current_delivery", id: "msg_" + id, run_id: "run_team",
+    to_handle: "run:run_team", from_handle: "term_" + id,
+    payload: JSON.stringify({ taskId: "task_" + id, dispatchId: "ctx_" + id, outcome }),
+    body: JSON.stringify({ document_id: paper, paper_url: origin + "/?api=local#run=" + run + "&document=" + paper + "&view=map" }),
+  });
+  const rows = [receipt("alpha-long", "succeeded", "one"), receipt("alpha", "failed", "two"), receipt("missing", "succeeded", "three")];
+  const fileInput = inbox.getByLabel("选择 Orca 收件箱 JSON");
+  await fileInput.setInputFiles({ name: "inbox.json", mimeType: "application/json", buffer: Buffer.from("\uFEFF" + JSON.stringify({ ok: true, result: { messages: rows } })) });
+  await expect(inbox.getByRole("status")).toHaveText("为当前星图匹配到 2 条回执。");
+  const first = inbox.getByRole("listitem").first();
+  await first.getByText("查看派工标识").click();
+  await expect(first).toContainText("ctx_one");
+  await first.getByRole("button", { name: "Longer ID" }).press("Enter");
+  await expect(inspector.getByRole("heading", { name: "Longer ID", exact: true })).toBeVisible();
+  await inbox.getByRole("button", { name: "Alpha film" }).click();
+  await expect(inspector.getByRole("heading", { name: "Alpha film", exact: true })).toBeVisible();
+  await expect(inbox).toContainText("执行失败");
+  expect(await inbox.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await fileInput.setInputFiles({ name: "bad.json", mimeType: "application/json", buffer: Buffer.from("not json") });
+  await expect(inbox.getByRole("status")).toContainText("无法读取 Orca 收件箱");
+  await expect(inbox.getByRole("listitem")).toHaveCount(0);
+  expect(reads).toEqual([]);
+  expect(writes).toEqual([]);
+});
+
 test("exports exactly the selected paper and merges its two cards into one Orca task", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 860 });
   const { reads, writes, inspector, verify, table } = await openMap(page, "alpha");

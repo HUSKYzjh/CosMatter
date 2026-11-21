@@ -136,6 +136,11 @@
   background: radial-gradient(circle, color-mix(in srgb, var(--muted) 20%, transparent) .7px, transparent .85px) 0 0 / 26px 26px, var(--surface);
 }
 .cytoscape-literature-canvas:focus-visible { outline: 2px solid var(--signal-teal); outline-offset: -3px; }
+.frontier-literature-workbench .graph-workspace .lens-canvas-region:has(.phrase-atlas) {
+  height: auto;
+  grid-template-rows: auto auto auto;
+}
+.lens-canvas-region .cytoscape-literature-canvas.phrase-atlas { height: var(--atlas-phrase-height); }
 .lens-canvas-region .lens-footnote { grid-area: caption; position: static; margin: 0; padding: .48rem .75rem; color: var(--muted); font-size: .79rem; line-height: 1.45; }
 .frontier-literature-workbench .evidence-inspector {
   min-width: 0; padding: clamp(.85rem, 1.8vw, 1.2rem); color: var(--ink);
