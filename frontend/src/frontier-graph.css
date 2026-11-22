@@ -1,5 +1,11 @@
 /* Graph styles are consolidated in styles.css. */
 
+/* Give the atlas the reading width and vertical breathing room its labels need.
+   The outer workbench keeps the rail, inspector, and controls on the same grid. */
+.workbench .frontier-literature-workbench {
+  padding-inline: clamp(1rem, 2vw, 2rem);
+}
+
 /* A paper cannot skip its candidate-screening decision on the way to private full text. */
 .evidence-handoff { display: grid; gap: .45rem; margin: .9rem 0; padding: .75rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .evidence-handoff small { color: var(--signal-amber); font: .58rem ui-monospace, monospace; letter-spacing: .08em; }
@@ -95,7 +101,7 @@
 .frontier-literature-workbench .lens-canvas-region {
   display: grid; grid-template-areas: "legend scale tools" "map map map" "caption caption caption";
   grid-template-columns: minmax(0, 1fr) auto auto; grid-template-rows: auto minmax(0, 1fr) auto;
-  align-self: start; min-width: 0; min-height: 0; height: clamp(29rem, 65vh, 46rem); overflow: hidden;
+  align-self: start; min-width: 0; min-height: 0; height: clamp(33rem, 72vh, 52rem); overflow: hidden;
   background: var(--surface); border: 1px solid var(--line); border-radius: .48rem;
 }
 .lens-canvas-region .lens-canvas-tools {
@@ -140,7 +146,9 @@
   height: auto;
   grid-template-rows: auto auto auto;
 }
-.lens-canvas-region .cytoscape-literature-canvas.phrase-atlas { height: var(--atlas-phrase-height); }
+.lens-canvas-region .cytoscape-literature-canvas.phrase-atlas {
+  height: calc(var(--atlas-phrase-height) + clamp(2rem, 4vw, 5rem));
+}
 .lens-canvas-region .lens-footnote { grid-area: caption; position: static; margin: 0; padding: .48rem .75rem; color: var(--muted); font-size: .79rem; line-height: 1.45; }
 .frontier-literature-workbench .evidence-inspector {
   min-width: 0; padding: clamp(.85rem, 1.8vw, 1.2rem); color: var(--ink);
@@ -190,7 +198,7 @@
   .frontier-literature-workbench .lens-canvas-region {
     grid-template-areas: "scale tools" "map map" "legend legend" "caption caption";
     grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr) auto auto;
-    height: clamp(28rem, 67svh, 38rem);
+    height: clamp(30rem, 72svh, 42rem);
   }
   .lens-canvas-region .canvas-zoom-readout { place-self: center start; margin-inline-start: .75rem; }
   .lens-canvas-region .paper-workflow-legend { padding: .52rem .75rem .1rem; }
