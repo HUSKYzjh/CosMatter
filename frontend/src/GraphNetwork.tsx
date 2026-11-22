@@ -99,7 +99,6 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
   const [controls, setControls] = createSignal<GraphCanvasControls | null>(null);
   const [nodeVisibility, setNodeVisibility] = createSignal<Record<NodeGroup, boolean>>({ mission: true, papers: true, evidence: true, conditions: true, references: false, structure: false });
   const [edgeVisibility, setEdgeVisibility] = createSignal<Record<EdgeGroup, boolean>>({ discovery: true, evidence: true, conditions: true, bibliography: false, related: false, structure: false });
-  const [citationAutoShown, setCitationAutoShown] = createSignal(false);
   const [sessionSelectionRestored, setSessionSelectionRestored] = createSignal(false);
   const [screeningFocusId, setScreeningFocusId] = createSignal<string | null>(null);
   const [screeningPanelOpen, setScreeningPanelOpen] = createSignal(Boolean(props.linkedScreeningRevision));
@@ -242,7 +241,11 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
     setScreeningFocusId(documentId);
     setScreeningPanelOpen(true);
   };
-  createEffect(() => { if (hasCitationMap() && !citationAutoShown()) { setNodeVisibility((current) => ({ ...current, references: true })); setEdgeVisibility((current) => ({ ...current, bibliography: true })); setCitationAutoShown(true); } });
+  const toggleCitationLayer = () => {
+    const shouldShow = !edgeVisibility().bibliography;
+    setEdgeVisibility((current) => ({ ...current, bibliography: shouldShow }));
+    setNodeVisibility((current) => ({ ...current, references: shouldShow }));
+  };
   // Restore the session paper once; later graph inspection remains user-directed.
   createEffect(() => {
     if (sessionSelectionRestored()) return;
@@ -446,6 +449,12 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
       <section class="lens-canvas-region">
         <div class="lens-canvas-tools">
           <button type="button" class="graph-fit-view" onClick={() => controls()?.fit()}>{t("适配画布", "Fit canvas")}</button>
+          <Show when={hasCitationMap()}>
+            <button type="button" class="graph-citation-toggle" aria-pressed={edgeVisibility().bibliography}
+              aria-label={t("切换引文关系线", "Toggle citation relationship lines")} onClick={toggleCitationLayer}>
+              {t("引文", "Citations")}
+            </button>
+          </Show>
           <button type="button" aria-label={t("放大", "Zoom in")} onClick={() => controls()?.zoomIn()}>+</button>
           <button type="button" aria-label={t("缩小", "Zoom out")} onClick={() => controls()?.zoomOut()}>−</button>
         </div>
@@ -547,7 +556,7 @@ export function GraphNetwork(props: { bundle: ImportedBundle; theme: string; loc
       <AtlasReadingIndex locale={props.locale} entries={routePapers()} nodes={nodesById()} scope={graphScope()}
         selectedId={selectedNodeId()} select={selectSearchMatch} stateLabel={paperStateLabel}
         routeSummary={routePolicySummary()} hasGuide={Boolean(props.bundle.researchGuide)} shortfall={routeShortfallSummary()} />
-      <aside class="fleet-relation-beacon" aria-label={t("关系航标", "Relation beacon")}><div><small>{t("关系航标", "RELATION BEACON")}</small><p>{t("下列计数来自当前图谱；书目连接、题名建议与来源溯源是不同类型的工件关系。点击可切换对应关系层，仅影响当前画布显示。", "Counts below come from the current graph; bibliography links, title suggestions, and source provenance are distinct artifact relations. Select a beacon to toggle its visible relationship layer on this canvas only.")}</p></div><nav aria-label={t("关系层开关", "Relationship layer toggles")}><button type="button" classList={{ active: edgeVisibility().discovery }} onClick={() => setEdgeVisibility((current) => ({ ...current, discovery: !current.discovery }))}><span>{t("候选路线", "Candidate routes")}</span><strong>{relationCounts().discovery}</strong></button><button type="button" classList={{ active: edgeVisibility().evidence }} onClick={() => setEdgeVisibility((current) => ({ ...current, evidence: !current.evidence }))}><span>{t("来源溯源", "Source provenance")}</span><strong>{relationCounts().evidence}</strong></button><button type="button" classList={{ active: edgeVisibility().conditions }} onClick={() => setEdgeVisibility((current) => ({ ...current, conditions: !current.conditions }))}><span>{t("条件关系", "Condition links")}</span><strong>{relationCounts().conditions}</strong></button><button type="button" classList={{ active: edgeVisibility().bibliography }} onClick={() => { const shouldShowReferences = !edgeVisibility().bibliography; setEdgeVisibility((current) => ({ ...current, bibliography: !current.bibliography })); if (shouldShowReferences) setNodeVisibility((current) => ({ ...current, references: true })); }}><span>{t("书目引文", "Bibliographic citations")}</span><strong>{relationCounts().bibliography}</strong></button><button type="button" classList={{ active: edgeVisibility().related }} onClick={() => setEdgeVisibility((current) => ({ ...current, related: !current.related }))}><span>{t("题名建议", "Title suggestions")}</span><strong>{relationCounts().related}</strong></button></nav></aside>
+      <aside class="fleet-relation-beacon" aria-label={t("关系航标", "Relation beacon")}><div><small>{t("关系航标", "RELATION BEACON")}</small><p>{t("下列计数来自当前图谱；书目连接、题名建议与来源溯源是不同类型的工件关系。点击可切换对应关系层，仅影响当前画布显示。", "Counts below come from the current graph; bibliography links, title suggestions, and source provenance are distinct artifact relations. Select a beacon to toggle its visible relationship layer on this canvas only.")}</p></div><nav aria-label={t("关系层开关", "Relationship layer toggles")}><button type="button" classList={{ active: edgeVisibility().discovery }} onClick={() => setEdgeVisibility((current) => ({ ...current, discovery: !current.discovery }))}><span>{t("候选路线", "Candidate routes")}</span><strong>{relationCounts().discovery}</strong></button><button type="button" classList={{ active: edgeVisibility().evidence }} onClick={() => setEdgeVisibility((current) => ({ ...current, evidence: !current.evidence }))}><span>{t("来源溯源", "Source provenance")}</span><strong>{relationCounts().evidence}</strong></button><button type="button" classList={{ active: edgeVisibility().conditions }} onClick={() => setEdgeVisibility((current) => ({ ...current, conditions: !current.conditions }))}><span>{t("条件关系", "Condition links")}</span><strong>{relationCounts().conditions}</strong></button><button type="button" classList={{ active: edgeVisibility().bibliography }} onClick={() => toggleCitationLayer()}><span>{t("书目引文", "Bibliographic citations")}</span><strong>{relationCounts().bibliography}</strong></button><button type="button" classList={{ active: edgeVisibility().related }} onClick={() => setEdgeVisibility((current) => ({ ...current, related: !current.related }))}><span>{t("题名建议", "Title suggestions")}</span><strong>{relationCounts().related}</strong></button></nav></aside>
     </section></Show>
     <Show when={hasNavigableMap()}>
     <Show when={props.onRequestFulltext && props.onRefreshSourceParses}>

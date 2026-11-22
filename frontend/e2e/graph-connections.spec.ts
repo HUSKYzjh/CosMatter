@@ -82,3 +82,39 @@ for (const width of [320, 1366]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
+
+test("keeps citation lines off until the map toolbar enables them", async ({ page }) => {
+  const run = "citation-layer";
+  const bundle = JSON.parse(await readFile(resolve("..", "examples/ui-demo/route_diagnostics.json"), "utf8"));
+  bundle.literature_graph = {
+    trust_status: "public_metadata",
+    nodes: [
+      { node_id: "paper:seed", kind: "relation_root_paper", label: "Seed paper", trust_status: "public_metadata" },
+      { node_id: "citation:one", kind: "citation_work", label: "Cited work", trust_status: "public_metadata" },
+      { node_id: "citation:two", kind: "citation_work", label: "Citing work", trust_status: "public_metadata" },
+    ],
+    edges: [
+      { source_id: "paper:seed", target_id: "citation:one", edge_type: "citation_reference", relation_source: "OpenAlex", trust_status: "public_metadata" },
+      { source_id: "citation:two", target_id: "paper:seed", edge_type: "citation_cited_by", relation_source: "OpenAlex", trust_status: "public_metadata" },
+    ],
+  };
+  await page.route("**/api/**", route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === `/api/runs/${run}/ui`) return route.fulfill({ json: bundle });
+    if (url.pathname === `/api/runs/${run}/status`) return route.fulfill({ json: { run_id: run, mission_id: bundle.mission.mission_id, state: "INTAKE" } });
+    if (url.pathname === `/api/runs/${run}/stage-contract`) return route.fulfill({ json: stageContractFixture(run, bundle.mission.mission_id, "extraction") });
+    return route.fulfill({ status: 404 });
+  });
+  await page.goto(`/?api=local#run=${run}`);
+  const map = page.getByRole("group", { name: "交互式文献图谱" });
+  await expect(map.locator("canvas").first()).toBeVisible({ timeout: 30_000 });
+  const toggle = page.getByRole("button", { name: "切换引文关系线", exact: true });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => map.evaluate(el => (el as HTMLElement & { _cyreg: { cy: { edges: (selector: string) => { filter: (predicate: (edge: { style: (key: string) => string }) => boolean) => { length: number } } } } })._cyreg.cy.edges('[flightRole="bibliography"]').filter(edge => edge.style("opacity") !== "0").length)).toBe(0);
+  await toggle.press("Enter");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => map.evaluate(el => (el as HTMLElement & { _cyreg: { cy: { edges: (selector: string) => { filter: (predicate: (edge: { style: (key: string) => string }) => boolean) => { length: number } } } } })._cyreg.cy.edges('[flightRole="bibliography"]').filter(edge => edge.style("opacity") !== "0").length)).toBe(2);
+  await toggle.press("Space");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => map.evaluate(el => (el as HTMLElement & { _cyreg: { cy: { nodes: (selector: string) => { length: number } } } })._cyreg.cy.nodes('[group="References"]').length)).toBe(0);
+});

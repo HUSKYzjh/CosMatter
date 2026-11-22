@@ -115,14 +115,22 @@
 }
 .lens-canvas-region .lens-canvas-tools button + button { border-inline-start: 1px solid var(--line); }
 .lens-canvas-region .lens-canvas-tools .graph-fit-view { width: auto; padding: .2rem .55rem; color: var(--muted); font-family: inherit; font-size: .78rem; font-weight: 600; line-height: 1.2; }
+.lens-canvas-region .lens-canvas-tools .graph-citation-toggle {
+  width: auto; padding-inline: .62rem; color: var(--muted); font-size: .72rem; font-weight: 650;
+}
+.lens-canvas-region .lens-canvas-tools .graph-citation-toggle[aria-pressed="true"] {
+  color: var(--signal-teal); background: color-mix(in srgb, var(--signal-teal) 10%, transparent);
+}
 .lens-canvas-region .lens-canvas-tools button:hover { background: var(--surface-strong); }
 .lens-canvas-region .canvas-zoom-readout {
   grid-area: scale; place-self: center end; margin: 0 .6rem; pointer-events: none;
   font: 600 .8rem/1.3 "Cascadia Mono", Consolas, monospace; color: var(--muted);
 }
 .lens-canvas-region .paper-workflow-legend {
-  grid-area: legend; display: flex; align-self: center; align-items: center; flex-wrap: wrap;
-  gap: .2rem .72rem; min-width: 0; margin: 0; padding: .45rem .75rem; color: var(--ink);
+  grid-area: legend; display: flex; align-self: stretch; align-items: center; align-content: center; flex-wrap: wrap;
+  gap: .2rem .72rem; min-width: 0; min-height: 2.75rem; margin: 0; padding: .45rem .75rem; color: var(--ink);
+  border-block-start: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-strong) 42%, transparent);
   font-family: inherit; font-size: .78rem; line-height: 1.45;
 }
 .paper-workflow-legend small { font-size: inherit; font-weight: 650; color: var(--muted); }
@@ -151,16 +159,16 @@
 }
 .lens-canvas-region .lens-footnote { grid-area: caption; position: static; margin: 0; padding: .48rem .75rem; color: var(--muted); font-size: .79rem; line-height: 1.45; }
 .frontier-literature-workbench .evidence-inspector {
-  min-width: 0; padding: clamp(.85rem, 1.8vw, 1.2rem); color: var(--ink);
+  display: grid; align-content: start; gap: .7rem; min-width: 0; padding: clamp(.85rem, 1.8vw, 1.2rem); color: var(--ink);
   border: 1px solid var(--line); border-block-start: 3px solid var(--signal-teal); border-radius: .3rem; background: var(--surface);
 }
 .frontier-literature-workbench .evidence-inspector h2 {
-  margin: .35rem 0 .48rem; overflow-wrap: anywhere; text-wrap: pretty; color: var(--ink);
+  margin: 0; overflow-wrap: anywhere; text-wrap: pretty; color: var(--ink);
   font: 650 clamp(1.18rem, 1.6vw, 1.55rem)/1.35 Georgia, "Songti SC", SimSun, serif;
 }
 .frontier-literature-workbench .evidence-inspector > small { display: block; font-family: inherit; font-size: .78rem; font-weight: 650; line-height: 1.35; color: var(--signal-teal); }
 .frontier-literature-workbench .graph-record-meta:empty { display: none; }
-.frontier-literature-workbench .evidence-inspector .graph-record-status { margin: 0 0 .65rem; color: var(--muted); }
+.frontier-literature-workbench .evidence-inspector .graph-record-status { margin: 0; color: var(--muted); }
 .frontier-literature-workbench .evidence-inspector :is(p, dd) { font-size: .86rem; line-height: 1.55; }
 .frontier-literature-workbench .evidence-inspector dt { font-size: .78rem; }
 .frontier-literature-workbench .evidence-inspector dl { border-block-start: 1px solid var(--line); }
